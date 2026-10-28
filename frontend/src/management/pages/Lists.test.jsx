@@ -316,6 +316,31 @@ describe('Lists: sellers, vendors and storage locations', () => {
     await waitFor(() => expect(api.deleteSeller).toHaveBeenCalledWith(2))
   })
 
+  it("sets a seller's contact, the phone after its country code", async () => {
+    const user = userEvent.setup()
+    api.updateSeller.mockResolvedValue({})
+    open('sellers')
+    const row = (await screen.findByText('idle_seler')).closest('tr')
+
+    await user.click(within(row).getByRole('button', { name: 'Edit' }))
+    const phone = within(row).getByRole('textbox', { name: 'Contact phone' })
+    expect(phone).toHaveValue('+1')
+    await user.type(within(row).getByRole('textbox', { name: 'Contact' }), 'Pat Dealer')
+    await user.type(
+      within(row).getByRole('textbox', { name: 'Contact email' }),
+      'pat@example.com',
+    )
+    await user.type(phone, '8605551234')
+    await user.click(within(row).getByRole('button', { name: 'Save' }))
+    await waitFor(() =>
+      expect(api.updateSeller).toHaveBeenCalledWith(2, {
+        contact_name: 'Pat Dealer',
+        contact_email: 'pat@example.com',
+        contact_phone: '+18605551234',
+      }),
+    )
+  })
+
   it("changes a vendor's kind", async () => {
     const user = userEvent.setup()
     api.updateVendor.mockResolvedValue({})
@@ -556,6 +581,26 @@ describe('Lists: adding', () => {
       expect(api.createSeller).toHaveBeenCalledWith({
         name: 'coin_shop',
         store_url: 'https://shop.example.com',
+      }),
+    )
+  })
+
+  it('adds a seller with no phone when only the country code is there', async () => {
+    const user = userEvent.setup()
+    api.createSeller.mockResolvedValue({})
+    open('sellers')
+    const form = await openAdd(user, 'seller')
+
+    expect(within(form).getByRole('textbox', { name: 'Contact phone' })).toHaveValue(
+      '+1',
+    )
+    await user.type(within(form).getByRole('textbox', { name: 'Name' }), 'coin_shop')
+    await user.type(within(form).getByRole('textbox', { name: 'Contact' }), 'Pat')
+    await user.click(within(form).getByRole('button', { name: 'Add' }))
+    await waitFor(() =>
+      expect(api.createSeller).toHaveBeenCalledWith({
+        name: 'coin_shop',
+        contact_name: 'Pat',
       }),
     )
   })

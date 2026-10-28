@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 
 import { api } from '../api'
 import { frProblem, normalizeFr } from '../friedberg-format'
+import { PHONE_DEFAULT_CC, phoneTyped } from '../phone'
 import { withScheme } from '../site-name'
 import { useReference } from '../../shared/reference-context'
 
@@ -83,7 +84,8 @@ function typeOf(row) {
  * by: how it is read, added to, changed and deleted, what a row is called,
  * how many records use it, the text a search matches, its columns -- a
  * column with a `field` can be edited -- and `adds`, the fields a new row
- * is asked for. A field `required` refuses a blank. The two kind
+ * is asked for. A field `required` refuses a blank; one with an `initial`
+ * text opens with it where it holds nothing; `type` is its box's. The two kind
  * vocabularies are passed in
  * because their labels and pickers come from reference data loaded later.
  */
@@ -92,6 +94,18 @@ function lists(vendorKinds, locationKinds) {
   const offeredKinds = locationKinds.filter((entry) => !MADE_ELSEWHERE.has(entry.code))
   const sellerName = { key: 'name', label: 'Name', required: true }
   const storeLink = { key: 'store_url', label: 'Store link', clean: webLink }
+  // The person behind a seller's account. The phone box starts with the
+  // country code, which alone is no number (`phoneTyped`); the server holds
+  // it to E.164 and says so when it is not.
+  const contactName = { key: 'contact_name', label: 'Contact' }
+  const contactEmail = { key: 'contact_email', label: 'Contact email', type: 'email' }
+  const contactPhone = {
+    key: 'contact_phone',
+    label: 'Contact phone',
+    type: 'tel',
+    initial: PHONE_DEFAULT_CC,
+    clean: phoneTyped,
+  }
   const vendorName = { key: 'name', label: 'Name', required: true }
   const vendorLink = { key: 'url', label: 'Link', clean: webLink }
   const vendorKind = { key: 'vendor_kind', label: 'Kind', options: vendorKinds }
@@ -150,13 +164,22 @@ function lists(vendorKinds, locationKinds) {
       noun: 'seller',
       load: api.listSellers,
       create: api.createSeller,
-      adds: [sellerName, storeLink],
+      adds: [sellerName, storeLink, contactName, contactEmail, contactPhone],
       update: api.updateSeller,
       remove: api.deleteSeller,
       name: (row) => row.name,
       uses: (row) => row.order_count,
       usesLabel: 'Purchases',
-      searchText: (row) => [row.name, row.store_url].filter(Boolean).join(' '),
+      searchText: (row) =>
+        [
+          row.name,
+          row.store_url,
+          row.contact_name,
+          row.contact_email,
+          row.contact_phone,
+        ]
+          .filter(Boolean)
+          .join(' '),
       columns: [
         {
           label: 'Name',
@@ -167,6 +190,21 @@ function lists(vendorKinds, locationKinds) {
           label: 'Store',
           value: (row) => row.store_url ?? '',
           field: storeLink,
+        },
+        {
+          label: 'Contact',
+          value: (row) => row.contact_name ?? '',
+          field: contactName,
+        },
+        {
+          label: 'Email',
+          value: (row) => row.contact_email ?? '',
+          field: contactEmail,
+        },
+        {
+          label: 'Phone',
+          value: (row) => <span className="mono">{row.contact_phone ?? ''}</span>,
+          field: contactPhone,
         },
       ],
     },
@@ -365,7 +403,7 @@ function CatalogTable({ config }) {
     e.preventDefault()
     const body = {}
     for (const field of config.adds) {
-      const typed = adding[field.key] ?? ''
+      const typed = adding[field.key] ?? field.initial ?? ''
       const value = field.clean ? field.clean(typed) : typed.trim()
       const problem = refusalOf(field, value)
       if (problem) {
@@ -416,7 +454,7 @@ function CatalogTable({ config }) {
               {/* */}
               <Field
                 field={field}
-                value={adding[field.key] ?? ''}
+                value={adding[field.key] ?? field.initial ?? ''}
                 onChange={(value) => setAdding({ ...adding, [field.key]: value })}
               />
             </label>
@@ -440,7 +478,7 @@ function CatalogTable({ config }) {
           {needle ? `Nothing matches ${search.trim()}.` : 'Nothing here yet.'}
         </p>
       ) : (
-        <table>
+        <table className="table">
           <thead>
             <tr>
               {config.columns.map((column) => (
@@ -462,7 +500,12 @@ function CatalogTable({ config }) {
                       {isEditing && column.field ? (
                         <Field
                           field={column.field}
-                          value={draft[column.field.key] ?? row[column.field.key] ?? ''}
+                          value={
+                            draft[column.field.key] ??
+                            row[column.field.key] ??
+                            column.field.initial ??
+                            ''
+                          }
                           onChange={(value) =>
                             setDraft({ ...draft, [column.field.key]: value })
                           }
@@ -585,7 +628,7 @@ function Field({ field, value, onChange, autoFocus = false, onEnter, onEscape })
   }
   return (
     <input
-      type="text"
+      type={field.type ?? 'text'}
       aria-label={field.label}
       value={value}
       autoFocus={autoFocus}

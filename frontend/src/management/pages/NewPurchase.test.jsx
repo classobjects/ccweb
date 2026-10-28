@@ -1315,8 +1315,11 @@ describe('NewPurchase: the seller', () => {
       await screen.findByRole('combobox', { name: 'Seller' }),
       '__add__',
     )
-    await user.type(screen.getByPlaceholderText('Seller name'), ' newseller ')
-    await user.type(screen.getByPlaceholderText('Store web address or email'), STORE)
+    await user.type(screen.getByRole('textbox', { name: 'Seller name' }), ' newseller ')
+    await user.type(
+      screen.getByRole('textbox', { name: 'Store web address or email' }),
+      STORE,
+    )
     await user.click(screen.getByRole('button', { name: 'Add seller' }))
 
     await waitFor(() =>
@@ -1348,7 +1351,7 @@ describe('NewPurchase: the seller', () => {
       '__add__',
     )
     const store = screen.getByRole('textbox', { name: 'Store web address or email' })
-    const name = screen.getByPlaceholderText('Seller name')
+    const name = screen.getByRole('textbox', { name: 'Seller name' })
     // The store comes before the name, and has the cursor.
     expect(store.compareDocumentPosition(name)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
     expect(store).toHaveFocus()
@@ -1373,7 +1376,7 @@ describe('NewPurchase: the seller', () => {
       '__add__',
     )
     const store = screen.getByRole('textbox', { name: 'Store web address or email' })
-    const name = screen.getByPlaceholderText('Seller name')
+    const name = screen.getByRole('textbox', { name: 'Seller name' })
 
     await user.type(store, 'coins@example.com')
     expect(name).toHaveValue('')
@@ -1400,7 +1403,7 @@ describe('NewPurchase: the seller', () => {
       '__add__',
     )
     const store = screen.getByRole('textbox', { name: 'Store web address or email' })
-    const name = screen.getByPlaceholderText('Seller name')
+    const name = screen.getByRole('textbox', { name: 'Seller name' })
     await user.type(store, 'https://www.ebay.com')
     expect(name).toHaveValue('ebay.com')
 
@@ -1449,7 +1452,10 @@ describe('NewPurchase: the seller', () => {
       screen.getByRole('textbox', { name: 'Store web address or email' }),
       'coins@example.com',
     )
-    await user.type(screen.getByPlaceholderText('Seller name'), 'By Mail Coins')
+    await user.type(
+      screen.getByRole('textbox', { name: 'Seller name' }),
+      'By Mail Coins',
+    )
     await user.click(screen.getByRole('button', { name: 'Add seller' }))
 
     await waitFor(() =>
@@ -1481,7 +1487,7 @@ describe('NewPurchase: the seller', () => {
       await screen.findByRole('combobox', { name: 'Seller' }),
       '__add__',
     )
-    await user.type(screen.getByPlaceholderText('Seller name'), 'newseller')
+    await user.type(screen.getByRole('textbox', { name: 'Seller name' }), 'newseller')
     await user.click(screen.getByRole('button', { name: 'Add seller' }))
     // Typed before the new seller's answer arrives.
     const notes = screen.getByRole('textbox', { name: /^notes/i })

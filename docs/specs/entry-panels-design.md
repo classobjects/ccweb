@@ -25,7 +25,7 @@ piece is in hand, from Receiving or the item editor
 | Other defaults | disposition `held`, authenticity `unverified` unless given, valuation basis `numismatic`, source `manual`. The **New item** row sends country United States (`US`) by default, because the project's vocabularies (denominations, series, note types) are US-centred; the API itself sets no country. The person may change or empty it in the editor, and an installation that mostly buys elsewhere changes the default in one place, `DEFAULT_COUNTRY` in `AddItem.jsx`. |
 | Vendors | Picked from a list; a missing one is added inline. Names are unique, case-insensitively. |
 | Web addresses | A purchase's `source_url` must start with `http://` or `https://` (422 otherwise), the rule Receiving applies when showing it. A seller's `store_url` may also be `mailto:` and a mail address, for a seller reached by mail; a mail address sent alone is stored with `mailto:` in front. |
-| Who sold it? | The vendor is often the marketplace (ebay.com, whatnot.com); the seller on it is a row of its own (`seller`: a unique name and an optional store link) that the purchase names by `seller_id` -- one seller per purchase, since a marketplace order comes from one, and many purchases per seller. |
+| Who sold it? | The vendor is often the marketplace (ebay.com, whatnot.com); the seller on it is a row of its own (`seller`: a unique name, an optional store link, and an optional contact -- name, email, E.164 phone -- for the person behind the account) that the purchase names by `seller_id` -- one seller per purchase, since a marketplace order comes from one, and many purchases per seller. |
 | One form for an item | An item is entered in the item editor, the form it is later corrected in: entering and correcting must not differ in what they offer or in what Suggest description writes. The purchase page makes the row and opens the editor on it. |
 | Repeated entry | **Add another like it** starts the next piece from exactly what it shares with the item last opened on the purchase, or its latest (`SHARED_ON_REPEAT` in `AddItem.jsx`, listed under *New item* below). Grade and strike type are copied, since the pieces of one purchase are mostly of one grade and strike, and a set's grade designation too, since a run of sets is bought as one designation. A loose piece's grade designation, serial number, certificate, variety, years, description and piece count are per piece and are entered each time, even when they often repeat. |
 
@@ -72,13 +72,18 @@ serve the Lists page (`list-maintenance-design.md`).
 ### Sellers
 
 - `GET /api/sellers` -- ordered by name, case aside: `id`, `name`, `store_url`,
-  `order_count`.
+  `contact_name`, `contact_email`, `contact_phone`, `order_count`.
 - `POST /api/sellers` -- `name` (1-255, trimmed), `store_url` (http(s), or
-  `mailto:` and a mail address; blank or absent -> null). 201 with the
-  seller; 409 on a name already taken, whatever its case; 422 for a store
-  that is neither.
-- `PATCH /api/sellers/{id}` -- `name` and/or `store_url`; only what is sent
-  changes, blank clears the store. 409 for a name another seller has.
+  `mailto:` and a mail address; blank or absent -> null), and the optional
+  contact of the person behind the account: `contact_name` (<= 255,
+  trimmed), `contact_email` (a mail address), `contact_phone` (E.164, as a
+  customer's: spaces, brackets, dashes and dots dropped, then `+` and 7-15
+  digits; 422 "international form" otherwise). Each blank or absent ->
+  null. 201 with the seller; 409 on a name already taken, whatever its
+  case; 422 for a store that is neither.
+- `PATCH /api/sellers/{id}` -- `name`, `store_url` and the three contact
+  fields; only what is sent changes, blank clears any but the name. 409 for
+  a name another seller has.
 
 ### Purchase orders
 
@@ -175,11 +180,14 @@ page:
    seller when the box is left or Enter pressed -- the seller whose store it
    is, compared without scheme, `www.`, trailing `/`, `?` or `#` and in any
    case; else the seller of the name the address gives, one seller to a
-   name; else a new seller so named, with that store, said "(added)". With
-   no address typed, the pulldown, with "+ Add a seller..." opening an
-   inline store / name form, as the vendor picker does: the store's address
-   is asked first and proposes the name by the same rule,
-   `management/site-name.js`; a mail address proposes none), notes,
+   name; else the add form opens holding that store and the name it gives,
+   so the contact is asked for before the seller is added. With no address
+   typed, the pulldown, with "+ Add a seller..." opening the same inline
+   form, as the vendor picker does: the store's address is asked first and
+   proposes the name by the same rule, `management/site-name.js` (a mail
+   address proposes none); then the name, and the contact name, email and
+   phone, each optional, the phone box starting at `+1`, which alone is no
+   number), notes,
    **Create purchase**. **Edit
    details** changes the same fields except the vendor. The heading links the purchase's web
    address as "Vendor page" and names the seller, linked to their store, as

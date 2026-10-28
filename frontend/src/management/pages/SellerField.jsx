@@ -3,10 +3,33 @@ import { useRef, useState } from 'react'
 import { api } from '../api'
 import { ADD, useAddOption } from '../../shared/add-option'
 import { useRequest } from '../../shared/useRequest'
+import { PHONE_DEFAULT_CC, phoneTyped } from '../phone'
 import { siteName, withScheme } from '../site-name'
 import { useInlineAdd } from '../useInlineAdd'
 
-const BLANK_DRAFT = { name: '', store_url: '' }
+const BLANK_DRAFT = {
+  name: '',
+  store_url: '',
+  contact_name: '',
+  contact_email: '',
+  contact_phone: PHONE_DEFAULT_CC,
+}
+
+/**
+ * A new seller as the server takes it: the name, and only the store and
+ * contact fields typed in -- a phone with nothing after its country code is
+ * none.
+ */
+function newSeller(draft) {
+  const body = {
+    name: draft.name.trim(),
+    store_url: withScheme(draft.store_url) ?? '',
+    contact_name: draft.contact_name.trim(),
+    contact_email: draft.contact_email.trim(),
+    contact_phone: phoneTyped(draft.contact_phone),
+  }
+  return Object.fromEntries(Object.entries(body).filter(([, value]) => value !== ''))
+}
 
 /**
  * A store address as it is compared: the site without `www.` and the page,
@@ -27,16 +50,32 @@ function storeKey(text) {
 }
 
 /**
+ * A box of the add form with its caption shown above it. The box carries its
+ * own name (`aria-label`); the caption is for the eye, so it is not read twice.
+ */
+function Captioned({ text, children }) {
+  return (
+    <span className="add-field">
+      <span aria-hidden="true">{text}</span>
+      {children}
+    </span>
+  )
+}
+
+/**
  * The seller picker: who sold a purchase on the marketplace its vendor
  * names.
  *
  * A store address typed in picks the seller, once the box is left or Enter
  * pressed: the seller whose store it is; else the seller of the name the
- * address gives (`siteName`), there being one seller to a name; else a new
- * seller, so named, with that store. While an address is typed the select
- * is not shown; with none, the select over `listSellers()` is, opening with
- * "+ Add a seller..." for an inline store and name form -- the vendor
- * picker's shape: the store's address is asked first and proposes the name.
+ * address gives (`siteName`), there being one seller to a name; else the
+ * add form opens with that store and name, for the contact to be typed
+ * before the seller is added. While an address is typed the select is not
+ * shown; with none, the select over `listSellers()` is, opening with
+ * "+ Add a seller..." for the same inline form -- the vendor picker's shape:
+ * the store's address is asked first and proposes the name; then the name
+ * and an optional contact name, email and phone (E.164, prefilled with the
+ * country code).
  *
  * `value` is the seller's id as text ('' for none), and `onChange` receives
  * the same, so it sits in a form of text fields; the form turns it into a
@@ -46,8 +85,8 @@ export default function SellerField({ value, onChange }) {
   const loaded = useRequest('sellers', () => api.listSellers())
   const [added, setAdded] = useState([])
   const addOption = useAddOption()
-  // The store address typed, and what it came to: the seller chosen (and
-  // whether it was added for it), or why it chose none.
+  // The store address typed, and what it came to: the seller on file it
+  // chose, or why it chose none.
   const [store, setStore] = useState('')
   const [picked, setPicked] = useState(null)
   const [storeError, setStoreError] = useState('')
@@ -63,11 +102,7 @@ export default function SellerField({ value, onChange }) {
     useInlineAdd({
       blank: BLANK_DRAFT,
       ready: (d) => Boolean(d.name.trim()),
-      create: (d) =>
-        api.createSeller({
-          name: d.name.trim(),
-          store_url: withScheme(d.store_url),
-        }),
+      create: (d) => api.createSeller(newSeller(d)),
       onCreated: (created) => {
         setAdded((list) => [...list, created])
         onChange(String(created.id))
@@ -96,18 +131,28 @@ export default function SellerField({ value, onChange }) {
         (s) => s.name.localeCompare(name, undefined, { sensitivity: 'base' }) === 0,
       )
     if (known) {
-      setPicked({ seller: known, added: false })
+      setPicked(known)
       onChange(String(known.id))
       return
     }
-    try {
-      const created = await api.createSeller({ name, store_url: withScheme(store) })
-      setAdded((list) => [...list, created])
-      setPicked({ seller: created, added: true })
-      onChange(String(created.id))
-    } catch (err) {
-      setStoreError(err.message)
-    }
+    // A store not on file opens the add form with it and the name it gives,
+    // so the seller's contact is asked for before they are added.
+    setDraft({ ...BLANK_DRAFT, store_url: store.trim(), name })
+    setAdding(true)
+    clearStore()
+  }
+
+  function clearStore() {
+    setStore('')
+    setPicked(null)
+    setStoreError('')
+    pickedFor.current = null
+  }
+
+  /** Close the add form, leaving nothing typed in it for the next open. */
+  function cancelAdd() {
+    setAdding(false)
+    setDraft(BLANK_DRAFT)
   }
 
   const storeBox = (
@@ -138,12 +183,7 @@ export default function SellerField({ value, onChange }) {
     return (
       <>
         {storeBox}
-        {picked && (
-          <span className="notice">
-            {picked.seller.name}
-            {picked.added && ' (added)'}
-          </span>
-        )}
+        {picked && <span className="notice">{picked.name}</span>}
         {storeError && <span className="error">{storeError}</span>}
       </>
     )
@@ -156,27 +196,60 @@ export default function SellerField({ value, onChange }) {
             marketplace, so its address proposes the name. Only a name the
             address gave follows it, or an empty one, which is nobody's
             choice; one typed by hand is left alone. */}
-        <input
-          placeholder="Store web address or email"
-          aria-label="Store web address or email"
-          value={draft.store_url}
-          autoFocus
-          onChange={(e) => {
-            const store = e.target.value
-            const proposed =
-              draft.name === '' || draft.name === siteName(draft.store_url)
-            setDraft({
-              ...draft,
-              store_url: store,
-              name: proposed ? siteName(store) : draft.name,
-            })
-          }}
-        />
-        <input
-          placeholder="Seller name"
-          value={draft.name}
-          onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-        />
+        {/* Each box captioned, not just given a placeholder: five filled
+            boxes would otherwise not say which is the name and which the
+            contact. A caption, not a <label>: the field already sits in the
+            form's own "Seller" label, and a label inside a label names
+            nothing. */}
+        <Captioned text="Store web address or email">
+          <input
+            aria-label="Store web address or email"
+            value={draft.store_url}
+            autoFocus
+            onChange={(e) => {
+              const store = e.target.value
+              const proposed =
+                draft.name === '' || draft.name === siteName(draft.store_url)
+              setDraft({
+                ...draft,
+                store_url: store,
+                name: proposed ? siteName(store) : draft.name,
+              })
+            }}
+          />
+        </Captioned>
+        <Captioned text="Seller name">
+          <input
+            aria-label="Seller name"
+            value={draft.name}
+            onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+          />
+        </Captioned>
+        {/* The person behind the account, each optional. */}
+        <Captioned text="Contact name">
+          <input
+            aria-label="Contact name"
+            value={draft.contact_name}
+            onChange={(e) => setDraft({ ...draft, contact_name: e.target.value })}
+          />
+        </Captioned>
+        <Captioned text="Contact email">
+          <input
+            type="email"
+            aria-label="Contact email"
+            value={draft.contact_email}
+            onChange={(e) => setDraft({ ...draft, contact_email: e.target.value })}
+          />
+        </Captioned>
+        <Captioned text="Contact phone">
+          <input
+            type="tel"
+            aria-label="Contact phone"
+            title="Country code, then the number"
+            value={draft.contact_phone}
+            onChange={(e) => setDraft({ ...draft, contact_phone: e.target.value })}
+          />
+        </Captioned>
         <button
           type="button"
           onClick={() => {
@@ -186,7 +259,7 @@ export default function SellerField({ value, onChange }) {
         >
           Add seller
         </button>
-        <button type="button" className="link" onClick={() => setAdding(false)}>
+        <button type="button" className="link" onClick={cancelAdd}>
           Cancel
         </button>
         {askedEmpty && !ready && (
@@ -210,8 +283,10 @@ export default function SellerField({ value, onChange }) {
           }
           // An arrow steps over Add; only choosing it opens the form.
           const meant = addOption.steppedOver(e.target)
-          if (meant === undefined) setAdding(true)
-          else if (meant !== null) onChange(meant)
+          if (meant === undefined) {
+            setDraft(BLANK_DRAFT)
+            setAdding(true)
+          } else if (meant !== null) onChange(meant)
         }}
         aria-label="Seller"
       >

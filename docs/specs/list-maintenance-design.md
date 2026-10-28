@@ -32,7 +32,7 @@ the form kept as typed. What a new row is asked for:
 | Tab | Asked for | Required |
 |---|---|---|
 | Friedberg numbers | number, description | the number, cleaned and checked as everywhere else |
-| Sellers | name, store link | name |
+| Sellers | name, store link, contact, contact email, contact phone (starts at `+1`, which alone is no number) | name |
 | Vendors | name, link (`https://` added to a bare `ebay.com`, as the purchase screen does), kind (none is `unknown`) | name |
 | Storage locations | kind, institution, identifier, notes | kind; never `consigned` or `sold` |
 
@@ -43,7 +43,7 @@ the note.
 | Tab | Shown | Editable | "Uses" counts |
 |---|---|---|---|
 | Friedberg numbers | number, the type it was recorded with, description, confirmed or proposed | number, description; **Confirm** / **Undo confirm** | notes holding it |
-| Sellers | name, store link | name, store link | purchases naming the seller |
+| Sellers | name, store link, contact, email, phone | all five | purchases naming the seller |
 | Vendors | name, link, kind | name, link, kind | purchases and sales platforms naming the vendor |
 | Storage locations | kind, institution, identifier, notes | the same four | items kept there now plus location-history rows naming it |
 
@@ -161,7 +161,7 @@ All manager only (`AdminUser`).
 | `PATCH /api/friedberg/{id}` | `fr_number`, `description`, `verified` (true stamps `verified_at` and the confirming user, false clears both) |
 | `DELETE /api/friedberg/{id}` | 409 while a note holds it |
 | `GET /api/sellers` | every seller, by name case aside, with `order_count` |
-| `PATCH /api/sellers/{id}` | `name`, `store_url` |
+| `PATCH /api/sellers/{id}` | `name`, `store_url`, `contact_name`, `contact_email`, `contact_phone` (E.164) |
 | `DELETE /api/sellers/{id}` | 409 while a purchase names the seller |
 | `GET /api/vendors` | every vendor, by name, with `order_count` (purchases and sales platforms) |
 | `PATCH /api/vendors/{id}` | `name`, `url` (http(s) only, as when a vendor is added; `host` recomputed), `vendor_kind` (null sets `unknown`) |

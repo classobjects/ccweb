@@ -183,6 +183,11 @@ class Seller(TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     #: Their store or profile page, or a `mailto:` address.
     store_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    #: The person behind the account, and how to reach them off the
+    #: marketplace; each optional. The phone is E.164, as a customer's is.
+    contact_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    contact_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    contact_phone: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     orders: Mapped[list[PurchaseOrder]] = relationship(back_populates="seller")
 
