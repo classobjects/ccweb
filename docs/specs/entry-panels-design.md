@@ -205,7 +205,8 @@ page:
   make an item -- its kind and a title, what the seller called it -- and
   posts them to `POST /api/inventory` with the purchase's tax values and, for
   a purchase whose web address is a lot's page, that address as the listing.
-  Enter in the title adds.
+  Enter in the title adds. The kind starts at the purchase detail's
+  `default_item_kind` (the `DEFAULT_ITEM_KIND` setting, `coin` unless set).
 - **The item opens in the item editor** (`ItemEditDialog`), where everything
   else is entered: the facts, grade, cost, storage location, errors,
   photographs (by file, web address, drag and drop or paste), the Friedberg

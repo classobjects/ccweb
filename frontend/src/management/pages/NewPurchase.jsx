@@ -690,6 +690,7 @@ export default function NewPurchase() {
               // never a marketplace's order or a shop's location page.
               orderUrl={purchase.lot_page ?? null}
               defaults={itemDefaults}
+              defaultKind={purchase.default_item_kind ?? 'coin'}
               items={purchase.lines ?? []}
               likeId={lastOpened}
               onEntered={setLastOpened}

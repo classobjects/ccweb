@@ -33,7 +33,13 @@ from .config import settings
 from .models import Image
 from .storage import StorageBackend, get_storage
 
-__all__ = ["SAMPLE_SIZE", "MediaRootMismatch", "check_at_startup", "check_media_root"]
+__all__ = [
+    "SAMPLE_SIZE",
+    "MediaRootMismatch",
+    "check_at_startup",
+    "check_media_root",
+    "startup_session",
+]
 
 _log = logging.getLogger(__name__)
 
@@ -69,7 +75,7 @@ def check_media_root(db: Session, storage: StorageBackend, root: Path) -> None:
 
 
 @contextmanager
-def _session(provide: Callable[[], object]) -> Iterator[Session]:
+def startup_session(provide: Callable[[], object]) -> Iterator[Session]:
     """A session from `provide`, which returns either one or a generator of one."""
     produced = provide()
     if isinstance(produced, Session):
@@ -89,7 +95,7 @@ def check_at_startup(provide: Callable[[], object]) -> None:
     replaces it -- so the check reads the database the requests will.
     """
     try:
-        with _session(provide) as db:
+        with startup_session(provide) as db:
             check_media_root(db, get_storage(), settings.media_root)
     except OperationalError as exc:
         _log.warning(

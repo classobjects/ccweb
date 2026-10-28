@@ -154,6 +154,13 @@ class Settings(RuntimeFields):
     sales_tax_rate: Decimal = Field(default=Decimal("0"), ge=0, le=1)
     sales_tax_includes_shipping: bool = True
 
+    # --- entering purchases ----------------------------------------------------
+    # The item kind (an `item_kind` code) a new item on a purchase starts as,
+    # before anyone picks one. A starting value only: every item may still be
+    # given any kind. A code the database does not hold, or holds retired,
+    # stops the API at start-up (`app.default_kind_check`).
+    default_item_kind: str = "coin"
+
     @field_validator("jwt_secret")
     @classmethod
     def _refuse_a_weak_secret(cls, value: str) -> str:
