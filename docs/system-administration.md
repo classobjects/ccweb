@@ -22,7 +22,8 @@ is structured).
 ## Contents
 
 1. [Accounts](#accounts) -- roles, creating accounts, passwords
-2. [Settings](#settings) -- `.env` and `backend/app/config.py`
+2. [Settings](#settings) -- `.env`; every setting is in
+   [settings.md](settings.md)
 3. [The collection record](#the-collection-record) -- the command-line passes
 4. [Finding items](#finding-items) -- the inventory search panel
 5. [Inventory items](#inventory-items) -- creating, editing, receiving, removing
@@ -164,49 +165,19 @@ in, then demote the old account.
 ## Settings
 
 Settings decide where the database, images and photographs are, how sessions
-are signed, and how purchases are taxed. Defaults live in
-`backend/app/config.py` and are overridden by environment variables or the
-repo-root `.env` (template: `.env.example`). Names are the field names
-upper-cased (`jwt_secret` -> `JWT_SECRET`). **A name in `.env` that is no
-setting is refused** (`extra="forbid"`): the API does not start, and the
-error names it, so a misspelt `JWT_SECRET` cannot leave the key unset
-unnoticed. The refusal never prints the value. Settings are read when the
-API starts; change them, then restart the API. On a development machine:
-`.\scripts\ccweb_shutdown.cmd /keepdb`, then `.\scripts\ccweb_startup.cmd`
-(Linux: `./scripts/ccweb_shutdown.sh --keepdb`, then
-`./scripts/ccweb_startup.sh`). On a server: `schtasks /end /tn "ccwebdb
-api"`, then `schtasks /run /tn "ccwebdb api"`, from an administrator cmd
-(Linux: `sudo systemctl restart ccwebdb-api`).
-
-The log settings `CCWEB_LOG_DIR`, `CCWEB_LOG_KEEP` and `CCWEB_LOG_MAX_BYTES`
-are read by the runtime scripts, not by `config.py`; see
-[logs/README.md](../logs/README.md).
-
-### Must change before anything outside this machine can reach the system
-
-| Setting | Default | Why |
-|---|---|---|
-| `JWT_SECRET` | none: required | signs every token; anyone who knows it can mint an admin session. Nothing starts without one, nor with one under 32 characters or one this repository has published (`config.PUBLISHED_SECRETS`). Make one with `python -c "import secrets; print(secrets.token_hex(32))"` |
-| `FIRST_ADMIN_PASSWORD` | none | used by `python -m app.seed` (`FIRST_ADMIN_EMAIL`, default `admin@example.com`, names the account) and, when set, by `python -m app.create_admin` in place of its prompt; both refuse one under 12 characters or one published in this repository (`seed.PUBLISHED_PASSWORDS`). It does not check an account that already exists: change the password of any account still on a development one under **People** |
-| `DATABASE_URL` | local `ccwebdb` with `devpassword` | contains the database password. The API refuses to start with the published development password `devpassword` unless the database is on this machine (`localhost`, `127.0.0.1` or `::1`) |
-| `SHOP_OPEN` | `true` | `false` until opening day. Closed, a visitor who is not signed in sees only a coming-soon page and sign-in, at every shop address; the API refuses them the catalog (`/api/catalog`, 403 *The shop is not open yet*) and refuses registration, so a listing made ahead of opening cannot be read by someone who skips the page. Signed-in accounts and the console are unaffected. To open the shop, set it to `true` and restart the API; the pages ask `/api/shop` and need no rebuild |
-
-### Worth reviewing
-
-| Setting | Default | Meaning |
-|---|---|---|
-| `ACCESS_TOKEN_EXPIRE_MINUTES` | `30` | how long a session lasts before the refresh token is used |
-| `REFRESH_TOKEN_EXPIRE_DAYS` | `14` | how long someone can stay signed in without re-entering a password |
-| `CORS_ORIGINS` | the two dev Vite URLs | must list the real origin once the frontend is served from anywhere else |
-| `API_PREFIX` | `/api` | changing it moves every endpoint |
-| `DEFAULT_ITEM_KIND` | `coin` | the kind a new item on a purchase starts as (an `item_kind` code: `currency` for a currency dealer); any item can still be given another. The purchase's detail carries it (`default_item_kind`), so a change needs only an API restart. A code that is not an active item kind stops the API at start-up, naming the kinds there are |
+are signed, and how purchases are taxed. They are set in the repository's
+`.env` (template: `.env.example`). **Every setting -- whether it is
+required, its default, the values it takes, and what must happen before a
+change is seen -- is in [settings.md](settings.md)**, with the environment
+variables that are not settings. A name in `.env` that is no setting stops
+the API, naming it; most settings are read when the API starts, so change
+them, then restart it.
 
 ### Sales tax on acquisitions
 
-| Setting | Default | Meaning |
-|---|---|---|
-| `SALES_TAX_RATE` | `0.0635` | the rate a newly recorded purchase is taxed at. A fraction, not a percentage. A value outside 0-1 is refused when the API starts, so `6.35` typed for 6.35% cannot multiply every cost by 7.35 |
-| `SALES_TAX_INCLUDES_SHIPPING` | `true` | whether shipping is part of the taxed amount |
+`SALES_TAX_RATE` and `SALES_TAX_INCLUDES_SHIPPING` ([settings.md](settings.md))
+are the rate a newly recorded purchase is taxed at and whether shipping is
+part of the taxed amount.
 
 **Both are copied onto each item when it is created, and never read again for
 that item.** Tax paid is a historical fact, so a change governs purchases
@@ -223,16 +194,12 @@ $0.35 where 6.35% of $5.40 is $0.34); those pennies stay as computed.
 
 ### Images and the photograph library
 
-| Setting | Default | Meaning |
-|---|---|---|
-| `MEDIA_ROOT` | `<repo>\media` | where image bytes live. **Bytes are never stored in the database**, so no database backup includes them: `python -m app.media_backup copy` backs them up (*Backing up and restoring*). Leave it unset unless the photographs are elsewhere, and then give the folder holding `originals` and `derivatives` as a full path. The API refuses to start when the folder holds none of the five newest photographs the database names, and says so in `backend.log`: `MEDIA_ROOT is ..., which holds none of the 5 newest photographs`. If the database is not answering when the API starts, the API logs `photograph folder not checked` and starts anyway |
-| `THUMBNAIL_MAX_PX` | `320` | longest edge of the small rendition |
-| `WEB_MAX_PX` | `1600` | longest edge of the large rendition. Originals are never served |
-| `MAX_UPLOAD_BYTES` | 25 MB | refused before anything is decoded |
-| `MAX_IMAGE_PIXELS` | 50,000,000 | guards against a small file that decodes to gigabytes of pixels |
-| `PHOTO_LIBRARY_ROOT` | `<repo>\photos` (git-ignored) | where `python -m app.photo_import` looks by default |
-
-Changing the rendition sizes does not regenerate existing images.
+Where photographs are kept and how large their renditions are:
+`MEDIA_ROOT`, `PHOTO_LIBRARY_ROOT`, `THUMBNAIL_MAX_PX`, `WEB_MAX_PX`,
+`MAX_UPLOAD_BYTES` and `MAX_IMAGE_PIXELS` in [settings.md](settings.md).
+**The bytes are never stored in the database**, so no database backup
+includes them: `python -m app.media_backup copy` backs them up (*Backing up
+and restoring*).
 
 ## The collection record
 
@@ -1589,7 +1556,7 @@ purchase sources*).
 A backup is only as good as the proof that it restores. This section says
 which kind of backup to take for which purpose, how to prove it, and how to
 restore. **Photograph bytes are in no database backup** -- they live under
-`MEDIA_ROOT` (*Settings*), and `app.media_backup` copies them
+`MEDIA_ROOT` ([settings.md](settings.md)), and `app.media_backup` copies them
 (*Photographs*, below). The workbook export runs that copy itself; a
 `pg_dump` file and a database copy do not.
 

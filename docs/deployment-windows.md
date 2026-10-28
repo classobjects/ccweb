@@ -256,8 +256,7 @@ python -m app.media_backup check MEDIA_FOLDER
 ## 4. Settings for the server
 
 The server's `.env` (template: `.env.example`, which lists every setting
-with its default; [system-administration.md](system-administration.md),
-*Settings*, says what each one does):
+with its default; [settings.md](settings.md) says what each one takes):
 
 | Setting | On the server |
 |---|---|

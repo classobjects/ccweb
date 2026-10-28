@@ -313,9 +313,9 @@ naming the setting that is wrong, never a value:
 cd ~/dev/ccweb/backend && uv run python -c "from app.config import settings; print('settings OK')"
 ```
 
-[system-administration.md](system-administration.md) (*Settings*) lists every
-setting and says which must change before anything outside this machine can
-reach the system.
+[settings.md](settings.md) lists every setting -- whether it is required,
+its default and the values it takes -- and says which must change before
+anything outside this machine can reach the system.
 
 ## 7. Install dependencies
 

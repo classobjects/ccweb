@@ -85,6 +85,7 @@ starts from an empty database and makes its first manager with
 | [docs/architecture.md](docs/architecture.md) | Components, backend layers, data model, request flows |
 | [docs/project-purpose.md](docs/project-purpose.md) | Why the system exists; the rules every design follows |
 | [docs/workflow-new-collection.md](docs/workflow-new-collection.md) | An item's path from purchase to sale, in the console |
+| [docs/settings.md](docs/settings.md) | Every `.env` setting: required or not, default, values, when a change is seen; and the environment variables that are not settings |
 | [docs/system-administration.md](docs/system-administration.md) | Every console screen, setting, pass, backup and release step |
 | [docs/environment-setup-windows.md](docs/environment-setup-windows.md), [-linux](docs/environment-setup-linux.md) | Building the development environment on a clean machine |
 | [docs/runtime-operations-windows.md](docs/runtime-operations-windows.md), [-linux](docs/runtime-operations-linux.md) | Starting, stopping and checking the servers |
