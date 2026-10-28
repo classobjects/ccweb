@@ -1,0 +1,937 @@
+import { useEffect, useRef, useState } from 'react'
+
+import { api } from '../../api'
+import { frProblem, isMuleNumber, normalizeFr } from '../../friedberg-format'
+import { ReferenceSelect } from '../../../shared/reference'
+import { useReference } from '../../../shared/reference-context'
+import { PRINTING_FACILITIES } from '../../../shared/kinds'
+import { pmgCertUrl } from './pmgCert'
+import { muleStatus } from './muleStatus'
+import { serialDistrict, serialStar } from './serialDistrict'
+import { webSearchText } from './webSearchText'
+import { useDebounced } from '../../../shared/useDebounced'
+import { useRequest } from '../../../shared/useRequest'
+import HelpScope from '../../HelpScope'
+
+//: A matched row's classifiers, rendered as one readable line -- only the
+//: attributes the row actually knows are shown, since a half-known row (see
+//: the backend's own docstring on `search_friedberg`) may not have all of
+//: them.
+function describeMatch(row) {
+  const parts = []
+  if (row.denomination) parts.push(row.denomination)
+  if (row.note_type) parts.push(row.note_type)
+  if (row.series_year) parts.push(`${row.series_year}${row.series_letter ?? ''}`)
+  if (row.seal_color) parts.push(row.seal_color)
+  if (row.signature_combination) parts.push(row.signature_combination)
+  if (row.district_letter) parts.push(`district ${row.district_letter}`)
+  if (row.web_press === true) parts.push('web press')
+  if (row.web_press === false) parts.push('sheet-fed')
+  return parts.join(' · ')
+}
+
+//: The web-press and star pulldowns' values, as the calls take them. Blank
+//: is "not known" and filters nothing -- a note without the Web Press
+//: attribute is not thereby known to be sheet-fed.
+const PRESS = { yes: true, no: false }
+
+//: A yes / no fact (`serialStar`, `mule_by_plates`) as a pulldown shows it.
+const YES_NO = new Map([
+  [true, 'yes'],
+  [false, 'no'],
+])
+
+/**
+ * Open Google AI Mode on `text` in the named pop-up window beside the form.
+ *
+ * A pop-up, not a tab, so the answer sits beside the form; the name makes a
+ * second search reuse that window. Returns what `window.open` does: null
+ * when the browser blocked it, which the caller reports.
+ */
+function openWebSearch(text) {
+  return window.open(
+    `${AI_SEARCH}${encodeURIComponent(text)}`,
+    'friedberg-web-search',
+    'popup,width=1000,height=800',
+  )
+}
+
+//: Google's AI Mode shortcut. It keeps `q` through its redirect
+//: (/ai?q= -> /aimode?q=), where `/search?udm=50` is stripped for a request
+//: without a browser session.
+const AI_SEARCH = 'https://www.google.com/ai?q='
+
+//: Note types printed without a seal, whose new numbers need none. The
+//: server's `NOTE_TYPES_WITHOUT_SEAL` (schemas.py), mirrored.
+const NOTE_TYPES_WITHOUT_SEAL = new Set([
+  'demand_note',
+  'military_payment_certificate',
+  'fractional',
+])
+
+/** The search and record calls' filters, from the form's fields; blanks omitted. */
+function filtersOf(fields) {
+  const filters = {}
+  if (fields.denomination) filters.denomination = fields.denomination
+  if (fields.noteType) filters.note_type = fields.noteType
+  if (fields.sealColor) filters.seal_color = fields.sealColor
+  if (fields.seriesYear) filters.series_year = Number(fields.seriesYear)
+  if (fields.seriesLetter) filters.series_letter = fields.seriesLetter
+  if (fields.signatureCombination) {
+    filters.signature_combination = fields.signatureCombination
+  }
+  if (fields.district) filters.district_letter = fields.district
+  if (fields.press in PRESS) filters.web_press = PRESS[fields.press]
+  // Washington or Fort Worth: one series and value can carry a different
+  // number from each. The plates are not catalog fields -- they go only
+  // into the web search's question, which is how a mule is found.
+  if (fields.printing) filters.printing_facility = fields.printing
+  return filters
+}
+
+/**
+ * The search's filters: the record call's, and whether it is a star note
+ * and a mule. Not recorded: the catalog reads both from the number itself.
+ */
+function searchFiltersOf(fields) {
+  const filters = filtersOf(fields)
+  if (fields.star in PRESS) filters.is_star = PRESS[fields.star]
+  if (fields.mule in PRESS) filters.is_mule = PRESS[fields.mule]
+  return filters
+}
+
+/** How long typing must pause before the signature pairs are narrowed again. */
+const NARROW_DELAY_MS = 250
+
+/**
+ * The mule question's key for `useRequest`: the facts the plate rules read,
+ * blanks omitted. A series year that is not a whole number names no series,
+ * so it is left out rather than sent to be refused.
+ */
+function muleKeyOf(facts) {
+  const year = Number(facts.seriesYear)
+  const params = {
+    note_type: facts.noteType || undefined,
+    denomination: facts.denomination || undefined,
+    series_year: facts.seriesYear && Number.isInteger(year) ? year : undefined,
+    series_letter: facts.seriesLetter || undefined,
+    back_plate: facts.backPlate || undefined,
+  }
+  return JSON.stringify(params)
+}
+
+/** Text in capitals, as a series letter and a plate number are printed. */
+const upper = (text) => text.toUpperCase()
+
+/** A vocabulary's values as a code -> label map; empty while it loads. */
+function labelsOf(values) {
+  return Object.fromEntries((values ?? []).map((entry) => [entry.code, entry.label]))
+}
+
+/**
+ * Whether the note is a mule, as the Mule field shows it. A note carrying
+ * the Mule attribute -- set by hand, or by the plate rules on save -- is
+ * one; otherwise its series and back plate say so where a rule speaks
+ * (`mule_by_plates`, `app/mule_rules.py`). The attribute's absence alone
+ * proves nothing.
+ */
+function muleOf(item) {
+  if ((item?.attributes ?? []).some((a) => a.code === 'mule')) return 'yes'
+  return YES_NO.get(item?.mule_by_plates) ?? ''
+}
+
+/**
+ * The search fields as the note already records them, so the owner starts
+ * from what the item says rather than retyping it. Only Web Press can be
+ * read from an attribute, and only as "yes": its absence proves nothing.
+ * A district the note does not record is read from its serial, and so is
+ * whether it is a star note.
+ */
+function fromItem(item) {
+  return {
+    denomination: item?.denomination ?? '',
+    noteType: item?.note_type ?? '',
+    sealColor: item?.seal_color ?? '',
+    seriesYear: item?.series_year != null ? String(item.series_year) : '',
+    seriesLetter: item?.series_letter ?? '',
+    signatureCombination: item?.signature_combination ?? '',
+    // What the note records, else what its serial names: a search with no
+    // district is offered every district's number.
+    district: item?.fed_district || serialDistrict(item),
+    press: (item?.attributes ?? []).some((a) => a.code === 'web_press') ? 'yes' : '',
+    star: YES_NO.get(serialStar(item)) ?? '',
+    mule: muleOf(item),
+    printing: item?.printing_facility ?? '',
+    facePlate: item?.face_plate_number ?? '',
+    backPlate: item?.back_plate_number ?? '',
+  }
+}
+
+/**
+ * Identify a banknote's Friedberg number from what the owner can see on it.
+ *
+ * Searches the owner's own accumulating catalog (`GET /api/friedberg`) --
+ * never a licensed dataset. The table ships empty by design
+ * (`docs/reference-data.md` forbids shipping a publisher's arrangement), so
+ * most of what this renders, for a long while, is the "no match" path:
+ * record the number read off the note or slab (`POST /api/friedberg`) and
+ * attach it (`POST /api/inventory/{id}/friedberg`).
+ *
+ * In Receiving the owner asks for this explicitly -- no search runs until
+ * "Look up" is pressed (the item editor's `searchNow` is the exception,
+ * below), unlike the signature-combination narrowing, which is public fact
+ * (already seeded server-side) and safe to refresh as soon as a year is
+ * typed.
+ *
+ * A search is guarded against a stale response the same way `ItemFinder`
+ * guards its own "Find" click: a cancel function stashed in a ref, replaced
+ * before every new search, so a slow response for an abandoned query can
+ * never land after a faster, later one and make a result clickable that no
+ * longer matches what is on screen.
+ *
+ * `item` is the note's detail (`GET /api/inventory/{id}`), when the caller has
+ * it: the fields start from what the note records. `onAttached` is told
+ * after a number is attached, so a caller showing the current number can
+ * read it again. With `onChoose` (the item editor) nothing is attached: the
+ * choice -- `{friedberg_id, status, fr_number}` -- is handed back for the
+ * editor's Save. A number typed in and recorded is still recorded in the
+ * catalog at once; only attaching it to the note waits.
+ *
+ * `searchNow` (the item editor) searches at once with what the note records
+ * and hides the fields: the owner asked for the answer, not a form to press
+ * Look up on a second time. "Change search fields" shows them for a note
+ * whose record is incomplete or wrong. Without it (Receiving) the fields
+ * are shown, filled from the note, for the owner to complete first.
+ *
+ * `entryOnly` shows only the Fr. number box and its Save buttons, for a
+ * number already known from a graded note's holder: recorded with what the
+ * note records, or the catalog's row used when it is on file already, as a
+ * number typed after a search is.
+ */
+export default function FriedbergLookup({
+  itemId,
+  item,
+  onClose,
+  onAttached,
+  onChoose,
+  searchNow = false,
+  entryOnly = false,
+}) {
+  const [initial] = useState(() => fromItem(item))
+  const [showFields, setShowFields] = useState(!searchNow)
+  // The search fields, shaped as `fromItem` makes them.
+  const [fields, setFields] = useState(initial)
+  const {
+    denomination,
+    noteType,
+    sealColor,
+    seriesYear,
+    seriesLetter,
+    signatureCombination,
+    district,
+    press,
+    star,
+    mule,
+    printing,
+    facePlate,
+    backPlate,
+  } = fields
+  /** A change handler for one field, the typed value passed through `clean`. */
+  const field =
+    (key, clean = (text) => text) =>
+    (e) =>
+      setFields((current) => ({ ...current, [key]: clean(e.target.value) }))
+
+  const [results, setResults] = useState(null)
+  const [searchError, setSearchError] = useState('')
+  // Starts true under `searchNow`, rather than being set inside the effect
+  // below: the search is already under way on the first render.
+  const [searching, setSearching] = useState(searchNow)
+  const searchCancelRef = useRef(null)
+  const searchTextRef = useRef('')
+  const [popupBlocked, setPopupBlocked] = useState(false)
+
+  // The item editor's search, run once with what the note records. It takes
+  // the same stale-response guard as a pressed Look up, so a Look up pressed
+  // after "Change search fields" supersedes it rather than racing it.
+  useEffect(() => {
+    if (!searchNow) return undefined
+    let cancelled = false
+    searchCancelRef.current = () => {
+      cancelled = true
+    }
+    api
+      .searchFriedberg(searchFiltersOf(initial))
+      .then((rows) => {
+        if (cancelled) return
+        // Inlined, not `showResults`: the effect runs once, and a function
+        // declared in the body would have to be one of its dependencies.
+        setResults(rows)
+        if (rows.length === 0) setPopupBlocked(!openWebSearch(searchTextRef.current))
+      })
+      .catch((err) => {
+        if (!cancelled) setSearchError(err.message)
+      })
+      .finally(() => {
+        if (!cancelled) setSearching(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [searchNow, initial])
+
+  const [recordFrNumber, setRecordFrNumber] = useState('')
+  // A Save pressed with the number box empty; said until one is typed.
+  const [askedForNumber, setAskedForNumber] = useState(false)
+  const [recordError, setRecordError] = useState('')
+  const [recording, setRecording] = useState(false)
+  // A number refused because its type is already on file under another --
+  // the owner's slip of recording `9907-` for `9907-L`: which row holds it,
+  // the number typed, and the status its Save button named. Offered as one
+  // click that corrects that row and uses it.
+  const [correction, setCorrection] = useState(null)
+
+  const [attachingKey, setAttachingKey] = useState(null)
+  // The match Use last put on the note (or chose, in the item editor), so
+  // its row says so: an attach that changed nothing near the button read
+  // as a press that did nothing.
+  const [usedId, setUsedId] = useState(null)
+  const [attachError, setAttachError] = useState('')
+  const [attachMessage, setAttachMessage] = useState('')
+
+  // Every pair, once, so a choice the narrowed list leaves out can still be
+  // shown by its name rather than its code -- and the pulldown's list while
+  // no series year is entered.
+  const everyPair = useRequest('all', () => api.getSignatureChoices({}))
+  const allSignatures = everyPair.data?.values ?? []
+
+  // Narrows to the pairs a note of this series can carry -- the seeded
+  // `note_issue` facts, the public-fact half of this feature. Not the pairs
+  // in office in the series year: that hides every lettered series' later
+  // signers (1963-A is Granahan / Fowler). Asked once typing pauses, not per
+  // keystroke of the year.
+  //
+  // A choice the narrowed list leaves out is **kept**, never cleared: it is
+  // usually what the note itself records, and clearing it silently would
+  // lose a right answer. The pulldown shows it marked instead.
+  //
+  // A year that is not a whole number ("19x") names no series: nothing is
+  // asked, since the server would refuse it, and no pair is offered. It is
+  // not read as "no year entered", which would offer every pair.
+  const yearNumber = Number(seriesYear)
+  const yearUnreadable = seriesYear !== '' && !Number.isInteger(yearNumber)
+  // Said when Look up or a Save is pressed, which stay live. Sent on, the
+  // year would reach the catalog as no year at all: a type recorded without
+  // one is not found by its year again.
+  const yearRefusal = yearUnreadable
+    ? `"${seriesYear}" is not a series year. Correct it, or clear the box, first.`
+    : ''
+  const narrowKey = useDebounced(
+    seriesYear && !yearUnreadable
+      ? JSON.stringify({
+          denomination,
+          note_type: noteType,
+          seal_color: sealColor,
+          series_year: yearNumber,
+          series_letter: seriesLetter,
+        })
+      : null,
+    NARROW_DELAY_MS,
+  )
+  const narrowed = useRequest(narrowKey, () =>
+    api.getSignatureChoices(JSON.parse(narrowKey)),
+  )
+  let signatureOptions
+  if (yearUnreadable) signatureOptions = []
+  else if (narrowKey === null) signatureOptions = allSignatures
+  else if (narrowed.error) signatureOptions = []
+  else signatureOptions = narrowed.data?.values ?? []
+
+  const denominations = useReference('denomination')
+  const noteTypes = useReference('note_type')
+  const districts = useReference('fed_district')
+  const searchText = webSearchText(fields, {
+    denomination: labelsOf(denominations),
+    note_type: labelsOf(noteTypes),
+    fed_district: labelsOf(districts),
+    signature_combination: labelsOf([...allSignatures, ...signatureOptions]),
+  })
+  // The latest search text, for a search whose answer lands after the
+  // vocabularies finish loading -- its question then uses their labels, not
+  // the codes the first render had.
+  useEffect(() => {
+    searchTextRef.current = searchText
+  })
+
+  function searchWeb() {
+    setPopupBlocked(!openWebSearch(searchText))
+  }
+
+  // A note in a PMG holder: PMG's own page for its certificate names the
+  // number on the label. Opened beside the form like the web search.
+  const pmgUrl = pmgCertUrl(item)
+  const pmgButton = pmgUrl && (
+    <button
+      type="button"
+      title="PMG's page for this note's certificate"
+      onClick={() =>
+        setPopupBlocked(!window.open(pmgUrl, 'pmg-cert', 'popup,width=1000,height=800'))
+      }
+    >
+      PMG cert
+    </button>
+  )
+
+  /**
+   * What a finished search does: a match shows its number to use; no
+   * match opens the web search straight away, so pressing Look up always
+   * ends in an answer or the place to find one.
+   */
+  function showResults(rows) {
+    setResults(rows)
+    if (rows.length === 0) setPopupBlocked(!openWebSearch(searchTextRef.current))
+  }
+
+  const signatureListed = signatureOptions.some(
+    (entry) => entry.code === signatureCombination,
+  )
+  const signatureLabel =
+    allSignatures.find((entry) => entry.code === signatureCombination)?.label ??
+    signatureCombination
+
+  function invalidatePendingSearch() {
+    searchCancelRef.current?.()
+    searchCancelRef.current = null
+  }
+
+  const currentFilters = () => filtersOf(fields)
+
+  async function search() {
+    if (yearRefusal) {
+      setSearchError(yearRefusal)
+      return
+    }
+    invalidatePendingSearch()
+    let cancelled = false
+    searchCancelRef.current = () => {
+      cancelled = true
+    }
+
+    setSearching(true)
+    setSearchError('')
+    setAttachError('')
+    setAttachMessage('')
+    setUsedId(null)
+    try {
+      const rows = await api.searchFriedberg(searchFiltersOf(fields))
+      if (cancelled) return
+      showResults(rows)
+    } catch (err) {
+      if (cancelled) return
+      setSearchError(err.message)
+      setResults(null)
+    } finally {
+      if (!cancelled) setSearching(false)
+    }
+  }
+
+  // Shared by "attach a result" and "record, then attach" -- returns the
+  // attach response on success or null on failure, so a caller that needs to
+  // know which happened (recording clears its input only on success) can
+  // tell without the failure being swallowed.
+  async function attach(friedbergId, status, frNumber) {
+    // A mule's number, confirmed, marks the note a Mule (the server's
+    // `attach_friedberg`): said where the press was made.
+    const marksMule = status === 'confirmed' && isMuleNumber(frNumber)
+    if (onChoose) {
+      onChoose({ friedberg_id: friedbergId, status, fr_number: frNumber })
+      setAttachMessage(
+        `Chose ${frNumber} as ${status}: attached when you Save` +
+          (marksMule ? ', and the note marked a Mule.' : '.'),
+      )
+      return { fr_number: frNumber }
+    }
+    setAttachingKey(`${friedbergId}:${status}`)
+    setAttachError('')
+    setAttachMessage('')
+    try {
+      const body = await api.attachFriedberg(itemId, {
+        friedberg_id: friedbergId,
+        status,
+      })
+      setAttachMessage(
+        `Attached ${body.fr_number} to this item as ${body.friedberg_status}` +
+          (marksMule ? ', and marked the note a Mule.' : '.'),
+      )
+      onAttached?.(body)
+      return body
+    } catch (err) {
+      setAttachError(err.message)
+      return null
+    } finally {
+      setAttachingKey(null)
+    }
+  }
+
+  /**
+   * Put a match on this note, in one step.
+   *
+   * A verified catalog row was confirmed once already for these search
+   * fields, so it is attached as confirmed -- asking again would be a
+   * second Save for a decision already made. A row only ever proposed, such
+   * as an AI answer saved unchecked, stays proposed: Use never confirms a
+   * guess on its own.
+   *
+   * Once it is on, the number is copied into the Fr. number box and its row
+   * marked, so what happened shows where the press was made. A failed
+   * attach copies and marks nothing: its error says what went wrong.
+   */
+  async function applyMatch(row) {
+    setUsedId(null)
+    const done = await attach(
+      row.id,
+      row.verified ? 'confirmed' : 'proposed',
+      row.fr_number,
+    )
+    if (!done) return
+    setUsedId(row.id)
+    setRecordFrNumber(row.fr_number)
+    setCorrection(null)
+  }
+
+  /**
+   * Save the number in the field onto this note -- a number not in the
+   * catalog, typed or pasted from a web search, recorded with what the form
+   * describes, then attached with the status its button names.
+   *
+   * A number typed that is a match is that catalog row, so it is attached
+   * as it is. So is one on file that the search did not list: recording it
+   * is refused with the row, and the row is attached instead.
+   */
+  async function save(status) {
+    // The Save buttons stay live: a press with no number says so, and one
+    // with a malformed number sends nothing -- its problem is shown beside.
+    if (!recordFrNumber.trim()) {
+      setAskedForNumber(true)
+      return
+    }
+    if (typedProblem) return
+    if (yearRefusal) {
+      setRecordError(yearRefusal)
+      return
+    }
+    const number = normalizeFr(recordFrNumber)
+    const known = (results ?? []).find((row) => row.fr_number === number)
+    if (known) {
+      setRecordError('')
+      if (await attach(known.id, status, known.fr_number)) setRecordFrNumber('')
+      return
+    }
+    // A number new to the catalog is recorded as this note's type, and the
+    // seal is part of the type: the server refuses it without one.
+    if (noteType && !sealColor && !NOTE_TYPES_WITHOUT_SEAL.has(noteType)) {
+      setRecordError(
+        `Set the seal colour first: ${number} is new to the catalog, and the seal is part of its type.`,
+      )
+      return
+    }
+    await recordAndAttach(number, status)
+  }
+
+  async function recordAndAttach(number, status) {
+    setRecording(true)
+    setRecordError('')
+    try {
+      const created = await api.createFriedbergNumber({
+        fr_number: number,
+        ...currentFilters(),
+      })
+      // Recorded now, whatever happens to the attach: listed as a match, so
+      // a retry after a failed attach only attaches, instead of recording it
+      // again and being refused as a duplicate.
+      setResults((rows) => [...(rows ?? []), created])
+      const attached = await attach(created.id, status, created.fr_number)
+      if (attached) {
+        setRecordFrNumber('')
+        setResults(null)
+      }
+    } catch (err) {
+      // The number is on file already, though no search listed it: it is
+      // that row, so it is attached as the matches are.
+      const recorded = err.body?.recorded
+      if (err.status === 409 && recorded) {
+        if (await attach(recorded.id, status, recorded.fr_number)) setRecordFrNumber('')
+        return
+      }
+      // Any other refusal -- this type on file under another number, say --
+      // is shown, not swallowed.
+      setRecordError(err.message)
+      const existing = err.body?.existing
+      if (err.status === 409 && existing) setCorrection({ existing, number, status })
+    } finally {
+      setRecording(false)
+    }
+  }
+
+  /**
+   * Correct the row that already holds this type to the number typed, then
+   * use it -- the slip repaired where it was noticed. Correcting writes the
+   * catalog at once, as recording does; in the item editor only attaching
+   * waits for Save.
+   */
+  async function correctAndUse() {
+    const { existing, number, status } = correction
+    setRecording(true)
+    setRecordError('')
+    try {
+      await api.updateFriedbergNumber(existing.id, { fr_number: number })
+      setCorrection(null)
+      if (await attach(existing.id, status, number)) setRecordFrNumber('')
+    } catch (err) {
+      setRecordError(err.message)
+    } finally {
+      setRecording(false)
+    }
+  }
+
+  // Checked as it is typed, by the rule the server holds (`fr_format.py`).
+  const typedProblem = recordFrNumber.trim()
+    ? frProblem(normalizeFr(recordFrNumber))
+    : null
+
+  const busy = attachingKey != null || recording
+
+  // Whether the note is a mule, said beside the Fr. number box. The facts
+  // are the search fields' -- or, with only the box shown, the note's as it
+  // stands now, since the item editor's draft moves under a box that stays
+  // open. Asked once typing pauses, by the rules Save applies.
+  const muleFacts = entryOnly ? fromItem(item) : fields
+  const muleKey = useDebounced(muleKeyOf(muleFacts), NARROW_DELAY_MS)
+  const muleAnswer = useRequest(muleKey, () => api.getMuleStatus(JSON.parse(muleKey)))
+  const typedNumber =
+    recordFrNumber.trim() && !typedProblem ? normalizeFr(recordFrNumber) : ''
+  const muleLine = muleStatus({
+    says: muleAnswer.data?.says,
+    number: typedNumber || (item?.friedberg_number ?? ''),
+    marked: (item?.attributes ?? []).some((a) => a.code === 'mule'),
+    series: `${muleFacts.seriesYear}${muleFacts.seriesLetter}`,
+    backPlate: muleFacts.backPlate,
+  })
+
+  /**
+   * The number typed in and its two Save buttons, with whatever stands
+   * beside the box (`beside`): the lookup's Search the web, or nothing.
+   */
+  // In the item editor a number is chosen, and kept by the editor's Save.
+  const verb = onChoose ? 'Use' : 'Save'
+  const numberEntry = (beside = null) => (
+    <>
+      <div className="row">
+        <label data-help="fr_number">
+          Fr. number{/* */}
+          <input
+            type="text"
+            value={recordFrNumber}
+            onChange={(e) => {
+              setRecordFrNumber(e.target.value)
+              setCorrection(null)
+            }}
+          />
+        </label>
+        {beside}
+      </div>
+      {muleLine.text && (
+        <p className="muted" data-help="mule_note">
+          {muleLine.text}
+        </p>
+      )}
+      {muleLine.warning && <p className="error">{muleLine.warning}</p>}
+      {muleAnswer.error && (
+        <p className="error">
+          Whether it is a mule could not be read: {muleAnswer.error}
+        </p>
+      )}
+      {typedProblem && <p className="error">{typedProblem}</p>}
+      {askedForNumber && !recordFrNumber.trim() && (
+        <p className="error">Type or paste the Fr. number first.</p>
+      )}
+      {recordError && <p className="error">{recordError}</p>}
+      {correction && (
+        <button type="button" disabled={busy} onClick={correctAndUse}>
+          Correct {correction.existing.fr_number} to {correction.number}
+        </button>
+      )}
+      <div className="row">
+        <button type="button" disabled={busy} onClick={() => save('proposed')}>
+          {verb} as proposed
+        </button>
+        <button type="button" disabled={busy} onClick={() => save('confirmed')}>
+          {verb} as confirmed
+        </button>
+      </div>
+    </>
+  )
+
+  // A number already known -- read off a graded note's holder -- is typed
+  // straight in: no search runs, and nothing opens.
+  if (entryOnly) {
+    return (
+      <div className="friedberg-lookup">
+        <HelpScope>
+          {numberEntry()}
+          {attachError && <p className="error">{attachError}</p>}
+          {attachMessage && <p className="notice">{attachMessage}</p>}
+        </HelpScope>
+      </div>
+    )
+  }
+
+  return (
+    <div className="friedberg-lookup">
+      <HelpScope>
+        {!showFields && (
+          <div className="row">
+            <span className="muted">
+              {searching
+                ? 'Looking up this note...'
+                : 'Looked up from what this note records.'}
+            </span>
+            <button type="button" className="link" onClick={() => setShowFields(true)}>
+              Change search fields
+            </button>
+            {pmgButton}
+            {onClose && (
+              <button type="button" className="link" onClick={onClose}>
+                Close
+              </button>
+            )}
+          </div>
+        )}
+        {showFields && (
+          <>
+            <div className="filter-grid">
+              <label data-help="denomination">
+                Denomination
+                <ReferenceSelect
+                  table="denomination"
+                  value={denomination}
+                  onChange={field('denomination')}
+                />
+              </label>
+              <label data-help="note_type">
+                Note type
+                <ReferenceSelect
+                  table="note_type"
+                  value={noteType}
+                  onChange={field('noteType')}
+                />
+              </label>
+              <label data-help="seal_color">
+                Seal color
+                <ReferenceSelect
+                  table="seal_color"
+                  value={sealColor}
+                  onChange={field('sealColor')}
+                />
+              </label>
+              <label data-help="series_year">
+                Series year{/* */}
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={seriesYear}
+                  onChange={field('seriesYear')}
+                />
+              </label>
+              <label data-help="series_letter">
+                Series letter{/* */}
+                <input
+                  type="text"
+                  maxLength={1}
+                  value={seriesLetter}
+                  onChange={field('seriesLetter', upper)}
+                />
+              </label>
+              <label data-help="signature_combination">
+                Signature combination{/* */}
+                <select
+                  value={signatureCombination}
+                  onChange={field('signatureCombination')}
+                >
+                  <option value="">--</option>
+                  {signatureCombination && !signatureListed && (
+                    <option value={signatureCombination}>
+                      {signatureLabel} (not listed for this series)
+                    </option>
+                  )}
+                  {signatureOptions.map((entry) => (
+                    <option key={entry.code} value={entry.code}>
+                      {entry.label}
+                    </option>
+                  ))}
+                </select>
+                {/* Pairs that could not be read are not "no pair fits". */}
+                {(everyPair.error || narrowed.error) && (
+                  <span className="error">{everyPair.error || narrowed.error}</span>
+                )}
+              </label>
+              <label data-help="fed_district">
+                District
+                <ReferenceSelect
+                  table="fed_district"
+                  value={district}
+                  onChange={field('district')}
+                />
+              </label>
+              <label data-help="web_press">
+                Web press{/* */}
+                <select value={press} onChange={field('press')}>
+                  <option value="">Not known</option>
+                  <option value="yes">Yes</option>
+                  <option value="no">No, sheet-fed</option>
+                </select>
+              </label>
+              <label data-help="star_note">
+                Star note{/* */}
+                <select value={star} onChange={field('star')}>
+                  <option value="">Not known</option>
+                  <option value="yes">Yes</option>
+                  <option value="no">No</option>
+                </select>
+              </label>
+              <label data-help="mule_note">
+                Mule{/* */}
+                <select value={mule} onChange={field('mule')}>
+                  <option value="">Not known</option>
+                  <option value="yes">Yes</option>
+                  <option value="no">No</option>
+                </select>
+              </label>
+              <label data-help="printing_facility">
+                Printed at{/* */}
+                <select value={printing} onChange={field('printing')}>
+                  <option value="">Not known</option>
+                  {PRINTING_FACILITIES.map(([code, label]) => (
+                    <option key={code} value={code}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label data-help="face_plate_number">
+                Face plate{/* */}
+                <input
+                  type="text"
+                  value={facePlate}
+                  onChange={field('facePlate', upper)}
+                />
+              </label>
+              <label data-help="back_plate_number">
+                Back plate{/* */}
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={backPlate}
+                  onChange={field('backPlate')}
+                />
+              </label>
+            </div>
+
+            <div className="row">
+              {/* Not disabled while a search is already running: refining a filter
+            and pressing this again before a slow response lands is a normal
+            way to use the form, not a mistake to block. The stale-response
+            guard above (`searchCancelRef`) is what keeps that safe, the same
+            idiom `ItemFinder` uses for its own "Find" button. */}
+              <button type="button" onClick={search}>
+                {searching ? 'Looking up...' : 'Look up'}
+              </button>
+              {pmgButton}
+              {onClose && (
+                <button type="button" className="link" onClick={onClose}>
+                  Close
+                </button>
+              )}
+            </div>
+          </>
+        )}
+
+        {searchError && <p className="error">{searchError}</p>}
+        {popupBlocked && (
+          <p className="error">
+            The browser blocked the search window -- press Search the web to open it.
+          </p>
+        )}
+
+        {/* Found in the catalog: each match has a Use button that puts it
+          on the note at once -- confirmed if it was confirmed before,
+          proposed if not. Not found: the web search opens -- the owner reads
+          the number off the results window, types or pastes it in the field,
+          and picks one of the two Save buttons, the only time a status has
+          to be chosen. Search the web is always offered, for a match that is
+          wrong. Nothing is fetched or saved from the search itself (see
+          `webSearchText`). */}
+        {results && (
+          <div className="admin-form">
+            {results.length > 0 ? (
+              <ul className="order-picker">
+                {results.map((row) => (
+                  // The number and its Use button, nothing else: what is
+                  // used is exactly what is shown. The row's description and
+                  // whether it is verified are on hover, for telling two
+                  // matches apart.
+                  <li
+                    key={row.id}
+                    className="order-row row"
+                    title={[
+                      describeMatch(row),
+                      row.verified ? 'verified' : 'unverified proposal',
+                    ]
+                      .filter(Boolean)
+                      .join(' -- ')}
+                  >
+                    <span className="mono">{row.fr_number}</span>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      aria-label={`Use ${row.fr_number}`}
+                      title={
+                        row.verified
+                          ? 'Put this number on the note, as confirmed'
+                          : 'Put this number on the note, as proposed'
+                      }
+                      onClick={() => applyMatch(row)}
+                    >
+                      Use
+                    </button>
+                    {usedId === row.id && (
+                      <strong>{onChoose ? 'Chosen' : 'On this note'}</strong>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="muted">
+                No match in the catalog yet, so the web search has opened in its own
+                window -- type or paste the number here. An AI answer can be wrong: save
+                it as proposed until you have checked it against the note or a
+                reference.
+              </p>
+            )}
+            {/* Offered with matches too: a match can be a wrong number
+                recorded earlier, and the web is where the right one is
+                found. Only a miss opens it unasked. */}
+            {numberEntry(
+              <button type="button" onClick={searchWeb} title={searchText}>
+                Search the web
+              </button>,
+            )}
+          </div>
+        )}
+
+        {attachError && <p className="error">{attachError}</p>}
+        {attachMessage && <p className="notice">{attachMessage}</p>}
+      </HelpScope>
+    </div>
+  )
+}

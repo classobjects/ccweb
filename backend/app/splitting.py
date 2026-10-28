@@ -1,0 +1,389 @@
+"""Breaking a lot into the pieces it is made of.
+
+A tube of twenty rounds, a roll of cents, a mint set: bought as one thing,
+often sold as many. Splitting creates one item per piece and divides the lot's
+cost between them, so each piece carries a cost basis that traces to the
+purchase it actually came from.
+
+**Two ways to divide the money, and the choice is not cosmetic.**
+
+`equal` gives every piece the same share. Right when the pieces are
+interchangeable -- twenty identical one-ounce rounds.
+
+`relative` divides in proportion to a value supplied per piece. Right when they
+are not. A 1964 mint set contains a cent and a half dollar; charging them the
+same cost basis would make the cent look like a catastrophic loss and the half
+a windfall, and both figures would be wrong on a return.
+
+The relative basis is the caller's to choose -- face value, melt value, a
+catalog price. This module takes the numbers and does not opine on where they
+came from, except to record them. It is worth being explicit that proportional
+value is a convention, not a measurement: it does not know that one coin in the
+set is the key date and the rest are common. It is a defensible way to divide a
+cost, not a valuation.
+
+**The parent is kept, never deleted.** It holds the purchase order, the price
+actually paid and the item code a receipt refers to. It is marked `split_at`
+and must then be excluded from anything that counts inventory or money --
+otherwise the lot and its pieces are both counted, and the collection appears
+to have cost twice what it did.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from decimal import Decimal
+from typing import Any
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from . import field_changes, item_kinds, lot_writes, offering_writes, sale_state
+from .allocation import allocate
+from .lifecycle_writes import record_initial_status, set_location
+from .models import (
+    CoinDetail,
+    CurrencyDetail,
+    Disposition,
+    InventoryItem,
+    Listing,
+    ListingStatus,
+    ProvenanceSource,
+    SalesLotStatus,
+    SalesOrderItem,
+)
+
+__all__ = ["EQUAL", "RELATIVE", "SplitError", "SplitPiece", "split_item"]
+
+EQUAL = "equal"
+RELATIVE = "relative"
+MODES = (EQUAL, RELATIVE)
+
+#: Columns a piece inherits from the lot unless the caller overrides them.
+#: Weight is per piece already, so it carries over unchanged -- each round out
+#: of a tube of one-ounce rounds still weighs an ounce.
+INHERITED = (
+    "item_kind_id",
+    "denomination_id",
+    "bullion_form_id",
+    "set_form_id",
+    "country_id",
+    "year_start",
+    "year_end",
+    "no_date",
+    "strike_type_id",
+    "grade_id",
+    "grade_designation_id",
+    "grading_service_id",
+    "authenticity_id",
+    "status_id",
+    "valuation_basis_id",
+    "composition_id",
+    "metal_id",
+    "fineness",
+    "gross_weight_ozt",
+    "fine_weight_ozt",
+    "weight_note",
+    "purchase_order_id",
+    # The listing the lot was bought from is every piece's listing: eBay's
+    # item id is how a piece is traced back to it (app.ebay_orders).
+    "listing_url",
+    "sellers_item_id",
+    "tax_rate",
+    "tax_includes_shipping",
+    "description",
+)
+
+
+class SplitError(ValueError):
+    """The lot cannot be split as asked."""
+
+
+@dataclass
+class SplitPiece:
+    """One piece to create."""
+
+    source_title: str
+    piece_count: int = 1
+    #: The value of ONE piece, on whatever basis the caller chose. Only used
+    #: in `relative` mode.
+    relative_value: Decimal | None = None
+    #: Resolved column values overriding what the piece would inherit.
+    overrides: dict[str, Any] = field(default_factory=dict)
+
+
+def _weights(pieces: list[SplitPiece], mode: str) -> list[Decimal]:
+    """How much of the cost each piece should carry.
+
+    Weight is per-piece value times the number of pieces, so a child holding
+    three coins carries three coins' worth. In `equal` mode every piece is
+    worth 1, which reduces the weight to simply the count -- so an equal split
+    is per *piece*, not per *row*.
+    """
+    if mode == EQUAL:
+        return [Decimal(piece.piece_count) for piece in pieces]
+
+    missing = [p.source_title for p in pieces if p.relative_value is None]
+    if missing:
+        raise SplitError(
+            "relative mode needs a relative_value for every piece; missing "
+            f"for: {missing}"
+        )
+    if any(p.relative_value is not None and p.relative_value < 0 for p in pieces):
+        raise SplitError("relative_value cannot be negative")
+
+    weights: list[Decimal] = []
+    for piece in pieces:
+        relative = piece.relative_value
+        # Guaranteed by the `missing` check above; asserted so the type
+        # checker sees it and so a future edit that drops that check fails
+        # loudly rather than multiplying by None.
+        assert relative is not None
+        weights.append(Decimal(relative) * piece.piece_count)
+    return weights
+
+
+def split_item(
+    db: Session,
+    parent: InventoryItem,
+    pieces: list[SplitPiece],
+    mode: str = EQUAL,
+    *,
+    user_id: int | None = None,
+) -> list[InventoryItem]:
+    """Break `parent` into `pieces`, dividing its cost between them.
+
+    `user_id` is who split it: each piece's opening status and first move
+    name them, and so does the lot's change-log row for `split_at`.
+
+    Raises `SplitError` for an unknown mode, fewer than two pieces, a lot
+    deleted, a lot already split, a lot that is itself a piece, a piece
+    holding less than one item, a `relative` split with a value missing or
+    negative, a lot that appears in an order -- sold on its own or inside a
+    sales lot -- or **an open member of a sales lot that is currently
+    offered**, and `AllocationError` from `allocate` if the cost cannot be
+    divided. `routers.inventory` catches only the first, so an
+    `AllocationError` here is a 500.
+
+    The last two are a pair -- sold inside a lot, and offered inside one --
+    and neither is negotiable by `acknowledge_for_sale`, unlike the listing
+    warning `routers.inventory.split` raises before calling this. See each
+    check for why.
+
+    `mode` is `EQUAL` or `RELATIVE`; anything else is a `SplitError`. The
+    API edge constrains it further (`SplitRequest.mode` carries a pattern),
+    so the type here is weaker than the contract one layer out.
+    """
+    if mode not in MODES:
+        raise SplitError(f"unknown mode {mode!r}; expected one of {MODES}")
+    if len(pieces) < 2:
+        raise SplitError("splitting into fewer than two pieces does nothing")
+
+    # Lock the lot before deciding whether it can be split.
+    #
+    # Without this, two people splitting the same tube at the same moment both
+    # read split_at as NULL, both pass the check, and the lot is broken up
+    # twice -- eight pieces from four, and the cost basis allocated twice over.
+    # This is a check-then-act on a single row, which is what SELECT ... FOR
+    # UPDATE is for: the second caller waits, then sees the first one's work.
+    #
+    # Pessimistic here rather than optimistic because the whole operation is
+    # one short transaction with nothing for a human to merge -- unlike an
+    # edit form, which is held open for minutes.
+    # refresh() rather than a fresh select(): a select returns the object
+    # already in the identity map *without* re-reading its columns, so the
+    # lock would be taken and then the decision made on the stale values this
+    # session loaded before waiting for it -- which is precisely the race.
+    db.refresh(parent, with_for_update=True)
+
+    if parent.deleted_at is not None:
+        # A deleted row is one that should never have existed; its pieces
+        # would come out live, and every view that excludes it would count
+        # them.
+        raise SplitError(f"{parent.item_code} has been deleted and cannot be split")
+    if parent.split_at is not None:
+        raise SplitError(f"{parent.item_code} has already been split")
+    if parent.parent_item_id is not None:
+        # Allowing this would make cost basis a tree to walk rather than a
+        # single hop, for no case that has come up.
+        raise SplitError(
+            f"{parent.item_code} is itself a piece of a lot; split the lot"
+        )
+    if any(count < 1 for count in (p.piece_count for p in pieces)):
+        raise SplitError("every piece must hold at least one item")
+
+    sold = db.scalar(
+        select(SalesOrderItem.id)
+        .join(Listing, Listing.id == SalesOrderItem.listing_id)
+        .where(sale_state.sold_this_item(parent.id))
+        .limit(1)
+    )
+    if sold is not None:
+        # Order history points at the lot. Splitting it now would leave a sold
+        # line referring to something that no longer exists as sold.
+        #
+        # `sale_state.sold_this_item`, not `listing.inventory_item_id` on its
+        # own: that column is NULL on a lot listing, so it would miss a lot
+        # sale and let a coin sold inside a lot be split. The line's share
+        # still credits the whole cost to this parent while `allocate` below
+        # hands that same cost to the children, so the realized gain and the
+        # cost basis would both double-count. No other guard covers it --
+        # `routers.inventory.split` narrows `sale_state.guard` to
+        # `kinds={"listing"}` precisely because this check is the
+        # unconditional one, and after a lot sale the claims are released and
+        # the listing ended, so the listing half finds nothing either.
+        raise SplitError(f"{parent.item_code} appears in an order and cannot be split")
+
+    # The sibling of the check above, one step earlier in the lifecycle: that
+    # one refuses a coin already **sold** inside a lot, this one a coin still
+    # **offered** inside one. `listing.inventory_item_id` is NULL on a lot
+    # listing, so a lot is invisible to any predicate built on it. The listing
+    # loop at the end of this function asks that column, deliberately: its
+    # job is to end an item's *own* listings, and a lot listing is not one.
+    # So nothing there ends the lot's offer.
+    #
+    # `sale_state.guard` does not stop it either: it warns, because
+    # `sale_state._offering` reads claims and so is lot-aware, but an
+    # acknowledged split passes. Without this refusal the coin would be split
+    # while the lot went on offering it: listing `active`, lot `offered`,
+    # membership open, claim `active`, and `offered_items` still naming a
+    # parent with `split_at` set. A buyer would be looking at a group
+    # containing a coin that no longer exists as a whole item -- while
+    # `offering_writes._refuse_unofferable` refuses to offer a split item and
+    # `lot_writes._refuse_unofferable` refuses to put one into a lot.
+    #
+    # Unconditional, like the order check above and unlike
+    # `sale_state.guard`: `acknowledge_for_sale` is for changes a buyer
+    # should be told about, not for ones that leave the offer describing
+    # something untrue. Only `offered` refuses, exactly as
+    # `offering_writes._refuse_grouped` scopes the same rule -- an
+    # `assembling` lot has been shown to nobody, and offering it afterwards
+    # refuses the split member by name.
+    #
+    # `lot_writes.lot_holding` rather than a query of its own, so "already in
+    # a lot" keeps the one definition `_refuse_grouped` and
+    # `routers.inventory.delete_item` also use.
+    holding_lot = lot_writes.lot_holding(db, parent.id)
+    if holding_lot is not None and holding_lot.status is SalesLotStatus.offered:
+        raise SplitError(
+            f"{parent.item_code} is in lot #{holding_lot.id}, which is offered: "
+            "end or dissolve the lot before splitting it"
+        )
+
+    weights = _weights(pieces, mode)
+    costs = allocate(parent.item_cost, weights)
+    shipping = allocate(parent.shipping_cost, weights)
+
+    now = datetime.now(UTC)
+    # `.one()`: a vocabulary row that is not there fails the split loudly,
+    # rather than leaving every piece with no disposition or a coin's detail.
+    held = db.scalars(select(Disposition.id).where(Disposition.code == "held")).one()
+
+    # Resolved once rather than per piece: a fifty-way split would otherwise
+    # run fifty identical lookups.
+    currency_kind_id = item_kinds.currency_kind_id(db)
+
+    children: list[InventoryItem] = []
+    for piece, cost, ship in zip(pieces, costs, shipping, strict=True):
+        values = {column: getattr(parent, column) for column in INHERITED}
+        # Packaging is copied from the lot here, and overridden a line later
+        # if the caller asked. `storage_form_id` is deliberately absent from
+        # INHERITED so that this copy is the only thing that sets it, which
+        # is what leaves `piece.overrides` free to replace it --
+        # `routers.inventory._to_piece` sends "single" for exactly that
+        # reason, since pieces come out of a tube or a set individually.
+        values["storage_form_id"] = parent.storage_form_id
+        values.update(piece.overrides)
+
+        child = InventoryItem(
+            **values,
+            parent_item_id=parent.id,
+            source_title=piece.source_title,
+            piece_count=piece.piece_count,
+            disposition_id=held,
+            item_cost=cost,
+            shipping_cost=ship,
+            source=ProvenanceSource.derived,
+            attributes={
+                **(parent.attributes or {}),
+                "split_from": parent.item_code,
+                "split_mode": mode,
+                # The number the allocation actually used, kept so the
+                # division can be re-checked later without guessing at what
+                # basis someone had in mind.
+                **(
+                    {"split_relative_value": str(piece.relative_value)}
+                    if piece.relative_value is not None
+                    else {}
+                ),
+            },
+        )
+        db.add(child)
+        db.flush()
+
+        # Every item in the collection has exactly one detail row, and a piece
+        # is an item. Created empty rather than copied from the parent's: a
+        # lot's detail row describes the lot, so copying it would write the
+        # seller's guess into exactly the fields someone is about to fill in
+        # by examining this piece.
+        detail_model = (
+            CurrencyDetail if child.item_kind_id == currency_kind_id else CoinDetail
+        )
+        db.add(detail_model(inventory_item_id=child.id))
+
+        # This writes the OPENING row for a newly created item, not a
+        # transition -- `from_status_id=None` is how the schema says so.
+        # `lifecycle_writes.set_status` is for changes to a status that
+        # already exists; a status change from here on must go through it.
+        record_initial_status(
+            db, child, user_id=user_id, note=f"split from {parent.item_code}"
+        )
+        # A piece starts where its lot was kept. Through `set_location`, not
+        # as an inherited column, so the piece's location history opens with
+        # the row that says so; a lot kept nowhere moves nothing.
+        set_location(
+            db,
+            child,
+            parent.storage_location_id,
+            user_id=user_id,
+            note=f"split from {parent.item_code}",
+        )
+        children.append(child)
+
+    # The lot is no longer a thing anyone holds. Its listings end through
+    # `offering_writes`, the only writer of listing status and claims, so the
+    # claims that held the lot are released with them.
+    parent.split_at = now
+    # In the change log like an edit, so the lot's History says who split
+    # it and when.
+    field_changes.record(
+        db,
+        parent.id,
+        {"split_at": None},
+        {"split_at": now.isoformat()},
+        ["split_at"],
+        user_id=user_id,
+        at=now,
+    )
+    # Flushed before the ending, not after. `end_offer` locks and re-reads the
+    # items it affects with `populate_existing=True` (`offering_writes._lock_items`),
+    # and the parent is one of them -- an assignment still sitting in the
+    # session is overwritten by that re-read and lost. The lot would then
+    # keep its pieces and still look unsplit.
+    #
+    # Nothing here flushes it implicitly: `SessionLocal` sets
+    # `autoflush=False`. The test suite runs with autoflush on, so the query
+    # below would flush it there and the fault never appears -- which is why
+    # the regression test turns autoflush off by hand.
+    db.flush()
+    for listing in db.scalars(
+        select(Listing).where(
+            Listing.inventory_item_id == parent.id,
+            Listing.status != ListingStatus.ended,
+        )
+    ).all():
+        offering_writes.end_offer(db, listing, note="item split into pieces")
+
+    db.flush()
+    return children

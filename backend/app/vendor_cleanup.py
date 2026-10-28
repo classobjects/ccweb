@@ -1,0 +1,341 @@
+"""Tidy the purchase-source list before sales platforms link to it.
+
+The list can hold one vendor per spelling of the same business -- typos
+(`exmaple-coins.com` for `example-coins.com`), two hosts of one auction
+site, a vendor named `.` -- and vendors with no kind. Sales platforms link
+to a vendor (selling design), so the list is cleaned first.
+
+Every change is named on the command line -- which vendors are the same
+business is the owner's call, not something to guess -- and nothing is
+written without --commit:
+
+    python -m app.vendor_cleanup --merge 15:12 --merge 21:9 --delete 6
+        --kind 1:marketplace --kind 19:marketplace
+        --rename 12:example-coins.com [--commit]
+
+A merge moves the purchase orders and removes the duplicate. Vendor rows hold
+no history of their own; the orders carry it, and they are kept.
+
+Renames run last, after the merges, so the survivor of a merge can take a
+spelling neither row had -- or one the merged-away row was using. A rename
+from one host name to another corrects the vendor's host and link with it;
+any other rename leaves them as they are. A blank name is refused.
+"""
+
+from __future__ import annotations
+
+import argparse
+import re
+import sys
+from collections.abc import Sequence
+from dataclasses import dataclass, field
+from urllib.parse import urlsplit, urlunsplit
+
+from sqlalchemy import func, select, update
+from sqlalchemy.orm import Session
+
+from .database import SessionLocal
+from .models import PurchaseOrder, SalesVenue, Vendor, VendorKind
+
+#: A host name: labels of letters, digits and hyphens with a dot between.
+_HOST_NAME = re.compile(r"^[a-z0-9-]+(?:\.[a-z0-9-]+)+$", re.IGNORECASE)
+
+
+class CleanupError(Exception):
+    """A requested change that cannot be made; nothing was written."""
+
+
+@dataclass
+class Report:
+    """What the pass did, or would do."""
+
+    #: (from name, into name, orders moved)
+    merged: list[tuple[str, str, int]] = field(default_factory=list)
+    deleted: list[str] = field(default_factory=list)
+    #: (vendor name, kind code)
+    kinds: list[tuple[str, str]] = field(default_factory=list)
+    #: (old name, new name)
+    renamed: list[tuple[str, str]] = field(default_factory=list)
+
+
+def _vendor(db: Session, vendor_id: int) -> Vendor:
+    """The vendor with this id, or a `CleanupError`."""
+    vendor = db.get(Vendor, vendor_id)
+    if vendor is None:
+        raise CleanupError(f"No vendor with id {vendor_id}")
+    return vendor
+
+
+def _order_count(db: Session, vendor_id: int) -> int:
+    """Count of purchase orders currently attached to a vendor."""
+    return (
+        db.scalar(select(func.count()).where(PurchaseOrder.vendor_id == vendor_id)) or 0
+    )
+
+
+def _refuse_if_a_platform_sells_through(db: Session, vendor: Vendor) -> None:
+    """Refuse to remove a vendor a sales platform is linked to.
+
+    `sales_venue.vendor_id` is ON DELETE RESTRICT and Vendor has no
+    relationship back to SalesVenue, so without this check the DELETE reaches
+    PostgreSQL and comes back as a raw IntegrityError -- a traceback where the
+    operator should see a REFUSED line naming what to unlink.
+    """
+    code = db.scalar(select(SalesVenue.code).where(SalesVenue.vendor_id == vendor.id))
+    if code is not None:
+        raise CleanupError(
+            f"{vendor.name} is the purchase source for platform {code}; unlink it first"
+        )
+
+
+def _clashing_numbers(db: Session, left: int, right: int) -> list[str]:
+    """Order numbers both vendors use, which a merge would duplicate."""
+    left_numbers = select(PurchaseOrder.order_number).where(
+        PurchaseOrder.vendor_id == left, PurchaseOrder.order_number.is_not(None)
+    )
+    # The IN-subquery restricts matches to left's non-null numbers, so no row
+    # here can actually have a null order_number -- but the column itself is
+    # nullable, so the filter is spelled out for the type checker too.
+    right_numbers = db.scalars(
+        select(PurchaseOrder.order_number).where(
+            PurchaseOrder.vendor_id == right,
+            PurchaseOrder.order_number.in_(left_numbers),
+        )
+    )
+    return sorted(number for number in right_numbers if number is not None)
+
+
+def _merge(db: Session, source_id: int, target_id: int, report: Report) -> None:
+    """Move one vendor's purchase orders to another and remove it, or refuse."""
+    source, target = _vendor(db, source_id), _vendor(db, target_id)
+    if source_id == target_id:
+        raise CleanupError(f"Cannot merge {source.name} into itself")
+    # The source is deleted at the end of this merge, so it faces the
+    # same FK as a plain --delete does. Checked before anything moves.
+    _refuse_if_a_platform_sells_through(db, source)
+    clashes = _clashing_numbers(db, source_id, target_id)
+    if clashes:
+        raise CleanupError(
+            f"{source.name} and {target.name} both have order number(s) "
+            f"{', '.join(clashes)}; resolve those first"
+        )
+    moved = _order_count(db, source_id)
+    db.execute(
+        update(PurchaseOrder)
+        .where(PurchaseOrder.vendor_id == source_id)
+        .values(vendor_id=target_id)
+    )
+    report.merged.append((source.name, target.name, moved))
+    db.delete(source)
+
+
+def _delete(db: Session, vendor_id: int, report: Report) -> None:
+    """Remove a vendor nothing names, or refuse."""
+    vendor = _vendor(db, vendor_id)
+    if _order_count(db, vendor_id):
+        raise CleanupError(f"{vendor.name} still has purchase orders; merge it instead")
+    _refuse_if_a_platform_sells_through(db, vendor)
+    report.deleted.append(vendor.name)
+    db.delete(vendor)
+
+
+def _set_kind(db: Session, vendor_id: int, code: str, report: Report) -> None:
+    """Give a vendor the kind with this code, or refuse an unknown one."""
+    vendor = _vendor(db, vendor_id)
+    kind_id = db.scalar(select(VendorKind.id).where(VendorKind.code == code))
+    if kind_id is None:
+        raise CleanupError(f"Unknown vendor_kind {code!r}")
+    vendor.vendor_kind_id = kind_id
+    report.kinds.append((vendor.name, code))
+
+
+def _rename_vendor(
+    db: Session, vendor_id: int, typed_name: str, report: Report
+) -> None:
+    """Give a vendor a new name, its address following it, or refuse."""
+    vendor = _vendor(db, vendor_id)
+    new_name = typed_name.strip()
+    if not new_name:
+        raise CleanupError(
+            f"Cannot rename {vendor.name} to nothing: a vendor needs a name"
+        )
+    # Case-insensitive, as `uq_vendor_name` is: two vendors differing
+    # only in case are the same source. Asked first so the refusal
+    # names the vendor that has the name.
+    taken = db.scalar(
+        select(Vendor).where(
+            func.lower(Vendor.name) == new_name.casefold(),
+            Vendor.id != vendor_id,
+        )
+    )
+    if taken is not None:
+        raise CleanupError(
+            f"Cannot rename {vendor.name} to {new_name}: "
+            f"{taken.name} already has that name"
+        )
+    old_name = vendor.name
+    report.renamed.append((old_name, new_name))
+    vendor.name = new_name
+    _follow_rename(vendor, old_name, new_name)
+
+
+def _follow_rename(vendor: Vendor, old_name: str, new_name: str) -> None:
+    """Correct a renamed vendor's host and link where they repeated its name.
+
+    A misspelt source misspells its web address too (`exmaple-coins.com` for
+    example-coins.com), so a name fixed on its own would leave the vendor's `host`
+    naming a site that does not exist. The address follows the name only as
+    one host name for another: the old name must be the host, or the end of
+    it after a dot, and both names must be host names. A fragment replaced
+    wherever it occurs, or words put where a host belongs, would name no
+    site at all.
+    """
+    old_host = vendor.host
+    if not old_host:
+        return
+    if not (_HOST_NAME.match(old_name) and _HOST_NAME.match(new_name)):
+        return
+    old_key = old_name.lower()
+    if old_host != old_key and not old_host.endswith(f".{old_key}"):
+        return
+    new_host = old_host[: -len(old_key)] + new_name.lower()
+    vendor.host = new_host
+    if vendor.url:
+        vendor.url = _with_host(vendor.url, old_host, new_host)
+
+
+def _with_host(url: str, old_host: str, new_host: str) -> str:
+    """`url` naming `new_host` where its host is `old_host`, case aside.
+
+    The link keeps the case it was typed in while `host` is lower case, so
+    the host is found by position, not by matching its text.
+    """
+    parts = urlsplit(url)
+    if (parts.hostname or "") != old_host:
+        return url
+    netloc = parts.netloc
+    at = netloc.rfind("@") + 1
+    start = netloc.lower().index(old_host, at)
+    netloc = netloc[:start] + new_host + netloc[start + len(old_host) :]
+    return urlunsplit(parts._replace(netloc=netloc))
+
+
+def run(
+    db: Session,
+    merges: Sequence[tuple[int, int]],
+    kinds: Sequence[tuple[int, str]],
+    deletes: Sequence[int],
+    *,
+    commit: bool,
+    renames: Sequence[tuple[int, str]] = (),
+) -> Report:
+    """Apply the named merges, deletions, kinds and renames.
+
+    Renames run last, so a merge in the same call frees the name it removes:
+    two spellings of one dealer become one row, named with the spelling of
+    the dealer's own website. Rolls back unless `commit`.
+
+    `commit` is keyword-only, as it is on every other pass here. Positional,
+    between two sequences, a `renames` list passed one argument early would
+    become the commit flag -- a non-empty list being truthy, that is a
+    silent write instead of a refusal.
+    """
+    report = Report()
+    try:
+        for source_id, target_id in merges:
+            _merge(db, source_id, target_id, report)
+        for vendor_id in deletes:
+            _delete(db, vendor_id, report)
+        # The removed rows leave the database before any name is looked up
+        # or written: the session does not autoflush, and a rename to a
+        # removed row's name would otherwise find it still there, or reach
+        # `uq_vendor_name` before its DELETE.
+        db.flush()
+        for vendor_id, code in kinds:
+            _set_kind(db, vendor_id, code, report)
+        for vendor_id, typed_name in renames:
+            _rename_vendor(db, vendor_id, typed_name, report)
+        db.flush()
+    except Exception:
+        # Every exception, not only CleanupError. A database constraint this
+        # pass has not learned to check for surfaces as an IntegrityError at
+        # flush, and leaving that session un-rolled-back would strand the
+        # caller in a failed transaction while earlier writes look applied.
+        db.rollback()
+        raise
+    if commit:
+        db.commit()
+    else:
+        db.rollback()
+    return report
+
+
+def _pair(text: str) -> tuple[int, int]:
+    """A `--merge` argument, `id:id`, as its two vendor ids."""
+    left, _, right = text.partition(":")
+    return int(left), int(right)
+
+
+def _kind(text: str) -> tuple[int, str]:
+    """A `--kind` argument, `id:code`, as a vendor id and a vendor kind's code."""
+    left, _, right = text.partition(":")
+    return int(left), right
+
+
+def _rename(text: str) -> tuple[int, str]:
+    """A rename argument, `id:name`, as a vendor id and the trimmed new name."""
+    left, _, right = text.partition(":")
+    return int(left), right.strip()
+
+
+def _run(db: Session, args: argparse.Namespace) -> Report:
+    """The changes the command line names, in one session."""
+    return run(
+        db, args.merge, args.kind, args.delete, commit=args.commit, renames=args.rename
+    )
+
+
+def main(argv: list[str] | None = None, *, db: Session | None = None) -> int:
+    """Report or apply the clean-up.
+
+    `db` is the session to work in; run as a module, the application's own
+    `SessionLocal` is opened. A caller that already has a session -- the
+    tests, which must never let this open the live database -- passes it.
+    """
+    parser = argparse.ArgumentParser(prog="vendor_cleanup", description=__doc__)
+    parser.add_argument("--merge", type=_pair, action="append", default=[])
+    parser.add_argument("--kind", type=_kind, action="append", default=[])
+    parser.add_argument("--delete", type=int, action="append", default=[])
+    parser.add_argument(
+        "--rename",
+        type=_rename,
+        action="append",
+        default=[],
+        help="ID:NEW_NAME, applied after the merges",
+    )
+    parser.add_argument("--commit", action="store_true", help="write the changes")
+    args = parser.parse_args(argv)
+    try:
+        if db is None:
+            with SessionLocal() as own:
+                report = _run(own, args)
+        else:
+            report = _run(db, args)
+    except CleanupError as exc:
+        print(f"REFUSED: {exc}")
+        return 1
+    for source, target, moved in report.merged:
+        print(f"merge  {source} -> {target}  ({moved} orders)")
+    for name in report.deleted:
+        print(f"delete {name}")
+    for name, code in report.kinds:
+        print(f"kind   {name} = {code}")
+    for old, new in report.renamed:
+        print(f"rename {old} -> {new}")
+    if not args.commit:
+        print("\n(dry run -- nothing written; pass --commit)")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,685 @@
+"""Contention around revising an order: a stale read must not go unnoticed.
+
+Real, committing sessions rather than ``TestClient``: a client call serializes
+through one connection and would look correct even with the locks removed --
+see test_concurrency.py for the pattern this borrows.
+
+The first test here is
+deterministic -- two sessions taking turns, no threads -- and exists to pin
+down exactly what a stale read must produce: a 409 naming what is actually
+left, never a `StaleDataError` and never a silent oversell.
+"""
+
+from __future__ import annotations
+
+import threading
+from collections.abc import Callable, Iterator
+from concurrent.futures import ThreadPoolExecutor
+from decimal import Decimal
+
+import pytest
+from app.models import (
+    Authenticity,
+    Currency,
+    Customer,
+    Disposition,
+    InventoryItem,
+    ItemKind,
+    ItemStatus,
+    Listing,
+    SalesOrder,
+    SalesOrderChange,
+    SalesOrderItem,
+    StorageForm,
+    User,
+    UserRole,
+    ValuationBasis,
+)
+from app.order_writes import Line, customer_for_user, place_order, revise_order
+from app.routers.orders import _load, _status_code, update_order_status
+from app.sales_venues import store_venue_id
+from app.schemas import OrderStatusUpdate
+from fastapi import HTTPException
+from sqlalchemy.engine import Engine
+from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm.exc import StaleDataError
+
+from tests.builders import code_id
+from tests.test_concurrency import RACE_TITLE, _seed
+
+
+def _present[T](instance: T | None) -> T:
+    """A row this test just committed, with its existence stated not assumed.
+
+    Every id handed to `Session.get` or `_load` below was committed a few
+    lines earlier -- by `_seed`, by `_extra_listing`, or by the writer under
+    test -- so a `None` here is a broken fixture rather than a case any of
+    these tests means to handle. Failing on it by name beats letting it
+    surface later as an attribute error on `None`.
+    """
+    assert instance is not None
+    return instance
+
+
+def _extra_listing(factory: sessionmaker[Session], *, stock: int) -> int:
+    """A second RACE_TITLE listing, sharing `_seed`'s item shape without new users.
+
+    Cleaned up by the `committed` fixture the same way `_seed`'s rows are:
+    by `source_title`, not by any id this returns.
+    """
+    with factory() as session:
+        item = InventoryItem(
+            source_title=RACE_TITLE,
+            item_kind_id=code_id(session, ItemKind, "coin"),
+            storage_form_id=code_id(session, StorageForm, "single"),
+            authenticity_id=code_id(session, Authenticity, "unverified"),
+            status_id=code_id(session, ItemStatus, "received"),
+            disposition_id=code_id(session, Disposition, "listed"),
+            valuation_basis_id=code_id(session, ValuationBasis, "numismatic"),
+        )
+        session.add(item)
+        session.flush()
+        listing = Listing(
+            inventory_item_id=item.id,
+            price=Decimal("100.00"),
+            currency_id=code_id(session, Currency, "USD"),
+            sales_venue_id=store_venue_id(session),
+            quantity_available=stock,
+        )
+        session.add(listing)
+        session.commit()
+        return listing.id
+
+
+@pytest.fixture
+def committed(engine: Engine) -> Iterator[sessionmaker[Session]]:
+    """Real, committing sessions; removes every row the race creates."""
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    yield factory
+    with factory() as cleanup:
+        cleanup.query(SalesOrderChange).delete()
+        cleanup.query(SalesOrderItem).delete()
+        cleanup.query(SalesOrder).delete()
+        cleanup.query(Customer).delete()
+        cleanup.query(Listing).delete()
+        cleanup.query(InventoryItem).filter(
+            InventoryItem.source_title == RACE_TITLE
+        ).delete(synchronize_session=False)
+        cleanup.query(User).filter(User.email.like("race%@example.com")).delete(
+            synchronize_session=False
+        )
+        cleanup.commit()
+
+
+def test_a_stale_read_is_refused_not_a_lost_update(
+    committed: sessionmaker[Session],
+) -> None:
+    """A listing changed after it was read must not be trusted at the lock.
+
+    Session A loads an order -- and, through it, a listing -- before session
+    B sells out that listing's remaining stock and commits. When A then
+    raises the order's quantity, the availability check must see B's
+    committed state, not the value A happened to read earlier: a 409 naming
+    what is actually left, not a `StaleDataError` surfacing from a write
+    that should never have been attempted, and not a silent oversell.
+    """
+    listing_id, (buyer_id, admin_id) = _seed(committed, stock=3, buyers=2)
+
+    with committed() as session_a:
+        buyer = _present(session_a.get(User, buyer_id))
+        order = place_order(
+            session_a,
+            customer_for_user(session_a, buyer),
+            [Line(listing_id, 1)],
+            buyer,
+        )
+        session_a.commit()
+        order_id, version = order.id, order.version
+
+        # Load the order -- and, through it, the listing -- into A's
+        # identity map before B changes the listing underneath it. Holding
+        # `stale_listing` matters: without a live Python reference, nothing
+        # keeps this instance around once `revise_order` reloads the order's
+        # items below, and the identity map would happily hand back a freshly
+        # queried (and so accidentally correct) object -- passing the test
+        # for the wrong reason, whether or not the lock re-reads the row.
+        order = _present(_load(session_a, order_id))
+        stale_listing = order.items[0].listing
+        assert stale_listing.quantity_available == 2
+
+        with committed() as session_b:
+            listing_b = _present(session_b.get(Listing, listing_id))
+            listing_b.quantity_available = 0
+            session_b.commit()
+
+        admin = _present(session_a.get(User, admin_id))
+        with pytest.raises(HTTPException) as excinfo:
+            revise_order(
+                session_a,
+                order,
+                customer=order.customer,
+                lines=[Line(listing_id, 2)],
+                notes=None,
+                version=version,
+                by=admin,
+            )
+
+    assert excinfo.value.status_code == 409
+    assert f"Only 0 more of listing {listing_id}" in excinfo.value.detail
+
+    with committed() as session_c:
+        remaining = _present(session_c.get(Listing, listing_id)).quantity_available
+    assert remaining == 0
+
+
+def test_an_edit_and_a_checkout_cannot_both_take_the_last_unit(
+    committed: sessionmaker[Session],
+) -> None:
+    """A genuinely concurrent admin edit and shopper checkout, not a stale read.
+
+    Two threads, each with its own committing session, released together by a
+    barrier -- as in test_concurrency.py -- contend for the last unit of a
+    listing an order already holds one of. Only one may take it; the loser
+    gets a 409, not a lost update or an oversell. A TestClient-based version
+    of this test would serialize both requests through one connection and
+    pass even with the lock removed.
+
+    The loser's refusal is read, not just counted. With the listing lock
+    gone, `listing.version` still stops the second writer, and when that
+    writer is the edit, `revise_order` answers the `StaleDataError` with a
+    409 of its own ("changed while saving") -- one winner, one 409, stock at
+    zero, and no lock. Only a refusal that names the stock says the loser
+    waited for the row and then read what the winner left.
+    """
+    listing_id, (buyer_id, holder_id, admin_id) = _seed(committed, stock=2, buyers=3)
+    with committed() as s:
+        _present(s.get(User, admin_id)).role = UserRole.manager
+        holder = _present(s.get(User, holder_id))
+        order = place_order(
+            s, customer_for_user(s, holder), [Line(listing_id, 1)], holder
+        )
+        s.commit()
+        order_id, version = order.id, order.version
+
+    barrier = threading.Barrier(2)
+
+    def checkout() -> str:
+        """Buy the last unit as the customer: "checkout", or the refusal in full."""
+        s = committed()
+        try:
+            user = _present(s.get(User, buyer_id))
+            customer = customer_for_user(s, user)
+            barrier.wait(timeout=10)
+            place_order(s, customer, [Line(listing_id, 1)], user)
+            s.commit()
+            return "checkout"
+        except HTTPException as exc:
+            s.rollback()
+            return f"{exc.status_code}: {exc.detail}"
+        finally:
+            s.close()
+
+    def edit() -> str:
+        """Revise the order to two units: "edit", or the refusal in full."""
+        s = committed()
+        try:
+            o = _present(s.get(SalesOrder, order_id))
+            admin_user = _present(s.get(User, admin_id))
+            customer = o.customer
+            barrier.wait(timeout=10)
+            revise_order(
+                s,
+                o,
+                customer=customer,
+                lines=[Line(listing_id, 2, Decimal("100.00"))],
+                notes=None,
+                version=version,
+                by=admin_user,
+            )
+            s.commit()
+            return "edit"
+        except HTTPException as exc:
+            s.rollback()
+            return f"{exc.status_code}: {exc.detail}"
+        finally:
+            s.close()
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        outcomes = sorted(pool.map(lambda f: f(), [checkout, edit]))
+
+    with committed() as s:
+        remaining = _present(s.get(Listing, listing_id)).quantity_available
+    assert remaining == 0
+    winners = [o for o in outcomes if o in ("checkout", "edit")]
+    refusals = [o for o in outcomes if o not in ("checkout", "edit")]
+    assert len(winners) == 1, outcomes
+    # "Only 0 of listing N remain" from a checkout, "Only 0 more of listing
+    # N are available" from an edit: either way the loser saw the stock gone.
+    assert len(refusals) == 1, outcomes
+    assert refusals[0].startswith("409: Only 0 "), outcomes
+    assert f"listing {listing_id}" in refusals[0], outcomes
+
+
+def test_a_cancel_and_an_edit_on_the_same_order_cannot_deadlock_or_corrupt_stock(
+    committed: sessionmaker[Session],
+) -> None:
+    """A PATCH cancellation and a PUT revision racing the same order.
+
+    `update_order_status` (the PATCH path) and `revise_order` (the PUT path)
+    both lock and re-read the `sales_order` row before touching listings --
+    order first, listings second -- so two admins racing a cancel and an edit
+    on the very same order must serialize on that lock rather than deadlock.
+
+    Both writers carry the version they read before the race, so whichever
+    writer's lock lands second finds the order moved on and is refused with
+    409: the cancel by `update_order_status`'s version check, the edit as
+    no-longer-editable (or by its own version check). Both orderings are
+    real, and this test's setup produces both across runs. What must hold
+    either way, and what this test checks: no deadlock, exactly one winner,
+    and stock exactly conserved -- the edit's three units held, or the
+    cancel's return of precisely the two the order held, never a unit short
+    or a unit conjured from nowhere. That depends on the order-row lock, not
+    the listing lock, which has ample stock here.
+    """
+    listing_id, (buyer_id, admin_id) = _seed(committed, stock=5, buyers=2)
+    with committed() as s:
+        _present(s.get(User, admin_id)).role = UserRole.manager
+        buyer = _present(s.get(User, buyer_id))
+        order = place_order(
+            s, customer_for_user(s, buyer), [Line(listing_id, 2)], buyer
+        )
+        s.commit()
+        order_id, version = order.id, order.version
+
+    with committed() as s:
+        assert _present(s.get(Listing, listing_id)).quantity_available == 3
+
+    barrier = threading.Barrier(2)
+
+    def cancel() -> str | int:
+        """Cancel the order through its route: "cancel", or the refusal's status."""
+        s = committed()
+        try:
+            admin = _present(s.get(User, admin_id))
+            payload = OrderStatusUpdate(status="cancelled", version=version)
+            barrier.wait(timeout=10)
+            update_order_status(order_id, payload, s, admin)
+            return "cancel"
+        except HTTPException as exc:
+            s.rollback()
+            return exc.status_code
+        finally:
+            s.close()
+
+    def edit() -> str | int:
+        """Revise the order to three units, from the version read before the race."""
+        s = committed()
+        try:
+            o = _present(s.get(SalesOrder, order_id))
+            admin = _present(s.get(User, admin_id))
+            customer = o.customer
+            barrier.wait(timeout=10)
+            revise_order(
+                s,
+                o,
+                customer=customer,
+                lines=[Line(listing_id, 3)],
+                notes=None,
+                version=version,
+                by=admin,
+            )
+            s.commit()
+            return "edit"
+        except HTTPException as exc:
+            s.rollback()
+            return exc.status_code
+        finally:
+            s.close()
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        # A result timeout, not just a barrier timeout: a deadlock would hang
+        # inside the database call itself, past any barrier, and only a
+        # timeout on the *result* turns that hang into a test failure instead
+        # of an indefinitely stuck test run.
+        outcomes = sorted(pool.map(lambda f: f(), [cancel, edit], timeout=30), key=str)
+
+    # Exactly one winner: the loser read the version the winner moved on.
+    assert outcomes.count(409) == 1, outcomes
+    edit_won = "edit" in outcomes
+    assert edit_won != ("cancel" in outcomes), outcomes
+
+    with committed() as s:
+        listing = _present(s.get(Listing, listing_id))
+        final_order = _present(s.get(SalesOrder, order_id))
+        final_status = _status_code(s, final_order)
+        final_items = [item.quantity for item in final_order.items]
+
+    # The edit's win holds three units of the five; the cancel's returns
+    # every unit the order held -- the purchase's two -- for five on hand.
+    # A unit short or one conjured from nowhere is what a missing order-row
+    # lock would produce.
+    if edit_won:
+        assert final_status == "pending", (outcomes, final_status)
+        assert final_items == [3], outcomes
+        assert listing.quantity_available == 2, (outcomes, listing.quantity_available)
+    else:
+        assert final_status == "cancelled", (outcomes, final_status)
+        assert final_items == [2], outcomes
+        assert listing.quantity_available == 5, (outcomes, listing.quantity_available)
+
+
+def test_a_concurrently_edited_item_no_longer_refuses_a_revision(
+    committed: sessionmaker[Session],
+) -> None:
+    """A concurrent edit to the coin behind a line must not refuse the revision.
+
+    Raising an order's quantity to take a listing's last unit writes to the
+    item behind it -- `_after_stock_change` flips its disposition to `sold`.
+    Were that write unlocked, an item another session had edited and
+    committed in the meantime would fail the flush with `StaleDataError`
+    and the caller would get a 409 telling them to reload -- a *false*
+    conflict: nothing about editing a coin's description says a revision of
+    the order holding it must be thrown away.
+
+    `_lock_listings` takes its rows through `offering_writes.lock_for_sale`,
+    which locks every item `_after_stock_change` will write --
+    `offered_items` for the lines' listings -- and re-reads them with
+    `populate_existing`, so the version the disposition write uses is the
+    one the lock granted rather than one read before the wait. The two
+    writers are serialized instead of one of them losing.
+
+    Fails for its stated reason if that re-read goes: remove
+    `.execution_options(populate_existing=True)` from
+    `offering_writes._lock_rows` and the revision is refused 409 again.
+    """
+    listing_id, (buyer_id, admin_id) = _seed(committed, stock=2, buyers=2)
+
+    with committed() as session_a:
+        buyer = _present(session_a.get(User, buyer_id))
+        order = place_order(
+            session_a, customer_for_user(session_a, buyer), [Line(listing_id, 1)], buyer
+        )
+        session_a.commit()
+        order_id, version = order.id, order.version
+
+        listing = _present(session_a.get(Listing, listing_id))
+        assert listing.quantity_available == 1
+        item_id = listing.inventory_item_id
+        # Keep a live reference in A's identity map, exactly as the
+        # stale-read test above keeps `stale_listing`: without it, the item
+        # would simply be queried fresh and B's commit would never be the
+        # stale-version hazard this test is about.
+        stale_item = _present(session_a.get(InventoryItem, item_id))
+        assert stale_item.disposition.code == "listed"
+
+        with committed() as session_b:
+            item_b = _present(session_b.get(InventoryItem, item_id))
+            item_b.description = "touched by session B"
+            session_b.commit()
+
+        order = _present(_load(session_a, order_id))
+        admin = _present(session_a.get(User, admin_id))
+        changed = revise_order(
+            session_a,
+            order,
+            customer=order.customer,
+            lines=[Line(listing_id, 2)],
+            notes=None,
+            version=version,
+            by=admin,
+        )
+        assert changed is True
+        session_a.commit()
+
+    with committed() as session_c:
+        remaining = _present(session_c.get(Listing, listing_id)).quantity_available
+        order_c = _present(session_c.get(SalesOrder, order_id))
+        item_lines = [i.quantity for i in order_c.items]
+        item_c = _present(session_c.get(InventoryItem, item_id))
+        item_description = item_c.description
+        item_disposition = item_c.disposition.code
+    assert remaining == 0
+    assert item_lines == [2]
+    # The revision applied *and* B's edit survived it: the lock re-read the
+    # row rather than writing over it from a value read before the wait.
+    # Asserting only the quantities would pass on a session that had
+    # silently discarded B's description.
+    assert item_description == "touched by session B"
+    assert item_disposition == "sold"
+
+
+def test_a_concurrently_edited_item_no_longer_refuses_a_cancellation(
+    committed: sessionmaker[Session],
+) -> None:
+    """The same false conflict cannot be reached through `return_stock`.
+
+    Two lines: the first listing's stock is fully sold, so cancelling flips
+    its item's disposition from `sold` back to `listed`, via the write
+    `_after_stock_change` queues for it. Were that write unlocked, an item
+    another session had edited meanwhile would raise `StaleDataError`
+    inside `update_order_status` -- a 409 refusing a cancellation over an
+    edit to a coin's description.
+
+    `return_stock` takes its rows through `_lock_listings`, and so through
+    `offering_writes.lock_for_sale`, which locks and re-reads every item
+    either listing offers before anything is written. The cancellation
+    goes through and returns both lines' stock.
+
+    The `except StaleDataError` clauses in `order_writes.revise_order` and
+    `routers._tx.committing` (which `update_order_status` writes inside)
+    are defense in depth rather than a live path: every version-tracked
+    row these two functions write -- `sales_order`, `listing`,
+    `inventory_item`, `sales_lot` -- is locked and re-read first.
+
+    Fails for its stated reason if the item lock's re-read goes, exactly as
+    the test above does.
+    """
+    listing_id, (buyer_id, admin_id) = _seed(committed, stock=1, buyers=2)
+    other_listing_id = _extra_listing(committed, stock=5)
+    with committed() as s:
+        _present(s.get(User, admin_id)).role = UserRole.manager
+        s.commit()
+
+    with committed() as session_a:
+        buyer = _present(session_a.get(User, buyer_id))
+        order = place_order(
+            session_a,
+            customer_for_user(session_a, buyer),
+            [Line(listing_id, 1), Line(other_listing_id, 2)],
+            buyer,
+        )
+        session_a.commit()
+        order_id, version = order.id, order.version
+
+        listing = _present(session_a.get(Listing, listing_id))
+        assert listing.quantity_available == 0
+        item_id = listing.inventory_item_id
+        # As above: a live reference in A's identity map, so B's commit
+        # leaves this session holding a version that is genuinely behind.
+        stale_item = _present(session_a.get(InventoryItem, item_id))
+        assert stale_item.disposition.code == "sold"
+
+        with committed() as session_b:
+            item_b = _present(session_b.get(InventoryItem, item_id))
+            item_b.description = "touched by session B"
+            session_b.commit()
+
+        admin = _present(session_a.get(User, admin_id))
+        payload = OrderStatusUpdate(status="cancelled", version=version)
+        update_order_status(order_id, payload, session_a, admin)
+
+    with committed() as session_c:
+        sold_out = _present(session_c.get(Listing, listing_id))
+        other = _present(session_c.get(Listing, other_listing_id))
+        final_status = _status_code(
+            session_c, _present(session_c.get(SalesOrder, order_id))
+        )
+        item_c = _present(session_c.get(InventoryItem, item_id))
+        item_description = item_c.description
+        item_disposition = item_c.disposition.code
+    assert final_status == "cancelled"
+    # Both lines' stock is back, not just the one whose item was contended.
+    assert sold_out.quantity_available == 1
+    assert other.quantity_available == 5
+    assert item_description == "touched by session B"
+    assert item_disposition == "listed"
+
+
+def _stale_on_first_real_flush(session: Session) -> Callable[..., None]:
+    """A flush that fails the way a lost optimistic-lock race fails.
+
+    Patched in place of `Session.flush` on one session, for the two tests
+    below. The real shape it stands in for -- an unlocked write to
+    `inventory_item.disposition` by `_after_stock_change` -- is unreachable:
+    `offering_writes.lock_for_sale` locks and re-reads every version-tracked
+    row `revise_order` and `update_order_status` write, which is what the two
+    tests above assert. So the only way to reach either handler is to make
+    a flush fail on purpose.
+
+    **It raises only when there is pending work to flush**, and that is
+    load-bearing rather than tidiness. `Session._autoflush` calls `flush()`
+    unconditionally and lets `flush()` itself return early on a clean
+    session, so a stand-in that raised on every call would fire on the first
+    autoflush of the run -- which in both functions below happens *before*
+    the `try` block, so the error would escape without the handler ever being
+    asked and the test would pass for the wrong reason (it fails at the
+    pre-`try` `SELECT ... FOR UPDATE` of the order row). Raising only
+    once something is actually pending puts the failure where a real lost
+    version race puts it: at the flush that carries the write.
+
+    What the two tests below therefore do and do not prove. They prove the
+    clauses are handlers and not decoration: a `StaleDataError` raised at the
+    write inside either block comes back as a 409 naming the order, and
+    removing the clause lets it escape. They do **not** prove the narrower
+    point that the messages must use a captured `order_id` rather than
+    `order.id` -- that needs a session genuinely awaiting rollback after a
+    *real* failed flush, and there is no write in either function that can
+    produce one. That reasoning is recorded at `order_writes.revise_order`'s
+    clause and beside the `committing` block in `update_order_status`.
+    """
+    real = session.flush
+
+    def _flush(*args: object, **kwargs: object) -> None:
+        """Flush as usual, unless there is something to write: then fail as stale."""
+        if session.new or session.dirty or session.deleted:
+            raise StaleDataError(
+                "forced: a version-tracked row this write touched had already moved"
+            )
+        real()
+
+    return _flush
+
+
+def test_a_stale_data_error_inside_revise_order_is_a_409_not_a_500(
+    committed: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`revise_order`'s `except StaleDataError` must refuse, not escape.
+
+    Covers `order_writes.py`'s clause, which no real write can reach (see
+    `_stale_on_first_real_flush`). Without the clause the `StaleDataError`
+    reaches the router as an unhandled 500.
+
+    Survives: replacing the body of `order_writes.revise_order`'s
+    `except StaleDataError` clause with a bare `raise` makes this fail with
+    `StaleDataError` in place of the `HTTPException` it expects. **Not**
+    deleting the clause, which is a `SyntaxError` -- the `try` needs a
+    handler -- so what is mutated is the 409 conversion, which is the
+    behavior under test anyway.
+    """
+    listing_id, (buyer_id, admin_id) = _seed(committed, stock=2, buyers=2)
+
+    with committed() as session:
+        buyer = _present(session.get(User, buyer_id))
+        order = place_order(
+            session, customer_for_user(session, buyer), [Line(listing_id, 1)], buyer
+        )
+        session.commit()
+        order_id, version = order.id, order.version
+
+        order = _present(_load(session, order_id))
+        admin = _present(session.get(User, admin_id))
+        customer = order.customer
+        monkeypatch.setattr(session, "flush", _stale_on_first_real_flush(session))
+        with pytest.raises(HTTPException) as excinfo:
+            revise_order(
+                session,
+                order,
+                customer=customer,
+                lines=[Line(listing_id, 2)],
+                notes=None,
+                version=version,
+                by=admin,
+            )
+        monkeypatch.undo()
+
+    assert excinfo.value.status_code == 409
+    # The order's own number, not a bare "something went wrong": the clause
+    # builds this message from a captured `order_id` precisely so it can be
+    # named after a failed flush has expired every instance.
+    assert f"Order #{order_id}" in excinfo.value.detail
+    assert "reload" in excinfo.value.detail.lower()
+
+    with committed() as verify:
+        # `_refuse` rolls back before raising, so the revision left nothing:
+        # asserting only the status code would pass on a half-applied edit.
+        assert _present(verify.get(Listing, listing_id)).quantity_available == 1
+        order_v = _present(verify.get(SalesOrder, order_id))
+        assert [line.quantity for line in order_v.items] == [1]
+
+
+def test_a_stale_data_error_inside_a_cancellation_is_a_409_not_a_500(
+    committed: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A `StaleDataError` inside `update_order_status` must refuse, not escape.
+
+    Covers the `except StaleDataError` clause of `routers._tx.committing`,
+    which `update_order_status` writes inside: the cancellation twin of the
+    test above. This test's session autoflushes, so the pending status write
+    is flushed -- and fails -- when `return_stock` issues its first SELECT,
+    well before `db.commit()`. The application's session does not autoflush
+    (`app/database.py`) and would meet the same error at the commit; the
+    whole block sits inside `committing`, so either is answered alike.
+
+    Survives: replacing the body of `routers._tx.committing`'s
+    `except StaleDataError` clause with a bare `raise` makes this fail with
+    `StaleDataError` in place of the `HTTPException` it expects -- not
+    deleting the clause, for the reason the test above gives.
+    """
+    listing_id, (buyer_id, admin_id) = _seed(committed, stock=1, buyers=2)
+    with committed() as s:
+        _present(s.get(User, admin_id)).role = UserRole.manager
+        s.commit()
+
+    with committed() as session:
+        buyer = _present(session.get(User, buyer_id))
+        order = place_order(
+            session, customer_for_user(session, buyer), [Line(listing_id, 1)], buyer
+        )
+        session.commit()
+        order_id, version = order.id, order.version
+
+        admin = _present(session.get(User, admin_id))
+        monkeypatch.setattr(session, "flush", _stale_on_first_real_flush(session))
+        with pytest.raises(HTTPException) as excinfo:
+            update_order_status(
+                order_id,
+                OrderStatusUpdate(status="cancelled", version=version),
+                session,
+                admin,
+            )
+        monkeypatch.undo()
+
+    assert excinfo.value.status_code == 409
+    assert f"Order #{order_id}" in excinfo.value.detail
+    assert "reload" in excinfo.value.detail.lower()
+    # The flush's refusal, not the version check's, which also says reload.
+    assert "while saving" in excinfo.value.detail
+
+    with committed() as verify:
+        # The clause rolls back, so neither the status nor the stock moved --
+        # a cancellation half-applied is the damage this handler prevents.
+        assert _present(verify.get(Listing, listing_id)).quantity_available == 0
+        assert (
+            _status_code(verify, _present(verify.get(SalesOrder, order_id)))
+            == "pending"
+        )

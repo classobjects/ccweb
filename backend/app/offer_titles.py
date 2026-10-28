@@ -1,0 +1,235 @@
+"""A public title for an item, composed from what the record says it is.
+
+`source_title` is the *seller's* wording from the purchase, which would go
+onto eBay unedited if the operator did not stop to rewrite it. That wording
+is often not a name at all: thousands of items are titled only by their
+denomination -- "1", "0.25" or "$1 Bill" -- and a Whatnot purchase carries
+lines such as "ITEM SEEN ON SCREEN ASK QUESTIONS NO CANCELLATIONS".
+
+`suggested_title` builds the title from the item's own classified facts
+instead, the way a collector would write it:
+
+- a coin: ``1921-S Morgan Dollar PCGS MS64`` -- year (or span) and mint mark,
+  then the set form, series or denomination, the variety, the grading
+  service and the grade; a coin of another country names it after the
+  year, ``1964 Canada Half Dollar``;
+- a note: ``Series 1935A $1 Silver Certificate PMG 64`` -- series, face
+  value and note type, then service and grade.
+
+It is a **default**, shown in an editable field; the operator still owns the
+wording. `source_title` remains the fallback only when the record holds no
+fact worth naming -- a year and a country alone are not one -- so an
+unclassified item still opens with the seller's wording.
+
+Facts, not a catalog's arrangement: every part is a label from this
+database's own vocabularies (see `docs/reference-data.md`).
+"""
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session, selectinload
+
+from . import grades
+from .models import (
+    InventoryItem,
+    Mint,
+    NoteType,
+    Series,
+)
+from .years import is_single
+
+#: The grading service code meaning the owner graded it: not a service a
+#: buyer would recognize, so it is left out of a public title.
+_SELF_GRADED = "SELF"
+
+#: The item kind whose title is written as a note rather than a coin.
+_CURRENCY_KIND = "currency"
+
+#: The countries a title does not name: the one the collection is kept in,
+#: whose coins are the unmarked case, and the row that stands for not knowing.
+_UNNAMED_COUNTRIES = frozenset({"US", "XX"})
+
+
+def foreign_country(item: InventoryItem) -> str | None:
+    """``Canada``: the country of a piece from abroad, or None."""
+    country = item.country
+    if country is None or country.code in _UNNAMED_COUNTRIES:
+        return None
+    return country.label
+
+
+def _years(item: InventoryItem) -> str | None:
+    """``1921``, or ``1878-1904`` for a span, or None when undated."""
+    start, end = item.year_start, item.year_end
+    if start is None:
+        return None
+    if end is not None and end != start:
+        return f"{start}-{end}"
+    return str(start)
+
+
+def _graded(item: InventoryItem) -> list[str]:
+    """``["PMG", "64 EPQ"]``: service, then grade with its designation.
+
+    The designation is printed with the grade -- on a note's holder "64 EPQ"
+    is the grade, and a title without the EPQ undersells it
+    (`grades.display_designated`).
+    """
+    parts: list[str] = []
+    service = item.grading_service
+    if service is not None and service.code != _SELF_GRADED:
+        parts.append(service.code)
+    grade = grades.display_designated(item)
+    if grade:
+        parts.append(grade)
+    return parts
+
+
+def _series_label(db: Session, item: InventoryItem) -> str | None:
+    """The series' label, e.g. ``Morgan Dollar``, or None."""
+    if item.series_id is None:
+        return None
+    series = db.get(Series, item.series_id)
+    return series.label if series is not None else None
+
+
+def _coin_title(db: Session, item: InventoryItem) -> tuple[list[str], bool]:
+    """A coin's title parts without the grade, and whether any part names it.
+
+    A year and a mint mark ("1921-S") date a coin but do not say what it is;
+    only a set form, series, denomination or variety does. Another country's
+    coin carries the country after its year: it places the coin and names
+    nothing either.
+    """
+    # Through the relationship, not a query by id: a caller describing an
+    # edit not yet committed holds the detail the item now points at.
+    detail = item.coin_detail
+    parts: list[str] = []
+    if (dated := _coin_date(db, item)) is not None:
+        parts.append(dated)
+    if (country := foreign_country(item)) is not None:
+        parts.append(country)
+    named = False
+    if (name := _coin_name(db, item)) is not None:
+        parts.append(name)
+        named = True
+    if detail is not None and detail.variety:
+        parts.append(detail.variety)
+        named = True
+    return parts, named
+
+
+def _coin_date(db: Session, item: InventoryItem) -> str | None:
+    """The coin's year or years, with its mint mark on a single year."""
+    years = _years(item)
+    if years is None:
+        return None
+    detail = item.coin_detail
+    mint = (
+        db.get(Mint, detail.mint_id)
+        if detail is not None and detail.mint_id is not None
+        else None
+    )
+    # A mint mark belongs to one year's coin; on a span it would claim every
+    # year came from that mint.
+    if mint is not None and mint.mark and is_single((item.year_start, item.year_end)):
+        return f"{years}-{mint.mark}"
+    return years
+
+
+def _coin_name(db: Session, item: InventoryItem) -> str | None:
+    """What says which coin it is: its set form, else series, else face value."""
+    if item.set_form is not None:
+        return item.set_form.label
+    name = _series_label(db, item)
+    if name is None and item.denomination is not None:
+        name = item.denomination.label
+    return name
+
+
+def _note_title(db: Session, item: InventoryItem) -> tuple[list[str], bool]:
+    """A note's title parts without the grade, and whether any part names it.
+
+    A series or a year dates a note; its face value, type or series label
+    say what it is.
+    """
+    detail = item.currency_detail
+    note_type = (
+        db.get(NoteType, detail.note_type_id)
+        if detail is not None and detail.note_type_id is not None
+        else None
+    )
+    parts: list[str] = []
+    if detail is not None and detail.series_designation:
+        parts.append(f"Series {detail.series_designation}")
+    elif item.year_start is not None:
+        parts.append(str(item.year_start))
+    face = item.denomination.label if item.denomination is not None else None
+    named = note_type is not None or face is not None
+    if note_type is not None:
+        # "$1 Bill" is the vocabulary's word for the face value alone; with
+        # a note type beside it, "$1 Silver Certificate" is how it is said.
+        if face is not None:
+            parts.append(face.removesuffix(" Bill"))
+        parts.append(note_type.label)
+    elif face is not None:
+        parts.append(face)
+    else:
+        name = _series_label(db, item)
+        if name is not None:
+            parts.append(name)
+            named = True
+    return parts, named
+
+
+def name_of(
+    db: Session, item: InventoryItem, *, country_names: bool = False
+) -> str | None:
+    """What the item is, without its grade; None when no fact names it.
+
+    ``1921-S Morgan Dollar``, ``Series 1935A $1 Silver Certificate``.
+    With `country_names`, another country's coin that nothing else names is
+    its year and country, ``1912 Austria`` -- enough for a description of
+    it, though not for a title a buyer searches by. A note is never named
+    by its country.
+    """
+    if item.item_kind.code == _CURRENCY_KIND:
+        described, named = _note_title(db, item)
+    else:
+        described, named = _coin_title(db, item)
+        named = named or (country_names and foreign_country(item) is not None)
+    return " ".join(described) if named else None
+
+
+def suggested_title(db: Session, item: InventoryItem) -> str:
+    """The title a listing of this item should start from.
+
+    Built from the item's classified facts; falls back to `source_title`
+    when nothing in them names the item -- a date, a mint mark, a country or
+    a grade alone says nothing a buyer is looking for, and the seller's wording,
+    however rough, is at least the operator's own record of what it is.
+    Empty only when that is empty too, and the dialog then shows an empty
+    title for the operator to write.
+    """
+    name = name_of(db, item)
+    if name is None:
+        return item.source_title
+    return " ".join([name, *_graded(item)])
+
+
+def suggested_titles(db: Session, item_ids: Sequence[int]) -> dict[int, str]:
+    """`suggested_title` for each of these items that exists, keyed by id."""
+    items = db.scalars(
+        select(InventoryItem)
+        .where(InventoryItem.id.in_(item_ids))
+        # A title reads each item's own detail row: one query each for the
+        # set rather than one per item.
+        .options(
+            selectinload(InventoryItem.coin_detail),
+            selectinload(InventoryItem.currency_detail),
+        )
+    ).all()
+    return {item.id: suggested_title(db, item) for item in items}

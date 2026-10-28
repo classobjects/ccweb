@@ -1,0 +1,825 @@
+/* --- header ------------------------------------------------------------- */
+.badge {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+/* --- typography --------------------------------------------------------- */
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 13px;
+}
+
+/* --- forms -------------------------------------------------------------- */
+.admin-form {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin-bottom: 28px;
+}
+
+.admin-form h2 {
+  margin-top: 0;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0 16px;
+}
+
+/* Inventory search panel and results grid.
+
+   Every color here comes from the theme variables: a literal near-white
+   background does not flip under `prefers-color-scheme: dark` while `--text`
+   does, which leaves light text on a light panel. */
+.search-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.9rem;
+  margin-bottom: 1rem;
+}
+/* The search box with its visible label beside it. The label exists so the
+   accelerator letter has somewhere to be underlined. */
+.search-row {
+  align-items: center;
+  display: flex;
+  gap: 0.6rem;
+  margin-bottom: 0.75rem;
+}
+.search-label {
+  font-weight: 600;
+  white-space: nowrap;
+}
+.search-text {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+}
+/* Search tips: collapsed under the box until asked for, so the panel stays
+   compact for anyone who already knows how the search behaves. */
+.search-help {
+  font-size: 0.82rem;
+  margin: -0.4rem 0 0.75rem;
+}
+.search-help summary {
+  color: var(--muted);
+  cursor: pointer;
+  width: fit-content;
+}
+.search-help ul {
+  margin: 0.4rem 0;
+  padding-left: 1.2rem;
+}
+.search-help li {
+  margin: 0.2rem 0;
+}
+.search-help code {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+.search-help p {
+  margin: 0.3rem 0 0;
+}
+.filter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.6rem;
+  margin-bottom: 0.75rem;
+}
+.filter-grid label {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.82rem;
+  gap: 0.2rem;
+}
+/* A radio or checkbox goes before its label, on the same line. The column
+   above is for a caption over a text box; applied to a toggle it stacks the
+   control above its own label. */
+.filter-grid label.checkbox {
+  align-items: center;
+  flex-direction: row;
+}
+/* A filter with no values left is disabled rather than hidden: a control
+   that vanishes as you narrow is more confusing than one that grays out. */
+.filter-grid select:disabled {
+  opacity: 0.45;
+}
+.inventory-table {
+  font-size: 0.86rem;
+}
+.inventory-table th.sortable {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+.inventory-table th.sortable:hover {
+  text-decoration: underline;
+}
+/* Two lines per item: the attributes, then the description under them. The
+   pair reads as one item -- no rule between the lines, the usual one after. */
+.inventory-table tr.has-detail td {
+  border-bottom: none;
+  padding-bottom: 2px;
+}
+.inventory-table tr.item-detail td {
+  color: var(--muted);
+  font-size: 0.8rem;
+  padding-top: 0;
+}
+/* A row of small controls that wraps when the field is narrow: an item's
+   attributes as removable chips with the picker after them, its recorded
+   errors and the row adding one, and a vocabulary value's aliases. */
+.attribute-list,
+.error-list li,
+.add-error,
+.alias-list {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+/* An item that is for sale: said before anything is changed. The surface
+   tinted rather than a fixed color, so the text on it reads in either
+   scheme. */
+.for-sale {
+  background: color-mix(in srgb, var(--warn) 14%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--warn) 55%, var(--surface));
+  border-radius: 4px;
+  margin: 0.5rem 0;
+  padding: 0.5rem 0.75rem;
+}
+.sale-history ul {
+  margin: 0.25rem 0;
+  padding-left: 1.2rem;
+}
+/* An item's mint and printing errors: the recorded ones, each with its own
+   note, then the row being added. A sub-panel, not a page -- it borrows the
+   `.field` row shape from the form it usually sits in and adds only what it
+   needs to stop reading as three loose controls. */
+.errors-panel .error-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.error-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.error-list li input {
+  flex: 1 1 8rem;
+  min-width: 0;
+}
+.add-error input {
+  flex: 1 1 6rem;
+  min-width: 0;
+}
+
+/* Vocabularies: each value's aliases, as removable chips. */
+.alias-chip {
+  cursor: default;
+  display: inline-flex;
+  gap: 0.3rem;
+  align-items: center;
+}
+.alias-chip button {
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+.alias-shared {
+  border-style: dashed;
+}
+.alias-retired {
+  color: #777;
+  text-decoration: line-through;
+}
+/* Merge into..., opened under a value's label. */
+.merge-panel {
+  border-left: 3px solid #b8860b;
+  margin-top: 0.4rem;
+  max-width: 30rem;
+  padding-left: 0.6rem;
+}
+/* The form a value is added with, above the vocabulary's table. */
+.vocabulary-add {
+  border-left: 3px solid #b8860b;
+  margin-bottom: 0.75rem;
+  max-width: 60rem;
+  padding-left: 0.6rem;
+}
+/* A value's actions -- Rename, Retire or Restore, Merge into..., Edit
+   details... -- under its label. */
+.value-actions {
+  display: flex;
+  gap: 0.6rem;
+  font-size: 0.85rem;
+}
+.alias-add {
+  display: flex;
+  gap: 0.3rem;
+}
+.alias-add input {
+  min-width: 0;
+  width: 9rem;
+}
+
+/* Tabbed pages (People, Lists). On People, accounts and customers are
+   separate tables, so they get separate tabs rather than one merged grid
+   that would imply every customer can sign in. */
+.tabs {
+  display: flex;
+  gap: 0.25rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 1rem;
+}
+.tab {
+  background: none;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 4px 4px 0 0;
+  padding: 0.45rem 0.9rem;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  width: auto;
+  margin: 0 0 -1px 0;
+}
+.tab-active {
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--text);
+  font-weight: 600;
+}
+.notice {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 4px;
+  padding: 0.6rem 0.8rem;
+  margin-bottom: 1rem;
+}
+/* The photo picker's own drop target (PhotosPanel, ReceiptPanel) -- dragging
+   an image onto it, or pasting one with Ctrl+V while it has focus, adds it
+   exactly as choosing it from the file box does. */
+.photo-drop {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  border: 1px dashed var(--border);
+  border-radius: 4px;
+  padding: 0.5rem;
+}
+.photo-drop-active {
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  border-color: var(--accent);
+  border-style: solid;
+}
+/* Issue chips. A selected chip must be unmistakable at a glance: the panel's
+   whole job is showing which of a dozen checks is currently narrowing the
+   list. */
+.issue-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.6rem 0;
+}
+.chip {
+  background: #f2f2f2;
+  border: 1px solid #ccc;
+  border-radius: 999px;
+  color: #333;
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 0.2rem 0.7rem;
+}
+.chip-on {
+  background: #24507a;
+  border-color: #24507a;
+  color: #fff;
+}
+/* The item editor, over the results. Sized to the form's three-column field
+   grid, and scrolling inside itself so a long form never pushes Save off
+   the screen. */
+.edit-dialog {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  max-height: 90vh;
+  max-width: min(60rem, 95vw);
+  overflow: hidden;
+  padding: 0;
+  width: 100%;
+}
+/* Open only: a closed <dialog> must stay hidden. The body scrolls and the
+   help band stays at the bottom, as in the console itself. */
+.edit-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+.edit-dialog-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 1rem 1.2rem;
+}
+.edit-dialog::backdrop {
+  background: rgb(0 0 0 / 45%);
+}
+/* A thumbnail that opens its large rendition: a button that looks like the
+   picture it holds, and the dialog's picture kept inside the window. */
+.image-enlarge {
+  background: none;
+  border: 0;
+  cursor: zoom-in;
+  display: inline-block;
+  line-height: 0;
+  padding: 0;
+}
+.image-enlarge:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+.image-dialog {
+  text-align: center;
+}
+.image-dialog img {
+  max-height: 70vh;
+  max-width: 100%;
+  object-fit: contain;
+}
+/* Receiving's Identify section: the theme's border, not the browser's. */
+fieldset.identify {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  margin: 0 0 1rem;
+  padding: 0.4rem 0.9rem 0.6rem;
+}
+
+/* The year box with its "Range of years" switch beside it, in one column.
+   The box never shrinks below room for four digits and the number spinner:
+   at `min-width: 0` the New item form's column squeezes it to about 70px,
+   where a four-digit year is hidden behind the arrows. Where the column is
+   too narrow for both, the switch wraps below instead. */
+.year-input {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+.year-input input[type='number'] {
+  flex: 1 1 6.5rem;
+  min-width: 6.5rem;
+}
+.year-input label.checkbox {
+  white-space: nowrap;
+}
+.edit-form .field {
+  align-items: center;
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: 9rem minmax(12rem, 24rem) auto;
+  margin-bottom: 0.4rem;
+}
+/* One lot being assembled, as a card.
+   The Lots page stacks these, and without a boundary one lot's Discard
+   button sits directly under the next lot's heading -- which is exactly the
+   pair of things that must never be confusable. */
+.lot {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin-bottom: 20px;
+}
+/* The lot's claim must read as context, not as a value someone typed. */
+.lot-claim {
+  color: var(--warn);
+  font-size: 0.85rem;
+  font-style: italic;
+}
+/* A weight box with its unit beside it, sharing the field's one column. */
+.weight-input {
+  display: flex;
+  gap: 0.3rem;
+}
+.weight-input input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.weight-input select {
+  flex: 0 0 auto;
+  width: auto;
+}
+/* A value the facts filled in: context too, until someone changes it. */
+.suggested {
+  color: var(--info);
+  font-size: 0.8rem;
+  font-style: italic;
+  margin-left: 0.4rem;
+}
+/* A spot price's box and its Record button, side by side in the table cell:
+   stacked, the button reads as belonging to the row below. */
+.spot-price-entry {
+  align-items: center;
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 0.5rem;
+}
+/* The box must read as a place to type: in a table of figures, the usual
+   faint border on the table's own colour looks like one more cell. */
+.spot-price-entry input:not([type='checkbox']):not([type='radio']) {
+  background: var(--bg);
+  border: 2px solid var(--accent);
+  margin-top: 0;
+  width: 9rem;
+}
+.spot-price-entry input::placeholder {
+  color: var(--muted);
+  font-style: italic;
+}
+/* Tinted from the surface, like .for-sale, so it reads in either scheme. */
+.bulk-bar {
+  align-items: center;
+  background: color-mix(in srgb, var(--info) 10%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--info) 30%, var(--surface));
+  border-radius: 4px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin: 0.6rem 0;
+  padding: 0.5rem 0.8rem;
+}
+.review-pane {
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  margin-top: 0.8rem;
+  padding: 0.8rem;
+}
+.select-cell {
+  width: 2rem;
+}
+
+/* Receiving: the items a search found, and the Friedberg lookup's matches.
+   A list of rows rather than a native <select>, so each can carry its own
+   detail -- an item's code, description and order -- and its own button. */
+.order-picker {
+  list-style: none;
+  margin: 0 0 1rem;
+  padding: 0;
+}
+.order-row {
+  display: block;
+  width: 100%;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  margin-bottom: 0.4rem;
+  padding: 0.5rem 0.8rem;
+}
+/* A row that is also a .row -- a Friedberg match and its Use button -- keeps
+   .row's flex and gap, which .order-row's block display would undo. */
+.order-row.row {
+  display: flex;
+}
+.order-row:hover {
+  background: var(--surface);
+}
+/* "Ctrl+S" beside every Save button (SaveButton.jsx). */
+.key-hint {
+  color: var(--muted);
+  font-size: 0.8em;
+  white-space: nowrap;
+}
+/* Purchases: a whole row picks its purchase, as its order number does. */
+.purchase-row {
+  cursor: pointer;
+}
+.purchase-row:hover {
+  background: var(--surface);
+}
+.sort-header {
+  font-weight: inherit;
+  white-space: nowrap;
+}
+
+/* The console shell: menu, page, help band, in a column the height of the
+   window. Only the page (.content) scrolls, so a form always fits between
+   the menu and the band, and the band never scrolls out of sight. */
+.console-app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+  padding-bottom: 0;
+}
+.console-app > .topbar {
+  flex: none;
+}
+/* The menu wraps onto a second line in a window too narrow for it, rather
+   than setting a floor under the whole page's width. */
+.console-app .nav {
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  min-width: 0;
+}
+.console-app > .content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding-bottom: 16px;
+}
+.help-bar {
+  flex: none;
+  max-height: 30vh;
+  overflow: auto;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.9em;
+  line-height: 1.4;
+  /* Room for two lines even when empty, so the page above does not jump
+     as explanations come and go. */
+  min-height: calc(2.8em + 16px);
+}
+
+/* HelpScope outside the console shell (a form rendered on its own): the
+   help area under the form, explaining the focused field.
+   Sticky to the bottom of the view, so a long form such as the item editor
+   keeps it in sight while the field being explained is on screen. */
+.help-area {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  margin-top: 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.9em;
+  line-height: 1.4;
+}
+
+/* Receiving: the receipt panel, inside its dialog -- the arrival date,
+   storage location and note, plus the four outcome buttons. */
+.receipt-panel {
+  margin-top: 0.8rem;
+}
+.receipt-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+/* The menu's groups: each a button in the bar, with its pages in a list
+   that drops under it while it is open. The list lies over the page rather
+   than pushing it down. */
+.menu-group {
+  position: relative;
+}
+.menu-button {
+  padding: 0 0 2px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.menu-button:hover,
+.menu-button[aria-expanded='true'] {
+  color: var(--accent);
+}
+/* The group the page shown belongs to, as a page's own link is marked. */
+.menu-button.current {
+  border-bottom-color: var(--accent);
+}
+/* A fieldset, for the group it is: its box is all given here, the browser's
+   own margin for one included. */
+.menu-list {
+  margin: 0;
+  position: absolute;
+  top: calc(100% + 8px);
+  left: -12px;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  min-width: 11rem;
+  padding: 6px 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: 0 6px 18px rgb(0 0 0 / 25%);
+}
+.console-menu .menu-list a {
+  padding: 6px 12px;
+  border-bottom: none;
+  border-left: 3px solid transparent;
+  white-space: nowrap;
+}
+.console-menu .menu-list a:hover,
+.console-menu .menu-list a:focus-visible {
+  background: color-mix(in srgb, var(--accent) 14%, var(--surface));
+}
+.console-menu .menu-list a.active {
+  border-left-color: var(--accent);
+}
+
+/* --- Reports ------------------------------------------------------------- */
+/* The catalog beside the report: a narrow column of links by group. */
+.reports-layout {
+  align-items: start;
+  display: grid;
+  gap: 1.5rem;
+  grid-template-columns: minmax(11rem, 14rem) minmax(0, 1fr);
+}
+/* A group of the catalog is a fieldset for what it means, not for a frame:
+   nothing of the browser's own box for one is kept. */
+.report-catalog fieldset {
+  border: 0;
+  margin: 0;
+  min-width: 0;
+  padding: 0;
+}
+.report-catalog h2 {
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  margin: 0.9rem 0 0.3rem;
+  text-transform: uppercase;
+}
+.report-catalog h2:first-child {
+  margin-top: 0;
+}
+.report-catalog ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.report-catalog li {
+  margin: 0.2rem 0;
+}
+.report-catalog a[aria-current='page'] {
+  font-weight: 600;
+}
+.reports-main h2 {
+  margin: 0 0 0.2rem;
+}
+.report-form .filter-grid {
+  max-width: 40rem;
+}
+.report-actions {
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+.report-table {
+  font-size: 0.86rem;
+}
+/* Numbers line up by their last digit, money above all. */
+.report-table .num {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.report-totals td {
+  border-top: 2px solid var(--border);
+  font-weight: 600;
+}
+.report-notes {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin: 0.4rem 0;
+  padding-left: 1.2rem;
+}
+/* The heading written for paper: hidden on the screen, which shows the same
+   facts in the page itself. */
+.print-only {
+  display: none;
+}
+
+@media (max-width: 720px) {
+  .reports-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Printing (reporting-design.md, Printing): the report alone, black on white.
+   The console is a column the height of the window whose page scrolls inside
+   it; on paper that column would print one window's worth, so it is undone
+   here and the page flows onto as many sheets as it needs. */
+@page wide {
+  size: landscape;
+}
+@media print {
+  .console-app {
+    display: block;
+    height: auto;
+  }
+  .console-app > .content {
+    overflow: visible;
+  }
+  .topbar,
+  .help-bar,
+  .help-area,
+  .report-catalog,
+  .report-form,
+  .screen-only {
+    display: none !important;
+  }
+  .reports-layout {
+    display: block;
+  }
+  .print-only {
+    display: block;
+  }
+  .report--wide {
+    page: wide;
+  }
+  .report,
+  .report * {
+    background: #fff !important;
+    color: #000 !important;
+  }
+  .report-print-heading p {
+    margin: 0 0 2px;
+  }
+  .report-print-heading .print-title {
+    font-size: 1.3em;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+  .report-table {
+    border: 1px solid #000;
+    border-radius: 0;
+    overflow: visible;
+  }
+  .report-table th,
+  .report-table td {
+    border-bottom: 1px solid #999;
+    padding: 3px 6px;
+  }
+  /* The header row on every sheet, a row never split between two, and the
+     totals once, after the last row -- a table footer would repeat too. */
+  .report-table thead {
+    display: table-header-group;
+  }
+  .report-table tfoot {
+    display: table-row-group;
+  }
+  .report-table tr {
+    break-inside: avoid;
+  }
+  /* A drill-down is plain text on paper; a sort button is just its label. */
+  .report a {
+    text-decoration: none;
+  }
+  .report .sort-header {
+    font-weight: 700;
+    padding: 0;
+    text-decoration: none;
+  }
+}
+
+/* What the Identify facts decide is a status line, an <output>, which is
+   inline by itself: here it is the paragraph it reads as. `:where` keeps the
+   rule as weak as the browser's own for a paragraph, so a class's margin
+   (`.notice`) still wins. */
+:where(.identify-decided) output {
+  display: block;
+  margin: 1em 0;
+}
+/* The other half of a star-note pair, said under the note's facts: a block
+   of its own, with room above it that `.notice` gives only below. */
+output.serial-pair {
+  display: block;
+  margin-top: 1rem;
+}
+/* The same for a page's own status line: how many purchases were found, and
+   what a recording did. */
+:where(output.status-line) {
+  display: block;
+  margin: 1em 0;
+}

@@ -1,0 +1,163 @@
+[project]
+name = "ccwebdb"
+version = "0.1.0"
+description = "Numismatic and currency web platform for inventory and sales."
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [{ name = "Nathaniel Mills" }]
+requires-python = ">=3.13"
+dependencies = [
+    "alembic>=1.19.1",
+    "argon2-cffi>=25.1.0",
+    "email-validator>=2.3.0",
+    "fastapi>=0.141.1",
+    "httpx>=0.28.1",
+    # Runtime, not dev: reports, app.workbook_backup and app.ebay_orders
+    # all write or read .xlsx.
+    "openpyxl>=3.1.5",
+    "pillow>=13.0.0",
+    "psycopg[binary]>=3.3.5",
+    "pydantic-settings>=2.15.0",
+    "pyjwt>=2.15.0",
+    "python-multipart>=0.0.32",
+    "sqlalchemy>=2.0.52",
+    "tzdata>=2026.3",
+    "uvicorn[standard]>=0.52.4",
+]
+
+[dependency-groups]
+dev = [
+    "mypy>=2.3.1",
+    "pdfplumber>=0.11.10",
+    "piexif>=1.1.3",
+    "psutil>=7.2.2",
+    "pytest>=9.1.1",
+    "pytest-cov>=7.0.0",
+    "ruff>=0.16.6",
+    "types-openpyxl>=3.1.5.20260827",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["backend/tests"]
+pythonpath = ["backend"]
+addopts = "-q --strict-markers"
+# --strict-markers means any custom mark below must be registered here, so
+# an opt-out from a suite-wide invariant (tests/conftest.py) cannot
+# arrive quietly -- it needs this greppable line plus a `reason=` at each
+# use site.
+markers = [
+    "claim_invariant_waiver(reason): this test builds an OfferClaim/Listing pair no current write path can produce, to exercise a reader function against it (see reason=). The suite-wide claim invariant in tests/conftest.py still runs its check for a test carrying this mark, and requires the check to raise -- a waiver that stops biting fails loudly instead of going stale. Scoped to the claim invariant only: the lot-membership, disposition and listing-history invariants (also in tests/conftest.py) run unconditionally ahead of this waiver, the auction invariant under its own auction_invariant_waiver, and none is ever absorbed by this one.",
+    "auction_invariant_waiver(reason): this test builds auction rows, or drives a sale into an auction lot, around app.auctions (see reason=). The suite-wide auction invariant in tests/conftest.py still runs its check for a test carrying this mark, and requires the check to raise -- a waiver that stops biting fails loudly instead of going stale. Scoped to the auction invariant only: it never absorbs the claim, lot, disposition or history checks.",
+]
+# Every DeprecationWarning is an error, wherever it is raised, except the one
+# anyio alias named below.
+filterwarnings = [
+    "error::DeprecationWarning",
+    "ignore:The anyio.abc.BlockingPortal alias is deprecated:DeprecationWarning",
+    # A cartesian product almost always means one alias of the same table
+    # was mixed into a query built on another (e.g. `.tables`'s `ITEM`
+    # alongside the plain ORM `InventoryItem`), silently doubling every sum.
+    # Matched on the message, not every SAWarning, so an unrelated
+    # SQLAlchemy warning stays a warning.
+    "error:.*cartesian product.*:sqlalchemy.exc.SAWarning",
+]
+
+# coverage.py records absolute file paths by default. The scanner that reads
+# coverage.xml runs in its own container with this repository bind-mounted at
+# /usr/src, so an absolute host path like
+# C:\Users\...\ccweb\backend\app never exists there and every
+# line is silently dropped from coverage. Relative paths resolve the same way
+# on the host and inside the container, so coverage stays portable across
+# both.
+[tool.coverage.run]
+relative_files = true
+
+# ---------------------------------------------------------------------------
+# Formatting and linting
+#
+# One formatter, one linter, no argument. Ruff does both, so there is a single
+# tool and a single config rather than black-plus-isort-plus-flake8 with three
+# opinions about line length.
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 88
+target-version = "py313"
+extend-exclude = ["backend/alembic/versions"]
+
+
+# `ruff format` reformats Python inside fenced code blocks in Markdown, and for
+# this project's documentation that is wrong rather than helpful.
+#
+# The specs in `docs/` quote *fragments* -- three lines that go
+# inside an existing function, indented to show where. Ruff sees a module,
+# dedents them to column zero, and the placement information is gone. Worse, it
+# reflows them: the keyword argument
+# `issues=count_issues(...) if facets else {},` comes out as
+# `issues = (count_issues(...) if facets else {},)`, an assignment of a
+# 1-tuple -- a different construct, ready to be transcribed into real code.
+#
+# Formatting is for code the interpreter runs. A fragment in a specification is
+# prose about code, and reformatting prose to compile changes what it says.
+[tool.ruff.format]
+exclude = ["docs/**/*.md"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W",   # pycodestyle
+    "F",        # pyflakes -- unused imports, undefined names
+    "I",        # import ordering
+    "UP",       # syntax that is out of date for the target version
+    "B",        # bugbear -- mutable defaults, shadowed loop vars
+    "SIM",      # simplifications
+    "C4",       # comprehensions
+    "RUF",      # ruff's own
+    "D",        # docstrings must exist and be well formed
+    "ANN",      # functions must be annotated
+    "PTH",      # prefer pathlib over os.path
+    "RET",      # return-statement hygiene
+]
+# Nothing is ignored to spare the codebase work. These two are ignored because
+# they are *mutually exclusive with rules that are enabled* -- ruff cannot
+# satisfy both members of either pair, so one of each must be chosen:
+#   D203 (blank line before a class docstring) vs D211 (no blank line)
+#   D213 (summary on the second line)          vs D212 (summary on the first)
+ignore = ["D203", "D213"]
+
+[tool.ruff.lint.per-file-ignores]
+# A pytest function is invoked by the framework and imported by nothing, so
+# D103 "undocumented *public* function" does not describe it -- its name is
+# its summary. Everything else applies to tests as it does to app code: they
+# are annotated, import-sorted and formatted like the rest.
+"backend/tests/*" = ["D103"]
+# Alembic generates these from its own template.
+"backend/alembic/env.py" = ["D", "ANN", "I"]
+# FastAPI declares parameters by calling File()/Form()/Depends() in the
+# default. B008 is right in general and wrong for this framework.
+"backend/app/routers/*" = ["B008"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+# Relative imports within the package (`..models`) are deliberate and
+# consistent -- they are what makes the app relocatable. Not linted against.
+
+# ---------------------------------------------------------------------------
+# Type checking
+# ---------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.13"
+# The tests are checked too. ruff's ANN rules only ask that an annotation
+# exist; mypy is what asks whether it is true -- a helper annotated
+# `-> None` that returns a value is invisible without it.
+files = ["backend/app", "backend/tests"]
+plugins = ["pydantic.mypy"]
+# Start strict about the things that actually catch bugs, rather than turning
+# on everything and drowning the signal in `Any` complaints from libraries.
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+no_implicit_optional = true
+strict_equality = true

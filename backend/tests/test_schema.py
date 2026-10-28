@@ -1,0 +1,636 @@
+"""Tests for the schema.
+
+These cover the properties the schema is *for*, rather than that SQLAlchemy
+can insert a row: arithmetic that must never drift, constraints that must
+actually refuse bad data, and the authorization boundary that must not leak.
+"""
+
+from __future__ import annotations
+
+from decimal import Decimal
+
+import pytest
+from app.models import (  # noqa: F401
+    Authenticity,
+    Composition,
+    Country,
+    Currency,
+    CurrencyDetail,
+    Denomination,
+    ErrorType,
+    Grade,
+    InventoryItem,
+    ItemError,
+    ItemKind,
+    ItemStatus,
+    Listing,
+    ListingStatus,
+    Metal,
+    MetalPrice,
+    StorageForm,
+    ValuationBasis,
+)
+from app.models.base import utcnow
+from app.models.views import PUBLIC_CATALOG_FORBIDDEN_COLUMNS
+from app.sales_venues import store_venue_id
+from sqlalchemy import select, text
+from sqlalchemy.exc import DBAPIError, IntegrityError
+from sqlalchemy.orm import Session
+
+from tests.builders import build_bare_item, code_id
+
+# ---------------------------------------------------------------------------
+# Cost basis: generated columns
+# ---------------------------------------------------------------------------
+
+
+def test_taxes_and_total_are_computed_by_the_database(db: Session) -> None:
+    item = build_bare_item(
+        db, item_cost=Decimal("37.95"), shipping_cost=Decimal("8.95")
+    )
+
+    # 46.90 * 0.0635 = 2.97815 -> 2.98
+    assert item.sales_tax == Decimal("2.98")
+    assert item.total_cost == Decimal("49.88")
+    assert item.total_cost == item.item_cost + item.shipping_cost + item.sales_tax
+
+
+def test_generated_columns_cannot_be_written(db: Session) -> None:
+    """The point of generating them is that they cannot drift from their inputs."""
+    cost = Decimal("10.00")
+    tax = Decimal("999.99")
+    with pytest.raises((DBAPIError, IntegrityError)):
+        build_bare_item(db, item_cost=cost, sales_tax=tax)
+    db.rollback()
+
+
+def test_tax_rate_is_per_row_not_a_constant(db: Session) -> None:
+    """A row's own rate is the one its tax is computed at: nought gives none."""
+    item = build_bare_item(
+        db,
+        item_cost=Decimal("100.00"),
+        shipping_cost=Decimal("0.00"),
+        tax_rate=Decimal("0.0000"),
+    )
+    assert item.sales_tax == Decimal("0.00")
+    assert item.total_cost == Decimal("100.00")
+
+
+def test_money_never_becomes_a_float(db: Session) -> None:
+    item = build_bare_item(db, item_cost=Decimal("0.10"), shipping_cost=Decimal("0.20"))
+    assert isinstance(item.item_cost, Decimal)
+    assert isinstance(item.total_cost, Decimal)
+    # The float trap: 0.1 + 0.2 != 0.3 in binary floating point.
+    assert item.item_cost + item.shipping_cost == Decimal("0.30")
+
+
+# ---------------------------------------------------------------------------
+# Constraints
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        pytest.param({"item_cost": Decimal("-1.00")}, id="negative price"),
+        pytest.param({"shipping_cost": Decimal("-1.00")}, id="negative shipping"),
+        pytest.param({"piece_count": 0}, id="zero quantity"),
+        pytest.param({"year_start": 2000, "year_end": 1999}, id="reversed year range"),
+        pytest.param({"fineness": Decimal("1.5000")}, id="fineness above one"),
+        pytest.param(
+            {"gross_weight_ozt": Decimal("1.0"), "fine_weight_ozt": Decimal("2.0")},
+            id="fine weight exceeding gross",
+        ),
+    ],
+)
+def test_constraints_refuse_impossible_data(db: Session, overrides: dict) -> None:
+    with pytest.raises(IntegrityError):
+        build_bare_item(db, **overrides)
+    db.rollback()
+
+
+#: A row breaking exactly one CHECK constraint, by the constraint's name. Raw
+#: SQL, every NOT NULL column filled: PostgreSQL checks NOT NULL first and
+#: CHECK next, both before the foreign keys -- which these invented ids would
+#: break -- so the constraint named is the error raised, and only while its
+#: predicate refuses the row.
+_CHECK_VIOLATIONS: list[tuple[str, str]] = [
+    (
+        "ck_composition_names_a_coin",
+        "INSERT INTO composition (country_id, year_from, metal_id, fineness, "
+        "fine_weight_ozt, source, created_at, updated_at) "
+        "VALUES (1, 1900, 1, 0.9000, 0.100000, 'seeded', now(), now())",
+    ),
+    (
+        "ck_currency_detail_printing_facility",
+        "INSERT INTO currency_detail (inventory_item_id, printing_facility) "
+        "VALUES (1, 'xx')",
+    ),
+    (
+        "ck_friedberg_number_printing_facility",
+        "INSERT INTO friedberg_number (fr_number, printing_facility, source, "
+        "created_at, updated_at) VALUES ('9999', 'xx', 'manual', now(), now())",
+    ),
+    (
+        "ck_sales_venue_commission_rate",
+        "INSERT INTO sales_venue (code, name, sales_venue_kind_id, commission_rate, "
+        "created_at, updated_at) VALUES ('test', 'Test', 1, 1.5, now(), now())",
+    ),
+    (
+        "ck_sales_venue_processing_rate",
+        "INSERT INTO sales_venue (code, name, sales_venue_kind_id, processing_rate, "
+        "created_at, updated_at) VALUES ('test', 'Test', 1, 1.5, now(), now())",
+    ),
+    (
+        "ck_sales_venue_processing_fixed",
+        "INSERT INTO sales_venue (code, name, sales_venue_kind_id, processing_fixed, "
+        "created_at, updated_at) VALUES ('test', 'Test', 1, -0.01, now(), now())",
+    ),
+    (
+        "ck_sales_venue_listing_fee",
+        "INSERT INTO sales_venue (code, name, sales_venue_kind_id, listing_fee, "
+        "created_at, updated_at) VALUES ('test', 'Test', 1, -0.01, now(), now())",
+    ),
+    (
+        "ck_shipment_cost",
+        "INSERT INTO shipment (sales_order_id, shipment_status_id, cost, "
+        "created_at, updated_at) VALUES (1, 1, -0.01, now(), now())",
+    ),
+    (
+        "ck_shipment_insured_value",
+        "INSERT INTO shipment (sales_order_id, shipment_status_id, insured_value, "
+        "created_at, updated_at) VALUES (1, 1, -0.01, now(), now())",
+    ),
+    (
+        "ck_address_validity_range",
+        "INSERT INTO address (customer_id, address_kind, line1, city, valid_from, "
+        "valid_to, created_at, updated_at) VALUES (1, 'shipping', '1 Main St', "
+        "'Springfield', '2020-01-02', '2020-01-01', now(), now())",
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    ("constraint", "statement"),
+    _CHECK_VIOLATIONS,
+    ids=[constraint for constraint, _ in _CHECK_VIOLATIONS],
+)
+def test_a_check_constraint_refuses_the_row_it_names(
+    db: Session, constraint: str, statement: str
+) -> None:
+    """The predicate refuses the row: a constraint dropped or loosened fails here.
+
+    Inside a savepoint, so the failed statement leaves the session usable for
+    the invariant checks run after every test.
+    """
+    with pytest.raises(IntegrityError, match=constraint), db.begin_nested():
+        db.execute(text(statement))
+
+
+def test_a_classifier_in_use_cannot_be_deleted(db: Session) -> None:
+    """A classifier in use cannot be deleted.
+
+    Reference foreign keys are ON DELETE RESTRICT: deleting a classifier
+    that rows depend on would orphan them.
+    """
+    item = build_bare_item(db)
+    kind = db.get(ItemKind, item.item_kind_id)
+
+    # delete() only stages the change; commit() is what the database refuses.
+    db.delete(kind)
+    with pytest.raises(IntegrityError):
+        db.commit()
+    db.rollback()
+
+
+def test_year_range_allows_a_single_year_and_an_open_range(db: Session) -> None:
+    """A bare year and an open range are different claims; both are legal."""
+    assert build_bare_item(db, year_start=1964, year_end=1964).year_end == 1964
+    assert build_bare_item(db, year_start=1980, year_end=None).year_end is None
+
+
+# ---------------------------------------------------------------------------
+# Weight
+# ---------------------------------------------------------------------------
+
+
+def test_weight_survives_the_database_exactly(db: Session) -> None:
+    """Six decimal places in troy ounces represents a silver dime exactly."""
+    item = build_bare_item(
+        db, gross_weight_ozt=Decimal("0.080376"), fine_weight_ozt=Decimal("0.072340")
+    )
+    db.expire(item)
+    assert item.fine_weight_ozt == Decimal("0.072340")
+    assert isinstance(item.fine_weight_ozt, Decimal)
+
+
+def test_fine_weight_is_less_than_gross_for_a_ninety_percent_coin(db: Session) -> None:
+    """A Morgan dollar weighs more than the silver in it.
+
+    Melt uses the fine weight; using gross would overstate every 90% coin by
+    11%.
+    """
+    item = build_bare_item(
+        db,
+        gross_weight_ozt=Decimal("0.859380"),
+        fine_weight_ozt=Decimal("0.773440"),
+        fineness=Decimal("0.9000"),
+    )
+    # Both weights were just supplied, so neither column is NULL here; the
+    # comparison below is about their values, not about their presence.
+    assert item.fine_weight_ozt is not None
+    assert item.gross_weight_ozt is not None
+    assert item.fine_weight_ozt < item.gross_weight_ozt
+
+
+# ---------------------------------------------------------------------------
+# Composition: public facts
+# ---------------------------------------------------------------------------
+
+
+def test_composition_resolves_a_silver_dime_by_year(db: Session) -> None:
+    dime = db.execute(
+        select(Denomination).where(Denomination.code == "usd_coin_0_10")
+    ).scalar_one()
+
+    silver = db.execute(
+        select(Composition).where(
+            Composition.denomination_id == dime.id,
+            Composition.year_from <= 1963,
+            (Composition.year_to.is_(None)) | (Composition.year_to >= 1963),
+        )
+    ).scalar_one()
+    assert silver.fineness == Decimal("0.9000")
+    assert silver.fine_weight_ozt == Decimal("0.072340")
+
+    # The same denomination two years later is a different composition.
+    clad = db.execute(
+        select(Composition).where(
+            Composition.denomination_id == dime.id,
+            Composition.year_from <= 1965,
+            (Composition.year_to.is_(None)) | (Composition.year_to >= 1965),
+        )
+    ).scalar_one()
+    assert clad.fine_weight_ozt == Decimal("0.000000")
+
+
+# ---------------------------------------------------------------------------
+# Views
+# ---------------------------------------------------------------------------
+
+
+def test_coin_and_currency_views_keep_coins_and_notes_apart(db: Session) -> None:
+    coin = build_bare_item(
+        db, item_kind_id=code_id(db, ItemKind, "coin"), source_title="a coin"
+    )
+    note = build_bare_item(
+        db, item_kind_id=code_id(db, ItemKind, "currency"), source_title="a note"
+    )
+
+    coin_ids = {r[0] for r in db.execute(text("select id from coin_inventory"))}
+    note_ids = {r[0] for r in db.execute(text("select id from currency_inventory"))}
+
+    assert coin.id in coin_ids
+    assert coin.id not in note_ids
+    assert note.id in note_ids
+    assert note.id not in coin_ids
+
+
+@pytest.mark.parametrize("kind", ["bullion", "set", "medal", "token"])
+def test_the_coin_view_holds_every_kind_it_names(db: Session, kind: str) -> None:
+    item = build_bare_item(db, item_kind_id=code_id(db, ItemKind, kind))
+
+    coin_ids = {r[0] for r in db.execute(text("select id from coin_inventory"))}
+    note_ids = {r[0] for r in db.execute(text("select id from currency_inventory"))}
+
+    assert item.id in coin_ids
+    assert item.id not in note_ids
+
+
+@pytest.mark.parametrize("kind", ["other", "unknown"])
+def test_an_item_of_no_settled_kind_is_in_neither_view(db: Session, kind: str) -> None:
+    """The two views do not divide the whole inventory between them.
+
+    `coin_inventory` names its kinds, and `other` and `unknown` are not
+    among them. Anything built on the views must not take their union for
+    the collection.
+    """
+    item = build_bare_item(db, item_kind_id=code_id(db, ItemKind, kind))
+
+    coin_ids = {r[0] for r in db.execute(text("select id from coin_inventory"))}
+    note_ids = {r[0] for r in db.execute(text("select id from currency_inventory"))}
+
+    assert item.id not in coin_ids
+    assert item.id not in note_ids
+
+
+def test_item_valuation_computes_melt_from_the_latest_spot_price(db: Session) -> None:
+    """Melt is a view column precisely because spot moves; the newest quote wins."""
+    silver = db.execute(select(Metal).where(Metal.code == "silver")).scalar_one()
+    db.execute(
+        text(
+            "insert into metal_price (metal_id, quoted_at, price_per_ozt, source) "
+            "values (:m, now() - interval '2 days', 20.0000, 'test')"
+        ),
+        {"m": silver.id},
+    )
+    db.execute(
+        text(
+            "insert into metal_price (metal_id, quoted_at, price_per_ozt, source) "
+            "values (:m, now(), 30.0000, 'test')"
+        ),
+        {"m": silver.id},
+    )
+    db.commit()
+
+    item = build_bare_item(
+        db,
+        metal_id=silver.id,
+        fine_weight_ozt=Decimal("2.000000"),
+        piece_count=3,
+        valuation_basis_id=code_id(db, ValuationBasis, "melt"),
+        item_cost=Decimal("100.00"),
+        shipping_cost=Decimal("0.00"),
+    )
+
+    row = db.execute(
+        text(
+            "select spot_price_used, melt_value, reported_value, profit "
+            "from item_valuation where inventory_item_id = :i"
+        ),
+        {"i": item.id},
+    ).one()
+
+    # The newer quote, not the older one.
+    assert row.spot_price_used == Decimal("30.0000")
+    # 2 ozt * 30 * 3 pieces
+    assert row.melt_value == Decimal("180.00")
+    assert row.reported_value == Decimal("180.00")
+    assert row.profit == Decimal("180.00") - item.total_cost
+
+
+def test_public_catalog_never_exposes_private_columns(db: Session) -> None:
+    """The authorization boundary, asserted against the column list itself.
+
+    A later `select *` in the view would widen it silently; this fails first.
+    """
+    columns = {
+        r[0]
+        for r in db.execute(
+            text(
+                "select column_name from information_schema.columns "
+                "where table_name = 'public_catalog'"
+            )
+        )
+    }
+    # An absent view has no columns, and would pass everything below.
+    assert {"listing_id", "listing_price", "title"} <= columns
+    leaked = columns & PUBLIC_CATALOG_FORBIDDEN_COLUMNS
+    assert not leaked, f"public_catalog exposes private columns: {sorted(leaked)}"
+
+
+def test_public_catalog_shows_only_active_listings(db: Session) -> None:
+    usd = db.execute(select(Currency).where(Currency.code == "USD")).scalar_one()
+    item = build_bare_item(db, source_title="for sale")
+
+    active = Listing(
+        inventory_item_id=item.id,
+        price=Decimal("50.00"),
+        currency_id=usd.id,
+        status=ListingStatus.active,
+        sales_venue_id=store_venue_id(db),
+        quantity_available=1,
+    )
+    ended = Listing(
+        inventory_item_id=item.id,
+        price=Decimal("50.00"),
+        currency_id=usd.id,
+        status=ListingStatus.ended,
+        sales_venue_id=store_venue_id(db),
+        quantity_available=1,
+    )
+    db.add_all([active, ended])
+    db.commit()
+
+    listed = {r[0] for r in db.execute(text("select listing_id from public_catalog"))}
+    assert active.id in listed
+    assert ended.id not in listed
+
+
+def test_a_deleted_item_leaves_every_view(db: Session) -> None:
+    """Soft delete must reach all four views, not only the search.
+
+    A row that is hidden from search but still summed by item_valuation would
+    keep contributing money to a collection that no longer holds it. All four
+    views carry `deleted_at IS NULL`, and this checks each one directly rather
+    than trusting that they agree.
+    """
+    coin = build_bare_item(db, item_cost=Decimal("42.00"))
+    note = build_bare_item(db, item_kind_id=code_id(db, ItemKind, "currency"))
+
+    usd = db.execute(select(Currency).where(Currency.code == "USD")).scalar_one()
+    listing = Listing(
+        inventory_item_id=coin.id,
+        price=Decimal("50.00"),
+        currency_id=usd.id,
+        status=ListingStatus.active,
+        sales_venue_id=store_venue_id(db),
+        quantity_available=1,
+    )
+    db.add(listing)
+    db.commit()
+
+    # item_valuation names the item's id `inventory_item_id`, not `id`;
+    # public_catalog carries no inventory_item_id at all -- see
+    # PUBLIC_CATALOG_FORBIDDEN_COLUMNS -- so it is checked by listing_id.
+    views = (
+        ("coin_inventory", "id", coin.id),
+        ("currency_inventory", "id", note.id),
+        ("item_valuation", "inventory_item_id", coin.id),
+        ("public_catalog", "listing_id", listing.id),
+    )
+
+    for view, id_column, row_id in views:
+        present = db.execute(
+            text(f"SELECT count(*) FROM {view} WHERE {id_column} = :id"),
+            {"id": row_id},
+        ).scalar_one()
+        assert present == 1, f"{view} should show a live row"
+
+    coin.deleted_at = utcnow()
+    note.deleted_at = utcnow()
+    db.commit()
+
+    for view, id_column, row_id in views:
+        present = db.execute(
+            text(f"SELECT count(*) FROM {view} WHERE {id_column} = :id"),
+            {"id": row_id},
+        ).scalar_one()
+        assert present == 0, f"{view} still shows a deleted row"
+
+
+# ---------------------------------------------------------------------------
+# Reference data
+# ---------------------------------------------------------------------------
+
+
+def test_reference_codes_are_unique(db: Session) -> None:
+    db.add(Grade(code="65", label="duplicate"))
+    with pytest.raises(IntegrityError):
+        db.commit()
+    db.rollback()
+
+
+def test_seeded_rows_are_marked_seeded(db: Session) -> None:
+    """The shipped grades carry `source = 'seeded'`.
+
+    Seeded apart from derived is the distinction that makes exporting a
+    catalog to another installation safe: one collection's guesses are not
+    shipped as facts.
+    """
+    # scalar_one(), like the view assertions above: a count query returns
+    # exactly one row, so a missing one is a broken query, not a zero.
+    seeded = db.execute(
+        text("select count(*) from grade where source = 'seeded'")
+    ).scalar_one()
+    assert seeded > 0
+
+
+# ---------------------------------------------------------------------------
+# The permanent item code
+#
+# Its whole value is that it can be cited years later and still mean the same
+# physical object -- on a packing slip, in a return, in an audit.
+# ---------------------------------------------------------------------------
+
+
+def test_every_item_gets_a_code_without_being_asked(db: Session) -> None:
+    item = build_bare_item(db)
+    assert item.item_code
+    assert item.item_code.startswith("CC-")
+
+
+def test_codes_are_unique(db: Session) -> None:
+    first = build_bare_item(db)
+    with pytest.raises(IntegrityError):
+        build_bare_item(db, item_code=first.item_code)
+    db.rollback()
+
+
+def test_a_deleted_items_code_is_never_reissued(db: Session) -> None:
+    """A sequence never goes backwards.
+
+    If a dead item's code could be handed to a later one, every historical
+    reference would become ambiguous.
+    """
+    doomed = build_bare_item(db)
+    code = doomed.item_code
+    db.delete(doomed)
+    db.commit()
+
+    replacement = build_bare_item(db)
+    assert replacement.item_code != code
+
+
+def test_a_code_is_issued_by_the_database_sequence(db: Session) -> None:
+    """The database assigns the code, from a sequence, so inserts cannot collide.
+
+    Two inserts in the same instant cannot compute the same value only
+    because neither computes it: the column's default is `nextval`, and the
+    application sends no code. Twenty in a row, from one session, show the
+    default at work but not the concurrency -- that rests on the sequence.
+    """
+    default = InventoryItem.__table__.c.item_code.server_default
+    assert "nextval('item_code_seq'" in str(getattr(default, "arg", ""))
+    assert InventoryItem.__table__.c.item_code.default is None
+
+    codes = {build_bare_item(db).item_code for _ in range(20)}
+    assert len(codes) == 20
+
+
+# ---------------------------------------------------------------------------
+# Currency plate numbers
+# ---------------------------------------------------------------------------
+
+
+def test_plate_numbers_accept_a_check_letter(db: Session) -> None:
+    """`E82` is a real plate designation: text, not a bare integer.
+
+    Storing it as a number would destroy the check letter irreversibly, the
+    same reasoning `purchase_order.order_number` documents.
+    """
+    item = build_bare_item(db, item_kind_id=code_id(db, ItemKind, "currency"))
+    detail = CurrencyDetail(
+        inventory_item_id=item.id,
+        face_plate_number="E82",
+        back_plate_number="E14",
+        plate_position="A4",
+    )
+    db.add(detail)
+    db.commit()
+    db.expire(detail)
+
+    assert detail.face_plate_number == "E82"
+    assert detail.back_plate_number == "E14"
+    assert detail.plate_position == "A4"
+
+
+# ---------------------------------------------------------------------------
+# Item errors: several per item
+# ---------------------------------------------------------------------------
+
+
+def test_an_item_can_carry_two_different_errors(db: Session) -> None:
+    """A coin can be both a doubled die and struck off center."""
+    item = build_bare_item(db)
+    doubled_die = code_id(db, ErrorType, "doubled_die")
+    off_center = code_id(db, ErrorType, "off_center")
+
+    db.add_all(
+        [
+            ItemError(
+                inventory_item_id=item.id, error_type_id=doubled_die, details="a"
+            ),
+            ItemError(inventory_item_id=item.id, error_type_id=off_center, details="b"),
+        ]
+    )
+    db.commit()
+
+    rows = (
+        db.execute(select(ItemError).where(ItemError.inventory_item_id == item.id))
+        .scalars()
+        .all()
+    )
+    assert {r.error_type_id for r in rows} == {doubled_die, off_center}
+    assert {r.details for r in rows} == {"a", "b"}
+
+
+def test_the_same_error_twice_on_one_item_is_refused(db: Session) -> None:
+    """The unique constraint: the same fact recorded twice, not two facts."""
+    item = build_bare_item(db)
+    error_type = code_id(db, ErrorType, "off_center")
+    db.add(ItemError(inventory_item_id=item.id, error_type_id=error_type))
+    db.commit()
+
+    db.add(ItemError(inventory_item_id=item.id, error_type_id=error_type))
+    with pytest.raises(IntegrityError):
+        db.commit()
+    db.rollback()
+
+
+def test_deleting_an_item_deletes_its_errors(db: Session) -> None:
+    """An error is meaningless without its item -- CASCADE, not RESTRICT."""
+    item = build_bare_item(db)
+    error_type = code_id(db, ErrorType, "off_center")
+    db.add(ItemError(inventory_item_id=item.id, error_type_id=error_type))
+    db.commit()
+
+    db.delete(item)
+    db.commit()
+
+    remaining = (
+        db.execute(select(ItemError).where(ItemError.inventory_item_id == item.id))
+        .scalars()
+        .all()
+    )
+    assert remaining == []

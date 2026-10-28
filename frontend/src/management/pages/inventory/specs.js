@@ -1,0 +1,232 @@
+/**
+ * What each inventory view shows and filters on.
+ *
+ * Separated from the components because three modules import it -- the
+ * inventory page, which hands a view to the table and the filter panel, the
+ * filter panel and the search hook -- and a specification imported in three
+ * places should not live inside any one of them.
+ *
+ * `detail` is shown on a second line under each item, across the columns.
+ * The description is long and read rather than compared, so it takes no
+ * column; that leaves room for the denomination beside the code.
+ *
+ * `searchExamples` are the "Search tips" under the search box, and each one
+ * runs when clicked. The box has no field syntax: one term, matched anywhere
+ * in the title, description, rating, item code or the purchase's order
+ * number, ignoring case -- plus any item whose series, strike, designation,
+ * mint, note type or serial feature is called that, by name or alias
+ * (app.aliases). Each example is chosen for what it teaches. The one most
+ * worth showing is that several words are a single phrase in order:
+ * "1921 morgan" finds items that "morgan 1921" does not.
+ */
+
+/**
+ * Accelerators every view shares. Each view's own filters carry their letter
+ * as the last element of their spec entry, chosen to avoid these; the test
+ * checks each view as a whole for repeats and for D, E and F, which the
+ * browsers keep for the address bar and menus. Year from and Year to match
+ * the item editor's Y and O, so a key means the same thing in both places.
+ */
+export const SHARED_KEYS = {
+  search: 's',
+  tips: 'h',
+  yearFrom: 'y',
+  yearTo: 'o',
+  clear: 'c',
+}
+
+//: The seller's own id for the listing an item was bought from -- eBay's item
+//: number -- matched in part, on both views. It has no letter: every letter
+//: of its label that the browser leaves free is another field's on one view
+//: or the other.
+const SELLERS_ITEM_ID = [
+  "Seller's item id",
+  'sellers_item_id',
+  'eBay item number',
+  null,
+]
+
+//: The number of the purchase an item arrived on, from the seller's receipt
+//: or packing slip, matched in part, on both views. No letter, for the
+//: reason the seller's item id has none.
+const ORDER_NUMBER = ['Order number', 'order_number', '114-4452-X, or 4452', null]
+
+//: What an item carries rather than what it is: a recorded error (off
+//: center, miscut) and an attribute (Star Note, Radar, First Strike). On
+//: both views, each offering only the values some matching item has. No
+//: letter, for the reason the seller's item id has none.
+const CARRIED = [
+  ['Error', 'error_type', 'error_type', null],
+  ['Attribute', 'attribute', 'attribute', null],
+]
+
+export const COIN_VIEW = {
+  view: 'coins',
+  title: 'Coins',
+  columns: [
+    ['Code', 'item_code', 'mono'],
+    ['Denomination', 'denomination_label'],
+    ['Year', 'year_start'],
+    ['Mint', 'mint_mark'],
+    ['Series', 'series_label'],
+    ['Kind', 'item_kind'],
+    ['Grade', 'grade'],
+    ['Metal', 'metal'],
+    ['Fine ozt', 'fine_weight_ozt'],
+    ['Qty', 'piece_count'],
+    ['Cost', 'total_cost', 'money'],
+    ['Order', 'order_number', 'order'],
+    ['Status', 'status'],
+  ],
+  detail: 'description',
+  searchPlaceholder:
+    'Search title, description, rating, item code, order number or a series, strike or mint name, e.g. mercury (tips below)',
+  searchExamples: [
+    // Found mostly through the series nickname, not the listing text.
+    [
+      'mercury',
+      'a series name or nickname: finds Winged Liberty Head dimes even where the listing never says "Mercury"',
+    ],
+    // The mint's name is searched because most listings give only the mint
+    // mark.
+    ['denver', 'a mint, strike or designation by name or alias: proof, deep cameo, PR'],
+    [
+      '1921 morgan',
+      'several words are one phrase, in that order: "morgan 1921" finds nothing',
+    ],
+    ['morgan%1921', '% matches anything in between, so the words can be apart'],
+    ['19_5', '_ matches exactly one character: 1905, 1915 ... 1995'],
+    ['ms65', 'text is matched as written: "ms65" and "ms-65" find different items'],
+    ['cc-0012', 'part of an item code'],
+  ],
+  // The last element of each filter is its Alt+letter accelerator. FilterPanel
+  // uses SHARED_KEYS, above, for the ones common to both views (search, tips,
+  // clear, years); FilterPanel.test.jsx checks every view for repeats, for D/E/F,
+  // and that each letter appears in its label so it can be underlined.
+  // Grade is typed, not picked: 55 is exactly 55, 55+ exactly 55+, 55% both;
+  // BU is 60-62, BU+ 63-64, BU++ 65-66 and BU% all three; MS65 and PR69+
+  // name the strike too (app.grades.search_term). Not matched anywhere in
+  // the value like the other text filters -- a term is a range of grades.
+  textFilters: [
+    ['Item code', 'item_code', 'CC-000123', 'i'],
+    SELLERS_ITEM_ID,
+    ORDER_NUMBER,
+    ['Grade', 'grade', 'a grade, or a range like BU%', 'g'],
+    // A bar's, round's or Goldback's own; no coin holds one.
+    ['Serial number', 'serial_number', "all or part of a bar's serial", 'b'],
+  ],
+  facetFilters: [
+    ['Denomination', 'denomination', 'denomination', 'm'],
+    ['Series', 'series', 'series', 'r'],
+    ['Kind', 'kind', 'item_kind', 'k'],
+    ['Metal', 'metal', 'metal', 'l'],
+    ['Strike type', 'strike_type', 'strike_type', 'p'],
+    ['Mint', 'mint', 'mint_mark', 't'],
+    ['Country', 'country', 'country', 'u'],
+    // A, not U as on the currency view: Country can only take U here.
+    ['Status', 'status', 'status', 'a'],
+    ['Disposition', 'disposition', 'disposition', 'n'],
+    ...CARRIED,
+  ],
+  // Named diagnostics. The code is the contract, appears in bookmarked URLs,
+  // and is what the chip's label is derived from; the explanation on its
+  // tooltip comes from the API's `issue_descriptions`, so a check's reasoning
+  // -- why bullion is excluded, what "malformed" means here -- is written
+  // once on the server rather than copied into this file and left to drift.
+  issueChecks: [
+    'no_year',
+    'no_country',
+    'no_grade',
+    'no_denomination',
+    'no_weight_bullion',
+    'mixed_marker',
+    'zero_cost',
+    'kind_unknown',
+    'repeated_identity',
+  ],
+}
+
+export const CURRENCY_VIEW = {
+  view: 'currency',
+  title: 'Currency',
+  columns: [
+    ['Code', 'item_code', 'mono'],
+    ['Denomination', 'denomination_label'],
+    ['Series name', 'series_label'],
+    ['Series', 'series_designation'],
+    ['Seal', 'seal_color'],
+    ['District', 'fed_district_letter'],
+    ['Serial', 'serial_number', 'mono'],
+    ['Fr#', 'friedberg_number'],
+    // The label, because a note grade's code (`N64`) is not what anyone reads.
+    ['Grade', 'grade_label'],
+    ['Cost', 'total_cost', 'money'],
+    ['Order', 'order_number', 'order'],
+    ['Status', 'status'],
+  ],
+  detail: 'description',
+  // Series names match here too, once app.series_classify has assigned the
+  // note designs (Funnyback, Barr Note, Hawaii, North Africa), and so do note
+  // classes and serial features by name or alias. A note's series year is
+  // its own dropdown.
+  searchPlaceholder:
+    'Search title, description, rating, item code or order number, e.g. funny%back (tips below)',
+  searchExamples: [
+    // The word lives only in the Rating text, spelled "Funnyback" and
+    // "Funny Back"; % is what finds both.
+    ['funny%back', 'the rating is searched too, and % bridges its two spellings'],
+    ['silver certificate', 'several words are one phrase, in that order'],
+    ['1957%silver', '% matches anything in between, so the words can be apart'],
+    // More notes carry the serial feature than listings say it.
+    ['fancy', 'a fancy serial, whether the listing says so or the note records it'],
+    ['error', 'listings that describe an error note'],
+    [
+      'star',
+      'star notes, by listing or by the recorded feature; the Serial number box searches the serial',
+    ],
+    ['cc-0070', 'part of an item code'],
+  ],
+  textFilters: [
+    ['Serial number', 'serial_number', 'B0808450_  (_ = one char, % = any)', 'b'],
+    ['Item code', 'item_code', 'CC-000123', 'i'],
+    SELLERS_ITEM_ID,
+    ORDER_NUMBER,
+    // Typed, as on the coin view: 64, 64%, UNC, UNC%.
+    ['Grade', 'grade', 'a grade, or a range like UNC%', 'g'],
+  ],
+  facetFilters: [
+    ['Denomination', 'denomination', 'denomination', 'm'],
+    ['Series', 'series', 'series', 'r'],
+    ['Note type', 'note_type', 'note_type', 'p'],
+    ['Seal', 'seal_color', 'seal_color', 'l'],
+    ['District', 'fed_district', 'fed_district_letter', 't'],
+    // A is the only free letter in "Series year", so Status takes U here.
+    ['Series year', 'series_year', 'series_year', 'a'],
+    ['Status', 'status', 'status', 'u'],
+    ['Disposition', 'disposition', 'disposition', 'n'],
+    ...CARRIED,
+  ],
+  // Named diagnostics. The code is the contract, appears in bookmarked URLs,
+  // and is what the chip's label is derived from; the explanation on its
+  // tooltip comes from the API's `issue_descriptions`, so a check's reasoning
+  // -- why bullion is excluded, what "malformed" means here -- is written
+  // once on the server rather than copied into this file and left to drift.
+  // kind_unknown is not offered here: CURRENCY_VIEW's own filter requires
+  // k.code = 'currency', so an item of kind 'unknown' can never appear in
+  // this view for the check to find. COIN_VIEW is everything that is not
+  // currency, which is where that check actually lives.
+  issueChecks: [
+    'no_year',
+    'no_country',
+    'no_grade',
+    'no_denomination',
+    'mixed_marker',
+    'zero_cost',
+    'repeated_identity',
+    'star_mismatch',
+    'malformed_serial',
+    'near_duplicate_serial',
+  ],
+}
+
+export const PAGE_SIZE = 50

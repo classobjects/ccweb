@@ -1,0 +1,269 @@
+{
+  "_comment": [
+    "Banknote-specific vocabulary.",
+    "Item attributes, a note's included, are in attribute.json.",
+    "Note types use the Bureau of Engraving and Printing's class names",
+    "(bep.gov/currency/history and /faqs). 'Legal Tender Note' is an alias of",
+    "'United States Note', not a class: BEP uses legal tender for every class",
+    "(31 USC 5103), so it names no class of its own. 'National Currency' is",
+    "the legend printed on National Bank Notes -- and on the Series 1929",
+    "Federal Reserve Bank Notes, so it is a nickname of both.",
+    "",
+    "reference_alias: other names for a row of any table here, matched by",
+    "search and the pickers. {table, code, alias}."
+  ],
+  "note_type": [
+    {
+      "code": "frn",
+      "label": "Federal Reserve Note",
+      "sort_order": 10
+    },
+    {
+      "code": "silver_certificate",
+      "label": "Silver Certificate",
+      "sort_order": 20
+    },
+    {
+      "code": "us_note",
+      "label": "United States Note",
+      "sort_order": 30
+    },
+    {
+      "code": "gold_certificate",
+      "label": "Gold Certificate",
+      "sort_order": 40
+    },
+    {
+      "code": "national_bank_note",
+      "label": "National Bank Note",
+      "sort_order": 50
+    },
+    {
+      "code": "frbn",
+      "label": "Federal Reserve Bank Note",
+      "sort_order": 70
+    },
+    {
+      "code": "fractional",
+      "label": "Fractional Currency",
+      "sort_order": 80
+    },
+    {
+      "code": "demand_note",
+      "label": "Demand Note",
+      "sort_order": 90
+    },
+    {
+      "code": "treasury_note",
+      "label": "Treasury Note",
+      "sort_order": 100
+    }
+  ],
+  "seal_color": [
+    {
+      "code": "blue",
+      "label": "Blue Seal",
+      "sort_order": 10
+    },
+    {
+      "code": "red",
+      "label": "Red Seal",
+      "sort_order": 20
+    },
+    {
+      "code": "brown",
+      "label": "Brown Seal",
+      "sort_order": 30
+    },
+    {
+      "code": "green",
+      "label": "Green Seal",
+      "sort_order": 40
+    },
+    {
+      "code": "gold",
+      "label": "Gold Seal",
+      "sort_order": 50
+    },
+    {
+      "code": "yellow",
+      "label": "Yellow Seal",
+      "sort_order": 60
+    }
+  ],
+  "fed_district": [
+    {
+      "code": "A",
+      "label": "A - Boston",
+      "letter": "A",
+      "city": "Boston",
+      "number": 1,
+      "sort_order": 1
+    },
+    {
+      "code": "B",
+      "label": "B - New York",
+      "letter": "B",
+      "city": "New York",
+      "number": 2,
+      "sort_order": 2
+    },
+    {
+      "code": "C",
+      "label": "C - Philadelphia",
+      "letter": "C",
+      "city": "Philadelphia",
+      "number": 3,
+      "sort_order": 3
+    },
+    {
+      "code": "D",
+      "label": "D - Cleveland",
+      "letter": "D",
+      "city": "Cleveland",
+      "number": 4,
+      "sort_order": 4
+    },
+    {
+      "code": "E",
+      "label": "E - Richmond",
+      "letter": "E",
+      "city": "Richmond",
+      "number": 5,
+      "sort_order": 5
+    },
+    {
+      "code": "F",
+      "label": "F - Atlanta",
+      "letter": "F",
+      "city": "Atlanta",
+      "number": 6,
+      "sort_order": 6
+    },
+    {
+      "code": "G",
+      "label": "G - Chicago",
+      "letter": "G",
+      "city": "Chicago",
+      "number": 7,
+      "sort_order": 7
+    },
+    {
+      "code": "H",
+      "label": "H - St. Louis",
+      "letter": "H",
+      "city": "St. Louis",
+      "number": 8,
+      "sort_order": 8
+    },
+    {
+      "code": "I",
+      "label": "I - Minneapolis",
+      "letter": "I",
+      "city": "Minneapolis",
+      "number": 9,
+      "sort_order": 9
+    },
+    {
+      "code": "J",
+      "label": "J - Kansas City",
+      "letter": "J",
+      "city": "Kansas City",
+      "number": 10,
+      "sort_order": 10
+    },
+    {
+      "code": "K",
+      "label": "K - Dallas",
+      "letter": "K",
+      "city": "Dallas",
+      "number": 11,
+      "sort_order": 11
+    },
+    {
+      "code": "L",
+      "label": "L - San Francisco",
+      "letter": "L",
+      "city": "San Francisco",
+      "number": 12,
+      "sort_order": 12
+    }
+  ],
+  "reference_alias": [
+    {
+      "table": "note_type",
+      "code": "us_note",
+      "alias": "Legal Tender Note"
+    },
+    {
+      "table": "note_type",
+      "code": "us_note",
+      "alias": "Legal Tender"
+    },
+    {
+      "table": "note_type",
+      "code": "national_bank_note",
+      "alias": "National Currency"
+    },
+    {
+      "table": "note_type",
+      "code": "national_bank_note",
+      "alias": "National Banknote"
+    },
+    {
+      "table": "note_type",
+      "code": "frbn",
+      "alias": "National Currency"
+    },
+    {
+      "table": "note_type",
+      "code": "treasury_note",
+      "alias": "Coin Note"
+    },
+    {
+      "table": "note_type",
+      "code": "treasury_note",
+      "alias": "Treasury Coin Note"
+    },
+    {
+      "table": "note_type",
+      "code": "frn",
+      "alias": "FRN"
+    },
+    {
+      "table": "note_type",
+      "code": "frbn",
+      "alias": "FRBN"
+    },
+    {
+      "table": "note_type",
+      "code": "silver_certificate",
+      "alias": "Silver Cert"
+    },
+    {
+      "table": "note_type",
+      "code": "gold_certificate",
+      "alias": "Gold Cert"
+    },
+    {
+      "table": "note_type",
+      "code": "frbn",
+      "alias": "Federal Reserve Bank"
+    },
+    {
+      "table": "note_type",
+      "code": "frbn",
+      "alias": "Fed Res"
+    },
+    {
+      "table": "note_type",
+      "code": "national_bank_note",
+      "alias": "National"
+    },
+    {
+      "table": "note_type",
+      "code": "national_bank_note",
+      "alias": "Natl"
+    }
+  ]
+}

@@ -1,0 +1,286 @@
+"""GET/PUT /inventory/{item_id}/errors -- replacing an item's whole error set.
+
+An item may carry more than one mint or printing error -- miscut and
+overprint are routinely found on the same bill -- which is exactly what a
+single `error_type_id` foreign key could not express. These tests exercise
+the join table end to end: two errors on one item, the request check that
+refuses the same one twice, and the replace semantics of the write endpoint.
+"""
+
+from __future__ import annotations
+
+from app.models import ErrorType, InventoryItem, ItemError, User
+from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
+
+from tests.builders import build_bare_item, code_id
+
+
+def _errors_of(db: Session, item: InventoryItem) -> set[int]:
+    """The ids of the error types the item now holds, read afresh."""
+    db.expire_all()
+    return {
+        row.error_type_id
+        for row in db.query(ItemError)
+        .filter(ItemError.inventory_item_id == item.id)
+        .all()
+    }
+
+
+# ---------------------------------------------------------------------------
+# GET /inventory/{item_id}/errors
+# ---------------------------------------------------------------------------
+
+
+def test_get_errors_is_empty_for_an_unremarkable_item(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    item = build_bare_item(db)
+    resp = client.get(f"/api/inventory/{item.id}/errors", headers=admin_headers)
+    assert resp.status_code == 200, resp.text
+    assert resp.json() == {"inventory_item_id": item.id, "errors": []}
+
+
+def test_get_errors_requires_an_administrator(
+    client: TestClient, customer_headers: dict[str, str], db: Session
+) -> None:
+    item = build_bare_item(db)
+    resp = client.get(f"/api/inventory/{item.id}/errors", headers=customer_headers)
+    assert resp.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# PUT /inventory/{item_id}/errors -- replacing the whole set
+# ---------------------------------------------------------------------------
+
+
+def test_two_errors_round_trip(
+    client: TestClient,
+    admin_headers: dict[str, str],
+    admin_user: User,
+    db: Session,
+) -> None:
+    """Doubled die and off center on one coin: both survive, each with its own note."""
+    item = build_bare_item(db)
+
+    resp = client.put(
+        f"/api/inventory/{item.id}/errors",
+        json={
+            "errors": [
+                {"error_type": "doubled_die", "details": "strong doubling on LIBERTY"},
+                {"error_type": "off_center", "details": "struck 10% off center"},
+            ]
+        },
+        headers=admin_headers,
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["inventory_item_id"] == item.id
+    by_type = {e["error_type"]: e for e in body["errors"]}
+    assert set(by_type) == {"doubled_die", "off_center"}
+    assert by_type["doubled_die"]["details"] == "strong doubling on LIBERTY"
+    assert by_type["off_center"]["details"] == "struck 10% off center"
+    assert all(e["source"] == "manual" for e in body["errors"])
+    assert all(e["noted_by_id"] == admin_user.id for e in body["errors"])
+    assert all(e["noted_at"] for e in body["errors"])
+
+    # And it is what is actually in the database, not just what the response
+    # claims.
+    stored = _errors_of(db, item)
+    assert stored == {
+        code_id(db, ErrorType, "doubled_die"),
+        code_id(db, ErrorType, "off_center"),
+    }
+
+    # A second GET sees the same set.
+    got = client.get(f"/api/inventory/{item.id}/errors", headers=admin_headers)
+    assert {e["error_type"] for e in got.json()["errors"]} == {
+        "doubled_die",
+        "off_center",
+    }
+
+
+def test_put_replaces_rather_than_adds(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    """A second PUT with a different set discards the first, entirely."""
+    item = build_bare_item(db)
+    client.put(
+        f"/api/inventory/{item.id}/errors",
+        json={"errors": [{"error_type": "doubled_die"}]},
+        headers=admin_headers,
+    )
+
+    resp = client.put(
+        f"/api/inventory/{item.id}/errors",
+        json={"errors": [{"error_type": "off_center"}]},
+        headers=admin_headers,
+    )
+    assert resp.status_code == 200, resp.text
+    assert {e["error_type"] for e in resp.json()["errors"]} == {"off_center"}
+    assert _errors_of(db, item) == {code_id(db, ErrorType, "off_center")}
+
+
+def test_put_with_an_empty_list_clears_every_error(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    item = build_bare_item(db)
+    client.put(
+        f"/api/inventory/{item.id}/errors",
+        json={"errors": [{"error_type": "doubled_die"}]},
+        headers=admin_headers,
+    )
+
+    resp = client.put(
+        f"/api/inventory/{item.id}/errors",
+        json={"errors": []},
+        headers=admin_headers,
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["errors"] == []
+    assert _errors_of(db, item) == set()
+
+
+def test_an_unknown_error_type_is_422(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    item = build_bare_item(db)
+    resp = client.put(
+        f"/api/inventory/{item.id}/errors",
+        json={"errors": [{"error_type": "not_a_real_error"}]},
+        headers=admin_headers,
+    )
+    assert resp.status_code == 422, resp.text
+
+
+def test_the_same_error_type_twice_in_one_request_is_422(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    """The same error twice is one fact, not two -- caught before it reaches SQL."""
+    item = build_bare_item(db)
+    resp = client.put(
+        f"/api/inventory/{item.id}/errors",
+        json={
+            "errors": [
+                {"error_type": "doubled_die", "details": "a"},
+                {"error_type": "doubled_die", "details": "b"},
+            ]
+        },
+        headers=admin_headers,
+    )
+    assert resp.status_code == 422, resp.text
+
+
+def test_set_errors_requires_an_administrator(
+    client: TestClient, customer_headers: dict[str, str], db: Session
+) -> None:
+    item = build_bare_item(db)
+    resp = client.put(
+        f"/api/inventory/{item.id}/errors",
+        json={"errors": []},
+        headers=customer_headers,
+    )
+    assert resp.status_code == 403
+
+
+def test_unknown_item_is_404(client: TestClient, admin_headers: dict[str, str]) -> None:
+    resp = client.put(
+        "/api/inventory/999999/errors",
+        json={"errors": []},
+        headers=admin_headers,
+    )
+    assert resp.status_code == 404
+
+
+def test_a_changed_error_set_moves_the_item_s_version(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    """Errors are another table, and an open editor watches the version alone.
+
+    The same set sent again changes nothing, and so moves nothing.
+    """
+    item = build_bare_item(db)
+    path = f"/api/inventory/{item.id}"
+    opened = client.get(path, headers=admin_headers).json()["version"]
+    body = {"errors": [{"error_type": "doubled_die", "details": "on LIBERTY"}]}
+
+    assert client.put(f"{path}/errors", json=body, headers=admin_headers).is_success
+    assert client.get(path, headers=admin_headers).json()["version"] == opened + 1
+
+    assert client.put(f"{path}/errors", json=body, headers=admin_headers).is_success
+    assert client.get(path, headers=admin_headers).json()["version"] == opened + 1
+
+
+def test_an_unknown_field_in_the_request_is_refused(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    """A misspelt field is a 422, not a set saved without what it meant."""
+    item = build_bare_item(db)
+    url = f"/api/inventory/{item.id}/errors"
+    entry = {"error_type": "doubled_die"}
+
+    for body in (
+        {"errors": [entry], "acknowledge_forsale": True},
+        {"errors": [{**entry, "detail": "strong doubling"}]},
+    ):
+        resp = client.put(url, json=body, headers=admin_headers)
+        assert resp.status_code == 422, resp.text
+
+    assert _errors_of(db, item) == set()
+
+
+def test_a_save_from_a_stale_set_is_refused_and_keeps_the_other_change(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    """Two editors read the same set; the first saves an addition, then the second."""
+    item = build_bare_item(db)
+    url = f"/api/inventory/{item.id}/errors"
+    read = [{"error_type": "doubled_die", "details": None}]
+    assert client.put(url, json={"errors": read}, headers=admin_headers).is_success
+    first = [*read, {"error_type": "off_center", "details": None}]
+    assert client.put(
+        url, json={"errors": first, "base": read}, headers=admin_headers
+    ).is_success
+
+    second = [*read, {"error_type": "die_crack", "details": None}]
+    refused = client.put(
+        url, json={"errors": second, "base": read}, headers=admin_headers
+    )
+
+    assert refused.status_code == 409, refused.text
+    assert "changed by someone else" in refused.json()["detail"]
+    assert _errors_of(db, item) == {
+        code_id(db, ErrorType, "doubled_die"),
+        code_id(db, ErrorType, "off_center"),
+    }
+
+
+def test_a_stale_set_that_already_matches_what_is_sent_is_saved(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    """Both editors made the same change: there is nothing to lose."""
+    item = build_bare_item(db)
+    url = f"/api/inventory/{item.id}/errors"
+    wanted = [{"error_type": "off_center", "details": None}]
+    assert client.put(url, json={"errors": wanted}, headers=admin_headers).is_success
+
+    saved = client.put(url, json={"errors": wanted, "base": []}, headers=admin_headers)
+
+    assert saved.status_code == 200, saved.text
+
+
+def test_without_a_base_a_save_replaces_whatever_is_there(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    """A caller that sends no base has asked for the replace, and gets it."""
+    item = build_bare_item(db)
+    url = f"/api/inventory/{item.id}/errors"
+    body = {"errors": [{"error_type": "off_center"}]}
+    assert client.put(url, json=body, headers=admin_headers).is_success
+
+    replaced = client.put(
+        url, json={"errors": [{"error_type": "die_crack"}]}, headers=admin_headers
+    )
+
+    assert replaced.status_code == 200, replaced.text
+    assert _errors_of(db, item) == {code_id(db, ErrorType, "die_crack")}

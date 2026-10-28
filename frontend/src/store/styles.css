@@ -1,0 +1,190 @@
+/* --- typography --------------------------------------------------------- */
+.small {
+  font-size: 13px;
+}
+
+.price {
+  font-weight: 600;
+  margin: 6px 0 2px;
+}
+
+.price.large {
+  font-size: 22px;
+}
+
+/* --- layout helpers ----------------------------------------------------- */
+.grow {
+  flex: 1;
+}
+
+/* --- catalog ------------------------------------------------------------ */
+.filters {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+
+.filters input[type='search'] {
+  flex: 1;
+  min-width: 200px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 16px;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+}
+
+.card h3 {
+  margin: 0 0 4px;
+  font-size: 15px;
+}
+
+.card h3 a {
+  text-decoration: none;
+  color: var(--text);
+}
+
+/* A card's thumbnail: a fixed aspect box so a grid of mixed portrait and
+   landscape photographs still lines up, and so cards do not jump as images
+   load. */
+.card-thumb {
+  display: block;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+
+.card-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.card-thumb-empty {
+  background: repeating-linear-gradient(
+    45deg,
+    var(--bg),
+    var(--bg) 10px,
+    var(--surface) 10px,
+    var(--surface) 20px
+  );
+}
+
+/* --- detail ------------------------------------------------------------- */
+.specs {
+  border-collapse: collapse;
+  margin: 16px 0;
+}
+
+.specs th,
+.specs td {
+  text-align: left;
+  padding: 5px 20px 5px 0;
+  border-bottom: 1px solid var(--border);
+  font-weight: 400;
+}
+
+.specs th {
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.detail-image {
+  max-width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+/* What is in a lot: one row per coin, each with its own photograph.
+   A fixed thumbnail box for the same reason the catalog grid has one --
+   mixed portrait and landscape photographs still line up, and the rows do
+   not jump about as the images load. */
+.lot-member-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.lot-member-list li {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.lot-member-list li:last-child {
+  border-bottom: none;
+}
+
+.lot-member-list img {
+  width: 96px;
+  height: 72px;
+  object-fit: contain;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  flex: none;
+}
+
+.lot-member-list p {
+  margin: 0.2rem 0 0;
+}
+
+/* --- cart --------------------------------------------------------------- */
+.qty {
+  width: 70px;
+}
+
+/* --- orders ------------------------------------------------------------- */
+.order {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+  margin-bottom: 16px;
+}
+
+.order header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.status {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  text-transform: capitalize;
+}
+
+.status-paid,
+.status-shipped {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.status-cancelled {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.seal {
+  margin-top: 12px;
+}

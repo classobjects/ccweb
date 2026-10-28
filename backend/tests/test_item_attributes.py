@@ -1,0 +1,399 @@
+"""Item attributes: coins and notes, derived and set by hand, and removal.
+
+docs/specs/item-attributes-design.md, section 2. The attribute vocabulary is
+seeded, so these read it.
+"""
+
+from __future__ import annotations
+
+from decimal import Decimal
+
+from app import aliases
+from app.inventory_search import COIN_VIEW, CURRENCY_VIEW, search
+from app.models import (
+    CurrencyDetail,
+    InventoryItem,
+    ItemAttribute,
+    ItemAttributeLink,
+    ProvenanceSource,
+)
+from app.serial_patterns import run as run_serial_patterns
+from fastapi.testclient import TestClient
+from httpx import Response
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from tests.builders import ItemFactory, patch_current
+
+#: A star and nothing else: no ladder, repeater or fancy digits.
+STAR_SERIAL = "A38164927*"
+
+
+def _attribute(db: Session, code: str) -> ItemAttribute:
+    """The attribute with this code."""
+    return db.execute(
+        select(ItemAttribute).where(ItemAttribute.code == code)
+    ).scalar_one()
+
+
+def _note(
+    db: Session, make_item: ItemFactory, serial: str | None = None
+) -> InventoryItem:
+    """A bought banknote with this serial number, its words naming no attribute."""
+    note = make_item(
+        kind="currency",
+        description="plain",
+        grade_id=None,
+        strike_type_id=None,
+        item_cost=Decimal("5.00"),
+    )
+    db.add(CurrencyDetail(inventory_item_id=note.id, serial_number=serial))
+    db.commit()
+    return note
+
+
+def _coin(make_item: ItemFactory) -> InventoryItem:
+    """A bought coin whose words name no attribute."""
+    return make_item(description="plain", item_cost=Decimal("5.00"))
+
+
+def _link(db: Session, item: InventoryItem, code: str) -> ItemAttributeLink | None:
+    """The row that gives the item this attribute, or None when it has none."""
+    return db.scalar(
+        select(ItemAttributeLink).where(
+            ItemAttributeLink.inventory_item_id == item.id,
+            ItemAttributeLink.item_attribute_id == _attribute(db, code).id,
+        )
+    )
+
+
+def _detail(client: TestClient, headers: dict[str, str], item: InventoryItem) -> dict:
+    """The item as its detail route returns it."""
+    return client.get(f"/api/inventory/{item.id}", headers=headers).json()
+
+
+def _set(
+    client: TestClient,
+    headers: dict[str, str],
+    item: InventoryItem,
+    codes: list[str] | None,
+    **extra: object,
+) -> Response:
+    """The response to a person setting the item's attributes to these codes."""
+    return patch_current(
+        client,
+        f"/api/inventory/{item.id}",
+        json={"attributes": codes, **extra},
+        headers=headers,
+    )
+
+
+def _codes(body: dict) -> list[str]:
+    """The attribute codes in an item's detail, in the order returned."""
+    return [a["code"] for a in body["attributes"]]
+
+
+# --- the vocabulary ---------------------------------------------------------------
+
+
+def test_the_note_attributes_kept_their_codes_and_gained_a_group(db: Session) -> None:
+    star = _attribute(db, "star")
+    assert (star.label, star.applies_to.value, star.attribute_group.value) == (
+        "Star Note",
+        "currency",
+        "serial",
+    )
+    assert _attribute(db, "web_press").attribute_group.value == "variety"
+
+
+def test_coins_have_attributes_too(db: Session) -> None:
+    for code, applies_to, group in (
+        ("first_strike", "coin", "release"),
+        ("cac", "coin", "verification"),
+        ("no_motto", "any", "variety"),
+        ("genuine", "any", "qualifier"),
+    ):
+        row = _attribute(db, code)
+        assert (row.applies_to.value, row.attribute_group.value) == (applies_to, group)
+
+
+def test_the_owners_words_are_aliases(db: Session) -> None:
+    no_motto = _attribute(db, "no_motto").id
+    assert aliases.resolve(db, ItemAttribute, "No God") == aliases.Resolved(
+        no_motto, "alias"
+    )
+    assert aliases.resolve(db, ItemAttribute, "godless") == aliases.Resolved(
+        no_motto, "alias"
+    )
+
+
+# --- reading ----------------------------------------------------------------------
+
+
+def test_the_detail_lists_attributes_with_where_they_came_from(
+    db: Session,
+    make_item: ItemFactory,
+    client: TestClient,
+    admin_headers: dict[str, str],
+) -> None:
+    note = _note(db, make_item, STAR_SERIAL)
+    run_serial_patterns(db, commit=True)
+
+    body = _detail(client, admin_headers, note)
+    assert body["attributes"] == [
+        {
+            "code": "star",
+            "label": "Star Note",
+            "group": "serial",
+            "source": "derived",
+            "derived_by": "serial_pattern",
+        }
+    ]
+
+
+# --- setting ----------------------------------------------------------------------
+
+
+def test_a_person_sets_a_coins_attributes(
+    db: Session,
+    make_item: ItemFactory,
+    client: TestClient,
+    admin_headers: dict[str, str],
+    admin_user: object,
+) -> None:
+    coin = _coin(make_item)
+    before = _detail(client, admin_headers, coin)["version"]
+
+    response = _set(
+        client,
+        admin_headers,
+        coin,
+        ["first_strike", "cac"],
+        version=before,
+    )
+    assert response.status_code == 200
+    body = _detail(client, admin_headers, coin)
+    # Vocabulary order, not the order sent.
+    assert _codes(body) == ["first_strike", "cac"]
+    assert {a["source"] for a in body["attributes"]} == {"manual"}
+    link = _link(db, coin, "cac")
+    assert link is not None and link.noted_by_id == admin_user.id  # type: ignore[attr-defined]
+    # Only the links changed, and the item's version still moved.
+    assert body["version"] == before + 1
+
+
+def test_a_stale_form_cannot_put_the_old_attributes_back(
+    make_item: ItemFactory, client: TestClient, admin_headers: dict[str, str]
+) -> None:
+    coin = _coin(make_item)
+    version = _detail(client, admin_headers, coin)["version"]
+    assert (
+        _set(client, admin_headers, coin, ["cac"], version=version).status_code == 200
+    )
+
+    stale = _set(client, admin_headers, coin, [], version=version)
+    assert stale.status_code == 409
+    assert _codes(_detail(client, admin_headers, coin)) == ["cac"]
+
+
+def test_saving_the_same_attributes_changes_nothing(
+    make_item: ItemFactory, client: TestClient, admin_headers: dict[str, str]
+) -> None:
+    coin = _coin(make_item)
+    _set(client, admin_headers, coin, ["cac"])
+    version = _detail(client, admin_headers, coin)["version"]
+    _set(client, admin_headers, coin, ["cac"])
+    assert _detail(client, admin_headers, coin)["version"] == version
+
+
+def test_a_removed_derived_attribute_stays_removed(
+    db: Session,
+    make_item: ItemFactory,
+    client: TestClient,
+    admin_headers: dict[str, str],
+) -> None:
+    note = _note(db, make_item, STAR_SERIAL)
+    run_serial_patterns(db, commit=True)
+
+    assert _set(client, admin_headers, note, []).status_code == 200
+    stats, _ = run_serial_patterns(db, commit=True)
+
+    assert stats["already:star"] == 1
+    assert "written" not in stats
+    assert _codes(_detail(client, admin_headers, note)) == []
+    link = _link(db, note, "star")
+    assert link is not None and link.removed_at is not None
+    rows, _ = search(db, CURRENCY_VIEW, params={}, query="star note")
+    assert note.item_code not in {r["item_code"] for r in rows}
+    rows, _ = search(db, CURRENCY_VIEW, params={"attribute": "star"})
+    assert note.item_code not in {r["item_code"] for r in rows}
+
+
+def test_setting_a_removed_attribute_again_makes_it_the_persons(
+    db: Session,
+    make_item: ItemFactory,
+    client: TestClient,
+    admin_headers: dict[str, str],
+) -> None:
+    note = _note(db, make_item, STAR_SERIAL)
+    run_serial_patterns(db, commit=True)
+    assert _set(client, admin_headers, note, []).status_code == 200
+    assert _set(client, admin_headers, note, ["star"]).status_code == 200
+
+    # A person chose it, so no rule may take it back as its own.
+    body = _detail(client, admin_headers, note)
+    held = [(a["code"], a["source"], a["derived_by"]) for a in body["attributes"]]
+    assert held == [("star", "manual", None)]
+    # And removing it a second time still holds.
+    _set(client, admin_headers, note, [])
+    run_serial_patterns(db, commit=True)
+    assert _codes(_detail(client, admin_headers, note)) == []
+
+
+def test_an_attribute_a_person_added_and_removed_is_not_derived_back(
+    db: Session,
+    make_item: ItemFactory,
+    client: TestClient,
+    admin_headers: dict[str, str],
+) -> None:
+    note = _note(db, make_item, STAR_SERIAL)
+    _set(client, admin_headers, note, ["star"])
+    _set(client, admin_headers, note, [])
+    run_serial_patterns(db, commit=True)
+    assert _codes(_detail(client, admin_headers, note)) == []
+
+
+def test_a_designation_a_corrected_serial_no_longer_earns_is_taken_back(
+    db: Session, make_item: ItemFactory
+) -> None:
+    """The pass takes back what it derived, and nothing a person set."""
+    radar = "A12344321B"
+    corrected = _note(db, make_item, radar)
+    unchanged = _note(db, make_item, radar)
+    by_hand = _note(db, make_item, "A38164927B")
+    db.add(
+        ItemAttributeLink(
+            inventory_item_id=by_hand.id,
+            item_attribute_id=_attribute(db, "radar").id,
+            source=ProvenanceSource.manual,
+        )
+    )
+    db.commit()
+    run_serial_patterns(db, commit=True)
+    assert _link(db, corrected, "radar") is not None
+    assert _link(db, corrected, "fancy_serial") is not None
+
+    detail = db.execute(
+        select(CurrencyDetail).where(CurrencyDetail.inventory_item_id == corrected.id)
+    ).scalar_one()
+    detail.serial_number = "A12344322B"
+    db.commit()
+
+    # A report touches nothing.
+    run_serial_patterns(db, commit=False)
+    db.expire_all()
+    assert _link(db, corrected, "radar") is not None
+
+    run_serial_patterns(db, commit=True)
+    db.expire_all()
+    assert _link(db, corrected, "radar") is None
+    assert _link(db, corrected, "fancy_serial") is None
+    # The serial that still earns it keeps it, and so does a person's link.
+    assert _link(db, unchanged, "radar") is not None
+    assert _link(db, by_hand, "radar") is not None
+
+
+def test_an_attribute_for_the_other_kind_of_item_is_refused(
+    db: Session,
+    make_item: ItemFactory,
+    client: TestClient,
+    admin_headers: dict[str, str],
+) -> None:
+    coin = _coin(make_item)
+    note = _note(db, make_item)
+
+    on_coin = _set(client, admin_headers, coin, ["cac", "star"])
+    assert on_coin.status_code == 422
+    assert "Not an attribute of a coin: ['star']" in on_coin.json()["detail"]
+    on_note = _set(client, admin_headers, note, ["first_strike"])
+    assert on_note.status_code == 422
+    # Nothing half-applied.
+    assert _codes(_detail(client, admin_headers, coin)) == []
+    # "any" fits both.
+    assert _set(client, admin_headers, coin, ["no_motto"]).status_code == 200
+    assert _set(client, admin_headers, note, ["no_motto"]).status_code == 200
+
+
+def test_a_kind_changed_in_the_same_save_decides_what_fits(
+    make_item: ItemFactory, client: TestClient, admin_headers: dict[str, str]
+) -> None:
+    coin = _coin(make_item)
+    response = _set(client, admin_headers, coin, ["star"], item_kind="currency")
+    assert response.status_code == 200
+    assert _codes(_detail(client, admin_headers, coin)) == ["star"]
+
+
+def test_nonsense_attributes_are_refused(
+    make_item: ItemFactory, client: TestClient, admin_headers: dict[str, str]
+) -> None:
+    coin = _coin(make_item)
+    assert _set(client, admin_headers, coin, ["no_such"]).status_code == 422
+    assert _set(client, admin_headers, coin, None).status_code == 422
+    assert _set(client, admin_headers, coin, ["cac", "cac"]).status_code == 422
+
+
+def test_bulk_edit_does_not_set_attributes(
+    make_item: ItemFactory, client: TestClient, admin_headers: dict[str, str]
+) -> None:
+    coin = _coin(make_item)
+    response = client.post(
+        "/api/inventory/bulk",
+        json={"ids": [coin.id], "changes": {"attributes": ["cac"]}},
+        headers=admin_headers,
+    )
+    assert response.status_code == 422
+    assert "one item at a time" in response.json()["detail"]
+
+
+# --- search -----------------------------------------------------------------------
+
+
+def test_search_finds_an_item_by_attribute_name_alias_or_filter(
+    db: Session,
+    make_item: ItemFactory,
+    client: TestClient,
+    admin_headers: dict[str, str],
+) -> None:
+    coin = _coin(make_item)
+    note = _note(db, make_item)
+    _set(client, admin_headers, coin, ["first_strike"])
+    _set(client, admin_headers, note, ["no_motto"])
+
+    def found(view: object, **kwargs: object) -> set[str]:
+        """The item codes a search of the view returns."""
+        rows, _ = search(db, view, **kwargs)  # type: ignore[arg-type]
+        return {r["item_code"] for r in rows}
+
+    assert coin.item_code in found(COIN_VIEW, params={}, query="first strike")
+    assert found(COIN_VIEW, params={"attribute": "first_strike"}) == {coin.item_code}
+    assert note.item_code in found(CURRENCY_VIEW, params={}, query="godless")
+    assert found(CURRENCY_VIEW, params={"attribute": "no_motto"}) == {note.item_code}
+
+
+def test_a_removed_star_no_longer_disagrees_with_a_plain_serial(
+    db: Session,
+    make_item: ItemFactory,
+    client: TestClient,
+    admin_headers: dict[str, str],
+) -> None:
+    note = _note(db, make_item, "A38164927B")
+
+    def flagged() -> bool:
+        """Whether the star-mismatch check lists the note."""
+        rows, _ = search(db, CURRENCY_VIEW, params={"issue": "star_mismatch"})
+        return note.item_code in {r["item_code"] for r in rows}
+
+    _set(client, admin_headers, note, ["star"])
+    assert flagged()
+    _set(client, admin_headers, note, [])
+    assert not flagged()

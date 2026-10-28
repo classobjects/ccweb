@@ -1,0 +1,154 @@
+"""The only writers of an item's status and location.
+
+Both columns have a history table beside them, and both tables exist so a
+later correction cannot erase what actually happened -- `lifecycle.py` says
+so: "History is a table rather than overwritten columns, so that 'when did
+this actually arrive' survives a later correction to the status."
+
+That promise holds only if nothing assigns the column without writing the
+row. A helper some callers use is a convention; a helper that is the only way
+to reach the column is a property of the code. Assign `item.status_id` or
+`item.storage_location_id` anywhere else and the history silently stops being
+true.
+
+Two different facts are recorded here. `set_status` and `set_location` record
+*changes* to a column that already holds a value. `record_initial_status`
+records the opposite fact: that an item has just come into existence and
+therefore has never had a status before. Every path that creates an
+`InventoryItem` calls it, so the invariant holds from row one: every item has
+a history, and that history's first row has `from_status_id = NULL`.
+"""
+
+from __future__ import annotations
+
+from datetime import UTC, date, datetime
+
+from sqlalchemy.orm import Session
+
+from .models import InventoryItem, ItemStatusHistory, LocationHistory
+
+__all__ = ["record_initial_status", "set_location", "set_status"]
+
+
+def record_initial_status(
+    session: Session,
+    item: InventoryItem,
+    *,
+    user_id: int | None = None,
+    note: str | None = None,
+) -> None:
+    """Record the opening row for a newly created item.
+
+    A new item has no status before it has one, so this is not a transition
+    -- `from_status_id` is NULL, which is how the schema itself says "there
+    was nothing before this." `set_status` no-ops when the status is
+    unchanged, and a freshly created item already has `status_id` set, so it
+    would never fire here; an opening row and a transition are different
+    facts, each with its own function.
+    """
+    if item.id is None:
+        # See the matching guard in set_status: a caller may build an item
+        # and open its history in the same breath, before anything has
+        # flushed.
+        session.flush()
+
+    session.add(
+        ItemStatusHistory(
+            inventory_item_id=item.id,
+            from_status_id=None,
+            to_status_id=item.status_id,
+            changed_at=datetime.now(UTC),
+            changed_by_id=user_id,
+            note=note,
+        )
+    )
+
+
+def set_status(
+    session: Session,
+    item: InventoryItem,
+    to_status_id: int,
+    *,
+    user_id: int | None = None,
+    note: str | None = None,
+    arrived_on: date | None = None,
+) -> None:
+    """Change an item's status and record that it changed.
+
+    A no-op when the status already matches: re-asserting a value is not a
+    transition, and a history full of non-events buries the real ones.
+
+    ``arrived_on`` is the date the thing physically turned up, which is not
+    the same as ``changed_at`` -- see the column's note.
+
+    Returns nothing, but is **order-critical**: it assigns `item.status_id`
+    without flushing, so a caller that then invokes a writer which re-reads
+    that row with `populate_existing` loses the assignment. Flush between.
+    `routers.inventory._end_offers_holding` flushes for this reason, on
+    behalf of `receive_items`, `bulk_edit` and `update_item`;
+    `splitting.split_item` flushes its `split_at` assignment for the same
+    one. Production runs `autoflush=False` while the test suite does not --
+    so the suite cannot see the difference.
+    """
+    if item.status_id == to_status_id:
+        return
+
+    if item.id is None:
+        # An unpersisted item has no id yet, and a NULL inventory_item_id
+        # would either violate the NOT NULL constraint or, worse, attach this
+        # row to nothing. Flushing assigns the id from the database's
+        # sequence without committing the transaction, so a caller that
+        # builds and sets status on a new item in one go still gets it.
+        session.flush()
+
+    session.add(
+        ItemStatusHistory(
+            inventory_item_id=item.id,
+            from_status_id=item.status_id,
+            to_status_id=to_status_id,
+            changed_at=datetime.now(UTC),
+            changed_by_id=user_id,
+            note=note,
+            arrived_on=arrived_on,
+        )
+    )
+    item.status_id = to_status_id
+
+
+def set_location(
+    session: Session,
+    item: InventoryItem,
+    storage_location_id: int | None,
+    *,
+    user_id: int | None = None,
+    note: str | None = None,
+) -> None:
+    """Move an item and record the move.
+
+    Unlike a status, a location is legitimately nullable -- "not recorded" is
+    a real answer -- so None is a value here, not an absence.
+
+    **Order-critical**, as `set_status` is: it assigns
+    `item.storage_location_id` without flushing, so a caller that then
+    invokes a writer which re-reads that row with `populate_existing` loses
+    the assignment. Flush between. Production runs `autoflush=False` while
+    the test suite does not -- so the suite cannot see the difference.
+    """
+    if item.storage_location_id == storage_location_id:
+        return
+
+    if item.id is None:
+        # See the matching guard in set_status: a caller may build an item
+        # and move it in the same breath, before anything else has flushed.
+        session.flush()
+
+    session.add(
+        LocationHistory(
+            inventory_item_id=item.id,
+            storage_location_id=storage_location_id,
+            moved_at=datetime.now(UTC),
+            moved_by_id=user_id,
+            note=note,
+        )
+    )
+    item.storage_location_id = storage_location_id

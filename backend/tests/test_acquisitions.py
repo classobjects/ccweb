@@ -1,0 +1,399 @@
+"""Reading the acquisition side: purchase orders and storage locations."""
+
+from __future__ import annotations
+
+from decimal import Decimal
+from typing import Any
+
+from app.models import (
+    ItemKind,
+    ItemStatus,
+    PurchaseOrder,
+    Seller,
+    StorageLocation,
+    StorageLocationKind,
+    Vendor,
+    VendorKind,
+)
+from app.models.base import utcnow
+from fastapi.testclient import TestClient
+from sqlalchemy import event, select
+from sqlalchemy.orm import Session
+
+from tests.builders import build_bare_item, build_purchase_order, code_id
+
+
+def _order_with_lines(db: Session, outstanding: int, done: int) -> PurchaseOrder:
+    """A purchase with `outstanding` items still ordered and `done` received."""
+    order = build_purchase_order(
+        db,
+        vendor_name=f"Vendor {outstanding}{done}",
+        order_number="27-1234",
+        commit=False,
+    )
+    ordered_id = db.scalars(
+        select(ItemStatus.id).where(ItemStatus.code == "ordered")
+    ).one()
+    received_id = db.scalars(
+        select(ItemStatus.id).where(ItemStatus.code == "received")
+    ).one()
+    for _ in range(outstanding):
+        item = build_bare_item(db)
+        item.purchase_order_id = order.id
+        item.status_id = ordered_id
+    for _ in range(done):
+        item = build_bare_item(db)
+        item.purchase_order_id = order.id
+        item.status_id = received_id
+    db.commit()
+    return order
+
+
+def test_orders_report_how_much_is_outstanding(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    order = _order_with_lines(db, outstanding=3, done=2)
+    res = client.get("/api/purchase-orders", headers=admin_headers)
+    assert res.status_code == 200
+    row = next(r for r in res.json() if r["id"] == order.id)
+    assert row["outstanding"] == 3
+    assert row["total"] == 5
+
+
+def test_a_missing_line_counts_as_outstanding(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    """`missing` means paid for, not cancelled, never arrived -- not `outstanding=0`.
+
+    An order whose only receivable line is `missing` must still be offered by
+    `GET /api/purchase-orders`, or the late arrival has no route back in
+    through the order path at all.
+    """
+    order = build_purchase_order(
+        db, vendor_name="Missing-only Vendor", order_number="27-4321", commit=False
+    )
+    missing_id = db.scalars(
+        select(ItemStatus.id).where(ItemStatus.code == "missing")
+    ).one()
+    item = build_bare_item(db, status_id=missing_id)
+    item.purchase_order_id = order.id
+    db.commit()
+
+    res = client.get("/api/purchase-orders", headers=admin_headers)
+    assert res.status_code == 200
+    row = next(r for r in res.json() if r["id"] == order.id)
+    assert row["outstanding"] == 1
+    assert row["total"] == 1
+
+
+def test_an_order_lists_its_lines_with_their_status(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    order = _order_with_lines(db, outstanding=2, done=1)
+    res = client.get(f"/api/purchase-orders/{order.id}", headers=admin_headers)
+    assert res.status_code == 200
+    body = res.json()
+    assert len(body["lines"]) == 3
+    assert sorted(line["status"] for line in body["lines"]) == [
+        "ordered",
+        "ordered",
+        "received",
+    ]
+
+
+def test_a_line_carries_its_title_and_kind(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    """The Purchases page's items table needs a title and a kind per line.
+
+    Both come straight off the item -- no per-line query -- so a line for a
+    banknote reads `item_kind: "currency"` and shows its own title rather
+    than falling back to `description`.
+    """
+    order = build_purchase_order(
+        db, vendor_name="Titled Vendor", order_number="TL-1", commit=False
+    )
+    item = build_bare_item(
+        db,
+        item_kind_id=code_id(db, ItemKind, "currency"),
+        source_title="Series 1928 $1 Silver Certificate",
+    )
+    item.purchase_order_id = order.id
+    db.commit()
+
+    res = client.get(f"/api/purchase-orders/{order.id}", headers=admin_headers)
+    assert res.status_code == 200
+    line = res.json()["lines"][0]
+    assert line["source_title"] == "Series 1928 $1 Silver Certificate"
+    assert line["item_kind"] == "currency"
+
+
+def test_an_unknown_order_is_a_404(
+    client: TestClient, admin_headers: dict[str, str]
+) -> None:
+    res = client.get("/api/purchase-orders/10000000", headers=admin_headers)
+    assert res.status_code == 404
+
+
+def test_a_customer_cannot_read_purchase_orders(
+    client: TestClient, customer_headers: dict[str, str], db: Session
+) -> None:
+    """What the owner paid a vendor is not a customer's business."""
+    _order_with_lines(db, outstanding=1, done=0)
+    assert (
+        client.get("/api/purchase-orders", headers=customer_headers).status_code == 403
+    )
+
+
+def test_a_deleted_item_does_not_count_or_appear(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    """A row that should never have existed must not inflate outstanding."""
+    order = _order_with_lines(db, outstanding=1, done=1)
+    ordered_id = db.scalars(
+        select(ItemStatus.id).where(ItemStatus.code == "ordered")
+    ).one()
+    deleted_item = build_bare_item(db, status_id=ordered_id)
+    deleted_item.purchase_order_id = order.id
+    deleted_item.deleted_at = utcnow()
+    db.commit()
+
+    res = client.get("/api/purchase-orders", headers=admin_headers)
+    assert res.status_code == 200
+    row = next(r for r in res.json() if r["id"] == order.id)
+    assert row["outstanding"] == 1
+    assert row["total"] == 2
+
+    detail = client.get(
+        f"/api/purchase-orders/{order.id}", headers=admin_headers
+    ).json()
+    assert len(detail["lines"]) == 2
+    assert deleted_item.id not in [line["id"] for line in detail["lines"]]
+
+
+def test_a_split_parent_is_hidden_but_its_children_are_not(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    """A split lot's parent is superseded by its children, not alongside them."""
+    order = build_purchase_order(
+        db, vendor_name="Split Vendor", order_number="27-9999", commit=False
+    )
+    ordered_id = db.scalars(
+        select(ItemStatus.id).where(ItemStatus.code == "ordered")
+    ).one()
+
+    parent = build_bare_item(db, status_id=ordered_id)
+    child_a = build_bare_item(db, status_id=ordered_id, parent_item_id=parent.id)
+    child_b = build_bare_item(db, status_id=ordered_id, parent_item_id=parent.id)
+    for item in (parent, child_a, child_b):
+        item.purchase_order_id = order.id
+    parent.split_at = utcnow()
+    db.commit()
+
+    res = client.get("/api/purchase-orders", headers=admin_headers)
+    assert res.status_code == 200
+    row = next(r for r in res.json() if r["id"] == order.id)
+    assert row["outstanding"] == 2
+    assert row["total"] == 2
+
+    detail = client.get(
+        f"/api/purchase-orders/{order.id}", headers=admin_headers
+    ).json()
+    line_ids = {line["id"] for line in detail["lines"]}
+    assert len(detail["lines"]) == 2
+    assert parent.id not in line_ids
+    assert {child_a.id, child_b.id} <= line_ids
+
+
+def _order_with_source_url(db: Session, source_url: str | None) -> PurchaseOrder:
+    """A purchase recorded with this web address, or with none."""
+    return build_purchase_order(
+        db,
+        vendor_name="Source URL Vendor",
+        order_number="27-5555",
+        source_url=source_url,
+    )
+
+
+def test_a_web_address_source_url_is_returned_unchanged(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    order = _order_with_source_url(db, "https://order.ebay.com/ord/show?orderId=1")
+    detail = client.get(
+        f"/api/purchase-orders/{order.id}", headers=admin_headers
+    ).json()
+    assert detail["source_url"] == "https://order.ebay.com/ord/show?orderId=1"
+
+
+def test_non_web_address_source_url_is_withheld(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    """Source text that is not a web address is not offered as a link.
+
+    "Gift" is the literal value stored for some rows -- not a URL at all.
+    """
+    order = _order_with_source_url(db, "Gift")
+    detail = client.get(
+        f"/api/purchase-orders/{order.id}", headers=admin_headers
+    ).json()
+    assert detail["source_url"] is None
+
+
+def test_a_javascript_url_is_withheld(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    """The http(s) guard is what stops stored text becoming a clickable link.
+
+    Without it, a `javascript:` value in the stored source text would
+    become an executable link on the receiving page.
+    """
+    order = _order_with_source_url(db, "javascript:alert(1)")
+    detail = client.get(
+        f"/api/purchase-orders/{order.id}", headers=admin_headers
+    ).json()
+    assert detail["source_url"] is None
+
+
+def test_a_customer_cannot_read_storage_locations(
+    client: TestClient, customer_headers: dict[str, str]
+) -> None:
+    """A public listing must not leak the safe-deposit box holding an item.
+
+    That would be a security failure, not a cosmetic one.
+    """
+    assert (
+        client.get("/api/storage-locations", headers=customer_headers).status_code
+        == 403
+    )
+
+
+def _costing(
+    db: Session, order: PurchaseOrder, price: str, shipping: str, rate: str = "0"
+) -> None:
+    """A live item on `order` at this price and shipping, taxed at `rate`."""
+    item = build_bare_item(
+        db,
+        item_cost=Decimal(price),
+        shipping_cost=Decimal(shipping),
+        tax_rate=Decimal(rate),
+        tax_includes_shipping=True,
+    )
+    item.purchase_order_id = order.id
+
+
+def test_the_list_names_each_purchase_s_seller_and_what_it_cost(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    seller = Seller(name="coinbuyer42")
+    db.add(seller)
+    db.flush()
+    sold_by = build_purchase_order(
+        db,
+        vendor_name="ebay.com",
+        order_number="27-0001",
+        seller_id=seller.id,
+        commit=False,
+    )
+    # Taxed, shipping included: 45.25 at 6.35% is 2.87, so a total that left
+    # the tax out would be 55.25.
+    _costing(db, sold_by, "40.00", "5.25", rate="0.0635")
+    _costing(db, sold_by, "10.00", "0")
+    # Deleted: neither a line of the purchase nor part of what it cost.
+    gone = build_bare_item(db, item_cost=Decimal("999.00"), tax_rate=Decimal("0"))
+    gone.purchase_order_id = sold_by.id
+    gone.deleted_at = utcnow()
+    direct = build_purchase_order(
+        db, vendor_name="Coin show", order_number=None, commit=False
+    )
+    _costing(db, direct, "7.00", "0")
+    empty = build_purchase_order(
+        db, vendor_name="Nothing yet", order_number="E-1", commit=False
+    )
+    db.commit()
+
+    rows = {
+        row["id"]: row
+        for row in client.get("/api/purchase-orders", headers=admin_headers).json()
+    }
+
+    assert rows[sold_by.id]["seller"] == "coinbuyer42"
+    assert Decimal(rows[sold_by.id]["total_cost"]) == Decimal("58.12")
+    assert rows[sold_by.id]["total"] == 2
+    # No seller recorded is null, not an empty name.
+    assert rows[direct.id]["seller"] is None
+    assert Decimal(rows[direct.id]["total_cost"]) == Decimal("7.00")
+    # A purchase with nothing on it yet is still listed, at no cost.
+    assert Decimal(rows[empty.id]["total_cost"]) == Decimal("0")
+    assert rows[empty.id]["total"] == 0
+
+
+def _selects_for(
+    db: Session, client: TestClient, headers: dict[str, str], url: str
+) -> tuple[int, list[dict[str, Any]]]:
+    """How many SELECTs a GET of `url` sends, and what it answers."""
+    sent: list[str] = []
+
+    def record(_conn: object, _cursor: object, statement: str, *_: object) -> None:
+        """Keep each SELECT."""
+        if statement.lstrip().upper().startswith("SELECT"):
+            sent.append(statement)
+
+    connection = db.connection()
+    event.listen(connection, "before_cursor_execute", record)
+    try:
+        response = client.get(url, headers=headers)
+    finally:
+        event.remove(connection, "before_cursor_execute", record)
+    assert response.status_code == 200, response.text
+    return len(sent), response.json()
+
+
+def test_the_vendor_list_does_not_query_once_per_vendor(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    """Each vendor's kind and uses come from grouped queries, not one per row."""
+    unknown = code_id(db, VendorKind, "unknown")
+    db.add(Vendor(name="Query Count First", vendor_kind_id=unknown))
+    db.commit()
+    few, _ = _selects_for(db, client, admin_headers, "/api/vendors")
+
+    db.add_all(
+        Vendor(name=f"Query Count More {n}", vendor_kind_id=unknown) for n in range(5)
+    )
+    build_purchase_order(db, vendor_name="Query Count Buyer")
+    many, body = _selects_for(db, client, admin_headers, "/api/vendors")
+
+    assert many == few
+    by_name = {vendor["name"]: vendor for vendor in body}
+    assert by_name["Query Count First"]["vendor_kind"] == "unknown"
+    assert by_name["Query Count First"]["order_count"] == 0
+    assert by_name["Query Count Buyer"]["vendor_kind"] is None
+    assert by_name["Query Count Buyer"]["order_count"] == 1
+
+
+def test_the_location_list_does_not_query_once_per_location(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    """Each location's item count comes from grouped queries, not one per row."""
+    home = code_id(db, StorageLocationKind, "home")
+    first = StorageLocation(
+        storage_location_kind_id=home, institution="Query Count", identifier="0"
+    )
+    db.add(first)
+    db.commit()
+    few, _ = _selects_for(db, client, admin_headers, "/api/storage-locations")
+
+    db.add_all(
+        StorageLocation(
+            storage_location_kind_id=home, institution="Query Count", identifier=str(n)
+        )
+        for n in range(1, 6)
+    )
+    build_bare_item(db, storage_location_id=first.id)
+    db.commit()
+    many, body = _selects_for(db, client, admin_headers, "/api/storage-locations")
+
+    assert many == few
+    counts = {row["label"]: row["item_count"] for row in body}
+    assert counts["Query Count 0"] == 1
+    assert counts["Query Count 1"] == 0

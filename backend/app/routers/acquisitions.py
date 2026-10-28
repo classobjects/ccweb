@@ -1,0 +1,807 @@
+"""The acquisition side: vendors, sellers, purchase orders and storage locations.
+
+What the Purchases page writes and the Receiving page reads -- who a purchase
+was made from, which orders still have items on the way, what is on each
+one, and where a received item could be put -- and what the Lists page
+corrects and prunes.
+
+Admin-only throughout. What was paid a vendor, and the safe-deposit box an
+item sits in, are neither a customer's business.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+from urllib.parse import urlsplit
+
+from fastapi import APIRouter, HTTPException, Response, status
+from sqlalchemy import and_, case, delete, func, select
+from sqlalchemy.orm import InstrumentedAttribute, Session, selectinload
+
+from .. import listing_links
+from ..deps import AdminUser, DbSession
+from ..item_history import location_label
+from ..live import OUTSTANDING_STATUSES, live_item
+from ..models import (
+    InventoryItem,
+    ItemStatus,
+    LocationHistory,
+    PurchaseOrder,
+    SalesVenue,
+    Seller,
+    StorageLocation,
+    StorageLocationKind,
+    Vendor,
+    VendorKind,
+)
+from ..purchases import GENERATED, WEB_ADDRESS
+from ..references import code_to_id, require_code
+from ..schemas import (
+    PurchaseOrderCreate,
+    PurchaseOrderDetailOut,
+    PurchaseOrderLineOut,
+    PurchaseOrderOut,
+    PurchaseOrderUpdate,
+    SellerCreate,
+    SellerOut,
+    SellerUpdate,
+    StorageLocationCreate,
+    StorageLocationOut,
+    StorageLocationUpdate,
+    VendorCreate,
+    VendorOut,
+    VendorUpdate,
+)
+from ._resolve import (
+    found_or_404,
+    get_or_404,
+    get_or_422,
+    refuse_future,
+    unprocessable,
+)
+from ._tx import commit_unique, delete_unused
+
+vendors_router = APIRouter(prefix="/vendors", tags=["acquisitions"])
+sellers_router = APIRouter(prefix="/sellers", tags=["acquisitions"])
+purchase_orders_router = APIRouter(prefix="/purchase-orders", tags=["acquisitions"])
+storage_locations_router = APIRouter(prefix="/storage-locations", tags=["acquisitions"])
+
+_ORDER_NOT_FOUND = "Purchase order not found"
+_LOCATION_EXISTS = "That storage location already exists"
+
+#: A generated order number: `Order-0001`, `Order-0002`, ... A purchase
+#: with no number of its own cannot be found by one; this gives it one,
+#: above the highest already issued. The pattern
+#: itself (`GENERATED`) lives in `app.purchases`, alongside `WEB_ADDRESS`,
+#: so `dq_purchases` can read the same one rather than restating it.
+_GENERATED_PREFIX = "Order-"
+#: Held for the rest of the transaction while a number is issued, so two
+#: purchases created at once cannot both take the same next number.
+_NUMBERING_LOCK = 2026092401
+
+
+def next_order_number(db: Session) -> str:
+    """The next generated order number, `Order-0001` and up."""
+    db.execute(select(func.pg_advisory_xact_lock(_NUMBERING_LOCK)))
+    issued = db.scalars(
+        select(PurchaseOrder.order_number).where(
+            PurchaseOrder.order_number.op("~")(GENERATED.pattern)
+        )
+    ).all()
+    matches = (GENERATED.match(number) for number in issued if number)
+    highest = max((int(m.group(1)) for m in matches if m), default=0)
+    return f"{_GENERATED_PREFIX}{highest + 1:04d}"
+
+
+def _host_of(url: str | None) -> str | None:
+    """The lowercase hostname of `url`, or `None` when there isn't one.
+
+    What `Vendor.host` stores: the host name alone -- no port, user name,
+    query or fragment -- so every address at one site gives the same host.
+    """
+    if not url:
+        return None
+    try:
+        return urlsplit(url).hostname or None
+    except ValueError:
+        return None
+
+
+def _counted(count: int, noun: str) -> str:
+    """`1 purchase`, `3 purchases`: the count a refusal names."""
+    return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
+
+
+def _vendor_use(db: Session, vendor_id: int) -> int:
+    """Purchases and sales platforms that name this vendor."""
+    orders = db.scalar(select(func.count()).where(PurchaseOrder.vendor_id == vendor_id))
+    venues = db.scalar(select(func.count()).where(SalesVenue.vendor_id == vendor_id))
+    return (orders or 0) + (venues or 0)
+
+
+def _vendor_out(db: Session, vendor: Vendor) -> VendorOut:
+    """A vendor row, with its kind resolved back to a code for the wire."""
+    kind = db.get(VendorKind, vendor.vendor_kind_id) if vendor.vendor_kind_id else None
+    return VendorOut(
+        id=vendor.id,
+        name=vendor.name,
+        url=vendor.url,
+        vendor_kind=kind.code if kind is not None else None,
+        order_count=_vendor_use(db, vendor.id),
+    )
+
+
+def _counts_by(db: Session, column: InstrumentedAttribute[Any]) -> dict[int, int]:
+    """How many rows of `column`'s table name each key, in one grouped query.
+
+    A list counts this way rather than row by row, so its queries do not
+    grow with its length.
+    """
+    return dict(
+        db.execute(
+            select(column, func.count()).where(column.is_not(None)).group_by(column)
+        )
+        .tuples()
+        .all()
+    )
+
+
+@vendors_router.get("")
+def list_vendors(db: DbSession, _admin: AdminUser) -> list[VendorOut]:
+    """Every vendor, ordered by name, for picking on the entry panels."""
+    orders = _counts_by(db, PurchaseOrder.vendor_id)
+    venues = _counts_by(db, SalesVenue.vendor_id)
+    rows = db.execute(
+        select(Vendor, VendorKind.code)
+        .outerjoin(VendorKind, VendorKind.id == Vendor.vendor_kind_id)
+        .order_by(Vendor.name)
+    ).tuples()
+    return [
+        VendorOut(
+            id=vendor.id,
+            name=vendor.name,
+            url=vendor.url,
+            vendor_kind=kind,
+            order_count=orders.get(vendor.id, 0) + venues.get(vendor.id, 0),
+        )
+        for vendor, kind in rows
+    ]
+
+
+@vendors_router.post("", status_code=status.HTTP_201_CREATED)
+def create_vendor(payload: VendorCreate, db: DbSession, _admin: AdminUser) -> VendorOut:
+    """Add a vendor inline, while entering a purchase.
+
+    Names are unique whatever their case -- checked here first, so a caller
+    typing "eBay.com" against an existing "ebay.com" gets a 409 echoing the
+    name as typed ("A vendor named eBay.com already exists"); `uq_vendor_name`
+    is the same rule at the database, for two requests at once.
+    """
+    duplicate = db.scalar(
+        select(Vendor).where(func.lower(Vendor.name) == payload.name.casefold())
+    )
+    if duplicate is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"A vendor named {payload.name} already exists",
+        )
+
+    vendor_kind_id = (
+        code_to_id(db, VendorKind, payload.vendor_kind, "vendor_kind")
+        if payload.vendor_kind is not None
+        else require_code(db, VendorKind, "unknown", "vendor_kind")
+    )
+
+    vendor = Vendor(
+        name=payload.name,
+        url=payload.url,
+        host=_host_of(payload.url),
+        vendor_kind_id=vendor_kind_id,
+    )
+    db.add(vendor)
+    # Two inline "+ Add a vendor..." submissions of the same name at
+    # once both pass the check above -- in the same case or not;
+    # `uq_vendor_name` (on the lowered name) stops the second at the
+    # database, and it should read as the same 409 rather than a 500.
+    commit_unique(db, f"A vendor named {payload.name} already exists")
+    db.refresh(vendor)
+    return _vendor_out(db, vendor)
+
+
+@vendors_router.patch("/{vendor_id}")
+def update_vendor(
+    vendor_id: int, payload: VendorUpdate, db: DbSession, _admin: AdminUser
+) -> VendorOut:
+    """Correct a vendor's name, link or kind; only the fields sent change.
+
+    The name stays unique case aside, as `create_vendor` keeps it.
+    """
+    vendor = get_or_404(db, Vendor, vendor_id, "Vendor not found")
+    sent = payload.model_fields_set
+    if "name" in sent and payload.name is not None:
+        clash = db.scalar(
+            select(Vendor.id).where(
+                func.lower(Vendor.name) == payload.name.casefold(),
+                Vendor.id != vendor.id,
+            )
+        )
+        if clash is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"A vendor named {payload.name} already exists",
+            )
+        vendor.name = payload.name
+    if "url" in sent:
+        vendor.url = payload.url
+        vendor.host = _host_of(payload.url)
+    if "vendor_kind" in sent:
+        vendor.vendor_kind_id = (
+            code_to_id(db, VendorKind, payload.vendor_kind, "vendor_kind")
+            if payload.vendor_kind is not None
+            else require_code(db, VendorKind, "unknown", "vendor_kind")
+        )
+    commit_unique(db, f"A vendor named {vendor.name} already exists")
+    db.refresh(vendor)
+    return _vendor_out(db, vendor)
+
+
+@vendors_router.delete("/{vendor_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_vendor(vendor_id: int, db: DbSession, _admin: AdminUser) -> Response:
+    """Delete a vendor nothing names -- a slip made while entering a purchase."""
+    vendor = get_or_404(db, Vendor, vendor_id, "Vendor not found")
+    used = _vendor_use(db, vendor.id)
+    if used:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"{vendor.name} is named on "
+            f"{_counted(used, 'purchase or platform')}",
+        )
+    delete_unused(
+        db,
+        delete(Vendor).where(Vendor.id == vendor.id),
+        f"{vendor.name} has just been named on a purchase or platform",
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@purchase_orders_router.get("")
+def list_purchase_orders(db: DbSession, _admin: AdminUser) -> list[PurchaseOrderOut]:
+    """Every purchase order: its seller, its cost, and what has not yet arrived.
+
+    "Not yet arrived" is `ordered` or `missing` -- a line written off as
+    missing is paid for, not cancelled, and sometimes turns up later, so it
+    is exactly as outstanding as one still `ordered`. Counting only `ordered`
+    would make an order whose sole receivable line is `missing` report
+    `outstanding=0`, as if nothing on it were still to come.
+
+    The counts are computed in SQL, one grouped query for every order, rather
+    than by loading each order's items and counting in Python -- an order can
+    carry hundreds of lines and this view needs none of them.
+
+    A soft-deleted item and a split lot's parent row are excluded from both
+    counts -- `live_item()` sits in the join's `ON` clause rather than a
+    `WHERE` on the assembled query, so an order whose only lines are
+    non-live still appears (with `outstanding=0, total=0`) instead of being
+    dropped by the aggregation entirely.
+    """
+    outstanding = func.count(
+        case((ItemStatus.code.in_(OUTSTANDING_STATUSES), InventoryItem.id))
+    )
+    total = func.count(InventoryItem.id)
+    # The same live items the counts are over: a deleted line's cost is
+    # not part of what the purchase cost.
+    total_cost = func.coalesce(func.sum(InventoryItem.total_cost), 0)
+
+    rows = db.execute(
+        select(
+            PurchaseOrder.id,
+            PurchaseOrder.order_number,
+            PurchaseOrder.ordered_on,
+            Vendor.name,
+            Seller.name.label("seller"),
+            outstanding.label("outstanding"),
+            total.label("total"),
+            total_cost.label("total_cost"),
+        )
+        .join(Vendor, Vendor.id == PurchaseOrder.vendor_id)
+        .outerjoin(Seller, Seller.id == PurchaseOrder.seller_id)
+        .outerjoin(
+            InventoryItem,
+            and_(InventoryItem.purchase_order_id == PurchaseOrder.id, live_item()),
+        )
+        .outerjoin(ItemStatus, ItemStatus.id == InventoryItem.status_id)
+        .group_by(
+            PurchaseOrder.id,
+            PurchaseOrder.order_number,
+            PurchaseOrder.ordered_on,
+            Vendor.name,
+            Seller.name,
+        )
+        .order_by(PurchaseOrder.id.desc())
+    ).all()
+
+    return [
+        PurchaseOrderOut(
+            id=row.id,
+            order_number=row.order_number,
+            vendor=row.name,
+            seller=row.seller,
+            ordered_on=row.ordered_on,
+            outstanding=row.outstanding,
+            total=row.total,
+            total_cost=row.total_cost,
+        )
+        for row in rows
+    ]
+
+
+@purchase_orders_router.get("/{order_id}")
+def get_purchase_order(
+    order_id: int, db: DbSession, _admin: AdminUser
+) -> PurchaseOrderDetailOut:
+    """One purchase order and every line on it, each with its own status.
+
+    Status is per item, not per order, since split shipments are normal and
+    partial receipt must leave the remainder `ordered` -- so the detail view
+    lists lines individually rather than folding them into one order status.
+
+    Lines are fetched with their own query rather than through
+    `PurchaseOrder.items`, so `live_item()` can be applied in SQL: that
+    relationship is unfiltered and shared with other code, so it is not
+    touched here. A soft-deleted item and a split lot's superseded parent
+    are excluded; a split lot's children are not -- they are what a
+    receiving clerk should see and receive instead.
+    """
+    order = db.scalar(
+        select(PurchaseOrder)
+        .where(PurchaseOrder.id == order_id)
+        .options(selectinload(PurchaseOrder.vendor))
+    )
+    order = found_or_404(order, _ORDER_NOT_FOUND)
+
+    items = db.scalars(
+        select(InventoryItem)
+        .where(InventoryItem.purchase_order_id == order_id, live_item())
+        .options(
+            selectinload(InventoryItem.status), selectinload(InventoryItem.item_kind)
+        )
+        .order_by(InventoryItem.id)
+    ).all()
+
+    return PurchaseOrderDetailOut(
+        id=order.id,
+        order_number=order.order_number,
+        vendor=order.vendor.name,
+        ordered_on=order.ordered_on,
+        source_url=(
+            order.source_url
+            if order.source_url and WEB_ADDRESS.match(order.source_url)
+            else None
+        ),
+        source_text=order.source_url,
+        seller_id=order.seller_id,
+        seller=order.seller.name if order.seller is not None else None,
+        seller_url=order.seller.store_url if order.seller is not None else None,
+        notes=order.notes,
+        lot_page=listing_links.lot_page(db, order),
+        lines=[
+            PurchaseOrderLineOut(
+                id=item.id,
+                item_code=item.item_code,
+                source_title=item.source_title,
+                description=item.description,
+                item_kind=item.item_kind.code,
+                item_cost=item.item_cost,
+                status=item.status.code,
+            )
+            for item in items
+        ],
+    )
+
+
+def _seller_id(db: Session, seller_id: int | None) -> int | None:
+    """The seller a purchase names, or None; 422 for one that does not exist."""
+    if seller_id is None:
+        return None
+    return get_or_422(db, Seller, seller_id, f"Unknown seller_id: {seller_id}").id
+
+
+def _refuse_seller_name(db: Session, name: str, keep: int | None) -> None:
+    """409 when another seller has this name, whatever its case."""
+    clash = db.scalar(
+        select(Seller.id).where(
+            func.lower(Seller.name) == name.casefold(),
+            Seller.id != (keep if keep is not None else -1),
+        )
+    )
+    if clash is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"A seller named {name} already exists",
+        )
+
+
+def _commit_seller(db: Session, name: str) -> None:
+    """Commit, reading a racing duplicate name as the same 409."""
+    commit_unique(db, f"A seller named {name} already exists")
+
+
+def _seller_orders(db: Session, seller_id: int) -> int:
+    """Purchases that name this seller."""
+    return (
+        db.scalar(select(func.count()).where(PurchaseOrder.seller_id == seller_id)) or 0
+    )
+
+
+def _seller_out(db: Session, seller: Seller) -> SellerOut:
+    """A seller for the wire, with how many purchases name them."""
+    return SellerOut(
+        id=seller.id,
+        name=seller.name,
+        store_url=seller.store_url,
+        order_count=_seller_orders(db, seller.id),
+    )
+
+
+@sellers_router.get("")
+def list_sellers(db: DbSession, _admin: AdminUser) -> list[SellerOut]:
+    """Every seller, ordered by name (case aside), with their purchases."""
+    counts = dict(
+        db.execute(
+            select(PurchaseOrder.seller_id, func.count())
+            .where(PurchaseOrder.seller_id.is_not(None))
+            .group_by(PurchaseOrder.seller_id)
+        )
+        .tuples()
+        .all()
+    )
+    sellers = db.scalars(select(Seller).order_by(func.lower(Seller.name))).all()
+    return [
+        SellerOut(
+            id=seller.id,
+            name=seller.name,
+            store_url=seller.store_url,
+            order_count=counts.get(seller.id, 0),
+        )
+        for seller in sellers
+    ]
+
+
+@sellers_router.post("", status_code=status.HTTP_201_CREATED)
+def create_seller(payload: SellerCreate, db: DbSession, _admin: AdminUser) -> SellerOut:
+    """Add a seller inline, while entering a purchase."""
+    _refuse_seller_name(db, payload.name, None)
+    seller = Seller(name=payload.name, store_url=payload.store_url)
+    db.add(seller)
+    _commit_seller(db, payload.name)
+    db.refresh(seller)
+    return _seller_out(db, seller)
+
+
+@sellers_router.patch("/{seller_id}")
+def update_seller(
+    seller_id: int, payload: SellerUpdate, db: DbSession, _admin: AdminUser
+) -> SellerOut:
+    """Rename a seller or change their store; only the fields sent change."""
+    seller = get_or_404(db, Seller, seller_id, "Seller not found")
+    sent = payload.model_fields_set
+    if "name" in sent and payload.name is not None:
+        _refuse_seller_name(db, payload.name, seller.id)
+        seller.name = payload.name
+    if "store_url" in sent:
+        seller.store_url = payload.store_url
+    _commit_seller(db, seller.name)
+    db.refresh(seller)
+    return _seller_out(db, seller)
+
+
+@sellers_router.delete("/{seller_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_seller(seller_id: int, db: DbSession, _admin: AdminUser) -> Response:
+    """Delete a seller no purchase names."""
+    seller = get_or_404(db, Seller, seller_id, "Seller not found")
+    used = _seller_orders(db, seller.id)
+    if used:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"{seller.name} is named on {_counted(used, 'purchase')}",
+        )
+    delete_unused(
+        db,
+        delete(Seller).where(Seller.id == seller.id),
+        f"{seller.name} has just been named on a purchase",
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@purchase_orders_router.post("", status_code=status.HTTP_201_CREATED)
+def create_purchase_order(
+    payload: PurchaseOrderCreate, db: DbSession, admin: AdminUser
+) -> PurchaseOrderDetailOut:
+    """Start a new purchase: a vendor, and everything else optional.
+
+    Returns the same shape `GET /api/purchase-orders/{id}` does -- built by
+    calling that route's own function, so the two can never drift into
+    describing a freshly created order differently from an existing one.
+    """
+    vendor = get_or_422(
+        db, Vendor, payload.vendor_id, f"Unknown vendor_id: {payload.vendor_id}"
+    )
+
+    refuse_future("ordered_on", payload.ordered_on)
+    number = payload.order_number or next_order_number(db)
+    _refuse_duplicate(db, vendor, number, None)
+
+    order = PurchaseOrder(
+        vendor_id=vendor.id,
+        order_number=number,
+        ordered_on=payload.ordered_on,
+        source_url=payload.source_url,
+        seller_id=_seller_id(db, payload.seller_id),
+        notes=payload.notes,
+    )
+    db.add(order)
+    _commit_order(db, vendor, number)
+    return get_purchase_order(order.id, db, admin)
+
+
+@purchase_orders_router.patch("/{order_id}")
+def update_purchase_order(
+    order_id: int, payload: PurchaseOrderUpdate, db: DbSession, admin: AdminUser
+) -> PurchaseOrderDetailOut:
+    """Change a purchase's number, date, web address, seller or notes.
+
+    Only the fields sent change. An order number sent blank is given the next
+    generated one: a purchase is never left without a number to find it by.
+    """
+    order = db.scalar(
+        select(PurchaseOrder)
+        .where(PurchaseOrder.id == order_id)
+        .options(selectinload(PurchaseOrder.vendor))
+    )
+    order = found_or_404(order, _ORDER_NOT_FOUND)
+    sent = payload.model_fields_set
+    if "ordered_on" in sent:
+        refuse_future("ordered_on", payload.ordered_on)
+        order.ordered_on = payload.ordered_on
+    if "order_number" in sent:
+        number = payload.order_number or next_order_number(db)
+        _refuse_duplicate(db, order.vendor, number, order.id)
+        order.order_number = number
+    if "source_url" in sent:
+        order.source_url = payload.source_url
+    if "seller_id" in sent:
+        order.seller_id = _seller_id(db, payload.seller_id)
+    if "notes" in sent:
+        order.notes = payload.notes
+    _commit_order(db, order.vendor, order.order_number)
+    return get_purchase_order(order.id, db, admin)
+
+
+def _refuse_duplicate(
+    db: Session, vendor: Vendor, number: str, own_id: int | None
+) -> None:
+    """409 when this vendor already has another purchase with this number."""
+    duplicate = db.scalar(
+        select(PurchaseOrder.id).where(
+            PurchaseOrder.vendor_id == vendor.id,
+            PurchaseOrder.order_number == number,
+            PurchaseOrder.id != (own_id if own_id is not None else -1),
+        )
+    )
+    if duplicate is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"{vendor.name} order {number} is already recorded",
+        )
+
+
+def _commit_order(db: Session, vendor: Vendor, number: str | None) -> None:
+    """Commit; the unique index's refusal reads as the same 409.
+
+    Two saves of the same vendor + number at once both pass the pre-check;
+    `uq_purchase_order_vendor_number` stops the second at the database, and
+    it should read as a 409 rather than an unhandled 500.
+    """
+    commit_unique(db, f"{vendor.name} order {number} is already recorded")
+
+
+#: Location kinds not made by hand: a consignment is made by the auction
+#: code, and `sold` is reserved -- nothing creates one. Not added from a
+#: picker.
+_MADE_ELSEWHERE = frozenset({"consigned", "sold"})
+
+#: The OpenAPI description of the 422 the storage-location writes answer.
+_LOCATION_REFUSED = (
+    "Request validation failed, or the kind is unknown, or it is one that is "
+    "not made or edited by hand."
+)
+
+
+@storage_locations_router.post(
+    "",
+    status_code=status.HTTP_201_CREATED,
+    responses={422: unprocessable(_LOCATION_REFUSED)},
+)
+def create_storage_location(
+    payload: StorageLocationCreate, db: DbSession, _admin: AdminUser
+) -> StorageLocationOut:
+    """Add a place items are kept: a bank box, a safe, home.
+
+    409 for a location that already exists -- the same kind, institution and
+    identifier, case aside -- so one box is never two rows items split
+    between.
+    """
+    if payload.kind in _MADE_ELSEWHERE:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"A {payload.kind} location is not made by hand: the auction "
+            "code makes a consigned one, and sold is reserved",
+        )
+    kind_id = require_code(db, StorageLocationKind, payload.kind, "kind")
+    same = func.lower(func.coalesce(StorageLocation.institution, "")) == (
+        (payload.institution or "").casefold()
+    )
+    same_box = func.lower(func.coalesce(StorageLocation.identifier, "")) == (
+        (payload.identifier or "").casefold()
+    )
+    exists = db.scalar(
+        select(StorageLocation.id).where(
+            StorageLocation.storage_location_kind_id == kind_id, same, same_box
+        )
+    )
+    if exists is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=_LOCATION_EXISTS,
+        )
+    location = StorageLocation(
+        storage_location_kind_id=kind_id,
+        institution=payload.institution,
+        identifier=payload.identifier,
+        notes=payload.notes,
+    )
+    db.add(location)
+    commit_unique(db, _LOCATION_EXISTS)
+    db.refresh(location)
+    return _location_out(db, location)
+
+
+def _location_use(db: Session, location_id: int) -> int:
+    """Items kept there now, and moves recorded to it before."""
+    items = db.scalar(
+        select(func.count()).where(InventoryItem.storage_location_id == location_id)
+    )
+    history = db.scalar(
+        select(func.count()).where(LocationHistory.storage_location_id == location_id)
+    )
+    return (items or 0) + (history or 0)
+
+
+def _location_out(
+    db: Session, location: StorageLocation, item_count: int | None = None
+) -> StorageLocationOut:
+    """A location for the wire: its label, its parts, and how much it holds."""
+    return StorageLocationOut(
+        id=location.id,
+        label=location_label(location),
+        kind=location.kind.code,
+        institution=location.institution,
+        identifier=location.identifier,
+        notes=location.notes,
+        item_count=_location_use(db, location.id) if item_count is None else item_count,
+    )
+
+
+def _refuse_same_location(
+    db: Session,
+    kind_id: int,
+    institution: str | None,
+    identifier: str | None,
+    keep: int,
+) -> None:
+    """409 when another location has this kind, institution and identifier."""
+    clash = db.scalar(
+        select(StorageLocation.id).where(
+            StorageLocation.storage_location_kind_id == kind_id,
+            func.lower(func.coalesce(StorageLocation.institution, ""))
+            == (institution or "").casefold(),
+            func.lower(func.coalesce(StorageLocation.identifier, ""))
+            == (identifier or "").casefold(),
+            StorageLocation.id != keep,
+        )
+    )
+    if clash is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=_LOCATION_EXISTS,
+        )
+
+
+@storage_locations_router.patch(
+    "/{location_id}", responses={422: unprocessable(_LOCATION_REFUSED)}
+)
+def update_storage_location(
+    location_id: int, payload: StorageLocationUpdate, db: DbSession, _admin: AdminUser
+) -> StorageLocationOut:
+    """Correct a location's kind, institution, identifier or notes.
+
+    Only what is sent changes. A `consigned` location is the auction code's
+    and `sold` is reserved: neither is edited by hand.
+    """
+    location = get_or_404(
+        db, StorageLocation, location_id, "Storage location not found"
+    )
+    if location.kind.code in _MADE_ELSEWHERE or payload.kind in _MADE_ELSEWHERE:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="A consigned location is the auction code's, and sold is "
+            "reserved: neither is edited or chosen by hand",
+        )
+    sent = payload.model_fields_set
+    kind_id = (
+        require_code(db, StorageLocationKind, payload.kind, "kind")
+        if "kind" in sent and payload.kind is not None
+        else location.storage_location_kind_id
+    )
+    institution = payload.institution if "institution" in sent else location.institution
+    identifier = payload.identifier if "identifier" in sent else location.identifier
+    _refuse_same_location(db, kind_id, institution, identifier, location.id)
+    location.storage_location_kind_id = kind_id
+    location.institution = institution
+    location.identifier = identifier
+    if "notes" in sent:
+        location.notes = payload.notes
+    commit_unique(db, _LOCATION_EXISTS)
+    db.refresh(location)
+    return _location_out(db, location)
+
+
+@storage_locations_router.delete(
+    "/{location_id}", status_code=status.HTTP_204_NO_CONTENT
+)
+def delete_storage_location(
+    location_id: int, db: DbSession, _admin: AdminUser
+) -> Response:
+    """Delete a location nothing is, or ever was, kept in.
+
+    One an item has been in is part of that item's history, so it stays.
+    """
+    location = get_or_404(
+        db, StorageLocation, location_id, "Storage location not found"
+    )
+    used = _location_use(db, location.id)
+    if used:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"{location_label(location)} holds or held "
+            f"{_counted(used, 'item record')}",
+        )
+    delete_unused(
+        db,
+        delete(StorageLocation).where(StorageLocation.id == location.id),
+        f"{location_label(location)} has just been given an item record",
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@storage_locations_router.get("")
+def list_storage_locations(
+    db: DbSession, _admin: AdminUser
+) -> list[StorageLocationOut]:
+    """Every storage location, for choosing where a received item goes.
+
+    Admin-only. `storage_location` is an authorization boundary, not a
+    convention -- a public listing that leaked the safe-deposit box holding
+    an item would be a security failure, not a cosmetic one.
+    """
+    locations = db.scalars(
+        select(StorageLocation).options(selectinload(StorageLocation.kind))
+    ).all()
+    held = _counts_by(db, InventoryItem.storage_location_id)
+    moves = _counts_by(db, LocationHistory.storage_location_id)
+    return [
+        _location_out(
+            db, location, held.get(location.id, 0) + moves.get(location.id, 0)
+        )
+        for location in locations
+    ]

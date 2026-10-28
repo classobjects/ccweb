@@ -1,0 +1,211 @@
+"""The form of a Friedberg number: cleaned, then checked (`app.fr_format`).
+
+The numbers here are forms only, chosen from no catalog: nothing in this file
+says which note any of them belongs to.
+"""
+
+from __future__ import annotations
+
+import re
+
+import pytest
+from app.fr_format import (
+    DISTRICT_SQL_PATTERN,
+    fr_district,
+    fr_problem,
+    fr_traits,
+    normalize_fr,
+)
+
+
+@pytest.mark.parametrize(
+    ("typed", "kept"),
+    [
+        ("  9901-L ", "9901-L"),
+        ("Fr. 9905-D", "9905-D"),
+        ("FR#9905-d", "9905-D"),
+        ("fr 12", "12"),
+        ("FR-9905-D", "9905-D"),
+        ("French", "French"),
+        # The label comes off only before a digit 0 to 9.
+        ("Fr. \uff19\uff19", "Fr. \uff19\uff19"),
+        ("9907 - l", "9907-L"),
+        ("9a", "9A"),
+        # The optional letter is kept in capitals, so one number is one
+        # text -- all but a mule's m, which stays lower-case in any case typed.
+        ("9912A", "9912A"),
+        ("9912a-b", "9912A-B"),
+        ("Fr. 9912a*", "9912A*"),
+        ("9901M", "9901m"),
+        ("9901m", "9901m"),
+        ("9912a lgs", "9912A LGS"),
+        ("9907-lm", "9907-Lm"),
+        ("9907-EM", "9907-Em"),
+        ("Fr. 9907-e*m", "9907-Em*"),
+        ("9908-b lgs", "9908-B LGS"),
+        ("9908-B   dgs ", "9908-B DGS"),
+        ("9908-b* lgs", "9908-B* LGS"),
+        ("9908-em lgs", "9908-Em LGS"),
+        # A Military Payment Certificate's M is a capital, the letter after
+        # its digits lower-case, as the catalog writes a replacement.
+        ("m9952m", "M9952m"),
+        ("M9952M", "M9952m"),
+        ("Fr. M9901R", "M9901r"),
+        ("fr m9931", "M9931"),
+    ],
+)
+def test_a_number_is_cleaned_before_it_is_kept(typed: str, kept: str) -> None:
+    assert normalize_fr(typed) == kept
+
+
+@pytest.mark.parametrize(
+    ("typed", "kept"),
+    [
+        # Space of every kind round a hyphen, and runs of hyphens.
+        ("", ""),
+        ("   ", ""),
+        ("-", "-"),
+        (" - ", "-"),
+        ("9907\t-\tl", "9907-L"),
+        ("9907  -\n l", "9907-L"),
+        ("9907\xa0-\u2003l", "9907-L"),
+        ("9907 - - l", "9907--L"),
+        ("9907--l", "9907--L"),
+        ("- 9907", "-9907"),
+        ("9907 -", "9907-"),
+        ("99 07", "99 07"),
+        # Where a seal shade is one: space of any kind, letters of any case.
+        ("9908-b\tLgS", "9908-B LGS"),
+        ("9908-b \n dGs", "9908-B DGS"),
+        ("9908-b\xa0lgs", "9908-B LGS"),
+        ("9908 - b  lgs", "9908-B LGS"),
+        # No space before the letters: not a shade, and cleaned as a district.
+        ("9908-blgs", "9908-BLGS"),
+        ("lgs", "lgs"),
+        ("9908-b gs", "9908-B GS"),
+        # Only the letters at the very end are a shade.
+        ("9908-b lgs dgs", "9908-B LGS DGS"),
+        ("9908-b lgs x", "9908-B LGS X"),
+        # The space before a digit after the label is any script's.
+        ("Fr.\xa09907", "9907"),
+    ],
+)
+def test_the_cleaning_at_its_edges(typed: str, kept: str) -> None:
+    assert normalize_fr(typed) == kept
+
+
+@pytest.mark.parametrize(
+    "number",
+    [
+        "1",
+        "9",
+        "9901",
+        "9901-L",
+        "9901-A*",
+        "12A",
+        "12A-B",
+        "9907-Em",
+        "9907-Em*",
+        "9901m",
+        "9908-B LGS",
+        "9908-B DGS",
+        "9908-B* LGS",
+        "9908-Em* DGS",
+        "9908 LGS",
+        "M9901",
+        "M9901r",
+        "M9952m",
+    ],
+)
+def test_a_well_formed_number_passes(number: str) -> None:
+    assert fr_problem(number) is None
+
+
+@pytest.mark.parametrize(
+    ("number", "says"),
+    [
+        ("", "needed"),
+        ("9907-", "hyphen"),
+        ("99070-L", "5 digits"),
+        ("9907-M", "form"),
+        ("9907-LL", "form"),
+        ("9907-Lmm", "form"),
+        ("9907-mL", "form"),
+        ("9908-B XGS", "form"),
+        ("9908-BLGS", "form"),
+        ("9908-B LGS*", "form"),
+        ("L-9907", "form"),
+        ("99 07", "form"),
+        # Digits are 0 to 9 only, as the console's copy of the rule reads
+        # them: full-width or other scripts' digits are not a number's.
+        ("\uff19\uff19\uff10\uff17-L", "form"),
+        ("٩٩٠٧", "form"),
+        # Nothing may follow the number, a line break included: the console's
+        # copy of the rule and the search's pattern both refuse it.
+        ("9907-L\n", "form"),
+        # An M is a certificate's only before the digits, and only one.
+        ("MM9901", "form"),
+        ("M", "form"),
+        ("9901M2", "form"),
+        ("M99010", "5 digits"),
+    ],
+)
+def test_a_slip_is_named(number: str, says: str) -> None:
+    problem = fr_problem(number)
+    assert problem is not None
+    assert says in problem
+
+
+@pytest.mark.parametrize(
+    ("number", "traits"),
+    [
+        ("9901-L", (False, False)),
+        ("9901-L*", (True, False)),
+        ("9901-Lm", (False, True)),
+        ("9901-Lm*", (True, True)),
+        ("9901m", (False, True)),
+        ("12A", (False, False)),
+        ("9901-L LGS", (False, False)),
+        ("9901-L* LGS", (True, False)),
+        ("9901-Lm DGS", (False, True)),
+        ("9901-Lm* DGS", (True, True)),
+        ("M9901r", (False, False)),
+        ("M9952m", (False, True)),
+    ],
+)
+def test_star_and_mule_are_read_from_the_number(
+    number: str, traits: tuple[bool, bool]
+) -> None:
+    assert fr_traits(number) == traits
+
+
+@pytest.mark.parametrize(
+    ("number", "district"),
+    [
+        ("9901-L", "L"),
+        ("9901-A*", "A"),
+        ("12A-B", "B"),
+        ("9907-Em", "E"),
+        ("9907-Em*", "E"),
+        ("9908-B LGS", "B"),
+        ("9908-Em* DGS", "E"),
+        # No district in the number: none is read from a letter or a mule's m.
+        ("9901", None),
+        ("12A", None),
+        ("9901m", None),
+        ("9908 LGS", None),
+        # Not in a number's form: nothing is read from it.
+        ("9907-", None),
+        ("9907-M", None),
+        ("L-9907", None),
+    ],
+)
+def test_the_district_is_read_from_the_number(
+    number: str, district: str | None
+) -> None:
+    assert fr_district(number) == district
+    # The pattern a search reads it with says the same. Its own flavour of
+    # regular expression is close enough to Python's for these to agree;
+    # `test_friedberg.py` asks the database itself.
+    found = re.search(DISTRICT_SQL_PATTERN, number)
+    assert (found.group(1) if found else None) == district

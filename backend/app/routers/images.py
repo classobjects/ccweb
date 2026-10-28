@@ -1,0 +1,482 @@
+"""Image upload and delivery.
+
+**Originals are never served.** Public requests are answered only from
+`image_derivative` rows. That is the second half of the metadata guarantee: even
+if an original somehow retained something, it is not reachable over HTTP.
+
+Uploads are content-addressed by the hash of the *cleansed* bytes, so
+re-uploading the same photograph links the existing image rather than storing a
+second copy. The same file uploaded twice costs one file.
+"""
+
+from __future__ import annotations
+
+from typing import cast
+
+from fastapi import APIRouter, File, Form, HTTPException, Response, UploadFile, status
+from sqlalchemy import String, select
+from sqlalchemy.orm import Session, selectinload
+
+from .. import image_fetch, image_links, image_store, sale_state
+from ..config import settings
+from ..deps import AdminUser, DbSession
+from ..image_store import ingest
+from ..imaging import ImageRejected
+from ..models import (
+    DerivativeKind,
+    Image,
+    ImageDerivative,
+    ImageRole,
+    InventoryItem,
+    ItemImage,
+)
+from ..references import code_to_id
+from ..schemas import ImageFromUrl, ImageLinkIn, ImageLinkOut, ImageOut
+from ..storage import get_storage
+from ._resolve import found_or_404, get_or_404, get_or_422, unprocessable
+from ._tx import committing
+
+router = APIRouter(prefix="/images", tags=["images"])
+
+_IMAGE_NOT_FOUND = "Image not found"
+_CHANGED_MEANWHILE = image_links.CHANGED_MEANWHILE
+_DESTROYED_MEANWHILE = (
+    "This photograph was deleted while saving; read the photographs again."
+)
+
+#: The longest web address `image.source_url` holds.
+_SOURCE_URL_LENGTH = cast("String", Image.__table__.c["source_url"].type).length or 0
+
+#: A derivative is immutable -- its key contains the hash of its source -- so
+#: it can be cached hard. A year is the usual maximum.
+CACHE_CONTROL = "public, max-age=31536000, immutable"
+
+
+def image_urls(sha256: str) -> dict[str, str]:
+    """Where an image's renditions are served from. Never the original.
+
+    Keyed by the content hash, not the row id. These URLs have to work in a
+    plain `<img>` tag -- for an anonymous buyer in the shop and for the owner
+    in the console -- and an `<img>` cannot carry a bearer token, so the route
+    behind them is public. A sequential id would therefore make every photograph in
+    the collection reachable by counting from 1, and most of this collection
+    is not for sale. The hash is unguessable and unique (`uq_image_sha256`),
+    so there is nothing left to enumerate.
+    """
+    return {
+        "thumbnail_url": f"{settings.api_prefix}/images/{sha256}/thumb",
+        "image_url": f"{settings.api_prefix}/images/{sha256}/web",
+    }
+
+
+def fileable_item(db: Session, item_id: int, unknown_detail: str) -> InventoryItem:
+    """The item a photograph is to be filed on, or a 422 saying why it cannot be.
+
+    `unknown_detail` for an id that names nothing. A deleted item should never
+    have existed and a split one is retired into its parts, so neither is
+    given a photograph -- as `app.photo_import` declines them.
+    """
+    item = get_or_422(db, InventoryItem, item_id, unknown_detail)
+    if item.deleted_at is not None:
+        reason = "was deleted"
+    elif item.split_at is not None:
+        reason = "was split"
+    else:
+        return item
+    raise HTTPException(
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        detail=f"{item.item_code} {reason}: no photograph is filed on it.",
+    )
+
+
+def to_image_out(image: Image) -> ImageOut:
+    """Project a stored image into the API shape."""
+    return ImageOut(
+        id=image.id,
+        sha256=image.sha256,
+        media_type=image.media_type,
+        byte_size=image.byte_size,
+        width=image.width,
+        height=image.height,
+        captured_at=image.captured_at,
+        source_url=image.source_url,
+        **image_urls(image.sha256),
+    )
+
+
+@router.post("", status_code=status.HTTP_201_CREATED)
+async def upload_image(
+    db: DbSession,
+    _admin: AdminUser,
+    file: UploadFile = File(...),
+    inventory_item_id: int | None = Form(default=None),
+    image_role: str | None = Form(default=None),
+    is_primary: bool = Form(default=False),
+    acknowledge_for_sale: bool = Form(default=False),
+) -> ImageOut:
+    """Upload a photograph, optionally attaching it to an inventory item.
+
+    ``inventory_item_id`` is optional because photographs exist before anyone
+    has decided what they depict. An unattached image is still stored and
+    listed (`unattached=true`) -- linking is a separate, human step.
+
+    The item is found, the for-sale guard asked and the role looked up
+    before `ingest` writes the bytes, so a refused upload leaves no file
+    behind with no row pointing at it. The item is held before the
+    picture's hash, the order adding by web address takes them in.
+    """
+    item: InventoryItem | None = None
+    if inventory_item_id is not None:
+        item = fileable_item(
+            db, inventory_item_id, f"Unknown inventory_item_id: {inventory_item_id}"
+        )
+        sale_state.guard(db, [item], acknowledged=acknowledge_for_sale)
+        code_to_id(db, ImageRole, image_role, "image_role")
+        image_links.hold_items(db, [item.id])
+
+    # One byte past the limit is enough to know it is over: the rest of an
+    # oversized upload is never read into memory.
+    raw = await file.read(settings.max_upload_bytes + 1)
+    try:
+        image = ingest(db, raw, source_ref=file.filename)
+    except ImageRejected as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
+        ) from exc
+
+    if item is not None:
+        try:
+            link = image_links.attach(
+                db,
+                image=image,
+                item=item,
+                role=image_role,
+                is_primary=is_primary,
+            )
+        except image_links.LinkRefused as exc:
+            # Re-uploading a photograph the item already has updates how it is
+            # filed rather than refusing: the caller is a file picker, not a
+            # filing decision, and picking a file again must not be an
+            # error. Both writes still go through `image_links`, which is
+            # what keeps the primary swap in one place.
+            existing = db.scalar(
+                select(ItemImage).where(
+                    ItemImage.inventory_item_id == item.id,
+                    ItemImage.image_id == image.id,
+                )
+            )
+            if existing is None:
+                # `LinkRefused` says the link is there, so not finding it
+                # means it was removed between the refusal and this read.
+                # A real check, not a bare `assert`: an assert vanishes
+                # under `python -O` and this branch would then go on to
+                # call `set_role` on None.
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT, detail=str(exc)
+                ) from exc
+            link = existing
+            # Only when the form actually carried a role. A file picker
+            # re-picking the same file sends no `image_role`, and an
+            # unconditional `set_role` would clear whatever the operator had
+            # just set -- the same omitted-versus-explicit-null distinction
+            # `routers.image_links.update_link` draws.
+            if image_role is not None:
+                image_links.set_role(db, link, image_role)
+            if is_primary:
+                image_links.make_primary(db, link)
+
+    db.commit()
+    db.refresh(image)
+    return to_image_out(image)
+
+
+def _filing_checks(db: Session, payload: ImageFromUrl) -> InventoryItem:
+    """The item a fetched photograph is for, once it may be filed there.
+
+    Fileable, acknowledged if it is for sale, and with a role that is one.
+    """
+    item = fileable_item(
+        db,
+        payload.inventory_item_id,
+        f"Unknown inventory_item_id: {payload.inventory_item_id}",
+    )
+    sale_state.guard(db, [item], acknowledged=payload.acknowledge_for_sale)
+    code_to_id(db, ImageRole, payload.image_role, "image_role")
+    return item
+
+
+@router.post("/from-url", status_code=status.HTTP_201_CREATED)
+def add_image_from_url(
+    payload: ImageFromUrl, db: DbSession, _admin: AdminUser
+) -> ImageOut:
+    """Fetch a photograph from a web address and file it against an item.
+
+    Fetched by `app.image_fetch` (public http(s) hosts only) at the largest
+    size its host serves, whichever size the address names; the address
+    kept as its source is the one the bytes came from. Then stored as any
+    upload is -- converted and stripped -- named for its place on the item,
+    `CC-000412_02.jpg`, and filed there after the item's other photographs.
+    A refused fetch stores nothing, and neither does a role that is not one:
+    it is looked up before anything is fetched.
+
+    The fetch can take up to a minute, so no transaction is held open over
+    it: the item is checked, the transaction ended, and the item read and
+    checked again once the bytes are in -- deleted, split or put on sale
+    meanwhile, it is refused then as it would have been before.
+    """
+    _filing_checks(db, payload)
+    db.rollback()
+    try:
+        raw, fetched_from = image_fetch.fetch_full_size(payload.url)
+    except image_fetch.ImageFetchRefused as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
+        ) from exc
+    item = _filing_checks(db, payload)
+    # The address kept is the one the bytes came from, and its full-size
+    # form can be longer than the address pasted.
+    if len(fetched_from) > _SOURCE_URL_LENGTH:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=(
+                f"{fetched_from[:60]}... is longer than the "
+                f"{_SOURCE_URL_LENGTH} characters kept for an address."
+            ),
+        )
+
+    position = image_links.next_position(db, item.id)
+    try:
+        image = ingest(
+            db,
+            raw,
+            source_ref=f"{item.item_code}_{position:02d}.jpg",
+            source_url=fetched_from,
+        )
+    except ImageRejected as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
+        ) from exc
+    try:
+        image_links.attach(
+            db,
+            image=image,
+            item=item,
+            role=payload.image_role,
+            is_primary=payload.is_primary,
+            sort_order=position,
+        )
+    except image_links.LinkRefused as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=str(exc)
+        ) from exc
+    db.commit()
+    db.refresh(image)
+    return to_image_out(image)
+
+
+@router.post(
+    "/{image_id}/links",
+    status_code=status.HTTP_201_CREATED,
+    responses={
+        409: {
+            "description": "The item is for sale and the caller has not "
+            "acknowledged it, or the photograph cannot be filed against it."
+        }
+    },
+)
+def attach_image(
+    image_id: int, payload: ImageLinkIn, db: DbSession, _admin: AdminUser
+) -> ImageLinkOut:
+    """File a photograph against an item.
+
+    Refused with 409 for an item that is for sale until the caller
+    acknowledges it: the shop serves an item's primary photograph, so filing
+    one changes what a buyer is looking at.
+    """
+    image = get_or_404(db, Image, image_id, _IMAGE_NOT_FOUND)
+    item = fileable_item(
+        db, payload.inventory_item_id, f"No such item: {payload.inventory_item_id}"
+    )
+
+    sale_state.guard(db, [item], acknowledged=payload.acknowledge_for_sale)
+
+    # A photograph destroyed after it was read here is refused by its
+    # foreign key when the link is written: a conflict, not a fault.
+    with committing(db, _CHANGED_MEANWHILE, gone_detail=_DESTROYED_MEANWHILE):
+        try:
+            link = image_links.attach(
+                db,
+                image=image,
+                item=item,
+                role=payload.image_role,
+                is_primary=payload.is_primary,
+                sort_order=payload.sort_order,
+            )
+        except image_links.LinkRefused as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail=str(exc)
+            ) from exc
+        # A photograph unfiled from one item and filed here is named for here.
+        image_links.name_for_place(db, link)
+    db.refresh(link)
+    return link_out(db, link)
+
+
+@router.get(
+    "",
+    responses={
+        422: unprocessable(
+            "Request validation failed, or the request does not name exactly "
+            "one of an item and the unfiled photographs."
+        )
+    },
+)
+def list_images(
+    db: DbSession,
+    _admin: AdminUser,
+    inventory_item_id: int | None = None,
+    unattached: bool = False,
+) -> list[ImageLinkOut]:
+    """An item's photographs, or the ones nobody has filed yet.
+
+    One filter is required. An unfiltered list of every photograph in the
+    collection is a page nobody asked for and a query that grows without
+    bound; making the caller say which set it wants costs one parameter.
+    """
+    if (inventory_item_id is None) == (not unattached):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Pass exactly one of inventory_item_id or unattached=true.",
+        )
+
+    if unattached:
+        linked = select(ItemImage.image_id).where(
+            ItemImage.inventory_item_id.is_not(None)
+        )
+        rows = db.scalars(
+            select(Image)
+            .where(Image.id.not_in(linked))
+            .order_by(Image.captured_at.desc().nullslast(), Image.id)
+        ).all()
+        return [
+            ImageLinkOut(
+                image_id=row.id,
+                captured_at=row.captured_at,
+                source_url=row.source_url,
+                **image_urls(row.sha256),
+            )
+            for row in rows
+        ]
+
+    links = db.scalars(
+        select(ItemImage)
+        .where(ItemImage.inventory_item_id == inventory_item_id)
+        .options(selectinload(ItemImage.item), selectinload(ItemImage.image))
+        .order_by(ItemImage.sort_order, ItemImage.id)
+    ).all()
+    return [link_out(db, link) for link in links]
+
+
+def link_out(db: Session, link: ItemImage) -> ImageLinkOut:
+    """Project a filed photograph into the API shape."""
+    role = db.get(ImageRole, link.image_role_id) if link.image_role_id else None
+    return ImageLinkOut(
+        link_id=link.id,
+        inventory_item_id=link.inventory_item_id,
+        item_code=link.item.item_code if link.item else None,
+        image_id=link.image_id,
+        image_role=role.code if role else None,
+        is_primary=link.is_primary,
+        sort_order=link.sort_order,
+        captured_at=link.image.captured_at,
+        source_url=link.image.source_url,
+        **image_urls(link.image.sha256),
+    )
+
+
+@router.get("/{sha256}/{kind}")
+def get_derivative(sha256: str, kind: DerivativeKind, db: DbSession) -> Response:
+    """Serve a rendition. Public, and the only way image bytes leave the app.
+
+    Public is deliberate: a listed coin's photograph must load for a buyer who
+    has never signed in. What keeps the unlisted rest of the collection out of
+    reach is the path -- see `image_urls`. Addressed by content hash, so a
+    caller who has not been given a URL has nothing to walk.
+    """
+    found = db.execute(
+        select(ImageDerivative.storage_key, Image.media_type)
+        .join(Image, ImageDerivative.image_id == Image.id)
+        .where(Image.sha256 == sha256, ImageDerivative.kind == kind)
+    ).first()
+    found = found_or_404(found, _IMAGE_NOT_FOUND)
+    storage_key, media_type = found
+
+    try:
+        data = get_storage().get(storage_key)
+    except (FileNotFoundError, ValueError) as exc:
+        # A row pointing at bytes that are gone is a real fault worth
+        # surfacing as 404 rather than a 500 -- but it means storage and the
+        # database have diverged.
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Image data missing"
+        ) from exc
+
+    return Response(
+        content=data,
+        media_type=media_type,
+        headers={"Cache-Control": CACHE_CONTROL},
+    )
+
+
+@router.delete("/{image_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_image(
+    image_id: int,
+    db: DbSession,
+    _admin: AdminUser,
+    acknowledge_for_sale: bool = False,
+) -> None:
+    """Remove an image, its renditions and its stored bytes.
+
+    `acknowledge_for_sale` is a query parameter rather than a body field
+    because DELETE has no body here. The shop serves an item's primary image
+    (`routers.catalog`), so deleting one changes what a buyer is looking at.
+    """
+    image = get_or_404(db, Image, image_id, _IMAGE_NOT_FOUND)
+
+    # This endpoint is given only an image id. The items it is attached to are
+    # what the for-sale rule is about, so they are read before anything is
+    # removed.
+    attached = db.scalars(
+        select(InventoryItem)
+        .join(ItemImage, ItemImage.inventory_item_id == InventoryItem.id)
+        .where(ItemImage.image_id == image.id)
+    ).all()
+    sale_state.guard(db, list(attached), acknowledged=acknowledge_for_sale)
+
+    keys = [derivative.storage_key for derivative in image.derivatives]
+    keys.append(image.storage_key)
+    held = image.sha256
+
+    # Held before anything is deleted, items first as every filing holds
+    # them. A photograph filed on one of these items meanwhile waits, and
+    # finds no incumbent primary when it goes on; an upload of the same
+    # picture waits too, and finds no row to answer with whose files the
+    # removal below would take.
+    image_links.hold_items(db, [item.id for item in attached])
+    image_store.hold_content(db, held)
+
+    db.delete(image)
+    db.flush()
+
+    # Deleting the image cascades its `item_image` rows away in the database,
+    # which is the one removal path that does not run through `image_links`.
+    # An item that kept two other photographs would be left with no primary,
+    # and the shop shows a buyer nothing at all in that state.
+    image_links.fill_primary_vacancy(db, [item.id for item in attached])
+    db.commit()
+
+    # The bytes go only once the rows that point at them are gone: a failed
+    # commit leaves the image whole, and a failed removal here leaves only
+    # files no row points at. And only if no upload of the same picture has
+    # committed since, which would name the same files (`remove_unheld`).
+    image_store.remove_unheld(db, {held: keys})

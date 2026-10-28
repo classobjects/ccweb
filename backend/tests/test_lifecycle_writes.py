@@ -1,0 +1,296 @@
+"""Every status and location change records that it happened.
+
+The table exists so "when did this actually arrive" survives a later
+correction to the status. That only holds if nothing can change the column
+without writing history, which is why these are the only writers.
+"""
+
+from __future__ import annotations
+
+from datetime import UTC, date, datetime
+
+from app.lifecycle_writes import record_initial_status, set_location, set_status
+from app.models import (
+    InventoryItem,
+    ItemStatus,
+    ItemStatusHistory,
+    LocationHistory,
+    StorageLocation,
+    StorageLocationKind,
+)
+from fastapi.testclient import TestClient
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from tests.builders import (
+    TUBE,
+    build_bare_item,
+    build_purchase_order,
+    build_split_lot,
+    code_id,
+    do_split,
+    patch_current,
+)
+
+
+def _status_id(db: Session, code: str) -> int:
+    """The id of the item status with this code."""
+    return db.scalars(select(ItemStatus.id).where(ItemStatus.code == code)).one()
+
+
+def test_a_status_change_records_where_it_came_from(db: Session) -> None:
+    item = build_bare_item(db, status_id=_status_id(db, "ordered"))
+    was = item.status_id
+    set_status(db, item, _status_id(db, "received"), note="unpacked")
+    db.commit()
+
+    rows = db.scalars(
+        select(ItemStatusHistory).where(ItemStatusHistory.inventory_item_id == item.id)
+    ).all()
+    latest = rows[-1]
+    assert latest.from_status_id == was
+    assert latest.to_status_id == _status_id(db, "received")
+    assert latest.note == "unpacked"
+
+
+def test_the_arrival_date_is_kept_apart_from_when_it_was_logged(
+    db: Session,
+) -> None:
+    """A box that sat over a weekend arrived before anyone typed anything."""
+    item = build_bare_item(db, status_id=_status_id(db, "ordered"))
+    friday = date(2026, 9, 4)
+    # Both in UTC, and taken either side of the write, so neither the hour
+    # nor a midnight between the two can fail this.
+    before = datetime.now(UTC).date()
+    set_status(db, item, _status_id(db, "received"), arrived_on=friday)
+    db.commit()
+    after = datetime.now(UTC).date()
+
+    row = db.scalars(
+        select(ItemStatusHistory)
+        .where(ItemStatusHistory.inventory_item_id == item.id)
+        .order_by(ItemStatusHistory.id.desc())
+    ).first()
+    assert row is not None
+    assert row.arrived_on == friday
+    assert before <= row.changed_at.astimezone(UTC).date() <= after
+
+
+def test_setting_the_same_status_records_nothing(db: Session) -> None:
+    """A history of non-events buries the real transitions.
+
+    Re-asserting a value is not a change.
+    """
+    item = build_bare_item(db)
+    before = len(
+        db.scalars(
+            select(ItemStatusHistory).where(
+                ItemStatusHistory.inventory_item_id == item.id
+            )
+        ).all()
+    )
+    set_status(db, item, item.status_id)
+    db.commit()
+    after = len(
+        db.scalars(
+            select(ItemStatusHistory).where(
+                ItemStatusHistory.inventory_item_id == item.id
+            )
+        ).all()
+    )
+    assert after == before
+
+
+def test_record_initial_status_writes_an_opening_row(db: Session) -> None:
+    """The opening row has no `from`: there was no status before this one."""
+    item = build_bare_item(db, status_id=_status_id(db, "ordered"))
+    db.flush()
+    record_initial_status(db, item, note="entered on a purchase")
+    db.commit()
+
+    rows = db.scalars(
+        select(ItemStatusHistory).where(ItemStatusHistory.inventory_item_id == item.id)
+    ).all()
+    assert len(rows) == 1
+    assert rows[0].from_status_id is None
+    assert rows[0].to_status_id == item.status_id
+    assert rows[0].note == "entered on a purchase"
+
+
+def test_a_location_change_records_where_it_went(db: Session) -> None:
+    location = StorageLocation(
+        storage_location_kind_id=code_id(db, StorageLocationKind, "home"),
+        identifier="test box",
+    )
+    db.add(location)
+    db.commit()
+    db.refresh(location)
+    item = build_bare_item(db, storage_location_id=location.id)
+    set_location(db, item, None, note="out of the box")
+    db.commit()
+
+    rows = db.scalars(
+        select(LocationHistory).where(LocationHistory.inventory_item_id == item.id)
+    ).all()
+    assert rows[-1].note == "out of the box"
+    # Where it went: nowhere recorded, on the row and on the item alike.
+    assert rows[-1].storage_location_id is None
+    db.refresh(item)
+    assert item.storage_location_id is None
+
+
+def test_editing_the_status_through_the_api_records_it(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    """An edit through the API writes history, with who made it."""
+    item = build_bare_item(db, status_id=_status_id(db, "ordered"))
+    db.commit()
+
+    res = patch_current(
+        client,
+        f"/api/inventory/{item.id}",
+        json={"status": "received"},
+        headers=admin_headers,
+    )
+    assert res.status_code == 200
+
+    rows = db.scalars(
+        select(ItemStatusHistory).where(ItemStatusHistory.inventory_item_id == item.id)
+    ).all()
+    assert rows[-1].to_status_id == _status_id(db, "received")
+    assert rows[-1].changed_by_id is not None
+
+
+def test_bulk_editing_the_status_through_the_api_records_it_per_item(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    """A bulk edit is the likelier path to "received" than a single PATCH.
+
+    An owner marks a whole order received at once, not one coin at a time.
+    """
+    ordered = _status_id(db, "ordered")
+    items = [build_bare_item(db, status_id=ordered) for _ in range(2)]
+    db.commit()
+
+    res = client.post(
+        "/api/inventory/bulk",
+        json={"ids": [i.id for i in items], "changes": {"status": "received"}},
+        headers=admin_headers,
+    )
+    assert res.status_code == 200
+    assert res.json()["updated"] == 2
+
+    for item in items:
+        rows = db.scalars(
+            select(ItemStatusHistory).where(
+                ItemStatusHistory.inventory_item_id == item.id
+            )
+        ).all()
+        assert rows[-1].from_status_id == ordered
+        assert rows[-1].to_status_id == _status_id(db, "received")
+        assert rows[-1].changed_by_id is not None
+
+
+def test_a_deleted_item_cannot_be_received(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    """A row that should never have existed does not arrive.
+
+    All or nothing: the live item sent with it is not received either, and
+    no history is written for either.
+    """
+    ordered = _status_id(db, "ordered")
+    deleted = build_bare_item(
+        db, status_id=ordered, deleted_at=datetime(2026, 1, 1, tzinfo=UTC)
+    )
+    live = build_bare_item(db, status_id=ordered)
+
+    refused = client.post(
+        "/api/inventory/receive",
+        json={"item_ids": [live.id, deleted.id], "outcome": "received"},
+        headers=admin_headers,
+    )
+
+    assert refused.status_code == 422, refused.text
+    assert str(deleted.id) in refused.json()["detail"]
+    db.expire_all()
+    assert (deleted.status_id, live.status_id) == (ordered, ordered)
+    assert (
+        db.scalars(
+            select(ItemStatusHistory.id).where(
+                ItemStatusHistory.inventory_item_id.in_([deleted.id, live.id])
+            )
+        ).all()
+        == []
+    )
+
+
+def test_an_unknown_field_in_a_receipt_is_refused(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    """A misspelt `arrived_on` would record a receipt with no arrival date."""
+    ordered = _status_id(db, "ordered")
+    item = build_bare_item(db, status_id=ordered)
+
+    refused = client.post(
+        "/api/inventory/receive",
+        json={"item_ids": [item.id], "outcome": "received", "arived_on": "2026-09-04"},
+        headers=admin_headers,
+    )
+
+    assert refused.status_code == 422, refused.text
+    db.expire_all()
+    assert item.status_id == ordered
+
+
+def test_no_item_lacks_history_across_every_creation_path_a_test_can_drive(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    """The invariant itself, not one endpoint's obedience to it.
+
+    Three code paths build an `InventoryItem`: `splitting.py`,
+    `POST /api/inventory` (entering what was bought on a purchase), and
+    `seed.py`. A test process cannot drive the demo seed script without a
+    great deal of unrelated setup, but it can drive the two live endpoints
+    -- entering an item and splitting -- which is enough to check the
+    invariant at the table level rather than re-asserting what a single code
+    path does: after exercising both, no `inventory_item` row anywhere is
+    missing its opening `item_status_history` row.
+    """
+    order = build_purchase_order(db, vendor_name="Lifecycle Test Vendor")
+
+    entered = client.post(
+        "/api/inventory",
+        json={
+            "purchase_order_id": order.id,
+            "item_kind": "coin",
+            "source_title": "1909-S VDB Lincoln Cent",
+            "year_start": 1909,
+            "item_cost": "1450.00",
+            "country": "US",
+            "grade": "VF20",
+        },
+        headers=admin_headers,
+    )
+    # An entry that was refused would leave only the split path exercised.
+    assert entered.status_code == 201, entered.text
+
+    # `parent` is test scaffolding built directly with `build_bare_item`, which
+    # deliberately bypasses these helpers so tests can set up arbitrary
+    # starting states -- it is not one of the three creation paths under
+    # test, so it is excluded from the check below rather than expected to
+    # satisfy it.
+    parent = build_split_lot(db)
+    db.commit()
+    split_res = do_split(client, admin_headers, parent.id, TUBE)
+    assert split_res.status_code == 200
+
+    orphans = db.scalars(
+        select(InventoryItem.id)
+        .outerjoin(
+            ItemStatusHistory,
+            ItemStatusHistory.inventory_item_id == InventoryItem.id,
+        )
+        .where(ItemStatusHistory.id.is_(None), InventoryItem.id != parent.id)
+    ).all()
+    assert orphans == []

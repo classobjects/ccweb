@@ -1,0 +1,310 @@
+"""`app.seller_titles`: the seller's words to the title, the record to the description.
+
+`main` is always given the test's own `db`: left to itself it opens the
+application's `SessionLocal`, which is the application database.
+"""
+
+from __future__ import annotations
+
+from datetime import date
+
+import pytest
+from app.models import (
+    CurrencyDetail,
+    Denomination,
+    InventoryItem,
+    ItemFieldChange,
+    ItemKind,
+    NoteType,
+    PurchaseOrder,
+    Series,
+    User,
+    Vendor,
+)
+from app.seller_titles import LONG_DESCRIPTION, SHORT_TITLE, apply, main, plan
+from app.series_classify import classify, run
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
+
+from tests.builders import build_bare_item, code_id
+
+SELLER = "1881-S Morgan Silver Dollar BU from an old collection #412"
+
+
+def _dollar(db: Session, **extra: object) -> InventoryItem:
+    """An 1881 Morgan dollar with the seller's words still in its description."""
+    extra.setdefault("source_title", "1")
+    extra.setdefault("description", SELLER)
+    return build_bare_item(
+        db,
+        denomination_id=code_id(db, Denomination, "usd_coin_1_00"),
+        series_id=code_id(db, Series, "morgan_dollar"),
+        year_start=1881,
+        year_end=1881,
+        **extra,
+    )
+
+
+def _planned(db: Session) -> dict[str, tuple[str, str]]:
+    """What the pass would change: old and new description, by item code."""
+    return {c.item_code: (c.description, c.new_description) for c in plan(db).changes}
+
+
+def test_a_face_value_title_gives_way_to_the_sellers_words(
+    db: Session, admin_user: User
+) -> None:
+    item = _dollar(db)
+
+    todo = plan(db)
+    assert [c.item_code for c in todo.changes] == [item.item_code]
+    written = todo.changes[0].new_description
+    # Written from the record: it names what the item is, not the listing.
+    assert "Morgan Dollar" in written
+    assert "#412" not in written
+
+    assert apply(db, todo, admin_user.id) == 1
+    db.commit()
+    db.refresh(item)
+    assert item.source_title == SELLER
+    assert item.description == written
+
+    logged = db.execute(
+        select(
+            ItemFieldChange.field_name,
+            ItemFieldChange.old_value,
+            ItemFieldChange.new_value,
+            ItemFieldChange.changed_by_id,
+        ).where(ItemFieldChange.inventory_item_id == item.id)
+    ).all()
+    assert sorted(logged) == sorted(
+        [
+            ("source_title", "1", SELLER, admin_user.id),
+            ("description", SELLER, written, admin_user.id),
+        ]
+    )
+
+
+def test_the_description_is_the_editors_with_what_a_save_fills(
+    db: Session, admin_user: User
+) -> None:
+    """A $1 Series 1957B note with no class recorded yet.
+
+    The editor's Suggest applies Save's defaults first, so it says Silver
+    Certificate and Blue Seal; describing the bare record would not.
+    """
+    note = build_bare_item(
+        db,
+        item_kind_id=code_id(db, ItemKind, "currency"),
+        denomination_id=code_id(db, Denomination, "usd_note_1"),
+        year_start=None,
+        source_title="$1 Bill",
+        description="Item in hand, no cancellations! Lot #25 of the evening",
+    )
+    db.add(
+        CurrencyDetail(inventory_item_id=note.id, series_year=1957, series_letter="B")
+    )
+    db.commit()
+
+    todo = plan(db)
+
+    assert [c.item_code for c in todo.changes] == [note.item_code]
+    written = todo.changes[0].new_description
+    assert "Silver Certificate" in written
+    assert "Blue Seal" in written
+    # The report tried Save's steps and undid them: nothing is kept.
+    db.expire_all()
+    detail = db.scalar(
+        select(CurrencyDetail).where(CurrencyDetail.inventory_item_id == note.id)
+    )
+    assert detail is not None
+    assert detail.note_type_id is None
+    assert db.scalar(select(func.count()).select_from(ItemFieldChange)) == 0
+
+    apply(db, todo, admin_user.id)
+    db.commit()
+    db.expire_all()
+
+    # Committed, the record holds what its description says, as after a Save.
+    detail = db.scalar(
+        select(CurrencyDetail).where(CurrencyDetail.inventory_item_id == note.id)
+    )
+    assert detail is not None
+    assert detail.note_type_id == code_id(db, NoteType, "silver_certificate")
+    assert db.get_one(InventoryItem, note.id).description == written
+    assert plan(db).changes == []
+
+
+def test_a_second_run_changes_nothing(db: Session, admin_user: User) -> None:
+    _dollar(db)
+    apply(db, plan(db), admin_user.id)
+    db.commit()
+
+    again = plan(db)
+
+    assert again.changes == []
+    assert sum(again.left.values()) == 0
+
+
+def test_what_is_left_alone_and_why(db: Session) -> None:
+    long_title = _dollar(db, source_title="1881-S Morgan Dollar PGA MS63")
+    at_the_edge = _dollar(db, source_title="x" * SHORT_TITLE)
+    past_the_edge = _dollar(db, source_title="x" * (SHORT_TITLE + 1))
+    short = _dollar(db, description="Item as shown #39")
+    just_long = _dollar(db, description="y" * LONG_DESCRIPTION)
+    too_long = _dollar(db, description="z" * 501)
+    gone = _dollar(db)
+    gone.deleted_at = gone.created_at
+    db.commit()
+    # Nothing recorded to describe it by: no year, denomination, series or grade.
+    bare = build_bare_item(db, source_title="1", description=SELLER, year_start=None)
+
+    todo = plan(db)
+
+    changed = {c.item_code for c in todo.changes}
+    assert changed == {at_the_edge.item_code, just_long.item_code}
+    assert long_title.item_code not in changed
+    assert past_the_edge.item_code not in changed
+    assert gone.item_code not in changed
+    assert todo.left == {
+        "description too short to be a title": 1,
+        "description too long to be a title": 1,
+        "nothing in the record to describe it by": 1,
+    }
+    assert short.item_code not in changed
+    assert too_long.item_code not in changed
+    assert bare.item_code not in changed
+
+
+def test_a_description_already_written_from_the_record_is_left(
+    db: Session, admin_user: User
+) -> None:
+    item = _dollar(db)
+    written = plan(db).changes[0].new_description
+    # Someone has already pressed Suggest, but the title is still the face value.
+    item.description = written
+    db.commit()
+
+    todo = plan(db)
+
+    # Left alone, whichever rule says so: a short written description is
+    # also too short to be a title.
+    assert todo.changes == []
+    assert sum(todo.left.values()) == 1
+
+
+def test_a_dry_run_writes_nothing_and_a_commit_needs_a_person(
+    db: Session, admin_user: User, capsys: pytest.CaptureFixture[str]
+) -> None:
+    item = _dollar(db, description=SELLER + " \U0001fa99")
+
+    assert main([], db=db) == 0
+    out = capsys.readouterr().out
+    assert "items to change: 1" in out
+    assert "dry run: nothing written" in out
+    db.refresh(item)
+    assert item.source_title == "1"
+
+    with pytest.raises(SystemExit):
+        main(["--commit"], db=db)
+    assert main(["--commit", "--by", "nobody@example.com"], db=db) == 1
+    db.refresh(item)
+    assert item.source_title == "1"
+
+    assert main(["--commit", "--by", admin_user.email.upper()], db=db) == 0
+    db.refresh(item)
+    assert item.source_title == SELLER + " \U0001fa99"
+
+
+def test_a_lots_listing_is_still_lot_text_once_it_is_the_title(
+    db: Session, admin_user: User
+) -> None:
+    """Moved into the title, a lot's listing is evidence about no single piece.
+
+    Each piece then has its own written description, so the pieces no longer
+    share title *and* description -- but the listing is no less the lot's.
+    """
+    vendor = Vendor(name="Lot Seller")
+    db.add(vendor)
+    db.flush()
+    order = PurchaseOrder(
+        vendor_id=vendor.id, order_number="LOT-9", ordered_on=date(2024, 12, 1)
+    )
+    db.add(order)
+    db.flush()
+    lot = "Coin Collection: Large Cents, Morgan dollars and Mercury dimes"
+    cent, nickel = (
+        build_bare_item(
+            db,
+            denomination_id=code_id(db, Denomination, denomination),
+            year_start=1943,
+            year_end=1943,
+            source_title=title,
+            description=lot,
+            purchase_order_id=order.id,
+        )
+        for denomination, title in (
+            ("usd_coin_0_01", "0.01"),
+            ("usd_coin_0_05", "0.05"),
+        )
+    )
+
+    apply(db, plan(db), admin_user.id)
+    db.commit()
+    db.refresh(cent)
+    db.refresh(nickel)
+    assert cent.source_title == nickel.source_title == lot
+    assert cent.description != nickel.description
+
+    report = run(db, commit=True)
+
+    # Decided by the facts, as before the move: not sent to review as a 1943
+    # cent that "says" Large Cent and Morgan Dollar.
+    db.refresh(cent)
+    db.refresh(nickel)
+    assert db.get_one(Series, cent.series_id).code == "lincoln_cent"
+    assert db.get_one(Series, nickel.series_id).code == "jefferson_nickel"
+    assert [case for case in report.review if case.reason == "conflict"] == []
+    assert classify(db).review == []
+
+
+def test_no_piece_of_a_lot_takes_the_design_its_listing_names(
+    db: Session, admin_user: User
+) -> None:
+    """Every piece of the lot is moved before any is classified.
+
+    A listing naming a design the pieces could be is the lot's text, not
+    evidence about one piece. Classified while its siblings still held their
+    face values, the first piece moved would read the listing as its own.
+    """
+    vendor = Vendor(name="Commemorative Lot Seller")
+    db.add(vendor)
+    db.flush()
+    order = PurchaseOrder(
+        vendor_id=vendor.id, order_number="LOT-2", ordered_on=date(2024, 12, 1)
+    )
+    db.add(order)
+    db.flush()
+    lot = "Lot of 3 Washington/Carver Commemorative Half Dollars"
+    halves = [
+        build_bare_item(
+            db,
+            denomination_id=code_id(db, Denomination, "usd_coin_0_50"),
+            year_start=year,
+            year_end=year,
+            source_title="0.5",
+            description=lot,
+            purchase_order_id=order.id,
+        )
+        for year in (1952, 1953)
+    ]
+
+    todo = plan(db)
+    assert {c.item_code for c in todo.changes} == {h.item_code for h in halves}
+    apply(db, todo, admin_user.id)
+    db.commit()
+
+    for half in halves:
+        db.refresh(half)
+        assert half.source_title == lot
+        # The facts allow Franklin and the commemorative; only the lot says which.
+        assert half.series_id is None, half.item_code

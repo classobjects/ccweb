@@ -1,0 +1,1280 @@
+"""The whole database as one Excel workbook, and back again.
+
+A backup a person can open, read and correct: the
+database is the record. One sheet per
+table, every stored column, the ids and foreign keys exactly as stored, so an
+import rebuilds the same database -- relationships and all.
+
+    python -m app.workbook_backup export [--out FILE]      live -> workbook
+        [--media FOLDER | --no-media]                      and its photographs
+    python -m app.workbook_backup import FILE --to URL     workbook -> database
+        [--unknown-for-missing]                            broken link -> Unknown row
+    python -m app.workbook_backup compare URL              live vs URL, row by row
+    python -m app.workbook_backup widths FILE              remember FILE's column widths
+
+**The photographs go with it.** The database holds each image's row and
+never its bytes, so an export also copies the bytes from media storage into
+a `media` folder beside the workbook (`app.media_backup`), or the folder
+`--media` names; `--no-media` writes the workbook alone. One folder serves
+every export -- only photographs not yet there are copied -- and the export
+exits 1, naming each file, when one could not be backed up. An import loads
+rows only: copy that folder back to `MEDIA_ROOT` to restore the pictures.
+
+**The tables come from the database itself**, by reflection, not from the
+models: a table that has no model would be lost silently by a model-driven
+backup.
+
+**What a cell holds.** Numbers and dates as Excel numbers and dates;
+timestamps as ISO text, so their time zone survives; JSON as JSON text;
+enums as their value; a NULL as an empty cell and an empty string as `""`
+(Excel cannot tell the two apart otherwise). A decimal is rounded back to
+its column's scale on import. Computed columns (`total_cost`, `sales_tax`,
+...) are written for reading, headed "(computed)", and ignored on import --
+the database recomputes them.
+
+**What a cell cannot hold is refused, not altered.** A cell keeps at most
+32,767 characters and no carriage return or control character; text that is
+only blank reads back as NULL, and the text `""` as an empty string. An
+export that meets such a value stops, names its table, row and column, and
+writes no workbook: change the value, then export again. The whole export
+reads one snapshot of the database, so a row saved while it runs is in every
+sheet or in none.
+
+**Importing** needs an empty database at the same migration revision:
+create one and run `alembic upgrade head` against it. Any rows the
+migrations put there are removed first, the tables are loaded in
+foreign-key order (a column that points at its own table, or at one loaded
+later, is filled in a second pass), every id sequence is moved past the
+highest id, and the item-code sequence past the highest item code. It
+refuses the live database -- identified by the server, not by how the URL
+is spelled -- and any database that already holds inventory items: restore
+into a new one, compare it, then switch to it. A workbook
+with a sheet the database has no table for is refused too, rather than
+loaded without it.
+
+**A broken link is refused, all of them at once.** Every foreign key is
+checked against the workbook's own rows before anything is written, and the
+refusal lists each row that points at nothing. With `--unknown-for-missing`
+a link into a *vocabulary* -- a table with a code and a
+label, such as `grade` or `mint` -- is pointed at that vocabulary's Unknown
+row instead, and every substitution is reported. The Unknown row is the one
+coded `unknown` (or labeled Unknown) if the sheet has one; otherwise it is
+added, with id 0 (or the next free id below it) -- ids start at 1, so it is
+never a real row's -- and `source` manual, so a seed load leaves it alone. A
+vocabulary whose rows need more than a code and a label (a denomination's
+face value, a mint's mark) is not given one by guesswork: add an `unknown`
+row to its sheet. A link into
+anything else -- an item, an order -- is still refused; there is no Unknown
+item.
+
+**Column widths are remembered**: each export sizes its
+columns from `data/workbook_widths.json`, keyed by sheet and column *name*
+rather than letter, so a width follows its column when a migration adds or
+moves one. Resize columns in an export, save it, and `widths FILE` records
+them; a sheet it finds widths on replaces that sheet's entry, the rest stay.
+"""
+
+from __future__ import annotations
+
+import argparse
+import contextlib
+import json
+import sys
+from collections.abc import Iterable, Iterator, Sequence
+from dataclasses import dataclass
+from datetime import date, datetime
+from decimal import Decimal
+from pathlib import Path
+from typing import Any
+
+from openpyxl import Workbook, load_workbook
+from openpyxl.cell import WriteOnlyCell
+from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
+from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.worksheet import Worksheet
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Column,
+    Date,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Integer,
+    MetaData,
+    Numeric,
+    Table,
+    Text,
+    create_engine,
+    select,
+    text,
+    update,
+)
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.engine import URL, Connection, Engine, make_url
+from sqlalchemy.exc import DBAPIError, OperationalError
+from sqlalchemy.orm import Session
+from sqlalchemy.sql.elements import ColumnElement
+from sqlalchemy.types import TypeEngine
+
+from . import media_backup
+from .backup import (
+    HIGHEST_ITEM_CODE,
+    ITEM_CODE_SEQUENCE,
+    generated_columns,
+    resync_item_codes,
+    resync_sequence,
+    stored_columns,
+)
+from .cell_text import keep_text
+from .clock import assume_local, local_now
+from .config import settings
+from .storage import get_storage
+
+__all__ = [
+    "EMPTY_STRING",
+    "UNKNOWN_CODE",
+    "WIDTHS_FILE",
+    "Difference",
+    "Imported",
+    "Substitution",
+    "capture_widths",
+    "compare",
+    "export_workbook",
+    "from_cell",
+    "import_workbook",
+    "load_widths",
+    "remember_widths",
+    "to_cell",
+]
+
+#: How an empty string is written: an empty cell reads back as NULL.
+EMPTY_STRING = '""'
+#: The most characters a cell holds; an export refuses a longer text (`_unkept`).
+_CELL_LIMIT = 32767
+#: The header suffix of a computed column, written for reading only.
+COMPUTED = " (computed)"
+#: Sheets that describe the workbook rather than hold a table.
+ABOUT, COLUMNS = "About", "Columns"
+#: The remembered column widths: {sheet: {column name: width}}.
+WIDTHS_FILE = Path(__file__).resolve().parents[1] / "data" / "workbook_widths.json"
+#: Changed when the layout changes, so an old workbook is recognized.
+FORMAT = "ccwebdb-workbook-1"
+#: The About sheet's first row, which its widths are keyed by.
+ABOUT_HEADER = ("format", FORMAT)
+#: The migration table: recorded on the About sheet, never loaded.
+VERSION_TABLE = "alembic_version"
+#: Rows written per insert round trip.
+CHUNK = 1000
+#: The code of a vocabulary's Unknown row.
+UNKNOWN_CODE = "unknown"
+#: The columns that make a table a vocabulary (`models.base.ReferenceMixin`).
+_VOCABULARY_COLUMNS = frozenset({"code", "label", "sort_order", "is_active", "source"})
+#: Broken links named in a refusal; the count says how many more.
+_SHOWN = 25
+
+
+class WorkbookError(RuntimeError):
+    """A workbook that cannot be imported as it stands; the message says where."""
+
+
+# -- one cell -------------------------------------------------------------------
+
+
+def _is_json(kind: TypeEngine[Any]) -> bool:
+    """Whether the column holds JSON, which a cell carries as its text."""
+    return isinstance(kind, (JSON, JSONB))
+
+
+def to_cell(value: object, kind: TypeEngine[Any]) -> object:
+    """A stored value as a workbook cell holds it."""
+    if value is None:
+        return None
+    if _is_json(kind):
+        return json.dumps(value, ensure_ascii=False)
+    if isinstance(value, str):
+        return EMPTY_STRING if value == "" else value
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, Decimal):
+        # At most 12 digits in this schema, well inside a double's 15.
+        return float(value)
+    return value
+
+
+def from_cell(value: object, kind: TypeEngine[Any], where: str) -> object:
+    """A workbook cell as the column stores it; `where` names it in an error."""
+    if value is None or (isinstance(value, str) and value.strip() == ""):
+        return None
+    try:
+        return _convert(value, kind)
+    except (ValueError, ArithmeticError, TypeError) as exc:
+        raise WorkbookError(f"{where}: {value!r} is not a valid {kind}: {exc}") from exc
+
+
+def _convert(value: object, kind: TypeEngine[Any]) -> object:
+    """A cell's value as the column's type stores it.
+
+    Raises ValueError (or the type's own error) for a value the type cannot
+    hold; the caller names the cell.
+    """
+    if _is_json(kind):
+        return _as_json(value)
+    if value == EMPTY_STRING:
+        return ""
+    if isinstance(kind, Boolean):
+        return _as_boolean(value)
+    if isinstance(kind, Numeric) and not isinstance(kind, Integer):
+        return _as_decimal(value, kind)
+    if isinstance(kind, Integer):
+        return _as_whole_number(value)
+    if isinstance(kind, DateTime):
+        return _as_moment(value, kind)
+    if isinstance(kind, Date):
+        return _as_day(value)
+    if isinstance(kind, Enum):
+        return str(value)
+    return value if isinstance(value, str) else str(value)
+
+
+def _as_json(value: object) -> object:
+    """A JSON cell's text decoded; JSON's own null as `JSON.NULL`.
+
+    A JSON null is a value, not SQL NULL: sent as JSON's null.
+    """
+    decoded = json.loads(str(value))
+    return JSON.NULL if decoded is None else decoded
+
+
+def _as_boolean(value: object) -> bool:
+    """A cell read as true or false: a boolean cell, or one of the words for it."""
+    if isinstance(value, bool):
+        return value
+    word = str(value).strip().lower()
+    if word in {"true", "yes", "1"}:
+        return True
+    if word in {"false", "no", "0"}:
+        return False
+    raise ValueError("expected TRUE or FALSE")
+
+
+def _as_decimal(value: object, kind: Numeric[Any]) -> Decimal:
+    """A cell as a decimal, rounded to the column's scale where it has one."""
+    number = Decimal(str(value))
+    scale = kind.scale
+    return number if scale is None else number.quantize(Decimal(1).scaleb(-scale))
+
+
+def _as_whole_number(value: object) -> int:
+    """A cell as an integer; one with a fraction is refused, not rounded."""
+    number = Decimal(str(value))
+    if number != number.to_integral_value():
+        raise ValueError("expected a whole number")
+    return int(number)
+
+
+def _as_moment(value: object, kind: DateTime) -> datetime:
+    """A cell as a timestamp: a date-time cell, or ISO text.
+
+    For a zone-aware column, one typed in by hand with no zone is read as
+    this machine's local time.
+    """
+    moment = (
+        value if isinstance(value, datetime) else datetime.fromisoformat(str(value))
+    )
+    if kind.timezone and moment.tzinfo is None:
+        moment = assume_local(moment)
+    return moment
+
+
+def _as_day(value: object) -> date:
+    """A cell as a date: a date or date-time cell, or ISO text."""
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    return date.fromisoformat(str(value))
+
+
+# -- the schema -----------------------------------------------------------------
+
+
+def reflect(engine: Engine) -> MetaData:
+    """Every table the database holds, in its own terms."""
+    meta = MetaData()
+    meta.reflect(engine)
+    return meta
+
+
+def _tables(meta: MetaData) -> list[Table]:
+    """The data tables in foreign-key order: the migration table is not one."""
+    return [t for t in meta.sorted_tables if t.name != VERSION_TABLE]
+
+
+def _revision(conn: Connection) -> str | None:
+    """The migration revision the database is at."""
+    return conn.execute(text(f"SELECT version_num FROM {VERSION_TABLE}")).scalar()
+
+
+def _order(table: Table) -> list[Column[Any]]:
+    """The columns a table's rows are read in order of: its key, else all of them."""
+    return list(table.primary_key.columns) or list(table.columns)
+
+
+# -- export ---------------------------------------------------------------------
+
+
+def default_path() -> Path:
+    """Beside the other backups, outside the repository, named by the time."""
+    folder = settings.ccweb_archive_dir
+    return folder / f"ccwebdb_{local_now():%Y%m%d_%H%M%S}.xlsx"
+
+
+def _as_read(column: Column[Any]) -> ColumnElement[Any]:
+    """A JSON column is read as its JSON text, the rest as they are.
+
+    As text, a JSON null reads as `null` while SQL NULL reads as nothing;
+    decoded, both would arrive as Python None and the workbook could not
+    tell them apart.
+    """
+    return column.cast(Text()) if _is_json(column.type) else column
+
+
+def _read_type(column: Column[Any]) -> TypeEngine[Any]:
+    """The type of what `_as_read` returns: text for JSON, else the column's."""
+    return Text() if _is_json(column.type) else column.type
+
+
+def _text_cell(sheet: Worksheet, value: object) -> object:
+    """A cell that stays text: a value starting with "=" is not a formula.
+
+    Text that spells a spreadsheet error is left as openpyxl types it, and
+    reads back as the same text.
+    """
+    if isinstance(value, str) and value.startswith("="):
+        return keep_text(WriteOnlyCell(sheet, value=value))
+    return value
+
+
+Widths = dict[str, dict[str, float]]
+
+
+def load_widths(path: Path = WIDTHS_FILE) -> Widths:
+    """The remembered widths, or none if nothing has been remembered yet."""
+    if not path.exists():
+        return {}
+    loaded: Widths = json.loads(path.read_text(encoding="utf-8"))
+    return loaded
+
+
+def capture_widths(workbook: Path) -> Widths:
+    """The widths a person set in `workbook`, by sheet and column-heading name.
+
+    Only widths set by hand (Excel's custom width); a column left at the
+    default is not recorded. Excel may save one width for a run of adjacent
+    columns, so each run is expanded to every column it covers.
+    """
+    book = load_workbook(workbook)
+    out: Widths = {}
+    for sheet in book.worksheets:
+        found = _widths_set(sheet)
+        if found:
+            out[sheet.title] = dict(sorted(found.items()))
+    book.close()
+    return out
+
+
+def _widths_set(sheet: Worksheet) -> dict[str, float]:
+    """One sheet's hand-set widths, by the heading of each column they cover."""
+    names = {
+        cell.column: str(cell.value)
+        for cell in next(sheet.iter_rows(min_row=1, max_row=1), ())
+        if cell.value is not None
+    }
+    found: dict[str, float] = {}
+    for dimension in sheet.column_dimensions.values():
+        if not dimension.customWidth or not dimension.width:
+            continue
+        for index in range(dimension.min or 0, (dimension.max or 0) + 1):
+            if index in names:
+                found[names[index]] = round(float(dimension.width), 2)
+    return found
+
+
+def remember_widths(workbook: Path, path: Path = WIDTHS_FILE) -> Widths:
+    """Merge `workbook`'s widths into the remembered ones; what is stored now.
+
+    A sheet with widths in `workbook` replaces that sheet's entry outright --
+    the owner's latest sizing of it -- and sheets it has no widths on keep
+    theirs.
+    """
+    merged = load_widths(path)
+    merged.update(capture_widths(workbook))
+    ordered = dict(sorted(merged.items()))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(ordered, indent=2) + "\n", encoding="utf-8", newline="\n"
+    )
+    return ordered
+
+
+def _size(sheet: Worksheet, header: Sequence[object], widths: dict[str, float]) -> None:
+    """Size a sheet's columns from the remembered widths, before its first row.
+
+    A write-only sheet writes its column widths ahead of the rows, so this must
+    run before the header is appended.
+    """
+    for index, name in enumerate(header, start=1):
+        width = widths.get(str(name))
+        if width:
+            sheet.column_dimensions[get_column_letter(index)].width = width
+
+
+def export_workbook(
+    engine: Engine, path: Path, widths: Widths | None = None
+) -> dict[str, int]:
+    """Write every table to `path`; the rows written, per table.
+
+    `widths` sizes the columns; by default the remembered ones.
+    """
+    sizes = load_widths() if widths is None else widths
+    meta = reflect(engine)
+    tables = _tables(meta)
+    book = Workbook(write_only=True)
+    try:
+        counts = _write_sheets(engine, book, tables, sizes)
+    except BaseException:
+        _abandon(book)
+        raise
+    path.parent.mkdir(parents=True, exist_ok=True)
+    book.save(path)
+    return counts
+
+
+def _abandon(book: Workbook) -> None:
+    """Close the sheets of a workbook that will not be saved.
+
+    Each write-only sheet holds a temporary file open until it is closed;
+    left to be collected, it is closed in no particular order and complains.
+    """
+    for sheet in book.worksheets:
+        # The export has already failed, and its own error is the one to
+        # raise: a sheet that will not close cleanly adds nothing to it.
+        with contextlib.suppress(Exception):
+            sheet.close()
+
+
+def _unkept(value: object, column: Column[Any]) -> str | None:
+    """Why a cell would not give `value` back on import, or None when it would.
+
+    A cell holds at most `_CELL_LIMIT` characters -- more is cut off without
+    a word -- and no carriage return or control character. Text that is
+    only blank reads back as NULL, and `EMPTY_STRING` itself as the empty
+    string; JSON is exempt from those two, being read back as JSON.
+    """
+    if not isinstance(value, str):
+        return None
+    if len(value) > _CELL_LIMIT:
+        return f"its {len(value):,} characters are more than a cell's {_CELL_LIMIT:,}"
+    if "\r" in value:
+        return "it holds a carriage return, which a cell does not keep"
+    if ILLEGAL_CHARACTERS_RE.search(value):
+        return "it holds a control character, which a cell cannot hold"
+    if _is_json(column.type):
+        return None
+    if value == EMPTY_STRING:
+        return f"it is the text {EMPTY_STRING}, which reads back as an empty string"
+    if value != "" and value.strip() == "":
+        return "it is only blank characters, which read back as no value"
+    return None
+
+
+def _write_sheets(
+    engine: Engine, book: Workbook, tables: list[Table], sizes: Widths
+) -> dict[str, int]:
+    """Fill `book` with every table's rows; the rows written, per table.
+
+    Read in one snapshot (REPEATABLE READ): a row saved while the export
+    runs is in every sheet or in none, so no sheet holds a link to a row
+    another sheet was read too early to hold.
+
+    Raises `WorkbookError`, naming the table, row and column, for a value a
+    cell would not give back (`_unkept`).
+    """
+    counts: dict[str, int] = {}
+    snapshot = engine.connect().execution_options(isolation_level="REPEATABLE READ")
+    with snapshot as conn:
+        revision = _revision(conn)
+        about = book.create_sheet(ABOUT)
+        _size(about, ABOUT_HEADER, sizes.get(ABOUT, {}))
+        columns = book.create_sheet(COLUMNS)
+        column_header = [
+            "table",
+            "column",
+            "type",
+            "nullable",
+            "computed",
+            "references",
+        ]
+        _size(columns, column_header, sizes.get(COLUMNS, {}))
+        columns.append(column_header)
+        for table in tables:
+            for column in table.columns:
+                refs = ", ".join(
+                    f"{fk.column.table.name}.{fk.column.name}"
+                    for fk in column.foreign_keys
+                )
+                columns.append(
+                    [
+                        table.name,
+                        column.name,
+                        str(column.type),
+                        column.nullable,
+                        column.computed is not None,
+                        refs,
+                    ]
+                )
+        for table in tables:
+            sheet = book.create_sheet(table.name)
+            stored, computed = stored_columns(table), generated_columns(table)
+            header = [c.name for c in stored] + [c.name + COMPUTED for c in computed]
+            _size(sheet, header, sizes.get(table.name, {}))
+            sheet.append(header)
+            n = 0
+            everything = [*stored, *computed]
+            kinds = [_read_type(column) for column in everything]
+            result = conn.execution_options(yield_per=CHUNK).execute(
+                select(*(_as_read(c) for c in everything)).order_by(*_order(table))
+            )
+            # Where the row's key is in what was read, to name a refused row.
+            read = [c.name for c in everything]
+            keys = [
+                (c.name, read.index(c.name))
+                for c in list(table.primary_key.columns) or everything[:1]
+            ]
+            for row in result:
+                # Only what an import reads: a computed column is recomputed.
+                for value, column in zip(row, stored, strict=False):
+                    reason = _unkept(value, column)
+                    if reason is not None:
+                        named = ", ".join(f"{name} {row[at]}" for name, at in keys)
+                        raise WorkbookError(
+                            f"{table.name} {named}, {column.name}: the workbook "
+                            f"would not give this value back -- {reason}"
+                        )
+                cells = [
+                    _text_cell(sheet, to_cell(value, kind))
+                    for value, kind in zip(row, kinds, strict=True)
+                ]
+                sheet.append(cells)
+                n += 1
+            counts[table.name] = n
+        about.append(list(ABOUT_HEADER))
+        about.append(["exported", local_now().isoformat()])
+        about.append(["database", make_url(str(engine.url)).database])
+        about.append(["migration revision", revision])
+        about.append(["tables", len(tables)])
+        about.append(["empty cell", "NULL -- no value"])
+        about.append(["empty string", f"written as {EMPTY_STRING}"])
+        about.append(
+            ["timestamps", "ISO text with the time zone; typed with none = local time"]
+        )
+        about.append(
+            ["(computed)", "columns written for reading; the import ignores them"]
+        )
+        about.append([])
+        about.append(["table", "rows"])
+        for name, n in counts.items():
+            about.append([name, n])
+    return counts
+
+
+# -- import ---------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class _Loaded:
+    """One table's rows, converted, and the columns filled in a second pass."""
+
+    table: Table
+    rows: list[dict[str, object]]
+    deferred: list[str]
+
+
+def _about(book: Workbook) -> dict[str, object]:
+    """The workbook's own description, from its first sheet, down to the table list.
+
+    Raises `WorkbookError` for a file with no such sheet or in another format.
+    """
+    if ABOUT not in book.sheetnames:
+        raise WorkbookError(f"no {ABOUT} sheet: not a ccwebdb workbook")
+    out: dict[str, object] = {}
+    for row in book[ABOUT].iter_rows(values_only=True):
+        if row and row[0] is not None and len(row) > 1:
+            out[str(row[0])] = row[1]
+            if row[0] == "table":
+                break
+    if out.get("format") != FORMAT:
+        raise WorkbookError(f"format is {out.get('format')!r}, expected {FORMAT!r}")
+    return out
+
+
+def _read_sheet(book: Workbook, table: Table, later: set[str]) -> _Loaded:
+    """Convert one sheet to rows for `table`, checking every header."""
+    if table.name not in book.sheetnames:
+        raise WorkbookError(f"no sheet for table {table.name}")
+    rows = book[table.name].iter_rows(values_only=True)
+    header = [str(h) if h is not None else "" for h in next(rows, ())]
+    stored = {c.name: c for c in stored_columns(table)}
+    kept = [(i, name) for i, name in enumerate(header) if name in stored]
+    unknown = [n for n in header if n and n not in stored and not n.endswith(COMPUTED)]
+    if unknown:
+        raise WorkbookError(f"{table.name}: no such column {', '.join(unknown)}")
+    missing = sorted(set(stored) - {name for _, name in kept})
+    if missing:
+        raise WorkbookError(f"{table.name}: missing column {', '.join(missing)}")
+    deferred = sorted(
+        {
+            fk.parent.name
+            for fk in table.foreign_keys
+            if fk.column.table is table or fk.column.table.name in later
+        }
+    )
+    out: list[dict[str, object]] = []
+    for number, values in enumerate(rows, start=2):
+        if values is None or all(v is None for v in values):
+            continue
+        record: dict[str, object] = {}
+        for i, name in kept:
+            value = values[i] if i < len(values) else None
+            record[name] = from_cell(
+                value, stored[name].type, f"{table.name} row {number}, {name}"
+            )
+        out.append(record)
+    return _Loaded(table, out, deferred)
+
+
+def _identity(engine: Engine) -> tuple[int, str]:
+    """The server's cluster identifier and the database's name, as the server says.
+
+    One server answers to many URL spellings (`localhost`, `127.0.0.1`, an
+    omitted default port), so only the server itself can say two URLs name
+    the same database.
+    """
+    with engine.connect() as conn:
+        row = conn.execute(
+            text(
+                "SELECT (SELECT system_identifier FROM pg_control_system()), "
+                "current_database()"
+            )
+        ).one()
+    return int(row[0]), str(row[1])
+
+
+_LOOPBACK = frozenset({"localhost", "127.0.0.1", "::1"})
+
+
+def _named(url: URL) -> tuple[str, int, str]:
+    """The host, port and database a URL names, with the usual spellings merged.
+
+    Every loopback spelling is one host and an omitted port is PostgreSQL's
+    default. Weaker than `_identity` -- another hostname for this machine is
+    not recognised -- so it serves only when the server cannot be asked.
+    """
+    host = (url.host or "localhost").lower()
+    return (
+        "localhost" if host in _LOOPBACK else host,
+        url.port or 5432,
+        url.database or "",
+    )
+
+
+def _refuse_live(target: Engine) -> None:
+    """Refuse `target` if it is the database the app runs on.
+
+    The server identifies itself when it can be reached. When it cannot, a
+    restore must still be possible, so the two URLs' host, port and database
+    are compared instead; `_refuse_occupied` also refuses a target that holds
+    a collection.
+    """
+    live = create_engine(settings.database_url)
+    try:
+        live_identity = _identity(live)
+    except OperationalError:
+        if _named(live.url) == _named(target.url):
+            raise WorkbookError(
+                f"{live.url.database} is the live database: import into a new "
+                "one, compare it, then switch to it"
+            ) from None
+        return
+    finally:
+        live.dispose()
+    if _identity(target) == live_identity:
+        raise WorkbookError(
+            f"{live_identity[1]} is the live database: import into a new one, "
+            "compare it, then switch to it"
+        )
+
+
+def _refuse_occupied(conn: Connection, tables: list[Table]) -> None:
+    """Refuse a target that already holds inventory items.
+
+    A new database holds none -- the migrations seed vocabularies, not
+    items -- so rows there mean the target is somebody's collection.
+    """
+    if not any(t.name == "inventory_item" for t in tables):
+        return
+    held = conn.execute(text("SELECT count(*) FROM inventory_item")).scalar_one()
+    if held:
+        raise WorkbookError(
+            f"the database already holds {held} inventory item(s): import into "
+            "a new one"
+        )
+
+
+@dataclass(frozen=True)
+class Substitution:
+    """A link that pointed at nothing, pointed at its vocabulary's Unknown row."""
+
+    table: str
+    row: str
+    column: str
+    missing: object
+    vocabulary: str
+    unknown: object
+
+
+@dataclass(frozen=True)
+class Imported:
+    """What an import loaded: rows per table, and every Unknown substitution."""
+
+    counts: dict[str, int]
+    substituted: list[Substitution]
+
+
+def import_workbook(
+    path: Path, url: str, *, unknown_for_missing: bool = False
+) -> Imported:
+    """Load the workbook at `path` into the database at `url`.
+
+    A link that points at no row is refused, unless `unknown_for_missing`
+    and the link is into a vocabulary: then it points at that vocabulary's
+    Unknown row, and the substitution is returned.
+    """
+    engine = create_engine(url)
+    book: Workbook | None = None
+    try:
+        _refuse_live(engine)
+        book = load_workbook(path, read_only=True, data_only=True)
+        return _load(engine, book, unknown_for_missing=unknown_for_missing)
+    finally:
+        # Closed whether it loaded or was refused: a pooled connection left
+        # open holds the database, and nothing can drop or rename it.
+        if book is not None:
+            book.close()
+        engine.dispose()
+
+
+def _is_vocabulary(table: Table) -> bool:
+    """Whether the table has the columns every vocabulary has."""
+    return {c.name for c in table.columns} >= _VOCABULARY_COLUMNS
+
+
+def _key(part: _Loaded, row: dict[str, object]) -> str:
+    """A row named by its primary key, as a refusal or a report shows it."""
+    keys = list(part.table.primary_key.columns) or list(part.table.columns)[:1]
+    return ", ".join(f"{k.name} {row.get(k.name)}" for k in keys)
+
+
+def _unknown_row(part: _Loaded, column: str) -> object:
+    """The value of `column` on the vocabulary's Unknown row, added if absent."""
+    for row in part.rows:
+        code, label = row.get("code"), row.get("label")
+        if code == UNKNOWN_CODE or (
+            isinstance(label, str) and label.lower() == "unknown"
+        ):
+            return row[column]
+    table = part.table
+    primary = list(table.primary_key.columns)
+    if [c.name for c in primary] != [column] or not isinstance(
+        primary[0].type, Integer
+    ):
+        raise WorkbookError(
+            f"{table.name}: links point at {column}, not its integer id, so no "
+            f"Unknown row can be added: add a row coded {UNKNOWN_CODE!r} to its sheet"
+        )
+    filled = _VOCABULARY_COLUMNS | {column}
+    needed = [
+        c.name
+        for c in stored_columns(table)
+        if not c.nullable and c.server_default is None and c.name not in filled
+    ]
+    if needed:
+        raise WorkbookError(
+            f"{table.name}: an Unknown row needs {', '.join(needed)}, which cannot "
+            f"be guessed: add a row coded {UNKNOWN_CODE!r} to its sheet"
+        )
+    taken = {row.get(column) for row in part.rows}
+    new_id = 0
+    while new_id in taken:
+        new_id -= 1
+    orders = [o for r in part.rows if isinstance(o := r.get("sort_order"), int)]
+    # Only the columns set here: the database fills the rest, NULL or its own
+    # default (`grade.is_plus` is NOT NULL DEFAULT false) -- an explicit None
+    # would be refused. `_load` inserts a row of other columns on its own.
+    part.rows.append(
+        {
+            column: new_id,
+            "code": UNKNOWN_CODE,
+            "label": "Unknown",
+            # Last in a sequenced picker, after every real value.
+            "sort_order": max(orders, default=0) + 1,
+            "is_active": True,
+            "source": "manual",
+        }
+    )
+    return new_id
+
+
+def _check_links(parts: list[_Loaded], unknown_for_missing: bool) -> list[Substitution]:
+    """Refuse or substitute every link that points at no row in the workbook.
+
+    Checked here, before anything is written, so a refusal names every broken
+    link at once rather than the database's first. A link of several columns
+    is left to the database.
+    """
+    by_name = {part.table.name: part for part in parts}
+    present: dict[tuple[str, str], set[object]] = {}
+    broken: list[str] = []
+    substituted: list[Substitution] = []
+    for part in parts:
+        for fk in sorted(part.table.foreign_keys, key=lambda f: f.parent.name):
+            if not _is_checked_here(fk, by_name):
+                continue
+            _check_link(
+                part, fk, by_name, present, unknown_for_missing, broken, substituted
+            )
+    if broken:
+        raise _links_refused(broken, unknown_for_missing)
+    return substituted
+
+
+def _held(
+    present: dict[tuple[str, str], set[object]],
+    by_name: dict[str, _Loaded],
+    table: str,
+    column: str,
+) -> set[object]:
+    """Every value the workbook holds in one column, gathered once into `present`."""
+    if (table, column) not in present:
+        present[table, column] = {r.get(column) for r in by_name[table].rows}
+    return present[table, column]
+
+
+def _is_checked_here(fk: ForeignKey, by_name: dict[str, _Loaded]) -> bool:
+    """Whether a link is one column into a table the workbook holds.
+
+    A link of several columns is left to the database.
+    """
+    constraint = fk.constraint
+    return not (
+        constraint is None
+        or len(constraint.elements) != 1
+        or fk.column.table.name not in by_name
+    )
+
+
+def _check_link(
+    part: _Loaded,
+    fk: ForeignKey,
+    by_name: dict[str, _Loaded],
+    present: dict[tuple[str, str], set[object]],
+    unknown_for_missing: bool,
+    broken: list[str],
+    substituted: list[Substitution],
+) -> None:
+    """Check one link of one table, row by row, in the sheet's order.
+
+    A row whose link finds no row is pointed at its vocabulary's Unknown row
+    and added to `substituted` when that was asked for and the target is a
+    vocabulary; otherwise it is added to `broken`.
+    """
+    target, column = fk.column.table, fk.column.name
+    for row in part.rows:
+        value = row.get(fk.parent.name)
+        if value is None or value in _held(present, by_name, target.name, column):
+            continue
+        if unknown_for_missing and _is_vocabulary(target):
+            unknown = _unknown_row(by_name[target.name], column)
+            _held(present, by_name, target.name, column).add(unknown)
+            row[fk.parent.name] = unknown
+            substituted.append(
+                Substitution(
+                    part.table.name,
+                    _key(part, row),
+                    fk.parent.name,
+                    value,
+                    target.name,
+                    unknown,
+                )
+            )
+        else:
+            broken.append(
+                f"{part.table.name} {_key(part, row)}: {fk.parent.name} "
+                f"{value!r} is no {target.name}.{column}"
+            )
+
+
+def _links_refused(broken: list[str], unknown_for_missing: bool) -> WorkbookError:
+    """The refusal naming the broken links: the first `_SHOWN`, and how many more."""
+    shown = "; ".join(broken[:_SHOWN])
+    more = f" (and {len(broken) - _SHOWN} more)" if len(broken) > _SHOWN else ""
+    hint = (
+        ""
+        if unknown_for_missing
+        else (
+            " -- with --unknown-for-missing, a link into a vocabulary "
+            "points at its Unknown row instead"
+        )
+    )
+    return WorkbookError(f"{len(broken)} link(s) point at nothing: {shown}{more}{hint}")
+
+
+def _load(engine: Engine, book: Workbook, *, unknown_for_missing: bool) -> Imported:
+    """Replace every table's rows with the workbook's, in one transaction."""
+    about = _about(book)
+    tables = _tables(reflect(engine))
+    _refuse_stray_sheets(book, tables)
+    _write_none_as_sql_null(tables)
+    counts: dict[str, int] = {}
+    with engine.begin() as conn:
+        _refuse_occupied(conn, tables)
+        revision = _revision(conn)
+        if revision != about.get("migration revision"):
+            raise WorkbookError(
+                f"the workbook is at revision {about.get('migration revision')}, "
+                f"the database at {revision}: run `alembic upgrade` to match"
+            )
+        # Anything the migrations inserted goes: the workbook is the whole record.
+        names = ", ".join(
+            engine.dialect.identifier_preparer.quote(t.name) for t in tables
+        )
+        conn.execute(text(f"TRUNCATE {names} RESTART IDENTITY CASCADE"))
+
+        remaining = {t.name for t in tables}
+        loaded: list[_Loaded] = []
+        for table in tables:
+            remaining.discard(table.name)
+            loaded.append(_read_sheet(book, table, remaining))
+        substituted = _check_links(loaded, unknown_for_missing)
+        for part in loaded:
+            _first_pass(conn, part)
+            counts[part.table.name] = len(part.rows)
+        for part in loaded:
+            _second_pass(conn, part)
+        for table in tables:
+            resync_sequence(conn, conn.dialect, table)
+            resync_item_codes(conn, conn.dialect, table)
+    return Imported(counts, substituted)
+
+
+def _refuse_stray_sheets(book: Workbook, tables: list[Table]) -> None:
+    """Refuse a workbook holding a sheet the database has no table for.
+
+    Every sheet is the workbook's own description or a table's rows. Rows
+    under a name the database has no table for would be left out without a
+    word, and the load would still say it had loaded the workbook.
+    """
+    known = {ABOUT, COLUMNS, *(t.name for t in tables)}
+    stray = [name for name in book.sheetnames if name not in known]
+    if stray:
+        raise WorkbookError(
+            f"no table in the database for the sheet(s) {', '.join(stray)}: their "
+            "rows would not be loaded -- remove a sheet that is not a table's, or "
+            "bring the database to the workbook's migration revision"
+        )
+
+
+def _write_none_as_sql_null(tables: list[Table]) -> None:
+    """Have every JSON column write Python's None as SQL NULL.
+
+    JSON's own null comes from a cell as `JSON.NULL` (`_as_json`), so the
+    two stay apart on the way in.
+    """
+    for table in tables:
+        for column in table.columns:
+            if _is_json(column.type):
+                column.type = JSONB(none_as_null=True)
+
+
+def _first_pass(conn: Connection, part: _Loaded) -> None:
+    """Insert one table's rows, the links `_second_pass` fills left empty.
+
+    One insert per set of columns: a sheet's rows all share one, an added
+    Unknown row names fewer.
+    """
+    shapes: dict[tuple[str, ...], list[dict[str, object]]] = {}
+    for r in part.rows:
+        first = {k: (None if k in part.deferred else v) for k, v in r.items()}
+        shapes.setdefault(tuple(first), []).append(first)
+    for rows in shapes.values():
+        for start in range(0, len(rows), CHUNK):
+            _insert(conn, part.table, rows[start : start + CHUNK])
+
+
+def _insert(conn: Connection, table: Table, rows: list[dict[str, object]]) -> None:
+    """Insert rows; a refusal names the table and the database's own reason."""
+    try:
+        conn.execute(table.insert(), rows)
+    except DBAPIError as exc:
+        raise _refused(table, "a row", exc) from exc
+
+
+def _refused(table: Table, what: str, exc: DBAPIError) -> WorkbookError:
+    """The refusal for a write the database turned down, in its own words.
+
+    The first two lines of the driver's message: the reason, and the detail
+    that names the offending value.
+    """
+    reason = str(exc.orig).strip().splitlines()
+    return WorkbookError(
+        f"{table.name}: the database refused {what} -- {' '.join(reason[:2])}"
+    )
+
+
+def _second_pass(conn: Connection, part: _Loaded) -> None:
+    """Fill the links that could not be written before their targets existed."""
+    if not part.deferred:
+        return
+    keys = list(part.table.primary_key.columns)
+    for row in part.rows:
+        values = {
+            name: row[name] for name in part.deferred if row.get(name) is not None
+        }
+        if not values:
+            continue
+        where = [key == row[key.name] for key in keys]
+        try:
+            conn.execute(update(part.table).where(*where).values(**values))
+        except DBAPIError as exc:
+            raise _refused(part.table, "a link", exc) from exc
+
+
+# -- compare --------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Difference:
+    """A table whose contents differ between two databases.
+
+    A side that does not have the table at all counts -1 rows. For the
+    item-code sequence (`ITEM_CODE_SEQUENCE`) the two numbers are the code
+    each side would issue next, -1 for a side without one.
+    """
+
+    table: str
+    left_rows: int
+    right_rows: int
+
+
+def _digest(conn: Connection, table: Table) -> tuple[int, str]:
+    """Row count and a digest of every row, in key order, as text."""
+    quote = conn.dialect.identifier_preparer.quote
+    quoted = quote(table.name)
+    order = ", ".join(quote(c.name) for c in _order(table))
+    # Columns named, in name order: a database built by migrations and one
+    # built from the models hold the same columns in different physical
+    # orders, and `t::text` would call identical rows different.
+    ordered = sorted(table.columns, key=lambda c: c.name)
+    fields = ", ".join(f"t.{quote(c.name)}" for c in ordered)
+    # Each row is hashed first and the fixed-width hashes joined, so the
+    # string the server builds grows by 32 bytes a row however wide the row
+    # is -- a table of long notes or JSON does not become one huge value.
+    joined = f"string_agg(md5(ROW({fields})::text), '' ORDER BY {order})"
+    row = conn.execute(
+        text(f"SELECT count(*), md5(coalesce({joined}, '')) FROM {quoted} t")
+    ).one()
+    return int(row[0]), str(row[1])
+
+
+def _item_codes(conn: Connection, tables: dict[str, Table]) -> tuple[int, int] | None:
+    """The item code the sequence issues next, and the highest one held.
+
+    None for a database with no item codes to issue: no item table with a
+    code, or no sequence. Read without drawing from the sequence.
+    """
+    items = tables.get("inventory_item")
+    if items is None or "item_code" not in items.columns:
+        return None
+    found = conn.execute(text("SELECT to_regclass(:s)"), {"s": ITEM_CODE_SEQUENCE})
+    if found.scalar() is None:
+        return None
+    quoted = conn.dialect.identifier_preparer.quote(ITEM_CODE_SEQUENCE)
+    state = text(f"SELECT last_value, is_called FROM {quoted}")
+    last, called = conn.execute(state).one()
+    highest = conn.execute(text(HIGHEST_ITEM_CODE)).scalar()
+    upcoming = int(last) + 1 if called else int(last)
+    return upcoming, int(highest or 0)
+
+
+def compare(left: Engine, right: Engine) -> list[Difference]:
+    """Every table whose rows differ, compared cell by cell through a digest.
+
+    A table only one side has is a difference too, whichever side that is.
+    So is an item-code sequence that would issue, on either side, a code that
+    side already holds: equal rows that refuse the next item are no restore.
+    The sequences are not compared with each other -- a code drawn and never
+    kept leaves live's past its highest code, as no restore's can be.
+    Each side is read in one snapshot, so a row saved while the comparison
+    runs is not seen in one table and missed in another.
+    """
+    out: list[Difference] = []
+    tables = _tables(reflect(left))
+    others = {table.name: table for table in _tables(reflect(right))}
+    snapshot = {"isolation_level": "REPEATABLE READ"}
+    with (
+        left.connect().execution_options(**snapshot) as a,
+        right.connect().execution_options(**snapshot) as b,
+    ):
+        if _revision(a) != _revision(b):
+            out.append(Difference(VERSION_TABLE, 1, 1))
+        left_codes = _item_codes(a, {t.name: t for t in tables})
+        right_codes = _item_codes(b, others)
+        if any(codes[0] <= codes[1] for codes in (left_codes, right_codes) if codes):
+            out.append(
+                Difference(
+                    ITEM_CODE_SEQUENCE,
+                    left_codes[0] if left_codes else -1,
+                    right_codes[0] if right_codes else -1,
+                )
+            )
+        for table in tables:
+            other = others.pop(table.name, None)
+            if other is None:
+                out.append(Difference(table.name, _digest(a, table)[0], -1))
+                continue
+            left_digest, right_digest = _digest(a, table), _digest(b, table)
+            if left_digest != right_digest:
+                out.append(Difference(table.name, left_digest[0], right_digest[0]))
+        for name, other in sorted(others.items()):
+            out.append(Difference(name, -1, _digest(b, other)[0]))
+    return out
+
+
+# -- command line ---------------------------------------------------------------
+
+
+def _print_counts(counts: dict[str, int]) -> None:
+    """Print the row count of each table that has rows, and the totals."""
+    for name, n in counts.items():
+        if n:
+            print(f"  {name:<28}{n:>8,}")
+    print(f"  {len(counts)} tables, {sum(counts.values()):,} rows")
+
+
+def _lines(differences: Iterable[Difference]) -> Iterator[str]:
+    """One printed line per table that differs, with each side's row count."""
+    for d in differences:
+        left = "missing" if d.left_rows < 0 else f"{d.left_rows:,} rows"
+        right = "missing" if d.right_rows < 0 else f"{d.right_rows:,}"
+        yield f"  DIFFERS {d.table}: {left} vs {right}"
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """Export, import or compare, or remember a workbook's column widths."""
+    parser = argparse.ArgumentParser(prog="workbook_backup", description=__doc__)
+    sub = parser.add_subparsers(dest="command", required=True)
+    exp = sub.add_parser("export", help="write the live database to a workbook")
+    exp.add_argument("--out", type=Path, help="the file; default ccwebdb-backups/")
+    exp.add_argument(
+        "--media",
+        type=Path,
+        help="where the photographs are copied; default a media folder beside the file",
+    )
+    exp.add_argument("--no-media", action="store_true", help="write the workbook only")
+    imp = sub.add_parser("import", help="load a workbook into an empty database")
+    imp.add_argument("file", type=Path)
+    imp.add_argument("--to", required=True, help="the database URL to load into")
+    imp.add_argument(
+        "--unknown-for-missing",
+        action="store_true",
+        help="point a vocabulary link that finds no row at its Unknown row",
+    )
+    cmp_ = sub.add_parser("compare", help="compare the live database with another")
+    cmp_.add_argument("url")
+    wid = sub.add_parser("widths", help="remember a workbook's column widths")
+    wid.add_argument("file", type=Path)
+    args = parser.parse_args(argv)
+
+    live = create_engine(settings.database_url)
+    try:
+        if args.command == "widths":
+            return _run_widths(args)
+        if args.command == "export":
+            return _run_export(live, args)
+        if args.command == "import":
+            return _run_import(args)
+        return _run_compare(live, args)
+    except WorkbookError as exc:
+        print(f"refused: {exc}", file=sys.stderr)
+        return 2
+
+
+def _run_widths(args: argparse.Namespace) -> int:
+    """`widths FILE`: remember the workbook's column widths; the exit status."""
+    stored = remember_widths(args.file)
+    columns = sum(len(v) for v in stored.values())
+    print(
+        f"remembered {columns} column widths on {len(stored)} sheets in {WIDTHS_FILE}"
+    )
+    return 0
+
+
+def _run_export(live: Engine, args: argparse.Namespace) -> int:
+    """`export`: write the workbook and copy the photographs; the exit status.
+
+    The workbook holds every image row and no picture: the bytes are in
+    media storage, so they are copied beside it unless `--no-media`. Exits 1
+    when a photograph could not be backed up.
+    """
+    path = args.out or default_path()
+    counts = export_workbook(live, path)
+    _print_counts(counts)
+    print(f"wrote {path}")
+    if args.no_media:
+        return 0
+    folder = args.media or path.parent / "media"
+    with Session(live) as db:
+        done = media_backup.copy_media(db, get_storage(), folder)
+    media_backup.report(done, folder)
+    return 1 if done.problems else 0
+
+
+def _run_import(args: argparse.Namespace) -> int:
+    """`import FILE --to URL`: load the workbook and say what was loaded."""
+    imported = import_workbook(
+        args.file, args.to, unknown_for_missing=args.unknown_for_missing
+    )
+    _print_counts(imported.counts)
+    for s in imported.substituted:
+        print(
+            f"  UNKNOWN {s.table} {s.row}: {s.column} {s.missing!r} -> "
+            f"{s.vocabulary} Unknown ({s.unknown})"
+        )
+    if imported.substituted:
+        print(f"  {len(imported.substituted)} link(s) set to Unknown")
+    print(f"loaded {args.file} into {make_url(args.to).database}")
+    return 0
+
+
+def _run_compare(live: Engine, args: argparse.Namespace) -> int:
+    """`compare URL`: print each table that differs; exit 1 when any does."""
+    differences = compare(live, create_engine(args.url))
+    for line in _lines(differences):
+        print(line)
+    print("identical" if not differences else f"{len(differences)} table(s) differ")
+    return 1 if differences else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

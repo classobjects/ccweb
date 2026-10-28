@@ -1,0 +1,1250 @@
+"""The offers API (`docs/specs/selling-design.md`).
+
+The HTTP face of `offering_writes`: offering items, listing what is offered,
+editing an offer and ending one. The writer's own rules are tested in
+`test_offering_writes.py`; what is checked here is the API contract on top of
+them -- who may call it, that a batch is all or nothing, and that the response
+shape carries what the console needs.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Collection, Sequence
+from decimal import Decimal
+
+import httpx
+import pytest
+from app import auctions, offering_writes
+from app.models import (
+    Auction,
+    Listing,
+    ListingFormat,
+    ListingStatus,
+    SalesLot,
+    SalesLotStatus,
+    SalesVenue,
+    SalesVenueKind,
+    User,
+)
+from app.routers.offers import create_offers
+from app.schemas import OfferIn, OfferItemIn, OfferRefusedOut
+from fastapi.testclient import TestClient
+from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+from sqlalchemy.orm.exc import StaleDataError
+
+from tests.builders import ItemFactory, patch_current
+
+EBAY_TEMPLATE = "https://www.ebay.com/itm/{external_id}"
+
+
+def _venue(
+    db: Session,
+    code: str,
+    *,
+    template: str | None = None,
+    kind: str = "marketplace",
+) -> SalesVenue:
+    """A platform to offer on, committed so a rollback under test keeps it."""
+    kind_id = db.scalar(select(SalesVenueKind.id).where(SalesVenueKind.code == kind))
+    venue = SalesVenue(
+        code=code,
+        name=code.title(),
+        sales_venue_kind_id=kind_id,
+        listing_url_template=template,
+    )
+    db.add(venue)
+    db.commit()
+    return venue
+
+
+def _offer(
+    client: TestClient,
+    headers: dict[str, str],
+    venue: str,
+    items: list[dict[str, object]],
+) -> httpx.Response:
+    """POST one batch of offers and hand back the response."""
+    return client.post(
+        "/api/offers",
+        headers=headers,
+        json={"venue": venue, "format": "fixed_price", "items": items},
+    )
+
+
+# --------------------------------------------------------------------------
+# Who may call it
+# --------------------------------------------------------------------------
+
+
+def test_offering_is_admin_only(
+    client: TestClient, customer_headers: dict[str, str], make_item: ItemFactory
+) -> None:
+    item = make_item()
+    body = {
+        "venue": "store",
+        "format": "fixed_price",
+        "items": [{"item_id": item.id, "price": "10.00"}],
+    }
+    assert client.post("/api/offers", json=body).status_code == 401
+    assert (
+        client.post("/api/offers", json=body, headers=customer_headers).status_code
+        == 403
+    )
+
+
+def test_the_listing_list_is_admin_only(
+    client: TestClient, customer_headers: dict[str, str]
+) -> None:
+    assert client.get("/api/listings").status_code == 401
+    assert client.get("/api/listings", headers=customer_headers).status_code == 403
+
+
+def test_editing_and_ending_are_admin_only(
+    client: TestClient, customer_headers: dict[str, str]
+) -> None:
+    """The guard runs before the handler, so no listing needs to exist.
+
+    A 404 here would mean the dependency had been dropped and the request had
+    reached the row lookup -- which is the regression these two lines exist
+    to catch.
+    """
+    edit = {"price": "1.00"}
+    assert patch_current(client, "/api/listings/1", json=edit).status_code == 401
+    assert (
+        patch_current(
+            client, "/api/listings/1", json=edit, headers=customer_headers
+        ).status_code
+        == 403
+    )
+    assert client.post("/api/listings/1/end").status_code == 401
+    assert (
+        client.post("/api/listings/1/end", headers=customer_headers).status_code == 403
+    )
+
+
+# --------------------------------------------------------------------------
+# Offering
+# --------------------------------------------------------------------------
+
+
+def test_offering_two_items_at_once(
+    client: TestClient,
+    db: Session,
+    admin_headers: dict[str, str],
+    make_item: ItemFactory,
+) -> None:
+    first = make_item()
+    second = make_item()
+    venue = _venue(db, "ebay-two")
+
+    response = _offer(
+        client,
+        admin_headers,
+        venue.code,
+        [
+            {"item_id": first.id, "price": "120.00", "title": "First"},
+            {"item_id": second.id, "price": "45.50", "title": "Second"},
+        ],
+    )
+    assert response.status_code == 201, response.text
+    listings = response.json()["listings"]
+    assert len(listings) == 2
+    assert [row["item_id"] for row in listings] == [first.id, second.id]
+    assert {row["status"] for row in listings} == {"active"}
+    assert {row["venue"] for row in listings} == {"ebay-two"}
+    assert {row["format"] for row in listings} == {"fixed_price"}
+    # The exact string, not a Decimal comparison: money crosses this API as a
+    # string and `Decimal(120.0) == Decimal("120.00")` would hide a regression
+    # to float serialization, which is the one thing forbidden here.
+    assert listings[0]["price"] == "120.00"
+    assert listings[1]["price"] == "45.50"
+    assert listings[0]["item_code"] == first.item_code
+    assert listings[0]["currency"] == "USD"
+    # Admin-only, so the console may show what the item cost.
+    assert listings[0]["cost_basis"] == str(first.total_cost)
+    # A number, not the string "1": one `listing.version` column, so an int,
+    # unlike the catalog's composite version token.
+    assert listings[0]["version"] == 1
+
+    written = db.scalars(
+        select(Listing).where(Listing.inventory_item_id.in_([first.id, second.id]))
+    ).all()
+    assert len(written) == 2
+
+
+def test_a_refused_batch_writes_nothing(
+    client: TestClient,
+    db: Session,
+    admin_headers: dict[str, str],
+    make_item: ItemFactory,
+) -> None:
+    """One item offered elsewhere refuses the whole batch, the rest included."""
+    spoken_for = make_item()
+    free = make_item()
+    first_venue = _venue(db, "ebay-taken")
+    second_venue = _venue(db, "whatnot-taken")
+
+    assert (
+        _offer(
+            client,
+            admin_headers,
+            first_venue.code,
+            [{"item_id": spoken_for.id, "price": "50.00"}],
+        ).status_code
+        == 201
+    )
+
+    response = _offer(
+        client,
+        admin_headers,
+        second_venue.code,
+        # The free item first, so it is written before the refusal happens.
+        [
+            {"item_id": free.id, "price": "10.00"},
+            {"item_id": spoken_for.id, "price": "60.00"},
+        ],
+    )
+    assert response.status_code == 409, response.text
+    body = response.json()
+    assert [row["item_code"] for row in body["refused"]] == [spoken_for.item_code]
+    assert "ebay-taken".title() in body["refused"][0]["reason"]
+
+    # Read back, not remembered: the other item must have no listing at all.
+    db.expire_all()
+    assert (
+        db.scalars(select(Listing).where(Listing.inventory_item_id == free.id)).all()
+        == []
+    )
+
+
+def test_an_unknown_item_id_is_unprocessable(
+    client: TestClient,
+    db: Session,
+    admin_headers: dict[str, str],
+) -> None:
+    venue = _venue(db, "ebay-unknown-item")
+    response = _offer(
+        client, admin_headers, venue.code, [{"item_id": 999999, "price": "1.00"}]
+    )
+    assert response.status_code == 422, response.text
+
+
+def test_an_unknown_platform_code_is_unprocessable(
+    client: TestClient, admin_headers: dict[str, str], make_item: ItemFactory
+) -> None:
+    item = make_item()
+    response = _offer(
+        client,
+        admin_headers,
+        "no-such-platform",
+        [{"item_id": item.id, "price": "1.00"}],
+    )
+    assert response.status_code == 422, response.text
+
+
+def test_an_unknown_lot_id_is_unprocessable(
+    client: TestClient,
+    db: Session,
+    admin_headers: dict[str, str],
+) -> None:
+    """An id in the body that names no lot is a bad field, not a missing page."""
+    venue = _venue(db, "ebay-unknown-lot")
+    response = client.post(
+        "/api/offers",
+        headers=admin_headers,
+        json={"venue": venue.code, "lot_id": 999999, "price": "1.00"},
+    )
+    assert response.status_code == 422, response.text
+    assert response.json()["detail"] == "Unknown lot_id: 999999"
+
+
+def test_an_auction_in_the_web_store_is_unprocessable(
+    client: TestClient,
+    db: Session,
+    admin_headers: dict[str, str],
+    make_item: ItemFactory,
+) -> None:
+    """The shop sells at a fixed price through checkout and nothing else.
+
+    An auction listing there would hold the coin while the shop could not
+    show it, checkout could not sell it and Record sale refuses a store
+    listing -- a coin off sale with no way to sell it.
+    """
+    item = make_item()
+    response = client.post(
+        "/api/offers",
+        headers=admin_headers,
+        json={
+            "venue": "store",
+            "format": "auction",
+            "items": [{"item_id": item.id, "price": "10.00"}],
+        },
+    )
+    assert response.status_code == 422, response.text
+    assert "fixed price" in response.json()["detail"]
+    db.expire_all()
+    assert (
+        db.scalar(select(Listing.id).where(Listing.inventory_item_id == item.id))
+        is None
+    )
+
+
+def _rejected_fields(response: httpx.Response) -> set[str]:
+    """The field each validation error names, so a 422 is pinned to its cause.
+
+    A bare `status_code == 422` would pass if the request were rejected for
+    some entirely different reason, which is exactly what these tests must not
+    accept.
+    """
+    return {str(error["loc"][-1]) for error in response.json()["detail"]}
+
+
+def test_the_same_item_twice_in_one_batch_says_so(
+    client: TestClient,
+    db: Session,
+    admin_headers: dict[str, str],
+    make_item: ItemFactory,
+) -> None:
+    """Named plainly, rather than as "already offered" by the writer."""
+    item = make_item()
+    venue = _venue(db, "ebay-twice")
+
+    response = _offer(
+        client,
+        admin_headers,
+        venue.code,
+        [
+            {"item_id": item.id, "price": "1.00"},
+            {"item_id": item.id, "price": "2.00"},
+        ],
+    )
+    assert response.status_code == 409, response.text
+    refused = response.json()["refused"]
+    assert [row["item_code"] for row in refused] == [item.item_code]
+    assert "more than once in this batch" in refused[0]["reason"]
+
+    db.expire_all()
+    assert (
+        db.scalars(select(Listing).where(Listing.inventory_item_id == item.id)).all()
+        == []
+    )
+
+
+def test_a_price_with_too_many_decimal_places_is_refused(
+    client: TestClient,
+    db: Session,
+    admin_headers: dict[str, str],
+    make_item: ItemFactory,
+) -> None:
+    """Refused here rather than silently rounded to 10.01 by the column."""
+    item = make_item()
+    venue = _venue(db, "ebay-precision")
+    response = _offer(
+        client, admin_headers, venue.code, [{"item_id": item.id, "price": "10.005"}]
+    )
+    assert response.status_code == 422, response.text
+    assert _rejected_fields(response) == {"price"}
+
+
+def test_a_price_too_large_for_the_column_is_refused(
+    client: TestClient,
+    db: Session,
+    admin_headers: dict[str, str],
+    make_item: ItemFactory,
+) -> None:
+    """Twelve integer digits overflow `Numeric(12, 2)`; that must not be a 500."""
+    item = make_item()
+    venue = _venue(db, "ebay-overflow")
+    response = _offer(
+        client,
+        admin_headers,
+        venue.code,
+        [{"item_id": item.id, "price": "999999999999.00"}],
+    )
+    assert response.status_code == 422, response.text
+    assert _rejected_fields(response) == {"price"}
+
+
+def test_a_negative_price_is_refused(
+    client: TestClient,
+    db: Session,
+    admin_headers: dict[str, str],
+    make_item: ItemFactory,
+) -> None:
+    item = make_item()
+    venue = _venue(db, "ebay-negative")
+    response = _offer(
+        client, admin_headers, venue.code, [{"item_id": item.id, "price": "-5.00"}]
+    )
+    assert response.status_code == 422, response.text
+    assert _rejected_fields(response) == {"price"}
+
+
+def test_a_quantity_below_one_is_refused(
+    client: TestClient,
+    db: Session,
+    admin_headers: dict[str, str],
+    make_item: ItemFactory,
+) -> None:
+    item = make_item()
+    venue = _venue(db, "ebay-quantity")
+    response = client.post(
+        "/api/offers",
+        headers=admin_headers,
+        json={
+            "venue": venue.code,
+            "format": "fixed_price",
+            "quantity": 0,
+            "items": [{"item_id": item.id, "price": "1.00"}],
+        },
+    )
+    assert response.status_code == 422, response.text
+    assert _rejected_fields(response) == {"quantity"}
+
+
+def test_the_race_refusal_has_the_same_body_as_every_other(
+    client: TestClient,
+    db: Session,
+    admin_headers: dict[str, str],
+    make_item: ItemFactory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The loser of a race reads the body the published schema promises.
+
+    The race itself is `tests/test_offer_races.py`'s subject; what is pinned
+    here is that the `IntegrityError` it ends in produces `OfferRefusedOut`
+    and not a bare `{"detail": ...}`, which a console reading `refused` on
+    every 409 would throw on.
+    """
+    item = make_item()
+    venue = _venue(db, "ebay-race")
+
+    def _lost(db_: Session, **kwargs: object) -> Listing:
+        """Stand in for the offer, failing as the loser of a race for the claim."""
+        raise IntegrityError(
+            "INSERT INTO offer_claim ...", {}, Exception("duplicate key value")
+        )
+
+    monkeypatch.setattr(offering_writes, "offer", _lost)
+    response = _offer(
+        client, admin_headers, venue.code, [{"item_id": item.id, "price": "1.00"}]
+    )
+    assert response.status_code == 409, response.text
+    body = response.json()
+    # Validates against the one 409 model the OpenAPI publishes.
+    refusal = OfferRefusedOut.model_validate(body)
+    assert [row.item_code for row in refusal.refused] == [item.item_code]
+    assert "somewhere else" in refusal.refused[0].reason
+
+
+def test_external_url_is_built_from_the_platform_template(
+    client: TestClient,
+    db: Session,
+    admin_headers: dict[str, str],
+    make_item: ItemFactory,
+) -> None:
+    """The URL is computed for the response and never stored on the row."""
+    with_id = make_item()
+    without_id = make_item()
+    venue = _venue(db, "ebay-url", template=EBAY_TEMPLATE)
+
+    response = _offer(
+        client,
+        admin_headers,
+        venue.code,
+        [
+            {"item_id": with_id.id, "price": "1.00", "external_id": "12345"},
+            {"item_id": without_id.id, "price": "1.00"},
+        ],
+    )
+    assert response.status_code == 201, response.text
+    listings = response.json()["listings"]
+    assert listings[0]["external_url"] == "https://www.ebay.com/itm/12345"
+    assert listings[1]["external_url"] is None
+
+    stored = db.get(Listing, listings[0]["id"])
+    assert stored is not None
+    assert stored.external_url is None
+
+
+def test_a_listing_number_is_encoded_whole_into_the_template(
+    client: TestClient,
+    db: Session,
+    admin_headers: dict[str, str],
+    make_item: ItemFactory,
+) -> None:
+    """A `/` or `?` in the number stays in the path segment the template gives it.
+
+    Unencoded, `12/../admin?x=1` would reach another path on the platform and
+    add a query of its own.
+    """
+    item = make_item()
+    venue = _venue(db, "ebay-encoded", template=EBAY_TEMPLATE)
+    response = _offer(
+        client,
+        admin_headers,
+        venue.code,
+        [{"item_id": item.id, "price": "1.00", "external_id": "12/../admin?x=1"}],
+    )
+    assert response.status_code == 201, response.text
+    assert (
+        response.json()["listings"][0]["external_url"]
+        == "https://www.ebay.com/itm/12%2F..%2Fadmin%3Fx%3D1"
+    )
+
+
+@pytest.mark.parametrize(
+    ("template", "stored", "expected"),
+    [
+        # A template that is not a web address builds no link.
+        ("javascript:alert('{external_id}')", None, None),
+        # A stored URL is shown only when it is http or https.
+        (None, "javascript:alert(1)", None),
+        (
+            None,
+            "https://www.example.com/listing/9",
+            "https://www.example.com/listing/9",
+        ),
+    ],
+)
+def test_only_an_http_link_is_answered_as_a_listing_page(
+    template: str | None,
+    stored: str | None,
+    expected: str | None,
+    client: TestClient,
+    db: Session,
+    admin_headers: dict[str, str],
+    make_item: ItemFactory,
+) -> None:
+    """The console renders `external_url` as an `href`, where `javascript:` runs.
+
+    The stored URL is written straight to the row: nothing in the
+    application writes that column, which is the case it exists for.
+    """
+    item = make_item()
+    venue = _venue(db, "ebay-scheme")
+    if template is not None:
+        # Past the platform schema's own checks, as a row edited in the
+        # database would be.
+        venue.listing_url_template = template
+        db.commit()
+    listing = _offer(
+        client,
+        admin_headers,
+        venue.code,
+        [{"item_id": item.id, "price": "1.00", "external_id": "77"}],
+    ).json()["listings"][0]
+    if stored is not None:
+        db.execute(
+            update(Listing)
+            .where(Listing.id == listing["id"])
+            .values(external_url=stored)
+        )
+        db.commit()
+
+    rows = client.get(
+        "/api/listings", headers=admin_headers, params={"ids": listing["id"]}
+    ).json()
+    assert [row["external_url"] for row in rows] == [expected]
+
+
+# --------------------------------------------------------------------------
+# Listing what is offered
+# --------------------------------------------------------------------------
+
+
+def test_listings_are_filtered_by_platform_and_by_status(
+    client: TestClient,
+    db: Session,
+    admin_headers: dict[str, str],
+    make_item: ItemFactory,
+) -> None:
+    here = make_item()
+    there = make_item()
+    first_venue = _venue(db, "ebay-filter")
+    second_venue = _venue(db, "whatnot-filter")
+
+    mine = _offer(
+        client, admin_headers, first_venue.code, [{"item_id": here.id, "price": "9.00"}]
+    ).json()["listings"][0]
+    _offer(
+        client,
+        admin_headers,
+        second_venue.code,
+        [{"item_id": there.id, "price": "9.00"}],
+    )
+
+    by_venue = client.get(
+        "/api/listings", headers=admin_headers, params={"venue": "ebay-filter"}
+    )
+    assert by_venue.status_code == 200, by_venue.text
+    assert [row["id"] for row in by_venue.json()] == [mine["id"]]
+
+    ended = client.post(f"/api/listings/{mine['id']}/end", headers=admin_headers)
+    assert ended.status_code == 200, ended.text
+
+    # Ended offers are out of the default list, and back in with status=all.
+    still = client.get(
+        "/api/listings", headers=admin_headers, params={"venue": "ebay-filter"}
+    ).json()
+    assert still == []
+    everything = client.get(
+        "/api/listings",
+        headers=admin_headers,
+        params={"venue": "ebay-filter", "status": "all"},
+    ).json()
+    assert [row["id"] for row in everything] == [mine["id"]]
+    only_ended = client.get(
+        "/api/listings", headers=admin_headers, params={"status": "ended"}
+    ).json()
+    assert [row["id"] for row in only_ended] == [mine["id"]]
+
+
+def test_listings_are_filtered_by_item(
+    client: TestClient,
+    db: Session,
+    admin_headers: dict[str, str],
+    make_item: ItemFactory,
+) -> None:
+    wanted = make_item()
+    other = make_item()
+    venue = _venue(db, "ebay-by-item")
+    _offer(
+        client,
+        admin_headers,
+        venue.code,
+        [
+            {"item_id": wanted.id, "price": "1.00"},
+            {"item_id": other.id, "price": "2.00"},
+        ],
+    )
+
+    rows = client.get(
+        "/api/listings", headers=admin_headers, params={"item_id": wanted.id}
+    ).json()
+    assert [row["item_id"] for row in rows] == [wanted.id]
+    # The list serves the same version the console sends back on a PATCH, and
+    # it is a number there too.
+    assert rows[0]["version"] == 1
+
+
+def test_the_listing_list_is_paged_with_a_total(
+    client: TestClient,
+    db: Session,
+    admin_headers: dict[str, str],
+    make_item: ItemFactory,
+) -> None:
+    venue = _venue(db, "ebay-paged")
+    listed = _offer(
+        client,
+        admin_headers,
+        venue.code,
+        [{"item_id": make_item().id, "price": "1.00"} for _ in range(3)],
+    ).json()["listings"]
+    ids = sorted(row["id"] for row in listed)
+
+    first = client.get(
+        "/api/listings", headers=admin_headers, params={"venue": venue.code, "limit": 2}
+    )
+    assert first.status_code == 200, first.text
+    # Still a bare array: the console reads it as one.
+    assert [row["id"] for row in first.json()] == ids[:2]
+    assert first.headers["X-Total-Count"] == "3"
+
+    rest = client.get(
+        "/api/listings",
+        headers=admin_headers,
+        params={"venue": venue.code, "limit": 2, "offset": 2},
+    )
+    assert [row["id"] for row in rest.json()] == ids[2:]
+    assert rest.headers["X-Total-Count"] == "3"
+
+
+def test_listings_are_read_by_id_whatever_their_status(
+    client: TestClient,
+    db: Session,
+    admin_headers: dict[str, str],
+    make_item: ItemFactory,
+) -> None:
+    """What the order editor prices its lines from, an ended listing included.
+
+    One listing of the three is left out, so a filter that ignored `ids`
+    would answer three rows; one is ended, so the default status filter
+    applied to named ids would answer one.
+    """
+    venue = _venue(db, "ebay-by-id")
+    listed = _offer(
+        client,
+        admin_headers,
+        venue.code,
+        [{"item_id": make_item().id, "price": "1.00"} for _ in range(3)],
+    ).json()["listings"]
+    wanted, ended, _left_out = (row["id"] for row in listed)
+    assert (
+        client.post(f"/api/listings/{ended}/end", headers=admin_headers).status_code
+        == 200
+    )
+
+    response = client.get(
+        "/api/listings", headers=admin_headers, params={"ids": [wanted, ended]}
+    )
+    assert response.status_code == 200, response.text
+    rows = response.json()
+    assert [(row["id"], row["status"]) for row in rows] == [
+        (wanted, "active"),
+        (ended, "ended"),
+    ]
+    assert response.headers["X-Total-Count"] == "2"
+
+    only_active = client.get(
+        "/api/listings",
+        headers=admin_headers,
+        params={"ids": [wanted, ended], "status": "active"},
+    ).json()
+    assert [row["id"] for row in only_active] == [wanted]
+
+
+# --------------------------------------------------------------------------
+# Editing and ending
+# --------------------------------------------------------------------------
+
+
+def test_editing_an_offer_and_a_stale_version(
+    client: TestClient,
+    db: Session,
+    admin_headers: dict[str, str],
+    make_item: ItemFactory,
+) -> None:
+    item = make_item()
+    venue = _venue(db, "ebay-edit")
+    listing = _offer(
+        client, admin_headers, venue.code, [{"item_id": item.id, "price": "10.00"}]
+    ).json()["listings"][0]
+
+    good = client.patch(
+        f"/api/listings/{listing['id']}",
+        headers=admin_headers,
+        json={"price": "25.00", "title": "Edited", "version": listing["version"]},
+    )
+    assert good.status_code == 200, good.text
+    assert good.json()["price"] == "25.00"
+    assert good.json()["title"] == "Edited"
+    assert listing["version"] == 1
+    assert good.json()["version"] == 2
+
+    # The version the form loaded is now one behind.
+    stale = client.patch(
+        f"/api/listings/{listing['id']}",
+        headers=admin_headers,
+        json={"price": "30.00", "version": listing["version"]},
+    )
+    assert stale.status_code == 409, stale.text
+    db.expire_all()
+    unchanged = db.get(Listing, listing["id"])
+    assert unchanged is not None
+    assert unchanged.price == Decimal("25.00")
+
+
+def test_an_edit_that_loses_a_race_at_commit_is_a_409(
+    client: TestClient,
+    db: Session,
+    admin_headers: dict[str, str],
+    make_item: ItemFactory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The commit-time half of the version check, not the pre-check.
+
+    The version sent is the one the handler loads, so the pre-check passes:
+    the conflict is found only when the UPDATE's `WHERE version = :v`
+    matches no row, because another writer bumped it after this request
+    loaded it. That `StaleDataError` must be a 409, not a 500.
+    """
+    from app.routers import offers as offers_router
+
+    item = make_item()
+    venue = _venue(db, "ebay-race")
+    listing = _offer(
+        client, admin_headers, venue.code, [{"item_id": item.id, "price": "10.00"}]
+    ).json()["listings"][0]
+
+    real_get = offers_router._get_listing
+
+    def load_then_lose_the_race(session: Session, listing_id: int) -> Listing:
+        """Load the listing, then move its version on as another writer would."""
+        loaded = real_get(session, listing_id)
+        # Another writer's commit, behind this session's back.
+        session.execute(
+            update(Listing)
+            .where(Listing.id == listing_id)
+            .values(version=Listing.version + 1)
+            .execution_options(synchronize_session=False)
+        )
+        return loaded
+
+    monkeypatch.setattr(offers_router, "_get_listing", load_then_lose_the_race)
+    response = patch_current(
+        client,
+        f"/api/listings/{listing['id']}",
+        headers=admin_headers,
+        json={"price": "30.00"},
+    )
+
+    assert response.status_code == 409, response.text
+    assert "changed by someone else" in response.json()["detail"]
+
+
+def test_ending_an_offer_maps_a_stale_write_to_409(
+    client: TestClient,
+    db: Session,
+    admin_headers: dict[str, str],
+    make_item: ItemFactory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """End's handler: `end_offer` re-reads under lock, so this is the mapping.
+
+    `end_offer` takes the listing `FOR UPDATE` with `populate_existing`, so a
+    concurrent writer cannot leave it stale the way PATCH can be -- the
+    handler exists for the lot and item rows it writes alongside. Driven by
+    making `end_offer` raise, which is what proves the 409 and the rollback.
+    """
+    from app.routers import offers as offers_router
+
+    item = make_item()
+    venue = _venue(db, "ebay-end-race")
+    listing = _offer(
+        client, admin_headers, venue.code, [{"item_id": item.id, "price": "10.00"}]
+    ).json()["listings"][0]
+
+    def stale(*_args: object, **_kwargs: object) -> None:
+        """Stand in for the write, failing as one that read a stale row."""
+        raise StaleDataError("simulated")
+
+    monkeypatch.setattr(offers_router.offering_writes, "end_offer", stale)
+    response = client.post(f"/api/listings/{listing['id']}/end", headers=admin_headers)
+
+    assert response.status_code == 409, response.text
+    assert "changed by someone else" in response.json()["detail"]
+
+
+def test_an_ended_offer_s_terms_cannot_be_rewritten(
+    client: TestClient,
+    db: Session,
+    admin_headers: dict[str, str],
+    make_item: ItemFactory,
+) -> None:
+    """Price, title and description are the record once the offer is over."""
+    item = make_item()
+    venue = _venue(db, "ebay-ended-edit")
+    listing = _offer(
+        client, admin_headers, venue.code, [{"item_id": item.id, "price": "10.00"}]
+    ).json()["listings"][0]
+    client.post(f"/api/listings/{listing['id']}/end", headers=admin_headers)
+
+    refused = patch_current(
+        client,
+        f"/api/listings/{listing['id']}",
+        headers=admin_headers,
+        json={"price": "99.00", "title": "Rewritten"},
+    )
+    assert refused.status_code == 409, refused.text
+    assert "price, title" in refused.json()["detail"]
+    db.expire_all()
+    assert db.get_one(Listing, listing["id"]).price == Decimal("10.00")
+
+    # The platform's own number is still settable: it is often looked up late.
+    # Sent the way the console's form sends it -- every field, the frozen
+    # ones unchanged -- which is what must still be accepted.
+    numbered = patch_current(
+        client,
+        f"/api/listings/{listing['id']}",
+        headers=admin_headers,
+        json={
+            "price": "10.00",
+            "title": listing["title"],
+            "description": listing["description"],
+            "external_id": "126655443322",
+        },
+    )
+    assert numbered.status_code == 200, numbered.text
+    assert numbered.json()["external_id"] == "126655443322"
+
+
+def test_a_web_store_lot_s_title_cannot_be_blanked(
+    client: TestClient,
+    db: Session,
+    admin_headers: dict[str, str],
+    store_lot_listing: Listing,
+    listing: Listing,
+) -> None:
+    """A lot in the shop is named to buyers by its listing's title alone.
+
+    The rule the offer endpoint keeps when the lot is offered holds for an
+    edit too. An item listing is the other side of it: left untitled, the
+    shop names it by its item, so blanking its title is still allowed.
+    """
+    db.commit()
+    refused = patch_current(
+        client,
+        f"/api/listings/{store_lot_listing.id}",
+        headers=admin_headers,
+        json={"title": "  "},
+    )
+    assert refused.status_code == 422, refused.text
+    assert "title" in refused.json()["detail"]
+    db.expire_all()
+    assert db.get_one(Listing, store_lot_listing.id).title == "Three Morgan Dollars"
+
+    allowed = patch_current(
+        client, f"/api/listings/{listing.id}", headers=admin_headers, json={"title": ""}
+    )
+    assert allowed.status_code == 200, allowed.text
+    assert allowed.json()["title"] == ""
+
+
+def test_a_batch_offer_never_takes_a_lot_row_after_its_items(
+    db: Session,
+    offered_lot_listing: Listing,
+    whatnot_venue: SalesVenue,
+    admin_user: User,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Lot rows come first, so a lot the batch's lock pass missed is refused.
+
+    The batch takes one `lock_for_sale` pass over every item, and each
+    `offer` then takes its own. Both choose their lot rows from an unlocked
+    `offers_holding` read. A lot offered between the batch's read and its
+    item lock is reached by the derived half with no lot row held, and the
+    per-item pass would then take that lot row while the batch already holds
+    items -- the inversion a checkout of that lot deadlocks against.
+
+    The window is opened here by making the batch's own read miss the lot:
+    the request must refuse with `LockSetChanged` before any per-item pass,
+    not go on to lock the lot row late and answer an ordinary 409.
+    """
+    lot = offered_lot_listing.sales_lot
+    assert lot is not None
+    member_id = lot.members[0].inventory_item_id
+    db.commit()
+
+    real = offering_writes.offers_holding
+    reads: list[object] = []
+
+    def first_read_misses_the_lot(
+        session: Session, item_ids: Collection[int]
+    ) -> Sequence[Listing]:
+        """Answer the batch's first read as if the lot were not yet offered."""
+        reads.append(item_ids)
+        return [] if len(reads) == 1 else real(session, item_ids)
+
+    monkeypatch.setattr(offering_writes, "offers_holding", first_read_misses_the_lot)
+    payload = OfferIn(
+        venue=whatnot_venue.code,
+        items=[OfferItemIn(item_id=member_id, price=Decimal("10.00"))],
+    )
+    with pytest.raises(offering_writes.LockSetChanged):
+        create_offers(payload, db, admin_user)
+    db.rollback()
+
+
+def test_ending_an_offer(
+    client: TestClient,
+    db: Session,
+    admin_headers: dict[str, str],
+    make_item: ItemFactory,
+) -> None:
+    item = make_item()
+    venue = _venue(db, "ebay-end")
+    listing = _offer(
+        client, admin_headers, venue.code, [{"item_id": item.id, "price": "10.00"}]
+    ).json()["listings"][0]
+
+    response = client.post(f"/api/listings/{listing['id']}/end", headers=admin_headers)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["status"] == "ended"
+    assert body["ended_at"] is not None
+
+    # The item is free to be offered again.
+    again = _offer(
+        client, admin_headers, venue.code, [{"item_id": item.id, "price": "11.00"}]
+    )
+    assert again.status_code == 201, again.text
+
+
+def test_ending_an_auction_lot_listing_directly_is_refused(
+    client: TestClient,
+    db: Session,
+    admin_headers: dict[str, str],
+    make_item: ItemFactory,
+    heritage_venue: SalesVenue,
+) -> None:
+    """An auction lot is ended through its auction, not here.
+
+    `app.auctions.consign` reads an auction's coins through
+    `offering_writes.offered_items(db, auction_lot.listing)`, which answers
+    `[]` for an ended listing. Ending this listing straight through
+    `POST /api/listings/{id}/end` -- which knows nothing of `auction_lot` --
+    would leave a live `auction_lot` row pointing at a listing no longer
+    offered anywhere, and the owner would see an auction reporting itself
+    consigned while this lot's coins never moved.
+    """
+    item = make_item()
+    auction = Auction(
+        sales_venue_id=heritage_venue.id, title="September Signature Sale"
+    )
+    db.add(auction)
+    db.commit()
+    auction_lot = auctions.add_lot(
+        db, auction, item, lot_number="1", reserve=None, price=Decimal("10.00")
+    )
+    db.commit()
+
+    response = client.post(
+        f"/api/listings/{auction_lot.listing_id}/end", headers=admin_headers
+    )
+    assert response.status_code == 409, response.text
+    assert f"auction #{auction.id}" in response.json()["detail"]
+
+    # Nothing was ended: the listing is exactly as it was.
+    db.expire_all()
+    assert db.get_one(Listing, auction_lot.listing_id).status is ListingStatus.active
+
+
+def test_ending_a_direct_auction_format_listing_is_allowed(
+    client: TestClient,
+    db: Session,
+    admin_headers: dict[str, str],
+    make_item: ItemFactory,
+    ebay_venue: SalesVenue,
+) -> None:
+    """An auction-format listing with no auction behind it ends like any other.
+
+    The Offer dialog offers a coin directly on eBay by auction; no
+    `auction_lot` row exists, so there is no auction to end it through. A
+    guard keyed on `format` alone would refuse it, leaving the listing with
+    no way to be ended.
+    """
+    listing = offering_writes.offer(
+        db,
+        item=make_item(),
+        venue=ebay_venue,
+        listing_format=ListingFormat.auction,
+        price=Decimal("10.00"),
+        title="1921 Morgan dollar",
+        description="",
+        external_id=None,
+    )
+    db.commit()
+
+    response = client.post(f"/api/listings/{listing.id}/end", headers=admin_headers)
+    assert response.status_code == 200, response.text
+
+    db.expire_all()
+    assert db.get_one(Listing, listing.id).status is ListingStatus.ended
+
+
+def test_ending_an_unknown_listing_is_not_found(
+    client: TestClient, admin_headers: dict[str, str]
+) -> None:
+    response = client.post("/api/listings/999999/end", headers=admin_headers)
+    assert response.status_code == 404
+    # The router's own 404, not the one a missing route would give.
+    assert response.json()["detail"] == "No such offer"
+
+
+def test_the_listings_page_shows_a_lot_listing(
+    client: TestClient,
+    admin_headers: dict[str, str],
+    db: Session,
+    offered_lot_listing: Listing,
+) -> None:
+    """`listing_out` reads `listing.inventory_item.item_code`, which a lot has not.
+
+    Read unguarded, that is an `AttributeError` inside the endpoint -- a 500
+    on the page that lists every offer, not a missing row.
+
+    `GET /api/listings` answers a bare array, not an object with a
+    `listings` key: `frontend/src/management/pages/Listings.jsx` reads it as an
+    array and `api.listListings` hands it straight over.
+    """
+    db.commit()
+    rows = client.get("/api/listings", headers=admin_headers).json()
+    row = next(entry for entry in rows if entry["id"] == offered_lot_listing.id)
+    assert row["item_id"] is None
+    assert row["item_code"] is None
+    assert row["sales_lot_id"] == offered_lot_listing.sales_lot_id
+    assert row["member_count"] == 3
+    assert row["item_title"] == "Three Morgan Dollars"
+    # The members cost 500, 300 and 200, and money crosses as a string.
+    assert row["cost_basis"] == "1000.00"
+
+
+def test_an_item_listing_keeps_its_own_fields(
+    client: TestClient,
+    admin_headers: dict[str, str],
+    db: Session,
+    ebay_listing: Listing,
+) -> None:
+    """Widening `item_id` and `item_code` to null must not null them here."""
+    db.commit()
+    rows = client.get("/api/listings", headers=admin_headers).json()
+    row = next(entry for entry in rows if entry["id"] == ebay_listing.id)
+    assert row["item_id"] == ebay_listing.inventory_item_id
+    assert row["item_code"]
+    assert row["sales_lot_id"] is None
+    assert row["member_count"] is None
+
+
+def _members_of(listing: Listing) -> list[int]:
+    """The item ids a lot listing offers, in `open_members` order.
+
+    The **open** memberships, filtered here rather than taken from
+    `lot.members` whole: a released row is a coin the lot no longer offers,
+    and this helper's callers pick `[0]` and then assert the endpoint finds
+    that coin's live offer. Every fixture member is open, so the two lists
+    are identical and the filter changes nothing until a fixture has a
+    released member.
+
+    `sorted` matches `open_members`' own `order_by(inventory_item_id)` --
+    `SalesLot.members` carries no ordering of its own.
+    """
+    lot = listing.sales_lot
+    assert lot is not None, "this fixture is a lot listing"
+    return sorted(
+        row.inventory_item_id for row in lot.members if row.released_at is None
+    )
+
+
+def test_one_coin_s_offers_include_the_lot_that_offers_it(
+    client: TestClient,
+    admin_headers: dict[str, str],
+    db: Session,
+    offered_lot_listing: Listing,
+) -> None:
+    """`item_id=` must find a lot listing, whose own item column is NULL.
+
+    `Listing.inventory_item_id` is null on a lot listing -- the lot's coins
+    are reached through `offer_claim` -- so filtering on it alone would
+    answer `[]` for a coin that is on sale inside a lot. The console's
+    offers panel (`OffersPanel.jsx`) is the reader: it asks this endpoint
+    per item, and on nothing would say the coin is not offered anywhere
+    while a buyer was looking at it, and show an "Offer for sale..." button
+    the writer refuses (`offering_writes._refuse_grouped`).
+
+    Asserting the row's identity and its lot fields, not that the list is
+    non-empty: this coin has exactly one offer, and naming it is what tells
+    "found the lot listing" apart from "found something".
+    """
+    member_id = _members_of(offered_lot_listing)[0]
+    db.commit()
+
+    rows = client.get(
+        "/api/listings",
+        headers=admin_headers,
+        params={"item_id": member_id, "status": "all"},
+    ).json()
+
+    assert [row["id"] for row in rows] == [offered_lot_listing.id]
+    row = rows[0]
+    # It must read as the lot it is, not as this coin: `item_code` is what
+    # the panel would otherwise print, and a lot has none.
+    assert row["item_code"] is None
+    assert row["item_id"] is None
+    assert row["sales_lot_id"] == offered_lot_listing.sales_lot_id
+    assert row["member_count"] == 3
+    assert row["item_title"] == "Three Morgan Dollars"
+
+
+def test_one_coin_s_offers_keep_a_lot_listing_that_has_ended(
+    client: TestClient,
+    admin_headers: dict[str, str],
+    db: Session,
+    offered_lot_listing: Listing,
+) -> None:
+    """Offer history outlives the offer, for a lot the same as for an item.
+
+    The panel asks with `status=all` because "where this coin has been
+    offered before, and for how much" is half of what it shows. Ending a lot
+    listing releases every member's claim (`offering_writes.end_offer`), so
+    a present-tense predicate -- `offers_holding`, or anything built on
+    `_holds_any`, which filters claims to `HELD_BY` -- would answer this
+    correctly while the lot was live and then lose the row the moment it
+    ended. That is why the filter asks `ever_named_any`, whose claim half
+    has no state filter at all.
+
+    A single-item listing has never had this problem, because
+    `Listing.inventory_item_id` survives the end of the offer. Only the lot
+    half depends on released claims, so only the lot half can regress here.
+    """
+    member_id = _members_of(offered_lot_listing)[0]
+    lot_listing_id = offered_lot_listing.id
+    db.commit()
+
+    ended = client.post(f"/api/listings/{lot_listing_id}/end", headers=admin_headers)
+    assert ended.status_code == 200, ended.text
+    assert ended.json()["status"] == "ended"
+
+    rows = client.get(
+        "/api/listings",
+        headers=admin_headers,
+        params={"item_id": member_id, "status": "all"},
+    ).json()
+
+    assert [row["id"] for row in rows] == [lot_listing_id]
+    assert rows[0]["status"] == "ended"
+
+
+def test_ending_a_sold_lot_s_listing_again_leaves_it_sold(
+    client: TestClient,
+    admin_headers: dict[str, str],
+    db: Session,
+    offered_lot_listing: Listing,
+) -> None:
+    """A second `POST /end` must not rewrite a sold lot's history.
+
+    `sold` and `dissolved` are different histories and never collapse into
+    one (spec, *`sales_lot` and `sales_lot_item`*). This endpoint is the one
+    route that could collapse them: it loads the listing with `_get_listing`,
+    a plain id lookup with no status filter, and calls
+    `offering_writes.end_offer(sold=False)` unconditionally. So a lot bought
+    in the shop -- settled as `end_offer(sold=True)`, lot `sold`, listing
+    `ended` -- would be one admin API call away from being rewritten to
+    `dissolved` while its members stayed `sold`, were `_end` to have no
+    guard of its own: `end_offer` skips the disposition loop for a sale.
+
+    A **money path**, and reachable with no concurrency at all: a stale
+    console tab, or a double-click, is enough. The guard is in
+    `offering_writes._end` rather than here or in `end_offer`, for the reason
+    its docstring gives -- that module is the single writer of
+    `sales_lot.status`, and an invariant every caller has to remember is
+    one a caller can forget.
+
+    `ended_at` is asserted as well as the status: a second ending that
+    overwrote only the timestamp would still lose the moment the offer really
+    ended, and the status assertions alone would pass on it.
+    """
+    listing_id = offered_lot_listing.id
+    lot_id = offered_lot_listing.sales_lot_id
+    assert lot_id is not None
+
+    offering_writes.end_offer(db, offered_lot_listing, sold=True)
+    db.commit()
+    first_ended_at = offered_lot_listing.ended_at
+    assert first_ended_at is not None
+    assert db.get_one(SalesLot, lot_id).status is SalesLotStatus.sold
+    released = [member.released_at for member in db.get_one(SalesLot, lot_id).members]
+    assert all(stamp is not None for stamp in released)
+
+    again = client.post(f"/api/listings/{listing_id}/end", headers=admin_headers)
+    assert again.status_code == 200, again.text
+    assert again.json()["status"] == "ended"
+
+    db.expire_all()
+    lot = db.get_one(SalesLot, lot_id)
+    listing = db.get_one(Listing, listing_id)
+    assert lot.status is SalesLotStatus.sold, lot.status
+    assert listing.status is ListingStatus.ended
+    assert listing.ended_at == first_ended_at
+    assert [member.released_at for member in lot.members] == released

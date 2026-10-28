@@ -1,0 +1,408 @@
+"""Anomalies as named, kind-aware checks rather than generic field filters.
+
+`issue=no_grade` means *a coin or banknote with no grade*, because bullion has
+no grade by nature and most rounds have no weight either, so a generic
+grade=null would bury the real cases under rounds that will never have one.
+The domain knowledge belongs in the check, defined once, rather than in the
+head of whoever types the filter.
+"""
+
+from __future__ import annotations
+
+import re
+from datetime import UTC, datetime
+from decimal import Decimal
+
+from app.inventory_search import VIEWS
+from app.models import (
+    CurrencyDetail,
+    InventoryItem,
+    ItemAttribute,
+    ItemAttributeLink,
+    ItemCertification,
+    ItemKind,
+)
+from fastapi.testclient import TestClient
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from tests.builders import build_bare_item, build_purchase_order, code_id
+
+#: When a row in these tests was deleted, or split into its pieces.
+_GONE = datetime(2026, 1, 1, tzinfo=UTC)
+
+#: Pulls a `k.code = 'x'` or `k.code <> 'x'` constraint out of a predicate,
+#: if it states one at all. Both a view's own WHERE and an issue's SQL are
+#: built from these, and the only structural contradiction this test can
+#: cheaply see is two constraints on the same column that no row can satisfy
+#: together.
+_KIND_CONSTRAINT = re.compile(r"k\.code\s*(=|<>)\s*'([^']+)'")
+
+
+def _kind_constraint(sql: str) -> tuple[bool, str] | None:
+    """The item kind a check's SQL is limited to, and whether by `=`; None if none."""
+    match = _KIND_CONSTRAINT.search(sql)
+    if match is None:
+        return None
+    return match.group(1) == "=", match.group(2)
+
+
+def search(client: TestClient, headers: dict[str, str], query: str) -> dict:
+    """What the coin search answers for a raw query string."""
+    return client.get(f"/api/inventory/coins/search?{query}", headers=headers).json()
+
+
+def test_a_named_check_finds_only_its_own_anomaly(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    missing = build_bare_item(db, year_start=None)
+    build_bare_item(db, year_start=1881)
+
+    rows = search(client, admin_headers, "issue=no_year")["rows"]
+    assert [r["id"] for r in rows] == [missing.id]
+
+
+def test_no_grade_ignores_bullion(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    """A round will never have a grade.
+
+    Counting it as an anomaly buries the coins that should have one.
+    """
+    coin = build_bare_item(db, grade_id=None)
+    build_bare_item(db, grade_id=None, item_kind_id=code_id(db, ItemKind, "bullion"))
+
+    rows = search(client, admin_headers, "issue=no_grade")["rows"]
+    assert [r["id"] for r in rows] == [coin.id]
+
+
+def test_no_weight_applies_only_to_bullion(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    """The mirror image: a Morgan's weight is not the interesting gap."""
+    round_ = build_bare_item(
+        db, fine_weight_ozt=None, item_kind_id=code_id(db, ItemKind, "bullion")
+    )
+    build_bare_item(db, fine_weight_ozt=None)
+
+    rows = search(client, admin_headers, "issue=no_weight_bullion")["rows"]
+    assert [r["id"] for r in rows] == [round_.id]
+
+
+def test_zero_cost_finds_an_item_recorded_at_no_cost(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    """The cost column is never empty, so "no cost recorded" is a zero."""
+    zero = build_bare_item(db, item_cost=Decimal("0.00"))
+    build_bare_item(db, item_cost=Decimal("19.99"))
+    build_bare_item(db, item_cost=Decimal("0.01"))
+
+    rows = search(client, admin_headers, "issue=zero_cost")["rows"]
+    assert [r["id"] for r in rows] == [zero.id]
+
+
+def test_mixed_marker_reads_the_rating_and_the_description(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    """Either text saying the row is known to vary, in any case."""
+    rated = build_bare_item(db, rating="Mixed dates")
+    described = build_bare_item(db, description="Roll of cents, MIXED grades")
+    build_bare_item(db, rating="BU", description="Roll of cents")
+
+    rows = search(client, admin_headers, "issue=mixed_marker")["rows"]
+    assert sorted(r["id"] for r in rows) == sorted([rated.id, described.id])
+
+
+def _certified(db: Session, number: str, **overrides: object) -> InventoryItem:
+    """A coin holding this certificate number."""
+    item = build_bare_item(db, **overrides)
+    db.add(ItemCertification(inventory_item_id=item.id, cert_number=number))
+    db.commit()
+    return item
+
+
+def _note(db: Session, serial: str | None, **overrides: object) -> InventoryItem:
+    """A banknote with this printed serial."""
+    item = build_bare_item(
+        db, item_kind_id=code_id(db, ItemKind, "currency"), **overrides
+    )
+    db.add(CurrencyDetail(inventory_item_id=item.id, serial_number=serial))
+    db.commit()
+    return item
+
+
+def _currency_issue(
+    client: TestClient, headers: dict[str, str], issue: str
+) -> list[int]:
+    """The ids the currency view returns for one named check, in id order."""
+    body = client.get(
+        f"/api/inventory/currency/search?issue={issue}", headers=headers
+    ).json()
+    return sorted(r["id"] for r in body["rows"])
+
+
+def test_a_certificate_on_two_rows_flags_both_and_no_other(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    pair = [_certified(db, "9900001"), _certified(db, "9900001")]
+    _certified(db, "9900002")
+    build_bare_item(db)
+
+    rows = search(client, admin_headers, "issue=repeated_identity")["rows"]
+    assert sorted(r["id"] for r in rows) == sorted(i.id for i in pair)
+
+
+def test_a_certificate_repeated_only_on_a_deleted_row_is_not_flagged(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    """Deleting the duplicate is the remedy, and it has to clear the check.
+
+    A row that should never have existed is not a second holder of the
+    certificate; neither is a lot that has been split into its pieces.
+    """
+    kept = _certified(db, "9900001")
+    _certified(db, "9900001", deleted_at=_GONE)
+    split_kept = _certified(db, "9900003")
+    _certified(db, "9900003", split_at=_GONE)
+
+    rows = search(client, admin_headers, "issue=repeated_identity")["rows"]
+
+    assert rows == [], [kept.id, split_kept.id]
+
+
+def test_a_serial_on_two_notes_flags_both_and_no_other(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    pair = [_note(db, "A00000001A"), _note(db, "A00000001A")]
+    _note(db, "A00000002A")
+    _note(db, None)
+    _note(db, "")
+
+    found = _currency_issue(client, admin_headers, "repeated_identity")
+    assert found == sorted(i.id for i in pair)
+
+
+def test_a_serial_repeated_only_on_a_deleted_note_is_not_flagged(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    _note(db, "A00000001A")
+    _note(db, "A00000001A", deleted_at=_GONE)
+
+    assert _currency_issue(client, admin_headers, "repeated_identity") == []
+
+
+def test_a_near_duplicate_of_a_deleted_note_is_not_flagged(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    order = build_purchase_order(db, vendor_name="test-vendor", order_number="X2")
+    _note(db, "B08084501A", purchase_order_id=order.id)
+    _note(db, "B0808451A", purchase_order_id=order.id, deleted_at=_GONE)
+
+    assert _currency_issue(client, admin_headers, "near_duplicate_serial") == []
+
+
+def test_a_star_anywhere_in_the_serial_agrees_with_the_star_attribute(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    """The serial pass reads a star anywhere in the serial; so does the check.
+
+    Read only at the ends, a star the pass derived from the middle of a serial
+    would be listed as disagreeing with the serial it came from.
+    """
+    star = db.scalars(select(ItemAttribute).where(ItemAttribute.code == "star")).one()
+    middle = _note(db, "A1234*5678B")
+    plain = _note(db, "A12345678B")
+    for note in (middle, plain):
+        db.add(ItemAttributeLink(inventory_item_id=note.id, item_attribute_id=star.id))
+    db.commit()
+
+    assert _currency_issue(client, admin_headers, "star_mismatch") == [plain.id]
+
+
+def test_a_malformed_serial_is_a_letter_between_two_digits(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    """A letter inside the digits is usually a typo; one at either end is not."""
+    odd = _note(db, "A1234B678C")
+    _note(db, "A12345678B")
+    _note(db, "12345678")
+    _note(db, None)
+
+    assert _currency_issue(client, admin_headers, "malformed_serial") == [odd.id]
+
+
+def test_a_near_duplicate_serial_is_found_within_one_order(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    """Exact matching misses a dropped or duplicated character.
+
+    Scoped to one purchase order because that is where mistranscriptions
+    cluster, and because two unrelated notes one character apart are two
+    unrelated notes.
+
+    Edit distance alone is not enough: a consecutive run of serials --
+    exactly how star notes are deliberately bought and stored -- differs from
+    its neighbour by edit distance 1 as the normal case, so the check also
+    requires the two serials to differ in length. That is what a dropped or
+    duplicated character does and a consecutive run does not.
+    """
+    order = build_purchase_order(
+        db, vendor_name="test-vendor", order_number="X1", commit=False
+    )
+
+    kind = code_id(db, ItemKind, "currency")
+    pair = [
+        build_bare_item(db, item_kind_id=kind, purchase_order_id=order.id)
+        for _ in range(2)
+    ]
+    consecutive = [
+        build_bare_item(db, item_kind_id=kind, purchase_order_id=order.id)
+        for _ in range(2)
+    ]
+    apart = build_bare_item(db, item_kind_id=kind, purchase_order_id=order.id)
+    db.add_all(
+        [
+            # A dropped '0': ten characters against nine, one edit apart.
+            CurrencyDetail(inventory_item_id=pair[0].id, serial_number="B08084501A"),
+            CurrencyDetail(inventory_item_id=pair[1].id, serial_number="B0808451A"),
+            # A consecutive run, same length throughout -- the shape of a
+            # deliberate purchase of sequential star notes, not a
+            # mistranscription, and must not be flagged.
+            CurrencyDetail(
+                inventory_item_id=consecutive[0].id, serial_number="G03986160"
+            ),
+            CurrencyDetail(
+                inventory_item_id=consecutive[1].id, serial_number="G03986161"
+            ),
+            CurrencyDetail(inventory_item_id=apart.id, serial_number="Z99999999A"),
+        ]
+    )
+    db.commit()
+
+    body = client.get(
+        "/api/inventory/currency/search?issue=near_duplicate_serial",
+        headers=admin_headers,
+    ).json()
+
+    ids = sorted(r["id"] for r in body["rows"])
+    assert ids == sorted(i.id for i in pair)
+    assert consecutive[0].id not in ids
+    assert consecutive[1].id not in ids
+
+
+def test_an_unknown_issue_is_refused_listing_the_known_ones(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    """Silently ignoring it returns the whole collection as a clean bill."""
+    response = client.get(
+        "/api/inventory/coins/search?issue=no_such_check", headers=admin_headers
+    )
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert "no_such_check" in detail
+    assert "no_year" in detail
+
+
+def test_issue_counts_come_back_with_the_page(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    """So the size of a job is visible before committing to it."""
+    build_bare_item(db, year_start=None)
+    build_bare_item(db, year_start=None, country_id=None)
+
+    body = client.get(
+        "/api/inventory/coins/search?facets=true", headers=admin_headers
+    ).json()
+
+    assert body["issues"]["no_year"] == 2
+    assert body["issues"]["no_country"] == 1
+
+
+def test_issue_counts_ignore_the_issue_filter_itself(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    """Otherwise every count but the selected one collapses.
+
+    The panel stops being a way to choose the next job.
+    """
+    build_bare_item(db, year_start=None)
+    build_bare_item(db, country_id=None)
+
+    body = client.get(
+        "/api/inventory/coins/search?issue=no_year&facets=true", headers=admin_headers
+    ).json()
+
+    assert body["total"] == 1
+    assert body["issues"]["no_country"] == 1
+
+
+def test_a_currency_only_check_is_not_offered_to_coins(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    """A star note check over the coin view would be a 422, not empty."""
+    response = client.get(
+        "/api/inventory/coins/search?issue=star_mismatch", headers=admin_headers
+    )
+    assert response.status_code == 422
+
+
+def test_an_unclassified_item_is_reachable_and_flagged(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    """An unclassified item is precisely the item someone needs to find.
+
+    A coin view that excluded kind `unknown` would make the item unreachable
+    on any screen, and `issue=kind_unknown` would read as a clean bill of
+    health while never actually running.
+    """
+    unknown = build_bare_item(db, item_kind_id=code_id(db, ItemKind, "unknown"))
+
+    rows = search(client, admin_headers, "")["rows"]
+    assert unknown.id in [r["id"] for r in rows]
+
+    rows = search(client, admin_headers, "issue=kind_unknown")["rows"]
+    assert [r["id"] for r in rows] == [unknown.id]
+
+
+def test_every_issue_a_view_offers_can_actually_fire(db: Session) -> None:
+    """A check that cannot return a row reads as a clean bill of health.
+
+    A view whose WHERE excludes a kind cannot return a row for a check that
+    requires it, as CURRENCY_VIEW excludes 'unknown'. The check is only
+    meaningful in a view whose WHERE clause can admit a matching row.
+
+    This does not prove every issue can fire -- only that no issue's own
+    `k.code` constraint structurally contradicts its view's `k.code`
+    constraint. An issue naming no `k.code` at all, or one whose
+    contradiction lives in a different column, passes this test whether or
+    not it can ever match a row. What it does catch is a check moved, or
+    shared, into a view its own kind constraint rules out.
+    """
+    for spec in VIEWS.values():
+        view_constraints = [
+            c for clause in spec.where if (c := _kind_constraint(clause)) is not None
+        ]
+        for name, issue in spec.issues.items():
+            issue_constraint = _kind_constraint(issue.sql)
+            if issue_constraint is None:
+                continue
+            issue_is_eq, issue_kind = issue_constraint
+            for view_is_eq, view_kind in view_constraints:
+                if view_is_eq and issue_is_eq:
+                    # Both pin k.code to a single value: they must agree.
+                    possible = view_kind == issue_kind
+                elif view_is_eq != issue_is_eq:
+                    # One pins it, the other excludes a value: fine unless
+                    # the excluded value is the one pinned.
+                    possible = view_kind != issue_kind
+                else:
+                    # Both only exclude a value each -- never a structural
+                    # contradiction by itself.
+                    possible = True
+                assert possible, (
+                    f"{spec.name}.{name} requires k.code "
+                    f"{'=' if issue_is_eq else '<>'} {issue_kind!r}, but "
+                    f"{spec.name}'s own WHERE requires k.code "
+                    f"{'=' if view_is_eq else '<>'} {view_kind!r}: no row in "
+                    "this view can ever satisfy this check"
+                )

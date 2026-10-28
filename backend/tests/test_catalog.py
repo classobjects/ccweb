@@ -1,0 +1,945 @@
+"""Catalog reads. Browsing is public; seeing what is *not* for sale is not.
+
+No authorization of any kind is needed to browse. The one exception is
+`include_inactive`, the administrator's preview of withdrawn listings, which
+is checked here rather than by a dependency because the endpoint itself has
+to answer a signed-out browser.
+
+A catalog row has no unique `sku`: two identical Morgan dollars are two
+physical objects and two rows.
+
+The catalog has no write endpoints. Offers are made and edited through the
+offers API (`test_offers_api.py`, `test_offering_writes.py`), which can offer
+an item the business already owns; an item is created only on a purchase.
+"""
+
+from __future__ import annotations
+
+import json
+from collections.abc import Callable
+from decimal import Decimal
+from typing import Any
+
+import pytest
+from app import offering_writes
+from app.config import settings
+from app.models import (
+    InventoryItem,
+    Listing,
+    ListingFormat,
+    SalesLot,
+    SalesLotItem,
+    SalesLotStatus,
+    SalesOrderItemShare,
+    SalesVenue,
+    SalesVenueKind,
+)
+from app.sales_venues import store_venue_id
+from fastapi.testclient import TestClient
+from httpx import Response
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+# --------------------------------------------------------------------------
+# Public reads
+# --------------------------------------------------------------------------
+
+
+def test_list_is_public(client: TestClient, listing: Listing) -> None:
+    response = client.get("/api/catalog")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 1
+    assert body["items"][0]["id"] == listing.id
+
+
+def test_detail_is_public(client: TestClient, listing: Listing) -> None:
+    response = client.get(f"/api/catalog/{listing.id}")
+    assert response.status_code == 200
+    item = listing.inventory_item
+    assert item is not None
+    assert response.json()["title"] == item.source_title
+
+
+@pytest.fixture
+def closed_shop(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The shop as SHOP_OPEN=false leaves it, before opening day."""
+    monkeypatch.setattr(settings, "shop_open", False)
+
+
+def test_shop_status_says_whether_the_shop_is_open(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert client.get("/api/shop").json() == {"open": True}
+    monkeypatch.setattr(settings, "shop_open", False)
+    assert client.get("/api/shop").json() == {"open": False}
+
+
+@pytest.mark.usefixtures("closed_shop")
+def test_a_closed_shop_shows_a_stranger_no_listing(
+    client: TestClient, listing: Listing
+) -> None:
+    for path in ("/api/catalog", f"/api/catalog/{listing.id}"):
+        response = client.get(path)
+        assert response.status_code == 403, path
+        assert response.json() == {"detail": "The shop is not open yet"}
+        assert str(listing.id) not in response.text
+
+
+@pytest.mark.usefixtures("closed_shop")
+def test_a_closed_shop_still_serves_a_signed_in_account(
+    client: TestClient, listing: Listing, customer_headers: dict[str, str]
+) -> None:
+    listed = client.get("/api/catalog", headers=customer_headers)
+    assert listed.status_code == 200
+    assert listed.json()["items"][0]["id"] == listing.id
+    detail = client.get(f"/api/catalog/{listing.id}", headers=customer_headers)
+    assert detail.status_code == 200
+
+
+@pytest.mark.usefixtures("closed_shop")
+def test_a_closed_shop_refuses_a_stale_token_as_signed_out(
+    client: TestClient, listing: Listing
+) -> None:
+    """A bad token is a signed-out caller, not a key to the closed shop."""
+    response = client.get(
+        "/api/catalog", headers={"Authorization": "Bearer not-a-token"}
+    )
+    assert response.status_code == 403
+
+
+def test_detail_404_for_unknown_id(client: TestClient) -> None:
+    assert client.get("/api/catalog/999999").status_code == 404
+
+
+def test_a_stranger_is_told_only_that_an_ended_listing_has_ended(
+    client: TestClient, make_listing: Callable[..., Listing]
+) -> None:
+    """Ids are sequential: a full answer would walk every offer ever ended.
+
+    The body is the refusal and nothing else -- no title, price or item code
+    of what was on offer.
+    """
+    listing = make_listing(is_active=False)
+    refused = client.get(f"/api/catalog/{listing.id}")
+    assert refused.status_code == 410, refused.text
+    assert refused.json() == {"detail": "This listing is no longer for sale"}
+
+
+def test_a_customer_is_not_enough_to_see_an_ended_listing(
+    client: TestClient,
+    make_listing: Callable[..., Listing],
+    customer_headers: dict[str, str],
+) -> None:
+    """Signed in is not the same as being an administrator."""
+    listing = make_listing(is_active=False)
+    refused = client.get(f"/api/catalog/{listing.id}", headers=customer_headers)
+    assert refused.status_code == 410, refused.text
+
+
+def test_an_administrator_still_sees_an_ended_listing_in_full(
+    client: TestClient,
+    make_listing: Callable[..., Listing],
+    admin_headers: dict[str, str],
+) -> None:
+    """What stops the 410 being a removal: the owner can still read it."""
+    listing = make_listing(is_active=False)
+    allowed = client.get(f"/api/catalog/{listing.id}", headers=admin_headers)
+    assert allowed.status_code == 200, allowed.text
+    assert allowed.json()["is_active"] is False
+    assert allowed.json()["price"] == "189.00"
+
+
+def test_price_is_serialised_with_two_decimals(
+    client: TestClient, listing: Listing
+) -> None:
+    """Money must survive the round trip exactly -- no float drift."""
+    assert client.get(f"/api/catalog/{listing.id}").json()["price"] == "189.00"
+
+
+def test_withdrawn_listings_hidden_by_default(
+    client: TestClient, make_listing: Callable[..., Listing]
+) -> None:
+    make_listing(is_active=False)
+    assert client.get("/api/catalog").json()["total"] == 0
+
+
+def test_a_stranger_cannot_ask_to_see_withdrawn_listings(
+    client: TestClient, make_listing: Callable[..., Listing]
+) -> None:
+    """`include_inactive` is described as an admin preview, so make it one.
+
+    The endpoint is public and must stay so -- the shop answers signed-out
+    browsers. Were the parameter honored for anyone who passed it, every
+    listing the owner had ever withdrawn would be one query string away.
+    That set is the stock taken off sale, mostly because it sold elsewhere:
+    a history of the collection no buyer is owed.
+    """
+    make_listing(is_active=False)
+    refused = client.get("/api/catalog?include_inactive=true")
+    assert refused.status_code == 403, refused.text
+    assert "Manager" in refused.json()["detail"]
+
+
+def test_a_customer_is_not_enough_to_see_withdrawn_listings(
+    client: TestClient,
+    make_listing: Callable[..., Listing],
+    customer_headers: dict[str, str],
+) -> None:
+    """Signed in is not the same as being an administrator.
+
+    Separate from the anonymous case on purpose: a check written as "is there
+    a token" would pass that one and fail this, and a shop full of customer
+    accounts is exactly where the difference bites.
+    """
+    make_listing(is_active=False)
+    refused = client.get("/api/catalog?include_inactive=true", headers=customer_headers)
+    assert refused.status_code == 403, refused.text
+
+
+def test_an_administrator_may_preview_withdrawn_listings(
+    client: TestClient,
+    make_listing: Callable[..., Listing],
+    admin_headers: dict[str, str],
+) -> None:
+    """The preview still works, which is what stops the guard being a removal."""
+    make_listing(is_active=False)
+    allowed = client.get("/api/catalog?include_inactive=true", headers=admin_headers)
+    assert allowed.status_code == 200, allowed.text
+    assert allowed.json()["total"] == 1
+
+
+def test_search_matches_title_and_description(
+    client: TestClient, listing: Listing
+) -> None:
+    assert client.get("/api/catalog?q=Morgan").json()["total"] == 1
+    assert client.get("/api/catalog?q=fixture").json()["total"] == 1
+    assert client.get("/api/catalog?q=nothingmatches").json()["total"] == 0
+
+
+def test_search_reads_the_wording_the_offer_itself_carries(
+    client: TestClient, db: Session, make_listing: Callable[..., Listing]
+) -> None:
+    """What a buyer reads on the page is what a search has to find.
+
+    An entry shows `listing.description` when the offer has one, in place of
+    the item's own. A decoy listing with no wording of its own is here so
+    that "everything matched" cannot pass for "the right one matched".
+    """
+    worded = make_listing()
+    make_listing()
+    worded.description = "Hand-picked for its zanzibar toning."
+    db.commit()
+
+    body = client.get("/api/catalog?q=zanzibar").json()
+
+    assert [item["id"] for item in body["items"]] == [worded.id]
+    assert body["total"] == 1
+
+
+def test_search_finds_a_lot_by_its_description(
+    client: TestClient, db: Session, store_lot_listing: Listing, listing: Listing
+) -> None:
+    """A lot has no item row, so its listing's wording is all a search can read."""
+    db.commit()
+
+    body = client.get("/api/catalog", params={"q": "coins, one price"}).json()
+
+    assert [item["id"] for item in body["items"]] == [store_lot_listing.id]
+
+
+def test_search_takes_a_percent_sign_and_an_underscore_as_typed(
+    client: TestClient, make_listing: Callable[..., Listing]
+) -> None:
+    """`%` and `_` are characters in a title, not wildcards for the buyer.
+
+    Each pair differs only where the wildcard would match: read as a
+    pattern, `zq100%` finds both of the first pair and `zq_under` both of the
+    second.
+    """
+    percent = make_listing(title="zq100% silver round")
+    make_listing(title="zq100 silver rounds")
+    underscore = make_listing(title="zq_under the mint mark")
+    make_listing(title="zqXunder the mint mark")
+
+    by_percent = client.get("/api/catalog", params={"q": "zq100%"}).json()
+    by_underscore = client.get("/api/catalog", params={"q": "zq_under"}).json()
+    everything = client.get("/api/catalog", params={"q": "%"}).json()
+
+    assert [item["id"] for item in by_percent["items"]] == [percent.id]
+    assert [item["id"] for item in by_underscore["items"]] == [underscore.id]
+    # A lone `%` is a search for that character, not for every entry.
+    assert [item["id"] for item in everything["items"]] == [percent.id]
+
+
+def test_filter_by_kind(
+    client: TestClient, make_listing: Callable[..., Listing]
+) -> None:
+    make_listing(kind="coin")
+    make_listing(kind="currency")
+    assert client.get("/api/catalog?kind=coin").json()["total"] == 1
+    assert client.get("/api/catalog?kind=currency").json()["total"] == 1
+
+
+def test_filter_by_an_unknown_classifier_is_a_422_not_an_empty_page(
+    client: TestClient, listing: Listing
+) -> None:
+    """An unknown classifier is an error, not an empty page.
+
+    Silently returning nothing would look like "no results" rather than
+    "you asked for something that does not exist".
+    """
+    response = client.get("/api/catalog?kind=notakind")
+    assert response.status_code == 422
+    assert "notakind" in response.json()["detail"]
+
+
+def test_filter_in_stock_only(
+    client: TestClient, make_listing: Callable[..., Listing]
+) -> None:
+    make_listing(quantity_available=2)
+    make_listing(quantity_available=0)
+    assert client.get("/api/catalog").json()["total"] == 2
+    assert client.get("/api/catalog?in_stock=true").json()["total"] == 1
+
+
+def test_filter_by_year_range(
+    client: TestClient, make_listing: Callable[..., Listing]
+) -> None:
+    make_listing(year_start=1850)
+    make_listing(year_start=1990)
+    assert client.get("/api/catalog?year_min=1900").json()["total"] == 1
+    assert client.get("/api/catalog?year_max=1900").json()["total"] == 1
+
+
+def test_pagination_reports_total_not_page_size(
+    client: TestClient, make_listing: Callable[..., Listing]
+) -> None:
+    for _ in range(5):
+        make_listing()
+    body = client.get("/api/catalog?limit=2&offset=0").json()
+    assert body["total"] == 5
+    assert len(body["items"]) == 2
+    assert body["limit"] == 2
+
+    second = client.get("/api/catalog?limit=2&offset=2").json()
+    assert len(second["items"]) == 2
+    assert {i["id"] for i in body["items"]}.isdisjoint(
+        {i["id"] for i in second["items"]}
+    )
+
+
+def test_limit_is_bounded(client: TestClient) -> None:
+    assert client.get("/api/catalog?limit=0").status_code == 422
+    assert client.get("/api/catalog?limit=500").status_code == 422
+
+
+def _refused_as_invalid(response: Response, name: str) -> bool:
+    """Whether the request was refused for this query parameter's value.
+
+    A code no table holds is a 422 too, but with a sentence for its detail;
+    a parameter out of its bounds is FastAPI's list of errors naming it.
+    """
+    if response.status_code != 422:
+        return False
+    detail = response.json()["detail"]
+    return isinstance(detail, list) and detail[0]["loc"] == ["query", name]
+
+
+@pytest.mark.parametrize(
+    ("name", "at_bound", "past_bound"),
+    [
+        ("offset", "1000000", "1000001"),
+        ("q", "m" * 200, "m" * 201),
+        ("kind", "k" * 64, "k" * 65),
+        ("country", "c" * 64, "c" * 65),
+        ("metal", "s" * 64, "s" * 65),
+        ("year_min", "10000", "10001"),
+        ("year_max", "-10000", "-10001"),
+    ],
+)
+def test_a_public_query_is_bounded(
+    client: TestClient, name: str, at_bound: str, past_bound: str
+) -> None:
+    """A stranger cannot make the catalog walk, match or count without limit.
+
+    Each bound is shown from both sides, so the test fails if a bound is
+    missing and if it is set tighter than the value it is documented at.
+    """
+    at = client.get("/api/catalog", params={name: at_bound})
+    assert not _refused_as_invalid(at, name), at.text
+    past = client.get("/api/catalog", params={name: past_bound})
+    assert _refused_as_invalid(past, name), past.text
+
+
+#: Every key a catalog entry may carry. An **allow-list**, written out by
+#: hand, and the boundary's first assertion: a deny-list only catches the
+#: private names somebody thought of, so a newly named one ships green for
+#: ever and nobody finds out. This fails closed instead -- any new key, public
+#: or private, reddens these tests until a person has written it down here.
+#:
+#: That edit is the point, not an inconvenience. Adding a field to
+#: `CatalogItemOut` means editing this set in the same commit, which is a
+#: review checkpoint on "should a buyer see this?" -- the checkpoint a
+#: deny-list never offers.
+#:
+#: Written out rather than derived from `CatalogItemOut.model_fields`,
+#: deliberately. A derived set agrees with the model by construction, so it
+#: fails **open** on exactly the case that matters: someone adding
+#: `total_cost` to the model would add it to the expectation at the same
+#: moment and the test would stay green.
+EXPECTED_PUBLIC_FIELDS = {
+    "id",
+    "inventory_item_id",
+    "version",
+    "item_code",
+    "title",
+    "description",
+    "item_kind",
+    "country",
+    "denomination",
+    "bullion_form",
+    "grade",
+    "strike_type",
+    "grade_display",
+    "grading_service",
+    "metal",
+    "year_start",
+    "year_end",
+    "fineness",
+    "gross_weight_ozt",
+    "fine_weight_ozt",
+    "piece_count",
+    "price",
+    "currency",
+    "quantity_available",
+    "is_active",
+    "thumbnail_url",
+    "image_url",
+    "members",
+    "created_at",
+    "updated_at",
+}
+
+#: Every key one member of a lot may carry: `EXPECTED_PUBLIC_FIELDS` less the
+#: listing's own fields, because a member has no price, no stock and no
+#: listing of its own. Hand-written for the reason above.
+EXPECTED_MEMBER_FIELDS = {
+    "inventory_item_id",
+    "item_code",
+    "title",
+    "description",
+    "item_kind",
+    "country",
+    "denomination",
+    "bullion_form",
+    "grade",
+    "strike_type",
+    "grade_display",
+    "grading_service",
+    "metal",
+    "year_start",
+    "year_end",
+    "fineness",
+    "gross_weight_ozt",
+    "fine_weight_ozt",
+    "piece_count",
+    "thumbnail_url",
+    "image_url",
+}
+
+#: Staff-only names, kept **as well as** the allow-lists above and used over
+#: the serialized payload rather than over its keys. The allow-lists cover
+#: every key the two models declare; only this catches a private name nested
+#: inside a structure neither of them declares today. Inexhaustive by nature,
+#: which is why it is the second assertion and not the first.
+PRIVATE_FIELD_NAMES = (
+    "total_cost",
+    "item_cost",
+    "sales_tax",
+    "shipping",
+    "shipping_cost",
+    "tax_rate",
+    "tax_includes_shipping",
+    "numismatic_value",
+    "valuation_basis",
+    "storage_location",
+    "storage_location_id",
+    "local_catalog_number",
+    "purchase_order",
+    "purchase_order_id",
+    "order_number",
+    "vendor",
+    "rating",
+    "weight_note",
+    "listing_url",
+    "source_url",
+    "attributes",
+    "deleted_at",
+    "split_at",
+    "parent_item_id",
+)
+
+
+def test_catalogue_never_exposes_cost_basis_or_location(
+    client: TestClient, listing: Listing
+) -> None:
+    """Cost basis and location must not reach a customer.
+
+    This test is the enforcement, not a second copy of it. The
+    `public_catalog` view describes the same boundary but no endpoint reads
+    it; what actually shapes this response is `catalog.to_catalog_item`
+    building it field by field. So a field added for staff is kept out by
+    that function plus this assertion, and by nothing else.
+
+    The allow-list first, because it fails closed: a private field nobody
+    thought to forbid still reddens it. The deny-list over the serialized
+    payload second, for a name nested somewhere the key check cannot see.
+    """
+    body = client.get(f"/api/catalog/{listing.id}").json()
+    assert set(body) == EXPECTED_PUBLIC_FIELDS, (
+        f"unexpected: {sorted(set(body) - EXPECTED_PUBLIC_FIELDS)}, "
+        f"missing: {sorted(EXPECTED_PUBLIC_FIELDS - set(body))}"
+    )
+    payload = json.dumps(body)
+    leaked = [name for name in PRIVATE_FIELD_NAMES if name in payload]
+    assert not leaked, f"leaked somewhere in the payload: {leaked}"
+
+
+def _ebay(db: Session) -> int:
+    """The id of a marketplace venue named eBay, added for the test."""
+    kind = db.scalar(
+        select(SalesVenueKind.id).where(SalesVenueKind.code == "marketplace")
+    )
+    venue = SalesVenue(code="ebay-catalog-test", name="eBay", sales_venue_kind_id=kind)
+    db.add(venue)
+    db.commit()
+    return venue.id
+
+
+def test_the_catalogue_hides_other_platforms_and_auctions(
+    client: TestClient,
+    listing: Listing,
+    make_listing: Callable[..., Listing],
+    db: Session,
+) -> None:
+    make_listing(sales_venue_id=_ebay(db))
+    make_listing(format=ListingFormat.auction)
+
+    body = client.get("/api/catalog").json()
+
+    assert body["total"] == 1
+    assert [item["id"] for item in body["items"]] == [listing.id]
+
+
+def test_a_listing_on_another_platform_is_not_found_in_the_shop(
+    client: TestClient, make_listing: Callable[..., Listing], db: Session
+) -> None:
+    ebay_listing = make_listing(sales_venue_id=_ebay(db))
+
+    assert client.get(f"/api/catalog/{ebay_listing.id}").status_code == 404
+
+
+def test_an_auction_listing_is_not_found_in_the_shop(
+    client: TestClient, make_listing: Callable[..., Listing]
+) -> None:
+    auction_listing = make_listing(format=ListingFormat.auction)
+
+    assert client.get(f"/api/catalog/{auction_listing.id}").status_code == 404
+
+
+# --------------------------------------------------------------------------
+# Lots in the shop
+#
+# A lot listing has no `inventory_item` at all, so every assertion below is
+# about the shape `to_catalog_item` builds for a group rather than for a coin
+# -- and about the boundary staying exactly where it was.
+# --------------------------------------------------------------------------
+
+
+def _entry(client: TestClient, listing_id: int) -> dict[str, Any]:
+    """The catalog's list entry for one listing, or fail saying it is absent."""
+    body = client.get("/api/catalog").json()
+    for row in body["items"]:
+        if row["id"] == listing_id:
+            return dict(row)
+    raise AssertionError(f"listing {listing_id} is not in the catalog: {body}")
+
+
+def _buy(
+    client: TestClient, headers: dict[str, str], listing_id: int
+) -> dict[str, Any]:
+    """Check out one unit of a listing, the way the shop does it."""
+    placed = client.post(
+        "/api/orders",
+        headers=headers,
+        json={"items": [{"listing_id": listing_id, "quantity": 1}]},
+    )
+    assert placed.status_code == 201, placed.text
+    return dict(placed.json())
+
+
+def test_a_store_lot_appears_as_one_catalogue_entry(
+    client: TestClient, db: Session, store_lot_listing: Listing
+) -> None:
+    """One thing for sale, with its members' public descriptions."""
+    db.commit()
+    entry = _entry(client, store_lot_listing.id)
+    lot = store_lot_listing.sales_lot
+    assert lot is not None
+    assert entry["title"] == lot.title
+    assert entry["inventory_item_id"] is None
+    assert entry["item_code"] is None
+    assert len(entry["members"]) == 3
+
+
+def test_a_store_lot_has_a_detail_page_too(
+    client: TestClient, db: Session, store_lot_listing: Listing
+) -> None:
+    """The detail endpoint projects through the same function the list does.
+
+    Separate from the list test because the two reach `to_catalog_item` by
+    different queries -- `_get_listing` does not go through the outer join --
+    so a lot that the list serves could still 500 here.
+    """
+    db.commit()
+    response = client.get(f"/api/catalog/{store_lot_listing.id}")
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["quantity_available"] == 1
+    assert body["price"] == "1200.00"
+    assert len(body["members"]) == 3
+
+
+def _offer_in_store(
+    db: Session,
+    lot: SalesLot,
+    *,
+    title: str = "Two Morgan Dollars",
+    description: str = "Both together.",
+) -> Listing:
+    """Offer a lot in the web store, the way the `store_lot_listing` fixture does."""
+    store = db.get(SalesVenue, store_venue_id(db))
+    assert store is not None
+    return offering_writes.offer(
+        db,
+        lot=lot,
+        venue=store,
+        listing_format=ListingFormat.fixed_price,
+        price=Decimal("75.00"),
+        title=title,
+        description=description,
+        external_id=None,
+    )
+
+
+def test_a_lot_entry_shows_the_offer_wording_not_the_lots(
+    client: TestClient,
+    db: Session,
+    make_item: Callable[..., InventoryItem],
+    make_lot: Callable[..., SalesLot],
+) -> None:
+    """The buyer reads what the offer says, not the lot's working name.
+
+    Written with the two strings deliberately different. The fixture's lot is
+    titled the same as its listing, so an assertion against it would pass
+    whichever of the two the catalog actually showed.
+    """
+    lot = make_lot(
+        [make_item(title="First coin"), make_item(title="Second coin")],
+        title="Working name nobody should see",
+        description="Internal note.",
+    )
+    listing = _offer_in_store(db, lot)
+    db.commit()
+
+    entry = _entry(client, listing.id)
+    assert entry["title"] == "Two Morgan Dollars"
+    assert entry["description"] == "Both together."
+
+
+def test_a_lot_entry_never_falls_back_to_the_lots_own_wording(
+    client: TestClient,
+    db: Session,
+    make_item: Callable[..., InventoryItem],
+    make_lot: Callable[..., SalesLot],
+) -> None:
+    """A lot listing with no wording shows none, not the office's.
+
+    `sales_lot.title` and `sales_lot.description` are the group's working
+    name and note. The listing's wording is blanked on the stored row, after
+    the offer, so this reads what the catalog does with such a row whatever
+    the offer path accepts: nothing of the lot's own may reach the page, in
+    the list or on the detail page.
+    """
+    lot = make_lot(
+        [make_item(title="First coin"), make_item(title="Second coin")],
+        title="Working name nobody should see",
+        description="Internal note.",
+    )
+    listing = _offer_in_store(db, lot)
+    listing.title = ""
+    listing.description = ""
+    db.commit()
+
+    entry = _entry(client, listing.id)
+    detail = client.get(f"/api/catalog/{listing.id}").json()
+
+    for shown in (entry, detail):
+        payload = json.dumps(shown)
+        assert "Working name nobody should see" not in payload
+        assert "Internal note." not in payload
+        assert shown["description"] == ""
+        # The members are still what describes it.
+        assert [member["title"] for member in shown["members"]] == [
+            "First coin",
+            "Second coin",
+        ]
+
+
+@pytest.mark.parametrize("title", ["", "   "])
+def test_a_lot_cannot_be_offered_in_the_store_with_no_title(
+    title: str,
+    client: TestClient,
+    db: Session,
+    admin_headers: dict[str, str],
+    make_item: Callable[..., InventoryItem],
+    make_lot: Callable[..., SalesLot],
+) -> None:
+    """A store lot's title is the only name a buyer is given for it.
+
+    An item listing left untitled is named by its item; a lot has no item,
+    and its own title is not for buyers. So the offer is refused, and the lot
+    is left as it was.
+    """
+    lot = make_lot(
+        [make_item(title="First coin"), make_item(title="Second coin")],
+        title="Working name nobody should see",
+    )
+    db.commit()
+    store = db.get_one(SalesVenue, store_venue_id(db))
+
+    refused = client.post(
+        "/api/offers",
+        json={"venue": store.code, "lot_id": lot.id, "price": "75.00", "title": title},
+        headers=admin_headers,
+    )
+
+    assert refused.status_code == 422, refused.text
+    assert "title" in json.dumps(refused.json()).lower()
+    db.expire_all()
+    assert db.get_one(SalesLot, lot.id).status is SalesLotStatus.assembling
+    listed = db.scalars(select(Listing).where(Listing.sales_lot_id == lot.id)).all()
+    assert listed == []
+
+    # The same offer with wording is accepted: the title was all that was wrong.
+    accepted = client.post(
+        "/api/offers",
+        json={
+            "venue": store.code,
+            "lot_id": lot.id,
+            "price": "75.00",
+            "title": "Two Morgan Dollars",
+        },
+        headers=admin_headers,
+    )
+    assert accepted.status_code in (200, 201), accepted.text
+
+
+def test_a_buyers_order_line_calls_a_lot_what_the_shop_called_it(
+    client: TestClient,
+    db: Session,
+    make_item: Callable[..., InventoryItem],
+    make_lot: Callable[..., SalesLot],
+    customer_headers: dict[str, str],
+) -> None:
+    """The same purchase, seen afterwards, must carry the same name.
+
+    `routers.orders._sold_as` names a lot by the listing wording in the
+    snapshot, not by the `lot.title` beside it -- the group's working name,
+    which the test above establishes is not for buyers. Otherwise the shop
+    would say "Two Morgan Dollars" and the buyer's own order "Working name
+    nobody should see". Asserted against the catalog entry
+    rather than against a literal, because agreeing with each other is the
+    property that matters.
+    """
+    lot = make_lot(
+        [make_item(title="First coin"), make_item(title="Second coin")],
+        title="Working name nobody should see",
+    )
+    listing = _offer_in_store(db, lot)
+    db.commit()
+
+    entry = _entry(client, listing.id)
+    placed = _buy(client, customer_headers, listing.id)
+
+    assert placed["items"][0]["title"] == entry["title"] == "Two Morgan Dollars"
+
+
+def test_a_lot_entry_counts_every_piece_in_it(
+    client: TestClient,
+    db: Session,
+    make_item: Callable[..., InventoryItem],
+    make_lot: Callable[..., SalesLot],
+) -> None:
+    """`piece_count` is how many objects the entry is, so a lot sums its members.
+
+    One member is a five-coin roll, so the three candidate answers are all
+    different: 7 (the truth), 3 (the number of members, which a multi-piece
+    member makes wrong) and 1 (the field's default, which reads exactly like
+    a genuine single coin).
+    """
+    lot = make_lot(
+        [
+            make_item(title="A roll of Morgans", piece_count=5),
+            make_item(title="One Morgan"),
+            make_item(title="Another Morgan"),
+        ]
+    )
+    listing = _offer_in_store(db, lot)
+    db.commit()
+
+    entry = _entry(client, listing.id)
+    assert entry["piece_count"] == 7
+    assert len(entry["members"]) == 3
+
+
+def test_a_lot_entry_never_carries_cost_or_location(
+    client: TestClient, db: Session, store_lot_listing: Listing
+) -> None:
+    """The authorization boundary is `to_catalog_item` building fields by name.
+
+    A lot widens what that function must build; this asserts the widening did
+    not reach for the whole row. Three assertions, and they are not
+    redundant: the entry's keys must be exactly `EXPECTED_PUBLIC_FIELDS`, so
+    a field added to `CatalogItemOut` reddens whether or not anyone thought
+    to forbid it; each member's keys must be exactly
+    `EXPECTED_MEMBER_FIELDS`, which is what actually bites here, since a
+    lot's private data would arrive nested; and `PRIVATE_FIELD_NAMES` over
+    the serialized payload catches a private name appearing anywhere at all,
+    including inside a structure neither model declares today.
+
+    `EXPECTED_PUBLIC_FIELDS` is the same list the single-item boundary test
+    uses. Two lists drift, and the member half is the one a reader is most
+    likely to widen.
+    """
+    db.commit()
+    entry = _entry(client, store_lot_listing.id)
+    assert set(entry) == EXPECTED_PUBLIC_FIELDS, (
+        f"unexpected: {sorted(set(entry) - EXPECTED_PUBLIC_FIELDS)}, "
+        f"missing: {sorted(EXPECTED_PUBLIC_FIELDS - set(entry))}"
+    )
+    for member in entry["members"]:
+        assert set(member) == EXPECTED_MEMBER_FIELDS, (
+            f"unexpected on a member: "
+            f"{sorted(set(member) - EXPECTED_MEMBER_FIELDS)}, "
+            f"missing: {sorted(EXPECTED_MEMBER_FIELDS - set(member))}"
+        )
+    payload = json.dumps(entry)
+    leaked = [name for name in PRIVATE_FIELD_NAMES if name in payload]
+    assert not leaked, f"leaked somewhere in the payload: {leaked}"
+
+
+def test_a_non_store_lot_listing_stays_out_of_the_catalogue(
+    client: TestClient, db: Session, offered_lot_listing: Listing
+) -> None:
+    """`shop_listing_filters` is the rule, and a lot does not get an exemption.
+
+    The mutation that proves it: drop `shop_listing_filters` from the widened
+    query and confirm this goes red while the test above stays green.
+    """
+    db.commit()
+    body = client.get("/api/catalog").json()
+    assert all(row["id"] != offered_lot_listing.id for row in body["items"])
+    assert client.get(f"/api/catalog/{offered_lot_listing.id}").status_code == 404
+
+
+def test_buying_a_lot_sells_every_member(
+    client: TestClient,
+    db: Session,
+    customer_headers: dict[str, str],
+    store_lot_listing: Listing,
+) -> None:
+    """Checkout of a lot is one line, with a share per member."""
+    db.commit()
+    lot = store_lot_listing.sales_lot
+    assert lot is not None
+    member_ids = [member.inventory_item_id for member in lot.members]
+
+    placed = _buy(client, customer_headers, store_lot_listing.id)
+
+    line_id = placed["items"][0]["id"]
+    shares = db.scalars(
+        select(SalesOrderItemShare).where(
+            SalesOrderItemShare.sales_order_item_id == line_id
+        )
+    ).all()
+    assert sorted(share.inventory_item_id for share in shares) == sorted(member_ids)
+    for item_id in member_ids:
+        item = db.get(InventoryItem, item_id)
+        assert item is not None
+        assert item.disposition.code == "sold"
+
+
+def test_buying_a_lot_ends_it_sold_and_releases_its_members(
+    client: TestClient,
+    db: Session,
+    customer_headers: dict[str, str],
+    store_lot_listing: Listing,
+) -> None:
+    """A lot bought in the shop ends `sold`, with nothing still open.
+
+    The lifecycle is `assembling -> offered -> sold | dissolved`
+    (`docs/specs/selling-design.md`), and `released_at` is set when the lot is
+    sold or dissolved. Without this, a shop checkout would leave the lot
+    `offered` for ever: its members sold, their membership rows still open
+    -- blocking the already-sold coins under `uq_sales_lot_item_open` -- and
+    the listing active at quantity zero. `ck_listing_lot_quantity_one`
+    caps a lot listing at one unit, so there is no partly-sold lot to
+    reason about.
+    """
+    db.commit()
+    lot = store_lot_listing.sales_lot
+    assert lot is not None
+    lot_id = lot.id
+
+    _buy(client, customer_headers, store_lot_listing.id)
+
+    sold_lot = db.get(SalesLot, lot_id)
+    assert sold_lot is not None
+    assert sold_lot.status is SalesLotStatus.sold
+    still_open = db.scalars(
+        select(SalesLotItem).where(
+            SalesLotItem.sales_lot_id == lot_id,
+            SalesLotItem.released_at.is_(None),
+        )
+    ).all()
+    assert not still_open, f"still open: {[row.id for row in still_open]}"
+
+
+def test_a_sold_lots_page_still_says_which_coins_it_held(
+    client: TestClient,
+    db: Session,
+    customer_headers: dict[str, str],
+    admin_headers: dict[str, str],
+    store_lot_listing: Listing,
+) -> None:
+    """Selling a lot releases its memberships; the page must still list them.
+
+    The detail endpoint serves an ended listing to an administrator. Asked
+    through `offering_writes.offered_items` -- "what does this listing offer
+    now" -- that page would be a group with nothing in it, because ending a
+    lot releases every membership in the same transaction. `members_held` is
+    the past-tense reader that answers it.
+    """
+    db.commit()
+    listing_id = store_lot_listing.id
+    _buy(client, customer_headers, listing_id)
+
+    response = client.get(f"/api/catalog/{listing_id}", headers=admin_headers)
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["is_active"] is False
+    assert len(body["members"]) == 3
+    assert all(member["item_code"] for member in body["members"])

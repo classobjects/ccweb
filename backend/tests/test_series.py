@@ -1,0 +1,192 @@
+"""Series classification and the alias search.
+
+The alias table earns its place only if a search for a formal name finds items
+that never use it, and the reverse. These fail if the alias join is removed.
+
+The series vocabulary is seeded, so these read it rather than inventing one --
+which also means a mistake in `series.json` shows up here.
+"""
+
+from __future__ import annotations
+
+from app.aliases import ids_named
+from app.inventory_search import COIN_VIEW, count_facets, search
+from app.models import Series
+from app.series_match import build_rules, match
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from tests.builders import ItemFactory
+
+
+def _series(db: Session, code: str) -> Series:
+    """The series with this code."""
+    return db.execute(select(Series).where(Series.code == code)).scalar_one()
+
+
+def test_alias_resolves_to_its_series(db: Session) -> None:
+    """Both names reach the same series, which is the whole point."""
+    mercury = _series(db, "winged_liberty_head_dime")
+
+    assert ids_named(db, Series, "Mercury") == [mercury.id]
+    assert ids_named(db, Series, "merc") == [mercury.id]
+    assert ids_named(db, Series, "Winged Liberty") == [mercury.id]
+    assert ids_named(db, Series, "") == []
+
+
+def test_one_alias_may_span_several_series(db: Session) -> None:
+    """A nickname is not owned by one design: any large silver dollar."""
+    found = set(ids_named(db, Series, "Cartwheel"))
+    expected = {
+        _series(db, "morgan_dollar").id,
+        _series(db, "peace_dollar").id,
+    }
+    assert found == expected
+
+
+def test_search_finds_an_item_by_a_name_its_description_lacks(
+    db: Session, make_item: ItemFactory
+) -> None:
+    """The reason the alias table exists.
+
+    The description says "Mercury" and never "Winged Liberty Head", as
+    sellers' descriptions do, so matching description text alone finds the
+    nickname and misses the formal name entirely.
+    """
+    mercury = _series(db, "winged_liberty_head_dime")
+    make_item(description="1945 Silver Mercury Dime", series_id=mercury.id)
+
+    by_nickname, _ = search(db, COIN_VIEW, params={}, query="Mercury")
+    by_formal, _ = search(db, COIN_VIEW, params={}, query="Winged Liberty Head")
+
+    assert len(by_nickname) == 1
+    assert len(by_formal) == 1, "the formal name must reach it through the series"
+    assert by_formal[0]["item_code"] == by_nickname[0]["item_code"]
+
+
+def test_unrelated_search_does_not_match(db: Session, make_item: ItemFactory) -> None:
+    """The alias join must not widen a search to everything."""
+    mercury = _series(db, "winged_liberty_head_dime")
+    make_item(description="1945 Silver Mercury Dime", series_id=mercury.id)
+    rows, _ = search(db, COIN_VIEW, params={}, query="Saint-Gaudens")
+    assert rows == []
+
+
+def test_ambiguous_terms_need_a_denomination(db: Session) -> None:
+    """Barber names three series; alone it means nothing.
+
+    Guessing one would misfile the coin, and every price looked up against it
+    afterwards would be for the wrong thing.
+    """
+    rules = build_rules(db)
+    assert match("1899 Barber coin", None, rules) == set()
+    assert match("1899 Barber coin", "usd_coin_0_25", rules) == {"barber_quarter"}
+    assert match("1899 Barber coin", "usd_coin_0_10", rules) == {"barber_dime"}
+
+
+def test_an_ambiguous_term_is_decided_by_the_denomination_not_its_wording(
+    db: Session,
+) -> None:
+    """Five cents is not a cent, whatever the five-cent piece is called.
+
+    Read from the label, "Indian Head" on a coin whose denomination is worded
+    "Five Cents" would be an Indian Head cent, and on a half cent, two, three
+    or twenty cents too.
+    """
+    rules = build_rules(db)
+    assert match("1913 Indian Head", "usd_coin_0_05", rules) == {"indian_head_nickel"}
+    assert match("1899 Indian Head", "usd_coin_0_01", rules) == {"indian_head_cent"}
+    for other in ("usd_coin_0_005", "usd_coin_0_02", "usd_coin_0_03", "usd_coin_0_20"):
+        assert match("Indian Head", other, rules) == set(), other
+    # A half cent, half dime or half eagle is not a half dollar.
+    assert match("Seated Liberty", "usd_coin_0_005", rules) == set()
+    assert match("Seated Liberty", "usd_coin_5_00", rules) == set()
+
+
+def test_presidential_on_a_dollar_names_the_presidential_dollar(db: Session) -> None:
+    """Sellers say "$1 Presidential Coin" as often as "Presidential Dollar"."""
+    rules = build_rules(db)
+    for text in (
+        "2008 P James Monroe $1 Presidential Coin - 5th President",
+        "2011 P&D PRESIDENTIAL $1 SET - 8 DIFFERENT - UNC",
+        "Presidential PR70 DCAM FDOI Garfield, Grant, Hayes",
+    ):
+        assert match(text, "usd_coin_1_00", rules) == {"presidential_dollar"}, text
+    # Not a dollar, or not known to be one: the word is a medal's or a set's.
+    assert match("1977 Presidential Inaugural Medal", None, rules) == set()
+    assert match("Presidential Inaugural Medal", "usd_coin_0_50", rules) == set()
+    # A whole word only.
+    assert match("Vice-presidentially signed", "usd_coin_1_00", rules) == set()
+
+
+def test_two_series_in_one_description_stays_ambiguous(db: Session) -> None:
+    """A Franklin Pierce Presidential Dollar is not a Franklin Half.
+
+    Its description matches both, and taking the first match would file a
+    presidential dollar as a Franklin half.
+    """
+    rules = build_rules(db)
+    found = match("2010 D FRANKLIN PIERCE PRESIDENTIAL DOLLAR ANACS", None, rules)
+    assert len(found) > 1, "must be recognized as ambiguous, not silently resolved"
+
+
+def test_a_name_inside_a_longer_one_is_the_longer_ones(db: Session) -> None:
+    """A gold dollar's type is named, not also Liberty Head Gold and Gold Dollar."""
+    rules = build_rules(db)
+    dollar = "usd_coin_1_00"
+    for text, expected in (
+        ("1851 Liberty Head Gold Dollar XF", "liberty_head_gold_dollar"),
+        (
+            "1856 Type 3 Large Head Princess Gold One Dollar $1",
+            "large_head_princess_gold_dollar",
+        ),
+        (
+            "1855 Indian Princess Small Head Gold Dollar",
+            "small_head_princess_gold_dollar",
+        ),
+        (
+            "Certified 1853 Type 1 $1 Liberty Gold Piece NGC MS61",
+            "liberty_head_gold_dollar",
+        ),
+        ("1852 Rare Gold Dollar AU", "gold_dollar"),
+    ):
+        assert match(text, dollar, rules) == {expected}, text
+    # Not a dollar: "Type 1" with another face names no gold dollar.
+    assert "liberty_head_gold_dollar" not in match(
+        "Type 1 $10", "usd_coin_10_00", rules
+    )
+
+
+def test_names_over_the_same_words_both_stand(db: Session) -> None:
+    """A shorter name drops out only inside a longer one, not beside it."""
+    rules = build_rules(db)
+    assert match("Morgan and Peace dollars", "usd_coin_1_00", rules) == {
+        "morgan_dollar",
+        "peace_dollar",
+    }
+
+
+def test_series_facet_counts_by_indexed_key(
+    db: Session, make_item: ItemFactory
+) -> None:
+    mercury = _series(db, "winged_liberty_head_dime")
+    make_item(description="a dime", series_id=mercury.id)
+    make_item(description="another dime", series_id=mercury.id)
+
+    facets = count_facets(db, COIN_VIEW, params={})
+    counts = {row["value"]: row["count"] for row in facets["series"]}
+    assert counts.get("winged_liberty_head_dime") == 2
+
+
+def test_series_filter_selects_only_that_series(
+    db: Session, make_item: ItemFactory
+) -> None:
+    make_item(
+        description="a dime", series_id=_series(db, "winged_liberty_head_dime").id
+    )
+    make_item(description="a dollar", series_id=_series(db, "morgan_dollar").id)
+
+    rows, total = search(db, COIN_VIEW, params={"series": "morgan_dollar"}, query=None)
+    assert total == 1
+    assert rows[0]["series"] == "morgan_dollar"
+    assert rows[0]["series_label"] == "Morgan Dollar"

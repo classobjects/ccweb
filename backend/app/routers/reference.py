@@ -1,0 +1,702 @@
+"""The classifier vocabularies, for populating dropdowns.
+
+Classifiers cross the API as codes, which is right for a stable contract and
+useless for a human filling in a form -- nobody knows that a Morgan dollar's
+denomination is `usd_coin_1_00`. This endpoint is what turns those free-text
+boxes into pickers.
+
+**Who reads what.** The vocabularies the shop reads (`PUBLIC_TABLES`) are
+public: the catalog has to name an item's kind to a signed-out browser.
+Every other one is a manager's -- the kinds of storage location and vendor,
+the platforms and carriers, are how the business is run, not what it sells
+-- and so are retired values and retired aliases (`include_inactive`), which
+only a form editing an old record needs.
+
+Each table's extra columns come through in `extra` rather than being flattened,
+so a client can show a denomination's face value or an error type's
+`applies_to` without this module needing a branch per table. Each value's
+aliases come with it, so a picker can find "Walker" and say what it is.
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import Annotated, Any
+
+from fastapi import APIRouter, HTTPException, Query, status
+from sqlalchemy import Select, UniqueConstraint, func, or_, select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import object_session
+
+from .. import aliases, reference_merge, sale_state
+from ..deps import AdminUser, DbSession, OptionalUser, is_admin
+from ..inventory_search import plain
+from ..models import (
+    REFERENCE_MODELS,
+    InventoryItem,
+    ProvenanceSource,
+    ReferenceMerge,
+    ReferenceMixin,
+)
+from ..reference_fields import (
+    FieldError,
+    column_values,
+    derived_code,
+    fields_of,
+    table_of,
+    target_of,
+)
+from ..references import extendable, retirable
+from ..schemas import (
+    ReferenceAliasIn,
+    ReferenceMergeIn,
+    ReferenceMergeOut,
+    ReferenceTableOut,
+    ReferenceValueCreate,
+    ReferenceValueOut,
+    ReferenceValueRename,
+)
+from ._resolve import found_or_404, unprocessable
+from ._tx import commit_unique
+
+router = APIRouter(prefix="/reference", tags=["reference"])
+
+_log = logging.getLogger(__name__)
+
+#: The vocabularies the shop reads, and so the only ones a signed-out caller
+#: or a customer may: `frontend/src/store` asks for `item_kind` alone. A
+#: table added here is published to anyone who asks.
+PUBLIC_TABLES = frozenset({"item_kind"})
+
+_MANAGERS_ONLY = "Manager privileges required"
+
+#: Columns every reference table shares. Anything else a table carries is
+#: specific to it and goes into `extra`.
+_COMMON = frozenset({"id", "code", "label", "sort_order", "is_active", "source"})
+
+TABLES: dict[str, type[ReferenceMixin]] = {
+    model.__tablename__: model for model in REFERENCE_MODELS
+}
+
+#: Vocabularies whose order is their meaning, so they keep `sort_order`.
+#: Three reasons an entry belongs here: a scale (grade runs 70, 69+, 69, ...;
+#: denomination runs face value ascending, coins then notes -- once a picker
+#: filters by kind, a note's denominations read 3 cents -> $10000 in order),
+#: a lifecycle (item_status, disposition, sales_order_status, shipment_status
+#: each run ordered -> received -> ... or an equivalent progression), or a
+#: curated sequence (item_kind is ranked by how often a kind occurs -- coin
+#: and currency cover the whole collection, so they lead; signature_combination
+#: is chronological, oldest pair first; `?year=` narrows it to the pairs in
+#: office that year, which no picker asks for (`_limit_to_year`);
+#: `sales_fee_kind` is curated too: the migration orders it commission,
+#: processing, listing, shipping label, promotion, other, which is the order
+#: a person reads a platform's statement in and puts the catch-all last,
+#: where alphabetical by label puts "Other" third). Everything else is a
+#: descriptive list that is scanned by name, and alphabetical is the only
+#: order a reader can predict.
+_SEQUENCED_TABLES = frozenset(
+    {
+        "grade",
+        "denomination",
+        "item_status",
+        "disposition",
+        "sales_order_status",
+        "shipment_status",
+        "item_kind",
+        "signature_combination",
+        "sales_fee_kind",
+    }
+)
+
+
+def _to_value(
+    row: ReferenceMixin,
+    model: type[ReferenceMixin],
+    names: list[str] | None = None,
+    retired: list[str] | None = None,
+) -> ReferenceValueOut:
+    """A vocabulary row as the API returns it.
+
+    The columns every vocabulary has are named fields; a table's own columns
+    go in `extra`, a reference among them as the code of the row it names.
+    """
+    extra: dict[str, Any] = {}
+    for column in table_of(model).columns:
+        if column.name in _COMMON:
+            continue
+        # Foreign keys are resolved to the referenced row's code, so a client
+        # never has to know an id -- the same rule the rest of the API follows.
+        if column.foreign_keys and column.name.endswith("_id"):
+            name = column.name[: -len("_id")]
+            related = getattr(row, name, None)
+            # A model need not declare a relationship for every reference it
+            # holds (a series' denomination): read the row it points at.
+            target = target_of(column)
+            value_id = getattr(row, column.name)
+            session = object_session(row)
+            if (
+                related is None
+                and target is not None
+                and value_id is not None
+                and session is not None
+            ):
+                related = session.get(target, value_id)
+            code = getattr(related, "code", None)
+            if code is not None:
+                extra[name] = code
+            continue
+        extra[column.name] = plain(getattr(row, column.name))
+
+    return ReferenceValueOut(
+        code=row.code,
+        label=row.label,
+        sort_order=row.sort_order,
+        source=row.source.value,
+        is_active=row.is_active,
+        retirable=retirable(model.__tablename__, row.code),
+        extra={k: v for k, v in extra.items() if v is not None},
+        aliases=names or [],
+        retired_aliases=retired or [],
+    )
+
+
+def _value_with_aliases(
+    db: DbSession, row: ReferenceMixin, model: type[ReferenceMixin]
+) -> ReferenceValueOut:
+    """One value, with its current and retired aliases."""
+    everything = aliases.aliases_by_row(db, model, include_retired=True).get(row.id, [])
+    active = set(aliases.aliases_by_row(db, model).get(row.id, []))
+    return _to_value(
+        row,
+        model,
+        [a for a in everything if a in active],
+        [a for a in everything if a not in active],
+    )
+
+
+@router.get("")
+def list_tables(caller: OptionalUser) -> list[str]:
+    """The vocabularies this caller may read, in dependency order.
+
+    A manager's are all of them; anyone else's are the shop's.
+    """
+    if is_admin(caller):
+        return list(TABLES)
+    return [table for table in TABLES if table in PUBLIC_TABLES]
+
+
+@router.get(
+    "/{table}",
+    responses={
+        403: {
+            "description": "Not a manager, asking for a vocabulary the shop does "
+            "not read, or for retired values."
+        }
+    },
+)
+def get_table(
+    table: str,
+    db: DbSession,
+    caller: OptionalUser,
+    include_inactive: Annotated[
+        bool,
+        Query(
+            description="Include retired values and aliases, for editing old "
+            "records. Managers only."
+        ),
+    ] = False,
+    year: Annotated[
+        int | None,
+        Query(
+            description="Only values whose term covers this year, where a table has one"
+        ),
+    ] = None,
+) -> ReferenceTableOut:
+    """One vocabulary, ordered as it should appear in a picker.
+
+    Retired values are hidden by default but available on request: an old
+    record may still reference a classifier that should no longer be offered
+    for new ones, and the form still has to render it.
+
+    A caller who is not a manager reads only `PUBLIC_TABLES`, and only their
+    values in use: anything else is a 403, not a quietly shorter list.
+    """
+    model = _model_or_404(table)
+    if not is_admin(caller):
+        if table not in PUBLIC_TABLES:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"{_MANAGERS_ONLY} to read {table}",
+            )
+        if include_inactive:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"{_MANAGERS_ONLY} to see retired values",
+            )
+    stmt = select(model)
+    if not include_inactive:
+        stmt = stmt.where(model.is_active.is_(True))
+    if year is not None:
+        stmt = _limit_to_year(model, stmt, year)
+    order = (
+        (model.sort_order, model.code)
+        if table in _SEQUENCED_TABLES
+        else (func.lower(model.label), model.code)
+    )
+    rows = db.scalars(stmt.order_by(*order)).all()
+    active = aliases.aliases_by_row(db, model)
+    retired: dict[int, list[str]] = {}
+    if include_inactive:
+        for row_id, names in aliases.aliases_by_row(
+            db, model, include_retired=True
+        ).items():
+            current = set(active.get(row_id, []))
+            retired[row_id] = [n for n in names if n not in current]
+
+    return ReferenceTableOut(
+        table=table,
+        values=[
+            _to_value(row, model, active.get(row.id), retired.get(row.id))
+            for row in rows
+        ],
+        sequenced=table in _SEQUENCED_TABLES,
+        fields=fields_of(model),
+        addable=extendable(table),
+    )
+
+
+def _limit_to_year(
+    model: type[ReferenceMixin], stmt: Select[Any], year: int
+) -> Select[Any]:
+    """Narrow a term-bounded vocabulary to the values in office in a given year.
+
+    Answers "who held office in this year", and nothing more. It is **not**
+    the pairs a note of that *series* can carry: a lettered series is printed
+    later, under later officials (1963-A is Granahan / Fowler, in office from
+    1965), so narrowing a note's signatures this way hides the right pair.
+    The Friedberg lookup asks `GET /friedberg/signatures` for that, which
+    reads the `note_issue` facts.
+
+    A table without a term is returned unfiltered rather than empty: the
+    parameter is a narrowing where one is possible, not a requirement.
+    """
+    columns = model.__table__.columns
+    if "term_from" not in columns or "term_to" not in columns:
+        return stmt
+    return stmt.where(
+        or_(columns["term_from"].is_(None), columns["term_from"] <= year),
+        or_(columns["term_to"].is_(None), columns["term_to"] >= year),
+    )
+
+
+def _model_or_404(table: str) -> type[ReferenceMixin]:
+    """The vocabulary's model, or a 404 for a table that is not one."""
+    return found_or_404(TABLES.get(table), f"Unknown reference table: {table!r}")
+
+
+#: The width of every vocabulary's `code` column.
+_CODE_LENGTH = 64
+
+
+def _unique_columns(model: type[ReferenceMixin], exc: IntegrityError) -> list[str]:
+    """The columns of the uniqueness rule a refused row broke, or none.
+
+    Named as the API names them, so the message reads as the form does:
+    `currency, face_value, kind` for a second denomination of one face value.
+    """
+    name = getattr(getattr(exc.orig, "diag", None), "constraint_name", None)
+    for constraint in table_of(model).constraints:
+        if isinstance(constraint, UniqueConstraint) and constraint.name == name:
+            return [
+                column.name.removesuffix("_id") if column.foreign_keys else column.name
+                for column in constraint.columns
+            ]
+    return []
+
+
+def _flush_or_refuse(
+    db: DbSession, table: str, model: type[ReferenceMixin], what: str
+) -> None:
+    """Flush a vocabulary write; a constraint's refusal is a 409 or a 422.
+
+    A broken uniqueness rule is a 409 naming the columns that must differ;
+    any other constraint is a 422 saying a constraint refused it. The
+    database's own words name tables, columns and values of the schema, so
+    they go to the log, not the caller. `what` names what was refused --
+    "the value" being added, "the change" to one.
+    """
+    try:
+        db.flush()
+    except IntegrityError as exc:
+        db.rollback()
+        same = _unique_columns(model, exc)
+        if same:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"{table} already has a value with the same {', '.join(same)}.",
+            ) from exc
+        _log.warning("%s rejected %s: %s", table, what, exc.orig)
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"{what.capitalize()} was rejected by a database constraint "
+            f"of {table}.",
+        ) from exc
+
+
+@router.post(
+    "/{table}",
+    status_code=status.HTTP_201_CREATED,
+    responses={
+        422: {
+            "description": "Request validation failed, or the payload names a column "
+            "the table does not have, or the row was rejected by a database "
+            "constraint.",
+            # Restates FastAPI's generated content. Passing only a description
+            # replaces the whole 422 entry and drops the schema reference.
+            "content": {
+                "application/json": {
+                    "schema": {"$ref": "#/components/schemas/HTTPValidationError"}
+                }
+            },
+        }
+    },
+)
+def create_value(
+    table: str, payload: ReferenceValueCreate, db: DbSession, _admin: AdminUser
+) -> ReferenceValueOut:
+    """Add a value to a vocabulary, so the tables grow with use.
+
+    An operator entering an item that does not fit the shipped vocabulary adds
+    the missing value here rather than abandoning the entry or forcing it into
+    an approximate one -- which is what actually happens otherwise, and it is
+    invisible afterwards.
+
+    Marked `manual`, so one installation's additions stay distinguishable from
+    the shipped catalog and do not leave in an export unless asked for.
+
+    Managers only: neither an anonymous request nor a customer may extend
+    a vocabulary.
+    """
+    model = _model_or_404(table)
+    if not extendable(table):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Nothing can be added to {table}: the application acts on "
+            "each of its values by code. A value can still be renamed.",
+        )
+
+    label = " ".join(payload.label.split())
+    if not label:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="A label needs some text.",
+        )
+    try:
+        values = column_values(db, model, payload.extra)
+    except FieldError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
+        ) from exc
+
+    code = payload.code or derived_code(db, model, label, values)
+    if not code or len(code) > _CODE_LENGTH:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"{label!r} gives no usable code; send one of at most "
+            f"{_CODE_LENGTH} characters.",
+        )
+    if db.scalar(select(model).where(model.code == code)) is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"{table} already has a value with code {code!r}",
+        )
+    # `reference_merge` holds a code once and a seed load skips it for good:
+    # a value added under a merged code could not be merged again, and no
+    # load would update it.
+    became = db.scalar(
+        select(ReferenceMerge.merged_into).where(
+            ReferenceMerge.table_name == table, ReferenceMerge.code == code
+        )
+    )
+    if became is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"{table} had a value with code {code!r}, which was merged into "
+            f"{became!r}. Use that value, or send another code.",
+        )
+
+    row = model(
+        code=code,
+        label=label,
+        sort_order=payload.sort_order,
+        source=ProvenanceSource.manual,
+        **values,
+    )
+    db.add(row)
+    _flush_or_refuse(db, table, model, "the value")
+    db.commit()
+    db.refresh(row)
+    return _to_value(row, model)
+
+
+@router.patch(
+    "/{table}/{code}",
+    responses={
+        422: unprocessable(
+            "Request validation failed, or the label holds no text, or the "
+            "change names a column the table does not have."
+        )
+    },
+)
+def rename_value(
+    table: str,
+    code: str,
+    payload: ReferenceValueRename,
+    db: DbSession,
+    _admin: AdminUser,
+) -> ReferenceValueOut:
+    """Change what a value is called, where it sorts, or retire it.
+
+    Never the code. The code is the contract -- it appears in saved filters,
+    bookmarked searches and any integration -- so it does not change, and
+    renaming the label is precisely what lets a poorly worded one be fixed
+    without breaking those.
+
+    `extra` changes the vocabulary's own columns -- which side a series is
+    offered for, a denomination's face value -- read as they are when a
+    value is added; only the columns named change, and a blank empties one.
+
+    A renamed, reordered or otherwise changed value becomes `manual`, so the
+    next seed load leaves it as the person set it rather than putting the
+    shipped wording back. Retiring is refused for a value the application
+    looks up by code (409); it may still be renamed.
+
+    **Nothing needs migrating.** Every record refers to the value by foreign
+    key, so the new wording is live everywhere the moment this commits. That is
+    the payoff for keeping one copy of it.
+    """
+    model, row = _row_or_404(db, table, code)
+
+    label = " ".join(payload.label.split())
+    if not label:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="A label needs some text.",
+        )
+    if payload.is_active is False and not retirable(table, code):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"{row.label} cannot be retired: the application looks it up "
+            "by its code. It can still be renamed.",
+        )
+
+    try:
+        changes = column_values(db, model, payload.extra or {}, changing=True)
+    except FieldError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
+        ) from exc
+    changed = {
+        column: value
+        for column, value in changes.items()
+        if getattr(row, column) != value
+    }
+
+    if (
+        label != row.label
+        or (payload.sort_order is not None and payload.sort_order != row.sort_order)
+        or changed
+    ):
+        row.source = ProvenanceSource.manual
+    row.label = label
+    for column, value in changed.items():
+        setattr(row, column, value)
+    if payload.sort_order is not None:
+        row.sort_order = payload.sort_order
+    if payload.is_active is not None:
+        # Retiring a value keeps existing records valid while removing it from
+        # the pickers -- which is what you want, since deleting it is refused
+        # by the foreign keys anyway.
+        row.is_active = payload.is_active
+
+    _flush_or_refuse(db, table, model, "the change")
+    db.commit()
+    db.refresh(row)
+    return _value_with_aliases(db, row, model)
+
+
+def _row_or_404(
+    db: DbSession, table: str, code: str
+) -> tuple[type[ReferenceMixin], ReferenceMixin]:
+    """The vocabulary's model and its value with this code, or a 404 for either."""
+    model = _model_or_404(table)
+    row = db.scalar(select(model).where(model.code == code))
+    row = found_or_404(row, f"{table} has no value with code {code!r}")
+    return model, row
+
+
+@router.post(
+    "/{table}/{code}/aliases",
+    status_code=status.HTTP_201_CREATED,
+    responses={409: {"description": "The alias cannot be added to this value."}},
+)
+def add_alias(
+    table: str,
+    code: str,
+    payload: ReferenceAliasIn,
+    db: DbSession,
+    _admin: AdminUser,
+) -> ReferenceValueOut:
+    """Give a value another name: what people write instead of its label.
+
+    The standard term stays the label; the owner's word becomes an alias
+    ("Ultra Cameo" for UCAM). Search and the pickers recognize it at once. A
+    retired shipped alias is brought back rather than copied.
+
+    Two values may share an alias ("Cartwheel" is any large silver dollar):
+    search finds both, and `aliases.resolve`, which cannot choose, names
+    neither.
+    Refused when the alias is another value's own label or code, which would
+    always win over it.
+    """
+    model, row = _row_or_404(db, table, code)
+    taken = f"{payload.alias.strip()!r} is already a name of this value."
+    try:
+        aliases.add_alias(db, model, row.id, payload.alias)
+    except aliases.AliasError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=str(exc)
+        ) from exc
+    except IntegrityError as exc:
+        # Added by another request since `add_alias` looked, and refused at
+        # its flush: the same refusal as the look gives.
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=taken) from exc
+    commit_unique(db, taken)
+    return _value_with_aliases(db, row, model)
+
+
+@router.delete("/{table}/{code}/aliases")
+def remove_alias(
+    table: str,
+    code: str,
+    alias: Annotated[str, Query(min_length=1, max_length=64)],
+    db: DbSession,
+    _admin: AdminUser,
+) -> ReferenceValueOut:
+    """Take a name away from a value.
+
+    A shipped alias is retired, not deleted, so the next seed load does not
+    bring it back; one added here is deleted.
+    """
+    model, row = _row_or_404(db, table, code)
+    try:
+        aliases.remove_alias(db, model, row.id, alias)
+    except aliases.AliasError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
+        ) from exc
+    db.commit()
+    return _value_with_aliases(db, row, model)
+
+
+#: Why a merge another request's write overtook is refused.
+_MERGED_MEANWHILE = (
+    "This value changed while it was being merged; read the vocabulary again and retry."
+)
+
+
+@router.post(
+    "/{table}/{code}/merge",
+    responses={
+        404: {"description": "The table or the value merged away is unknown."},
+        409: {
+            "description": "The two values cannot be merged, or another request "
+            "changed them while this one merged."
+        },
+        422: unprocessable("The value to merge into is unknown."),
+    },
+)
+def merge_value(
+    table: str,
+    code: str,
+    payload: ReferenceMergeIn,
+    db: DbSession,
+    admin: AdminUser,
+) -> ReferenceMergeOut:
+    """Merge a value into another: move its items, keep its names, delete it.
+
+    `dry_run` reports what would move and changes nothing -- the console
+    shows it before asking. Refused (409) for a value another vocabulary or
+    a facts table uses, for one the application looks up by code, and for a
+    retired target (app.reference_merge).
+
+    Refused (409) again when any item it would move is for sale, until
+    `acknowledge_for_sale` says the caller has seen that -- the dry run names
+    those items in `for_sale`, so the console can ask before it comes to this.
+    And refused (409), with nothing written, when another request's write
+    overtakes this one: the same value merged twice at once, or an item
+    given the value while it was being removed.
+    """
+    model = _model_or_404(table)
+    try:
+        if payload.dry_run:
+            result, _, _ = reference_merge.plan(db, model, code, payload.into)
+        else:
+            planned, _, _ = reference_merge.plan(db, model, code, payload.into)
+            if planned.for_sale_count:
+                for_sale_items = db.scalars(
+                    select(InventoryItem).where(
+                        InventoryItem.item_code.in_(planned.for_sale)
+                    )
+                ).all()
+                sale_state.guard(
+                    db,
+                    list(for_sale_items),
+                    acknowledged=payload.acknowledge_for_sale,
+                )
+            result = reference_merge.merge(
+                db, model, code, payload.into, user_id=admin.id
+            )
+    except reference_merge.NoSuchValue as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
+        ) from exc
+    except reference_merge.NoSuchTarget as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
+        ) from exc
+    except reference_merge.MergeError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=str(exc)
+        ) from exc
+    except IntegrityError as exc:
+        # Another request merged this value, gave an item it, or gave the
+        # kept value one of its names since this one read them: the database
+        # refuses the second writer, and it reads as the refusal it is.
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=_MERGED_MEANWHILE
+        ) from exc
+    if payload.dry_run:
+        db.rollback()
+    else:
+        commit_unique(db, _MERGED_MEANWHILE)
+    return ReferenceMergeOut(
+        table=result.table,
+        code=result.code,
+        into=result.into,
+        dry_run=payload.dry_run,
+        moved=result.moved,
+        items=result.items,
+        dropped=result.dropped,
+        aliases=result.aliases,
+        names_not_kept=result.names_not_kept,
+        for_sale=result.for_sale,
+        for_sale_count=result.for_sale_count,
+    )

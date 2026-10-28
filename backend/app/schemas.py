@@ -1,0 +1,3047 @@
+"""Pydantic request/response models.
+
+**Classifiers cross the API as codes, not ids.** A client sends
+``"item_kind": "bullion"``, never ``"item_kind_id": 3``. Ids are internal and
+may differ between installations; codes are the stable contract. The routers
+resolve them, and an unknown code is a 422 rather than a silently null column.
+
+**Money and weight are `Decimal`.** They are declared with the precision of
+the columns that store them, so a value with more digits or decimal places
+than its column holds is a 422 rather than a rounding surprise several layers
+down. A JSON number is accepted and read as a decimal; a string such as
+``"12.50"`` says exactly what was meant, and is what responses send back.
+"""
+
+from __future__ import annotations
+
+import re
+from datetime import date, datetime
+from decimal import Decimal
+from typing import Annotated, Any, Literal
+
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    EmailStr,
+    Field,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
+
+from . import plates
+from .fr_format import fr_district, fr_problem, normalize_fr
+from .models import AddressKind, UserRole
+
+#: A price, cost, fee or reserve in dollars and cents. Never negative, and
+#: held to the `NUMERIC(12,2)` columns it is stored in: `decimal_places` must
+#: be given alongside `max_digits`, or `1E+11` passes pydantic and fails in
+#: PostgreSQL as a `DataError` that nothing turns into a 422.
+Money = Annotated[Decimal, Field(ge=Decimal("0"), max_digits=12, decimal_places=2)]
+
+#: A weight in troy ounces, held to the `NUMERIC(12,6)` columns it is stored
+#: in for the reason `Money` is held to its own.
+Weight = Annotated[Decimal, Field(ge=Decimal("0"), max_digits=12, decimal_places=6)]
+
+#: A fee rate as a fraction of the sale -- 0.1325 is 13.25% -- held to the
+#: `NUMERIC(6,4)` columns it is stored in: a fifth decimal place would be
+#: rounded away by PostgreSQL while the response reported what was sent.
+Rate = Annotated[
+    Decimal, Field(ge=Decimal("0"), le=Decimal("1"), max_digits=6, decimal_places=4)
+]
+
+#: The bounds of a banknote's series year, wherever one is sent. 1690 is the
+#: first paper money issued in America, and the collection holds notes back
+#: to 1801; 2200 is the same far bound the item years use.
+SERIES_YEAR_MIN = 1690
+SERIES_YEAR_MAX = 2200
+
+#: Where a note was printed: `dc` (Washington) or `fw` (Fort Worth).
+_PRINTING_FACILITY = "^(dc|fw)$"
+SeriesYear = Annotated[int, Field(ge=SERIES_YEAR_MIN, le=SERIES_YEAR_MAX)]
+
+
+def _strip_or_none(value: str | None) -> str | None:
+    """Surrounding space is not part of it; nothing left is None."""
+    return (value or "").strip() or None
+
+
+def _name_or_refuse(value: str) -> str:
+    """A name without its surrounding space; one with nothing left is refused."""
+    trimmed = value.strip()
+    if not trimmed:
+        raise ValueError("name must not be blank")
+    return trimmed
+
+
+#: The seller's id for the listing an item was bought from -- eBay's item
+#: number. Text, as the seller prints it; blank clears it.
+SellersItemId = Annotated[
+    str | None, Field(max_length=64), AfterValidator(_strip_or_none)
+]
+
+
+#: The owner's rating of the piece, in their own words; blank clears it.
+Rating = Annotated[str | None, Field(max_length=2000), AfterValidator(_strip_or_none)]
+
+
+def _web_address_or_none(value: str | None) -> str | None:
+    """Trimmed; blank is None; otherwise it must be an http(s) address."""
+    address = _strip_or_none(value)
+    if address is not None and not _HTTP_URL.match(address):
+        raise ValueError("must start with http:// or https://")
+    return address
+
+
+#: The web address of the listing an item was bought from -- an eBay, HiBid
+#: or Whatnot page. Only http(s), so it can be offered as a link; blank
+#: clears it.
+ListingUrl = Annotated[
+    str | None, Field(max_length=1000), AfterValidator(_web_address_or_none)
+]
+
+
+def _web_link_or_withheld(value: str | None) -> str | None:
+    """A stored address as a response offers it: http(s), otherwise None."""
+    return value if value is not None and _HTTP_URL.match(value) else None
+
+
+def _store_link_or_withheld(value: str | None) -> str | None:
+    """A stored address as a response offers it: http(s) or `mailto:`, else None."""
+    if value is not None and _MAILTO_ADDRESS.match(value):
+        return value
+    return _web_link_or_withheld(value)
+
+
+#: A stored web address a response sends for the console to render as a
+#: link. Entry refuses anything else, but a row written another way -- an
+#: import, an older version, the database directly -- is not re-checked
+#: there, and an `href` of `javascript:` runs. So what is not http(s) is
+#: withheld rather than sent.
+WebLinkOut = Annotated[str | None, AfterValidator(_web_link_or_withheld)]
+#: The same, for a seller's address, which may also be `mailto:` (`StoreUrl`).
+StoreLinkOut = Annotated[str | None, AfterValidator(_store_link_or_withheld)]
+#: A face plate in its stored form (`app.plates.face_plate`): `E82`, `153`,
+#: or `FW E82` for a Fort Worth note.
+FacePlate = Annotated[
+    str | None, Field(max_length=16), AfterValidator(plates.face_plate)
+]
+#: A back plate, digits only (`app.plates.back_plate`).
+BackPlate = Annotated[
+    str | None, Field(max_length=16), AfterValidator(plates.back_plate)
+]
+
+# --------------------------------------------------------------------------
+# Auth / users
+# --------------------------------------------------------------------------
+
+
+class UserCreate(BaseModel):
+    """Registration payload. The password is never stored or echoed back."""
+
+    email: EmailStr
+    password: str = Field(min_length=8, max_length=128)
+    full_name: str = Field(default="", max_length=255)
+
+
+class UserOut(BaseModel):
+    """A user as the API returns them -- no password material of any kind."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    email: EmailStr
+    full_name: str
+    role: UserRole
+    is_active: bool
+    created_at: datetime
+
+
+class TokenPair(BaseModel):
+    """The two tokens issued on login: a short access one and a long refresh one."""
+
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+
+
+class RefreshRequest(BaseModel):
+    """Exchange a refresh token for a new access token."""
+
+    refresh_token: str
+
+
+class UserUpdate(BaseModel):
+    """The fields an administrator may change on someone else's account."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    full_name: str | None = Field(default=None, max_length=255)
+    role: UserRole | None = None
+    is_active: bool | None = None
+
+
+class AccountCreate(BaseModel):
+    """An account an administrator opens for someone else.
+
+    The role has no default. Self-registration can only ever produce a
+    customer; here either role is possible, so an administrator is never made
+    by a field left out. The password is the administrator's to set and pass
+    on out of band, the same as `PasswordSet` -- there is no mail to send an
+    invitation with.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    email: EmailStr
+    full_name: Annotated[str, Field(max_length=255)] = ""
+    role: UserRole
+    password: Annotated[str, Field(min_length=8, max_length=128)]
+
+
+class PasswordSet(BaseModel):
+    """A new password, chosen by an administrator.
+
+    There is no mail configuration, so a reset link is not possible. An
+    administrator sets the password and tells the person out of band.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    password: Annotated[str, Field(min_length=8, max_length=128)]
+
+
+# --------------------------------------------------------------------------
+# Catalog
+#
+# A catalog entry is a `listing` joined to the `inventory_item` behind it.
+# The two are separate tables because an item may be listed, delisted and
+# relisted at different prices, and because the public catalog must be able
+# to show a listing without exposing the item's cost basis or location. The
+# API presents them as one resource, since that is how a shop is operated.
+# --------------------------------------------------------------------------
+
+
+class ImageOut(BaseModel):
+    """A stored photograph and the URLs its renditions are served from.
+
+    No URL for the original: public requests are answered only from
+    derivatives, which is what keeps a file that somehow retained metadata
+    unreachable.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    sha256: str
+    media_type: str
+    byte_size: int
+    width: int | None = None
+    height: int | None = None
+    captured_at: datetime | None = None
+    #: The web address it was fetched from, when it was.
+    source_url: WebLinkOut = None
+    thumbnail_url: str
+    image_url: str
+
+
+class ImageLinkOut(BaseModel):
+    """One photograph as it is filed: the link, and the image it points at.
+
+    Both together because every console surface that lists photographs needs
+    both, and a second request per thumbnail is a page that arrives in pieces.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    #: Null for a photograph nobody has filed yet.
+    link_id: int | None = None
+    inventory_item_id: int | None = None
+    item_code: str | None = None
+    image_id: int
+    image_role: str | None = None
+    is_primary: bool = False
+    sort_order: int = 0
+    captured_at: datetime | None = None
+    #: The web address the photograph was fetched from, when it was.
+    source_url: WebLinkOut = None
+    #: These two names are `routers.images.image_urls`'s own keys, so the
+    #: helper can be splatted straight in. It returns `image_url`, not
+    #: `web_url` -- matching `ImageOut`, which does the same.
+    thumbnail_url: str
+    image_url: str
+
+
+class ImageLinkUpdate(BaseModel):
+    """What may change about a filed photograph."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    image_role: str | None = None
+    is_primary: bool | None = None
+    #: Set after a refusal (app.sale_state).
+    acknowledge_for_sale: bool = False
+
+
+class ImageLinkMove(BaseModel):
+    """The item a filed photograph moves to."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    inventory_item_id: int
+    #: Set after a refusal (app.sale_state); covers both items.
+    acknowledge_for_sale: bool = False
+
+
+class ImageFromUrl(BaseModel):
+    """A photograph to fetch from a web address and file against an item."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    url: str = Field(min_length=1, max_length=2000)
+    inventory_item_id: int
+    image_role: str | None = None
+    is_primary: bool = False
+    #: Set after a refusal to say the caller knows the item is for sale.
+    acknowledge_for_sale: bool = False
+
+
+class ImageLinkIn(BaseModel):
+    """Filing a photograph against an item."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    inventory_item_id: int
+    image_role: str | None = None
+    is_primary: bool = False
+    #: Its place among the item's photographs; none goes after the last.
+    #: Bounded to the INTEGER column it is stored in.
+    sort_order: int | None = Field(default=None, ge=-(2**31), le=2**31 - 1)
+    #: Set after a refusal to say the caller knows the item is for sale
+    #: (app.sale_state). The shop serves an item's primary photograph.
+    acknowledge_for_sale: bool = False
+
+
+class CatalogDescription(BaseModel):
+    """What describes a coin to a buyer: its classifiers, grade, years and metal.
+
+    Shared by `CatalogItemOut` and `CatalogMemberOut`, so a coin sold on its
+    own and the same coin inside a lot are described by one set of fields.
+    Every one is a fact a customer may see; cost basis and storage location
+    are not here, and must not be added. Null throughout on a lot listing's
+    own entry, because no single value of any of them describes a group.
+    """
+
+    item_kind: str | None = None
+    country: str | None = None
+    denomination: str | None = None
+    bullion_form: str | None = None
+    grade: str | None = None
+    strike_type: str | None = None
+    #: As collectors write it: MS65, PR69+. `grade` is the code alone.
+    grade_display: str | None = None
+    grading_service: str | None = None
+    metal: str | None = None
+
+    year_start: int | None = None
+    year_end: int | None = None
+    fineness: Decimal | None = None
+    gross_weight_ozt: Decimal | None = None
+    fine_weight_ozt: Decimal | None = None
+
+
+class CatalogMemberOut(CatalogDescription):
+    """One coin inside a lot, as a buyer sees it.
+
+    The descriptive half of `CatalogItemOut` and nothing else: a member has
+    no price, no stock and no listing of its own, because the lot is the one
+    thing for sale. Every field here is one a single-item catalog entry
+    already shows a customer, so nothing becomes public by being a member --
+    and cost basis and storage location are absent for the same reason they
+    are absent there.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    inventory_item_id: int
+    #: The item's permanent code, as `CatalogItemOut.item_code` is for a coin
+    #: sold on its own.
+    item_code: str
+    title: str
+    description: str
+    piece_count: int = 1
+
+    #: Renditions of this member's primary photograph, null when it has none
+    #: -- the same shape, and the same caveat, as `CatalogItemOut`'s.
+    thumbnail_url: str | None = None
+    image_url: str | None = None
+
+
+class CatalogItemOut(CatalogDescription):
+    """What a buyer sees: one coin, or one lot of them.
+
+    Deliberately carries no cost basis, storage location or internal catalog
+    number -- see `public_catalog` in the database design. The admin views read
+    the same shape, so a field cannot be added here for staff and leak to
+    customers.
+
+    **A listing offers an item or a lot, never both** (`ck_listing_item_xor_lot`),
+    which is why the two item-only fields below are optional: a lot listing's
+    `inventory_item_id` is NULL and it has no item code of its own. Its coins
+    are in `members`, and the item-describing fields -- kind, grade, metal,
+    year -- stay null, because no single value of any of them describes a
+    group.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    #: Null on a lot listing; `members` carries the coins instead.
+    inventory_item_id: int | None = None
+    #: Opaque -- it covers both the listing and the item behind it, so a
+    #: caller cannot use it to detect a change to only one of them.
+    version: str
+    #: The item's permanent code -- stable across sale, return and relisting,
+    #: which is what makes it usable on a packing slip and in an audit. Null
+    #: on a lot listing: a lot is not an item and has no code.
+    item_code: str | None = None
+    title: str
+    description: str
+    #: How many objects this entry is: the item's own count for a coin, and
+    #: the **sum** of its members' for a lot. Summed rather than counted
+    #: because a member may itself be a multi-piece row, and never left at 1
+    #: for a group -- a wrong count reads exactly like a genuine single piece.
+    piece_count: int = 1
+
+    price: Decimal
+    currency: str
+    quantity_available: int
+    is_active: bool
+
+    #: Renditions of the item's primary photograph. Null when it has none --
+    #: most of a real collection is unphotographed, and the UI has to cope.
+    #: Null on a lot listing too: a lot has no photograph of its own, and its
+    #: members carry theirs.
+    thumbnail_url: str | None = None
+    image_url: str | None = None
+
+    #: The coins the lot is made of, in item id order -- the one order every
+    #: lot reader uses. Empty for a listing that offers a single item, so a
+    #: client can read this field without first asking which kind of entry it
+    #: holds, and never empty for a lot.
+    #:
+    #: Past tense once the listing has ended: a lot releases every membership
+    #: when it is sold or dissolved, so these are the coins the group **held**
+    #: -- after a dissolved lot, one of them may already be on sale again on
+    #: its own. `lot_writes.members_held` is what answers that question;
+    #: `offered_items`, which answers "offered now", would say none.
+    members: list[CatalogMemberOut] = Field(default_factory=list)
+
+    created_at: datetime
+    updated_at: datetime
+
+
+class CatalogPage(BaseModel):
+    """A page of catalog results plus the total matching count."""
+
+    items: list[CatalogItemOut]
+    total: int
+    limit: int
+    offset: int
+
+
+class ShopStatus(BaseModel):
+    """Whether the public shop is open to callers who are not signed in."""
+
+    open: bool
+
+
+# --------------------------------------------------------------------------
+# Customers
+# --------------------------------------------------------------------------
+
+
+#: E.164: a leading +, a country code that cannot start with 0, then digits.
+#: Stored whole rather than split into a country code and the rest, because two
+#: columns can disagree and this one cannot. The default country code is a
+#: presentation concern and belongs in the form, not the database.
+_E164 = re.compile(r"^\+[1-9]\d{6,14}$")
+
+
+class AddressOut(BaseModel):
+    """An address as the API returns it.
+
+    The country is not included. `valid_to` is the date the address was
+    superseded, null while it is current.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    address_kind: AddressKind
+    line1: str
+    line2: str | None
+    city: str
+    region: str | None
+    postal_code: str | None
+    is_default: bool
+    valid_to: object | None
+
+
+class CustomerOut(BaseModel):
+    """A customer and their addresses."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    user_id: int | None
+    display_name: str
+    email: EmailStr | None
+    phone: str | None
+    notes: str | None
+    addresses: list[AddressOut] = []
+
+
+class CustomerUpdate(BaseModel):
+    """The fields an administrator may correct on a customer record."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    display_name: str | None = Field(default=None, max_length=255)
+    email: EmailStr | None = None
+    phone: str | None = None
+    notes: str | None = None
+
+    @field_validator("display_name")
+    @classmethod
+    def _named(cls, value: str | None) -> str | None:
+        """A name sent is trimmed and may not be blank.
+
+        It is how the customer is shown on every order and picked from
+        every list; a blank one is a row nobody can find.
+        """
+        if value is None:
+            return None
+        return _name_or_refuse(value)
+
+    @field_validator("phone")
+    @classmethod
+    def _e164(cls, value: str | None) -> str | None:
+        """Require E.164, so a number is dialable from anywhere.
+
+        A bare '555 1234' is ambiguous the moment a customer is not in the
+        same country as the seller, and this collection already has overseas
+        buyers in prospect. Empty clears the number.
+        """
+        if value is None or value.strip() == "":
+            return None
+        compact = re.sub(r"[\s()\-.]", "", value.strip())
+        if not _E164.match(compact):
+            raise ValueError("phone must be in international form, e.g. +12125551234")
+        return compact
+
+
+class AddressIn(BaseModel):
+    """A new address. Supersedes the previous default of the same kind."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    address_kind: AddressKind = AddressKind.shipping
+    line1: Annotated[str, Field(min_length=1, max_length=255)]
+    line2: str | None = Field(default=None, max_length=255)
+    city: Annotated[str, Field(min_length=1, max_length=128)]
+    region: str | None = Field(default=None, max_length=128)
+    postal_code: str | None = Field(default=None, max_length=32)
+    country: str | None = None
+    is_default: bool = True
+
+
+# --------------------------------------------------------------------------
+# Orders
+# --------------------------------------------------------------------------
+
+
+class OrderLineIn(BaseModel):
+    """One line of an order: which listing, how many, and the price seen.
+
+    `expected_price` is the listing's price as the buyer's cart showed it.
+    When sent, checkout refuses the line, 409, if the price has changed since.
+    """
+
+    listing_id: int
+    quantity: int = Field(ge=1)
+    expected_price: Money | None = None
+
+
+def _refuse_duplicate_listings(listing_ids: list[int]) -> None:
+    """Refuse the same listing twice in one order.
+
+    Two lines for one listing would each be checked against stock separately,
+    so together they could pass while overselling it.
+    """
+    if len(set(listing_ids)) != len(listing_ids):
+        raise ValueError("each listing_id may appear at most once per order")
+
+
+class OrderCreate(BaseModel):
+    """An order as placed. At least one line, at most 50, and no listing twice.
+
+    Capped because checkout locks every listing named, in one transaction.
+    """
+
+    items: list[OrderLineIn] = Field(min_length=1, max_length=50)
+
+    @field_validator("items")
+    @classmethod
+    def no_duplicate_listings(cls, items: list[OrderLineIn]) -> list[OrderLineIn]:
+        """Refuse the same listing twice in one order."""
+        _refuse_duplicate_listings([item.listing_id for item in items])
+        return items
+
+
+class AdminOrderLineIn(BaseModel):
+    """A line an administrator enters. No price means the listing's price."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    listing_id: int
+    quantity: int = Field(ge=1)
+    unit_price: Money | None = None
+
+
+class AdminOrderCreate(BaseModel):
+    """An order an administrator places for a customer."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[AdminOrderLineIn] = Field(min_length=1)
+    notes: str | None = None
+
+    @field_validator("items")
+    @classmethod
+    def no_duplicate_listings(
+        cls, items: list[AdminOrderLineIn]
+    ) -> list[AdminOrderLineIn]:
+        """Refuse the same listing twice in one order."""
+        _refuse_duplicate_listings([item.listing_id for item in items])
+        return items
+
+
+class OrderItemOut(BaseModel):
+    """An order line as stored, with the price frozen at purchase time."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    listing_id: int
+    #: What was bought, as it was called when it was sold.
+    title: str
+    quantity: int
+    unit_price: Decimal
+    #: The item and listing as sold (app.sale_snapshot). Console only: it
+    #: holds costs. None for a shopper, and on a line that carries none.
+    snapshot: dict[str, object] | None = None
+    #: Whether the listing this line bought from has ended -- a lot bought in
+    #: the shop, or any outside sale. Cancelling an unshipped order with such
+    #: a line is refused (`routers.orders._no_stock_to_return`); the console
+    #: reads this to gray the option out instead of offering it and failing.
+    listing_ended: bool = False
+
+
+class OrderOut(BaseModel):
+    """An order and its lines."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    customer_id: int
+    #: Who placed it. A customer only ever sees their own orders, so this adds
+    #: nothing they did not know; the management console needs it to say who.
+    customer_name: str
+    customer_email: str | None
+    #: The platform this order sold on. Safe for a shopper: which platform a
+    #: sale happened on is not staff-only, and a store order simply reads
+    #: `store`.
+    sales_venue_code: str
+    sales_venue_name: str
+    status: str
+    total_amount: Decimal
+    placed_at: datetime
+    items: list[OrderItemOut]
+    version: int
+    notes: str | None
+    #: The account that entered the order, when known.
+    placed_by_email: str | None
+    #: A paid order whose total changed after it was paid. Payments are not
+    #: recorded, so this prompts a person; it never charges or refunds.
+    payment_adjustment_due: bool
+
+
+class OrderRevisionLineIn(BaseModel):
+    """A line of an order's desired contents, at the price it should carry."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    listing_id: int
+    quantity: int = Field(ge=1)
+    unit_price: Money
+
+
+class OrderRevision(BaseModel):
+    """An order's complete desired contents, and the version they were read at."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    version: int
+    customer_id: int
+    items: list[OrderRevisionLineIn] = Field(min_length=1)
+    notes: str | None = None
+
+    @field_validator("items")
+    @classmethod
+    def no_duplicate_listings(
+        cls, items: list[OrderRevisionLineIn]
+    ) -> list[OrderRevisionLineIn]:
+        """Refuse the same listing twice in one order."""
+        _refuse_duplicate_listings([item.listing_id for item in items])
+        return items
+
+
+class OrderStatusUpdate(BaseModel):
+    """Advance an order to another status, by `sales_order_status` code."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    #: A `sales_order_status` code: pending, paid, packed, shipped,
+    #: delivered, cancelled, refunded.
+    status: str = Field(min_length=1, max_length=64)
+    #: The version the order was read at; a mismatch is a 409, so a status
+    #: chosen from a stale page is not applied over a change never seen.
+    version: int
+
+
+class OrderChangeOut(BaseModel):
+    """One row of an order's history, with who made it and which line."""
+
+    id: int
+    changed_at: datetime
+    changed_by_email: str | None
+    change: str
+    listing_id: int | None
+    listing_title: str | None
+    from_value: str | None
+    to_value: str | None
+
+
+# --------------------------------------------------------------------------
+# Reference vocabularies
+# --------------------------------------------------------------------------
+
+
+class ReferenceValueOut(BaseModel):
+    """One classifier, shaped for a dropdown.
+
+    `code` is what gets submitted, `label` is what a person reads. Table
+    specific columns arrive in `extra` rather than being flattened, so a client
+    can show a denomination's face value or an error type's `applies_to`
+    without the API needing a response model per table.
+    """
+
+    code: str
+    label: str
+    sort_order: int
+    source: str
+    #: False for a retired value, which only include_inactive lists.
+    is_active: bool = True
+    #: False for a value the application looks up by its code, which may be
+    #: renamed but not retired.
+    retirable: bool = True
+    extra: dict[str, object] = Field(default_factory=dict)
+    #: Other names people use for it ("Mercury", "Legal Tender"), which
+    #: search and the pickers also recognize.
+    aliases: list[str] = Field(default_factory=list)
+    #: Shipped aliases someone removed, listed only with include_inactive so
+    #: the console can offer them back.
+    retired_aliases: list[str] = Field(default_factory=list)
+
+
+class ReferenceFieldOut(BaseModel):
+    """One of a vocabulary's own columns, as a form asks for it."""
+
+    #: The key it is sent under in `extra`. A column naming another
+    #: vocabulary goes by that column's name less `_id`, and takes a code.
+    name: str
+    label: str
+    #: `text`, `integer`, `decimal`, `boolean`, `choice` (one of `choices`)
+    #: or `reference` (a code from `table`).
+    kind: str
+    #: A value cannot be added without it.
+    required: bool = False
+    choices: list[str] = Field(default_factory=list)
+    table: str | None = None
+    max_length: int | None = None
+
+
+class ReferenceTableOut(BaseModel):
+    """One vocabulary, ordered as a picker should show it."""
+
+    table: str
+    values: list[ReferenceValueOut]
+    #: The vocabulary's own columns, beyond code, label and position.
+    fields: list[ReferenceFieldOut] = Field(default_factory=list)
+    #: False for a vocabulary the application acts on value by value: one
+    #: added to it would be a value nothing knows what to do with.
+    addable: bool = True
+    #: True when the values are in a meaningful order (`sort_order`) rather
+    #: than alphabetical: grades, denominations, lifecycles. The Vocabularies
+    #: page offers to change the order only for these.
+    sequenced: bool = False
+
+
+# --------------------------------------------------------------------------
+# Splitting a lot into its pieces
+# --------------------------------------------------------------------------
+
+
+class SplitPieceIn(BaseModel):
+    """One piece to create when breaking a lot apart."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    source_title: str = Field(min_length=1, max_length=500)
+    piece_count: int = Field(default=1, ge=1, le=2**31 - 1)
+    #: The value of ONE piece, on whatever basis the caller chose -- face
+    #: value, melt, a catalog price. Required in `relative` mode, ignored in
+    #: `equal`. What it measures is the caller's decision; this only divides
+    #: the cost in proportion to it.
+    relative_value: Decimal | None = Field(default=None, ge=0)
+    #: Classifier overrides for this piece, by code. A mint set's pieces have
+    #: different denominations from each other and from the set.
+    denomination: str | None = Field(default=None, max_length=64)
+    #: A number (65, 64+) or a compound grade (MS65, PR69+), which is split
+    #: into the number and `strike_type`.
+    grade: str | None = Field(default=None, max_length=64)
+    strike_type: str | None = Field(default=None, max_length=64)
+    metal: str | None = Field(default=None, max_length=64)
+    year_start: int | None = Field(default=None, ge=-3000, le=2200)
+    #: What this piece is, in the owner's words -- "1980 US Proof Set" out of
+    #: a lot of nine. Omitted, the piece keeps the lot's description.
+    description: str | None = None
+
+
+class SplitRequest(BaseModel):
+    """How to break a lot into pieces, and how to divide its cost."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    #: `equal` divides the cost evenly per piece; `relative` divides it in
+    #: proportion to each piece's `relative_value`.
+    mode: str = Field(default="equal", pattern="^(equal|relative)$")
+    pieces: list[SplitPieceIn] = Field(min_length=2)
+    #: Set after a refusal to say the caller knows the lot is offered
+    #: somewhere (app.sale_state). An order refuses the split regardless.
+    acknowledge_for_sale: bool = False
+
+
+class SplitResultOut(BaseModel):
+    """What the split produced, with the arithmetic laid out to be checked."""
+
+    parent_item_code: str
+    mode: str
+    #: What the lot cost, and what the pieces cost. `item_cost` and
+    #: `shipping_cost` always reconcile exactly.
+    parent_cost: Decimal
+    allocated_cost: Decimal
+    parent_shipping: Decimal
+    allocated_shipping: Decimal
+    #: Taxes are generated per row at a fixed rate, so the sum of the pieces'
+    #: rounded taxes can differ from the lot's by a cent or two. Reported
+    #: rather than hidden -- see the note in the split endpoint.
+    parent_total_cost: Decimal
+    allocated_total_cost: Decimal
+    total_cost_difference: Decimal
+    pieces: list[InventoryItemOut]
+
+
+class InventoryItemOut(BaseModel):
+    """An inventory item as staff see it: cost basis included."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    item_code: str
+    version: int
+    source_title: str
+    year_start: int | None = None
+    piece_count: int
+    item_cost: Decimal
+    shipping_cost: Decimal
+    sales_tax: Decimal
+    total_cost: Decimal
+    parent_item_id: int | None = None
+    split_at: datetime | None = None
+
+
+class ItemAttributeOut(BaseModel):
+    """One attribute an item carries."""
+
+    code: str
+    label: str
+    #: serial, variety, release, verification or qualifier.
+    group: str
+    #: `derived` (read by a rule) or `manual`.
+    source: str
+    #: The rule that read it: `serial_pattern`, `attribute_rule`, `no_cost`.
+    derived_by: str | None = None
+
+
+class SaleUseOut(BaseModel):
+    """One reason an item is for sale: a listing, or an open order."""
+
+    kind: str
+    id: int
+    text: str
+
+
+class ItemSaleOut(BaseModel):
+    """One sale of an item: the order line, and the item as it was sold.
+
+    **`quantity` and `unit_price` are the *line*'s, not the coin's.** For a
+    lot line they describe the whole group -- one lot at 1,000.00 -- so every
+    member of a three-coin lot would otherwise report the whole price as its
+    own. `sales_lot_id` says the line was a group sale, and `share_amount`
+    is what this coin was actually credited with inside it. A reader showing
+    money against one coin wants `share_amount` whenever it is there.
+    """
+
+    order_id: int
+    status: str
+    placed_at: datetime
+    customer_name: str
+    #: The line's quantity and unit price -- the lot's, for a lot line.
+    quantity: int
+    unit_price: Decimal
+    #: The lot this line sold, or null for an ordinary item sale. The one
+    #: field that says "this coin went out inside a group".
+    sales_lot_id: int | None = None
+    #: This coin's share of the line, cost-weighted by `total_cost`
+    #: (`order_writes._sync_shares`). It equals the line total for an item
+    #: sale and is a fraction of it for a lot member. Null only for a line
+    #: that has no share rows, which `_sync_shares` allows for.
+    #: A `Decimal` on a Pydantic model, so it crosses the wire as a string.
+    share_amount: Decimal | None = None
+    #: The item and listing when the line was made; None on a line that
+    #: carries no snapshot.
+    snapshot: dict[str, object] | None = None
+    snapshot_at: datetime | None = None
+
+
+class FieldChangeOut(BaseModel):
+    """A field's most recent change by a person's edit: who, and when."""
+
+    by: str | None
+    at: datetime
+
+
+class SuggestedDescriptionOut(BaseModel):
+    """A description composed from an item's saved record (`app.item_descriptions`).
+
+    Empty when the record holds nothing to describe.
+    """
+
+    description: str
+
+
+class ItemHistoryEventOut(BaseModel):
+    """One entry in an item's history (`app.item_history`).
+
+    `kind` says which log it came from: `field` (an edit, `field` naming the
+    field as the editor does), `status` or `location`. Values are shown as a
+    person reads them -- a classifier's label, a location's name -- and may
+    be a list, for `attributes`. `old_value` is null on an item's first
+    status and first location.
+    """
+
+    kind: Literal["field", "status", "location"]
+    field: str
+    old_value: Any = None
+    new_value: Any = None
+    by: str | None
+    at: datetime
+    note: str | None = None
+    arrived_on: date | None = None
+
+
+class ItemDetailOut(InventoryItemOut):
+    """One item, with everything the edit form needs in one round trip.
+
+    `lot_claims` is *derived* by comparing the item to its parent and says
+    what the lot claimed -- it cannot drift out of sync because it is
+    recomputed.
+    """
+
+    #: The lot this piece came out of, if any. Only a split lot's pieces
+    #: have one: no parent is the normal state, not an orphan.
+    parent_item_code: str | None = None
+    #: The pieces a split lot became, oldest first; empty for anything else.
+    piece_codes: list[str] = Field(default_factory=list)
+    #: What the lot said, for the fields a piece inherits. The form shows
+    #: these beside the item's own values, so it is always visible what is
+    #: being overridden and what is still only the seller's word.
+    lot_claims: dict[str, object] = Field(default_factory=dict)
+    #: Fields holding a default filled from known facts, as column to the rule
+    #: that filled it (`note_type_id`: `note_issue`). The form marks them as
+    #: suggestions; saving one by hand makes it the person's.
+    derived: dict[str, str] = Field(default_factory=dict)
+    #: The purchase it was bought on, read-only here: the editor links to it,
+    #: and the purchase's own page changes its number.
+    purchase_order_id: int | None = None
+    order_number: str | None = None
+    vendor: str | None = None
+    #: The seller's id for the listing it was bought from -- eBay's item
+    #: number (`app.ebay_orders`).
+    sellers_item_id: str | None = None
+    #: The web address of the listing it was bought from.
+    listing_url: str | None = None
+    #: Where it is kept (`/api/storage-locations`); None when not recorded.
+    storage_location_id: int | None = None
+
+    # -- the rest of EDITABLE_SCALARS: not on InventoryItemOut, which is the
+    # shape a split's pieces come back as and has no reason to carry these.
+    description: str = ""
+    #: The owner's rating, in their own words; never shown to a buyer.
+    rating: str | None = None
+    year_end: int | None = None
+    #: The piece has no date at all, as distinct from a year not recorded.
+    no_date: bool = False
+    fineness: Decimal | None = None
+    gross_weight_ozt: Decimal | None = None
+    fine_weight_ozt: Decimal | None = None
+    weight_note: str | None = None
+    #: What the item is worth to a collector, as last recorded -- the
+    #: "value" column the offer dialog shows beside cost when pricing.
+    #: Read-only here: nothing in the editor sets it yet.
+    numismatic_value: Decimal | None = None
+    tax_rate: Decimal
+    tax_includes_shipping: bool
+    #: The rate a new item would be stamped with today. The form's "No sales
+    #: tax charged" box restores it when unticked on an item recorded as
+    #: untaxed, which has no non-zero rate of its own to go back to.
+    default_tax_rate: Decimal
+
+    # -- every classifier the edit form can set, by code. Without these the
+    # form's dropdowns have nothing to preselect: a coin already graded MS65
+    # would show an empty Grade box, and saving from it would overwrite the
+    # grade with nothing.
+    item_kind: str | None = None
+    country: str | None = None
+    denomination: str | None = None
+    bullion_form: str | None = None
+    #: What kind of set: proof set, mint set, mixed sets... (`set_form`).
+    set_form: str | None = None
+    grade: str | None = None
+    strike_type: str | None = None
+    #: As collectors write it: MS65, PR69+. `grade` is the code alone.
+    grade_display: str | None = None
+    grade_designation: str | None = None
+    grading_service: str | None = None
+    #: The holder's certificate numbers, oldest first. Usually one; a lot
+    #: of certified pieces carries several.
+    cert_numbers: list[str] = Field(default_factory=list)
+    metal: str | None = None
+    series: str | None = None
+    storage_form: str | None = None
+    authenticity: str | None = None
+    status: str | None = None
+    disposition: str | None = None
+
+    # -- the coin's own detail; null for a note, or where not recorded.
+    #: The mint mark's code (`S`, `CC`); `P` is Philadelphia.
+    mint: str | None = None
+    variety: str | None = None
+
+    # -- the note's currency detail; all null for anything but a note.
+    note_type: str | None = None
+    seal_color: str | None = None
+    fed_district: str | None = None
+    signature_combination: str | None = None
+    series_year: int | None = None
+    series_letter: str | None = None
+    #: A note's, or a bullion item's own (on its coin detail).
+    serial_number: str | None = None
+    face_plate_number: str | None = None
+    back_plate_number: str | None = None
+    #: `dc` (Washington) or `fw` (Fort Worth); None when not known.
+    printing_facility: str | None = None
+    #: The Friedberg number attached to the note, if any. Set through
+    #: `POST`/`DELETE /inventory/{id}/friedberg`, never by a PATCH.
+    friedberg_id: int | None = None
+    friedberg_number: str | None = None
+    #: unknown, proposed, confirmed or conflicting; None for anything but a note.
+    friedberg_status: str | None = None
+    #: Whether the attached catalog row has been confirmed by anyone.
+    friedberg_verified: bool | None = None
+    #: What the series and back plate say (`app.mule_rules`): a mule, not
+    #: one, or None where no rule speaks. The Friedberg lookup narrows by it.
+    mule_by_plates: bool | None = None
+
+    #: Each field's most recent change by an edit, keyed by field: who made
+    #: it and when (`item_field_change`). The editor names them when it warns
+    #: about a field changed elsewhere. A field never edited has no entry.
+    last_changes: dict[str, FieldChangeOut] = Field(default_factory=dict)
+
+    #: What the item is beyond its grade: Star Note, No Motto, First Strike.
+    #: Removed ones are not listed.
+    attributes: list[ItemAttributeOut] = Field(default_factory=list)
+    #: Why the item is up for sale, if it is: a save then needs
+    #: `acknowledge_for_sale` (app.sale_state).
+    sale_state: list[SaleUseOut] = Field(default_factory=list)
+
+
+#: One certificate number: text, since serials carry leading zeros and
+#: letters; surrounding spaces dropped, and never blank.
+CertNumber = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=64)
+]
+
+
+class InventoryItemUpdate(BaseModel):
+    """A partial edit to an item, in the item's own vocabulary.
+
+    Not `ListingUpdate` (`app.routers.offers`). That one speaks the shop's
+    language -- a listing has a `title` and a `price`, meaning what the shop
+    calls the item and what it is offered for. This one speaks the item's:
+    `source_title` is what the seller called the item, and `item_cost` is
+    what was paid for it. The workbook backup uses these names too, so there
+    is one vocabulary at this boundary rather than two.
+
+    Every field optional, and applied with `exclude_unset`, so an omitted
+    field is left alone rather than nulled. An unknown field is a 422, not
+    dropped: a misspelt field, or one this edit cannot change
+    (`purchase_order_id`), would otherwise answer 200 for a change never made.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    #: The version read before editing: a conflicting save is a 409 rather
+    #: than a silent overwrite. `PATCH /inventory/{id}` needs this or
+    #: `base` (422 for neither): an edit made against nothing would
+    #: overwrite whatever another save had just written. A dry run
+    #: (`ItemSuggestIn`) sends neither; it writes nothing.
+    version: int | None = None
+    #: The value each field being changed had when the edit began, as
+    #: `GET /inventory/{id}` returned it, keyed like the fields sent. With it
+    #: a save is merged field by field: a change made elsewhere since then
+    #: stops it only if it touched one of these fields (409 naming each, with
+    #: both values), and `version` is not compared. Without it, `version`
+    #: guards the whole item.
+    base: dict[str, Any] | None = None
+
+    source_title: str | None = Field(default=None, min_length=1, max_length=500)
+    description: str | None = None
+    #: The owner's own words about the piece. The search and the passes
+    #: read it as evidence, so a wrong word here is corrected here.
+    rating: Rating = None
+    #: The seller's id for the listing it was bought from -- eBay's item
+    #: number. Text, as the seller prints it; blank clears it.
+    sellers_item_id: SellersItemId = None
+    listing_url: ListingUrl = None
+    #: Where it is kept; null means not recorded. A move is kept in its
+    #: location history, and never needs `acknowledge_for_sale`: it does
+    #: not show to a buyer.
+    storage_location_id: int | None = None
+
+    year_start: int | None = Field(default=None, ge=-3000, le=2200)
+    year_end: int | None = Field(default=None, ge=-3000, le=2200)
+    #: True: the piece has no date at all -- its years are cleared and it
+    #: leaves "No year recorded". A year sent later clears it. Refused beside
+    #: a year in the same request, and on a note (its year is its series year).
+    no_date: bool | None = None
+    #: Above zero, as `ck_inventory_item_fineness_fraction` requires: a piece
+    #: with no precious metal has no fineness, not a fineness of nought.
+    fineness: Decimal | None = Field(default=None, gt=0, le=1, decimal_places=4)
+    gross_weight_ozt: Weight | None = None
+    fine_weight_ozt: Weight | None = None
+    #: The weight as written, where it is not one number ("1 oz each").
+    weight_note: str | None = Field(default=None, max_length=200)
+    piece_count: int | None = Field(default=None, ge=1, le=2**31 - 1)
+    item_cost: Money | None = None
+    shipping_cost: Money | None = None
+    #: A fraction, not a percentage: 0.0635 is 6.35%. Zero records a purchase
+    #: that was charged no sales tax. Bounded, so 6.35 typed for 6.35% is a
+    #: 422 rather than a cost multiplied by 7.35.
+    tax_rate: Decimal | None = Field(
+        default=None, ge=Decimal("0"), le=Decimal("1"), max_digits=6, decimal_places=4
+    )
+    tax_includes_shipping: bool | None = None
+
+    # Classifiers, by code.
+    item_kind: str | None = Field(default=None, max_length=64)
+    country: str | None = Field(default=None, max_length=64)
+    denomination: str | None = Field(default=None, max_length=64)
+    bullion_form: str | None = Field(default=None, max_length=64)
+    set_form: str | None = Field(default=None, max_length=64)
+    #: A number (65, 64+) or a compound grade (MS65, PR69+), which is split
+    #: into the number and `strike_type`.
+    grade: str | None = Field(default=None, max_length=64)
+    strike_type: str | None = Field(default=None, max_length=64)
+    grade_designation: str | None = Field(default=None, max_length=64)
+    grading_service: str | None = Field(default=None, max_length=64)
+    metal: str | None = Field(default=None, max_length=64)
+    series: str | None = Field(default=None, max_length=64)
+    storage_form: str | None = Field(default=None, max_length=64)
+    authenticity: str | None = Field(default=None, max_length=64)
+    status: str | None = Field(default=None, max_length=64)
+    disposition: str | None = Field(default=None, max_length=64)
+
+    # Coin fields, on the coin's own detail. Refused for a banknote.
+    mint: str | None = Field(default=None, max_length=64)
+    variety: str | None = Field(default=None, max_length=128)
+
+    # Banknote fields, on the note's currency detail. Refused by name for an
+    # item that is not a note, as `ItemCreate` refuses them.
+    note_type: str | None = Field(default=None, max_length=64)
+    seal_color: str | None = Field(default=None, max_length=64)
+    fed_district: str | None = Field(default=None, max_length=64)
+    signature_combination: str | None = Field(default=None, max_length=64)
+    series_year: SeriesYear | None = None
+    series_letter: str | None = Field(default=None, max_length=4)
+    #: Bullion takes one too, on its coin detail; another kind refuses it.
+    serial_number: str | None = Field(default=None, max_length=64)
+    #: `E82`, `153`, or `FW E82` for a Fort Worth note (`app.plates`).
+    face_plate_number: FacePlate = None
+    #: Digits, as printed on the back.
+    back_plate_number: BackPlate = None
+    #: `dc` or `fw`; read from the face plate when that is sent.
+    printing_facility: str | None = Field(default=None, pattern=_PRINTING_FACILITY)
+
+    #: Required, as true, to change an item that is up for sale: a listing
+    #: offers it or an unshipped order holds it (app.sale_state).
+    acknowledge_for_sale: bool = False
+
+    #: The item's whole set of attribute codes, replacing what it carries.
+    #: One the item had and this omits is marked removed, so no rule adds it
+    #: back (app.item_attributes). Single-item edits only.
+    attributes: list[str] | None = Field(default=None, max_length=64)
+    #: The item's whole set of certificate numbers, replacing what it holds:
+    #: one kept is left as it is, one omitted is removed, a new one is
+    #: recorded as graded by the item's grading service. `[]` clears them.
+    cert_numbers: list[CertNumber] | None = Field(default=None, max_length=64)
+
+    @field_validator("cert_numbers")
+    @classmethod
+    def _no_repeated_cert(cls, numbers: list[str] | None) -> list[str] | None:
+        """The same certificate twice is a typing slip, not two holders."""
+        if numbers is not None and len(set(numbers)) != len(numbers):
+            raise ValueError("each certificate number may appear at most once")
+        return numbers
+
+    @field_validator("attributes")
+    @classmethod
+    def _no_repeated_attribute(cls, codes: list[str] | None) -> list[str] | None:
+        """The same attribute twice is a client mistake, not two facts."""
+        if codes is not None and len(set(codes)) != len(codes):
+            raise ValueError("each attribute may appear at most once")
+        return codes
+
+
+class BulkEditRequest(BaseModel):
+    """One set of changes, applied to many items in one transaction.
+
+    `changes` is validated as an `InventoryItemUpdate`, so bulk and single
+    edits share one schema and the same codes. Two field lists would drift.
+    The router then refuses, by name, the fields only a single edit can set:
+    `attributes`, `no_date`, `mint`, `variety`, `cert_numbers` and `base`
+    (`routers.inventory._refuse_single_edit_fields`).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    #: At least one. "Apply to nothing" is far more likely a selection that
+    #: was lost than something anyone meant.
+    ids: list[int] = Field(min_length=1)
+    changes: InventoryItemUpdate
+
+
+class ForSaleRefusedOut(BaseModel):
+    """A bulk edit's 409: items in the selection are for sale.
+
+    `detail` is the message a person reads (`app.sale_state.refusal`);
+    `for_sale` names the items as codes, so the console tells this refusal
+    from any other 409, and names the items, without reading the wording.
+    Sending the edit again with `acknowledge_for_sale` makes it.
+    """
+
+    detail: str
+    for_sale: list[str]
+
+
+#: Fields on `ItemCreate` valid only when `item_kind` is not `currency`: the
+#: coin's detail, and the years -- a note's year is its series year.
+_COIN_ONLY_FIELDS: tuple[str, ...] = ("mint", "variety", "year_start", "year_end")
+
+#: Currency-detail fields on `ItemCreate`, valid only when `item_kind` is
+#: `currency` -- but `serial_number`, which bullion takes too.
+_CURRENCY_ONLY_FIELDS: tuple[str, ...] = (
+    "serial_number",
+    "series_year",
+    "series_letter",
+    "seal_color",
+    "fed_district",
+    "note_type",
+    "signature_combination",
+    "face_plate_number",
+    "back_plate_number",
+    "printing_facility",
+)
+
+
+class ItemCreate(BaseModel):
+    """A coin, banknote or other item bought on an existing purchase.
+
+    This creates the item alone, with no listing, on a purchase order that
+    must already exist -- entering what was bought, not putting it up for
+    sale. Offering it later is `POST /api/offers` (`app.routers.offers`). See
+    the decision in `docs/specs/entry-panels-design.md`: no item is entered
+    outside a purchase, so a standalone buy is a purchase holding one item.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    purchase_order_id: int
+    item_kind: str = Field(min_length=1, max_length=64)
+    source_title: str = Field(min_length=1, max_length=500)
+    description: str = ""
+
+    year_start: int | None = Field(default=None, ge=-3000, le=2200)
+    year_end: int | None = Field(default=None, ge=-3000, le=2200)
+    #: The piece has no date at all (a gold bar), not merely one unknown.
+    #: Refused with a year, and on a note.
+    no_date: bool = False
+
+    #: Pieces in the lot itself. A lot is simply piece_count > 1 -- splitting
+    #: it into individually tracked pieces is a later step.
+    piece_count: int = Field(default=1, ge=1, le=2**31 - 1)
+
+    item_cost: Money = Decimal("0.00")
+    shipping_cost: Money = Decimal("0.00")
+    #: None means "use the configured default". Unlike `item_cost`, this has
+    #: no default of its own: `Decimal("0")` is a real, different answer -- a
+    #: purchase charged no sales tax at all -- so the caller must say so
+    #: explicitly rather than the field quietly defaulting to it.
+    tax_rate: Decimal | None = Field(
+        default=None, ge=Decimal("0"), le=Decimal("1"), max_digits=6, decimal_places=4
+    )
+    #: None means "use the configured default", for the same reason as
+    #: `tax_rate`.
+    tax_includes_shipping: bool | None = None
+
+    #: An `item_status` code. Only `ordered` or `received` describe an item
+    #: as it is entered -- anything else this schema would have to accept and
+    #: the router would then have to explain is wrong.
+    status: str = "ordered"
+
+    # Classifiers, by code. Unknown -> 422 naming the field, resolved by the
+    # router since that is where the database lives.
+    country: str | None = Field(default=None, max_length=64)
+    denomination: str | None = Field(default=None, max_length=64)
+    #: A number (65, 64+) or a compound grade (MS65, PR69+), which is split
+    #: into the number and `strike_type`.
+    grade: str | None = Field(default=None, max_length=64)
+    strike_type: str | None = Field(default=None, max_length=64)
+    grade_designation: str | None = Field(default=None, max_length=64)
+    grading_service: str | None = Field(default=None, max_length=64)
+    metal: str | None = Field(default=None, max_length=64)
+    series: str | None = Field(default=None, max_length=64)
+    bullion_form: str | None = Field(default=None, max_length=64)
+    set_form: str | None = Field(default=None, max_length=64)
+    #: Weight, per piece, in troy ounces, and the fraction of it that is the
+    #: metal. A fine weight left out is worked out from the other two.
+    fineness: Decimal | None = Field(default=None, gt=0, le=1, decimal_places=4)
+    gross_weight_ozt: Weight | None = None
+    fine_weight_ozt: Weight | None = None
+    weight_note: str | None = Field(default=None, max_length=200)
+    #: null -> `single`.
+    storage_form: str | None = Field(default=None, max_length=64)
+    #: null -> `unverified`.
+    authenticity: str | None = Field(default=None, max_length=64)
+
+    #: Creates one `item_certification` row, graded by `grading_service`.
+    cert_number: str | None = Field(default=None, max_length=64)
+
+    #: The seller's id for the listing it was bought from -- eBay's item
+    #: number. Text, as the seller prints it; blank clears it.
+    sellers_item_id: SellersItemId = None
+    #: The web address of the listing it was bought from.
+    listing_url: ListingUrl = None
+    #: Where it is kept, if that is known as it is entered.
+    storage_location_id: int | None = None
+
+    #: Coin detail. Refused with a 422 when `item_kind` is `currency`.
+    mint: str | None = Field(default=None, max_length=64)
+    variety: str | None = Field(default=None, max_length=128)
+
+    #: Currency detail. Refused with a 422 for every `item_kind` but
+    #: `currency`.
+    serial_number: str | None = Field(default=None, max_length=64)
+    series_year: SeriesYear | None = None
+    series_letter: str | None = Field(default=None, max_length=4)
+    seal_color: str | None = Field(default=None, max_length=64)
+    fed_district: str | None = Field(default=None, max_length=64)
+    note_type: str | None = Field(default=None, max_length=64)
+    signature_combination: str | None = Field(default=None, max_length=64)
+    #: `E82`, `153`, or `FW E82` for a Fort Worth note (`app.plates`).
+    face_plate_number: FacePlate = None
+    #: Digits, as printed on the back.
+    back_plate_number: BackPlate = None
+    #: `dc` or `fw`; read from the face plate when that is sent.
+    printing_facility: str | None = Field(default=None, pattern=_PRINTING_FACILITY)
+
+    #: Fields whose value is a suggestion the form filled from the facts and
+    #: the person left as it was, by field name. They are recorded as derived
+    #: defaults; everything else sent is the person's.
+    suggested: list[str] = Field(default_factory=list)
+    #: What the piece is beyond its grade -- Binary, Star, CAC -- by code,
+    #: fitting its kind (app.item_attributes).
+    attributes: list[str] = Field(default_factory=list, max_length=64)
+
+    @field_validator("status")
+    @classmethod
+    def _known_status(cls, value: str) -> str:
+        """Only `ordered` or `received` describe an item as it is entered."""
+        if value not in {"ordered", "received"}:
+            raise ValueError(f"status must be 'ordered' or 'received', not {value!r}")
+        return value
+
+    @model_validator(mode="after")
+    def _refuse_a_date_beside_no_date(self) -> ItemCreate:
+        """No date and a year are a contradiction; a note has no date flag."""
+        if self.no_date and (self.year_start is not None or self.year_end is not None):
+            raise ValueError("no_date: a piece with no date cannot also have a year")
+        if self.no_date and self.item_kind == "currency":
+            raise ValueError(
+                "no_date: not valid for item_kind 'currency' -- a note's year is "
+                "its series year"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _refuse_cross_kind_details(self) -> ItemCreate:
+        """Refuse a detail field that belongs to the other kind, by name.
+
+        A currency-detail field silently dropped for an item that turns out
+        to be a coin, or the reverse, is data loss the caller is never told
+        about -- a serial number that vanished rather than one that was
+        refused. So this is a 422 naming exactly which field does not belong,
+        not a silent no-op.
+        """
+        is_currency = self.item_kind == "currency"
+        wrong_fields = _COIN_ONLY_FIELDS if is_currency else _CURRENCY_ONLY_FIELDS
+        if self.item_kind == "bullion":
+            # A bar, round or Goldback may carry a serial of its own.
+            wrong_fields = tuple(f for f in wrong_fields if f != "serial_number")
+        offending = sorted(f for f in wrong_fields if getattr(self, f) is not None)
+        if offending:
+            raise ValueError(
+                f"{', '.join(offending)}: not valid for item_kind {self.item_kind!r}"
+            )
+        return self
+
+
+class NoteSuggestionOut(BaseModel):
+    """Classifier codes the facts decide for a note being entered; null if open."""
+
+    note_type: str | None = None
+    seal_color: str | None = None
+    signature_combination: str | None = None
+    fed_district: str | None = None
+    #: The design series these facts decide (`app.series_classify`).
+    series: str | None = None
+    #: Set when the denomination's issues are on record but none is of this
+    #: series -- "No $2 note of Series 1953E is on record" -- so a series
+    #: typed wrong is said, not answered with silence.
+    warning: str | None = None
+
+
+class CoinSuggestionOut(BaseModel):
+    """What a coin's denomination, country and year decide; null if open."""
+
+    metal: str | None = None
+    #: The design series its denomination and year decide.
+    series: str | None = None
+
+
+#: The four outcomes a receipt can record. `received` is the common one;
+#: the rest close out a line that will not arrive. Without them there is no
+#: way to finish an order except to leave it permanently outstanding.
+RECEIVE_OUTCOMES: frozenset[str] = frozenset(
+    {"received", "missing", "returned", "canceled"}
+)
+
+
+class ReceiveRequest(BaseModel):
+    """One receipt, applied to one or many items at once."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    item_ids: list[int] = Field(min_length=1)
+    outcome: str
+    arrived_on: date | None = None
+    storage_location_id: int | None = None
+    note: str | None = None
+    #: Set after a refusal to say the caller knows an item is for sale
+    #: (app.sale_state). Only the outcomes that are not `received` can be
+    #: refused: an item that has not been received cannot be offered.
+    acknowledge_for_sale: bool = False
+
+
+class ItemErrorIn(BaseModel):
+    """One mint or printing error, as part of an item's whole set."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    error_type: str = Field(max_length=64)
+    #: Free text, per error -- so miscut and overprint on the same bill each
+    #: get their own note rather than sharing one field.
+    details: str | None = None
+
+
+class ItemSuggestIn(BaseModel):
+    """What the item editor shows that is not saved yet, for a description.
+
+    `changes` is exactly what Save would send (`InventoryItemUpdate`), so a
+    suggestion reads the screen rather than the saved record. `errors`, when
+    sent, is the whole set the errors panel holds; omitted, the saved errors
+    are read. Nothing is written.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    changes: InventoryItemUpdate = Field(default_factory=InventoryItemUpdate)
+    errors: list[ItemErrorIn] | None = None
+
+
+class ItemErrorsRequest(BaseModel):
+    """The whole set of errors an item carries.
+
+    A replace, not an add/remove pair: `PUT /inventory/{item_id}/errors`
+    stores exactly this list and discards whatever was recorded before.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    errors: list[ItemErrorIn] = Field(default_factory=list)
+    #: The set as the caller read it. Sent, the save is refused (409) when
+    #: the item's set has changed since into something other than `errors`;
+    #: omitted, it replaces whatever is there.
+    base: list[ItemErrorIn] | None = None
+    #: Set after a refusal to say the caller knows the item is for sale
+    #: (app.sale_state).
+    acknowledge_for_sale: bool = False
+
+    @field_validator("errors")
+    @classmethod
+    def _no_repeated_type(cls, errors: list[ItemErrorIn]) -> list[ItemErrorIn]:
+        """The same error twice in one request is a client mistake, not two facts.
+
+        Caught here rather than left to the database's unique constraint so
+        the caller gets a 422 naming the repeat instead of a 500 from a bulk
+        insert that half-applied.
+        """
+        seen = {e.error_type for e in errors}
+        if len(seen) != len(errors):
+            raise ValueError("each error_type may appear at most once per item")
+        return errors
+
+
+class ItemErrorOut(BaseModel):
+    """One recorded error, as the API returns it."""
+
+    error_type: str
+    details: str | None = None
+    source: str
+    noted_by_id: int | None = None
+    noted_at: datetime
+
+
+class ItemErrorsOut(BaseModel):
+    """Every error recorded against one item."""
+
+    inventory_item_id: int
+    errors: list[ItemErrorOut]
+
+
+class SerialPairOut(BaseModel):
+    """A note whose serial pairs with another's: one a star note, one not."""
+
+    id: int
+    item_code: str
+    serial_number: str
+    #: The denomination's label and the series as printed (`2017A`), for
+    #: telling a pair of one issue from two notes that share only digits.
+    denomination: str | None
+    series: str | None
+
+
+# --------------------------------------------------------------------------
+# Inventory browse
+# --------------------------------------------------------------------------
+
+
+class FacetValueOut(BaseModel):
+    """One value a filter could take, and how many rows would match it."""
+
+    value: object
+    count: int
+    #: What a person reads: "Cent" for `usd_coin_0_01`. The filter still takes
+    #: `value`. Absent where the value is already readable, as a series year is.
+    label: str | None = None
+
+
+class InventoryPageOut(BaseModel):
+    """A page of inventory rows.
+
+    `rows` are plain dictionaries whose keys are the view's own columns rather
+    than a declared model per view. The two views differ in exactly the columns
+    that make them worth separating, and restating forty-odd fields twice in
+    Python would add no safety over the view definition while adding a second
+    place to drift. The returned column set is fixed by the view specification,
+    not by `select *`.
+
+    Money and weight arrive as strings, never floats.
+    """
+
+    view: str
+    rows: list[dict[str, object]]
+    total: int
+    limit: int
+    offset: int
+    sort: str
+    descending: bool
+    facets: dict[str, list[FacetValueOut]] = Field(default_factory=dict)
+    #: How many rows in this result set hit each named check. Populated when
+    #: `facets=true`, and computed ignoring any `issue` filter so the sizes
+    #: of the other jobs stay visible.
+    issues: dict[str, int] = Field(default_factory=dict)
+    #: What each check in `issues` means, written once here rather than
+    #: copied into the client. `no_weight_bullion` does not explain itself
+    #: from its code alone; this is what a chip's tooltip reads from.
+    issue_descriptions: dict[str, str] = Field(default_factory=dict)
+    #: The columns this view can be sorted by. The table makes only these
+    #: headers clickable; the server refuses any other with "cannot sort by".
+    sortable: list[str] = Field(default_factory=list)
+
+
+class ReferenceValueCreate(BaseModel):
+    """Add a value to a vocabulary while picking from it.
+
+    This is how the tables grow organically: an operator entering an item that
+    does not fit the shipped vocabulary adds the missing value in place rather
+    than abandoning the entry or forcing it into an approximate one.
+
+    Created rows are marked `manual`, so they stay distinguishable from the
+    shipped catalog and are excluded from an export by default.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    #: Left out, the value is given one: named for its label, or for what it
+    #: is where the vocabulary's codes say that (a denomination's). No `/`:
+    #: a code is a segment of the value's own address, `/{table}/{code}`,
+    #: and one holding a slash could never be reached there.
+    code: str | None = Field(
+        default=None, min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_+.-]+$"
+    )
+    label: str = Field(min_length=1, max_length=255)
+    #: Bounded to the column's own range, as a move's is.
+    sort_order: int = Field(default=500, ge=0, le=2**31 - 1)
+    #: Columns specific to the table, such as a denomination's face value. One
+    #: naming another vocabulary takes that value's code: `currency: "USD"`.
+    extra: dict[str, object] = Field(default_factory=dict)
+
+
+class ReferenceValueRename(BaseModel):
+    """Change a value: what it is called, where it sorts, whether it is offered.
+
+    The label always travels; `sort_order`, `is_active` and `extra` change
+    only when sent. Never the code. The code is the API contract -- it
+    appears in saved filters, bookmarked searches and any integration -- so
+    it is immutable, and renaming is exactly the operation that lets a
+    badly-worded label be fixed without breaking those.
+
+    Because every record refers to the value by foreign key, a rename takes
+    effect everywhere at once. There is nothing to migrate.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    label: str = Field(min_length=1, max_length=255)
+    #: Bounded to the column's own range: a larger number would overflow the
+    #: INTEGER and surface as a 500 instead of a 422.
+    sort_order: int | None = Field(default=None, ge=0, le=2**31 - 1)
+    is_active: bool | None = None
+    #: Changes to the vocabulary's own columns, keyed as `extra` is when a
+    #: value is added. Only the columns named change; a blank empties one.
+    extra: dict[str, object] | None = None
+
+
+class ReferenceMergeIn(BaseModel):
+    """The value to merge into, and whether only to say what would happen."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    into: str = Field(min_length=1, max_length=64)
+    #: True: report what the merge would move, and change nothing.
+    dry_run: bool = False
+    #: Set after a refusal to say the caller knows some of the items the
+    #: merge moves are for sale (app.sale_state).
+    acknowledge_for_sale: bool = False
+
+
+class ReferenceMergeOut(BaseModel):
+    """What a merge moved, or would move."""
+
+    table: str
+    code: str
+    into: str
+    dry_run: bool
+    #: Rows moved, by "table.column".
+    moved: dict[str, int]
+    #: Distinct items those rows describe.
+    items: int
+    #: Rows dropped because the item already had the kept value.
+    dropped: int
+    #: Names the kept value gains (or would gain).
+    aliases: list[str]
+    #: Old names the kept value cannot take, each with the reason: one over
+    #: the length an alias may be, or one that is another value's own name.
+    names_not_kept: list[str] = Field(default_factory=list)
+    #: Item codes among those moved that are for sale, at most ten.
+    for_sale: list[str] = Field(default_factory=list)
+    #: How many are for sale in total, however many are named above.
+    for_sale_count: int = 0
+
+
+class ReferenceAliasIn(BaseModel):
+    """Another name for a value: what people write instead of its label."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    alias: str = Field(min_length=1, max_length=64)
+
+
+# --------------------------------------------------------------------------
+# Acquisitions: vendors, purchase orders and storage locations
+# --------------------------------------------------------------------------
+
+#: `mailto:` and a whole mail address.
+_MAILTO_ADDRESS = re.compile(r"^mailto:[^\s@]+@[^\s@]+$", re.IGNORECASE)
+_MAIL_ADDRESS = re.compile(r"^[^\s@:/]+@[^\s@:/]+$")
+
+
+def _store_address_or_none(value: str | None) -> str | None:
+    """Trimmed; blank is None; otherwise an http(s) or a `mailto:` address.
+
+    A mail address typed alone is stored as its `mailto:` form.
+    """
+    address = _strip_or_none(value)
+    if address is None:
+        return None
+    if _MAIL_ADDRESS.match(address):
+        return f"mailto:{address}"
+    if not (_HTTP_URL.match(address) or _MAILTO_ADDRESS.match(address)):
+        raise ValueError("must be a mail address, or start with http:// or https://")
+    return address
+
+
+#: Where a seller is reached: their store or profile page, or -- for one who
+#: sells by mail -- a `mailto:` address, which a mail address typed alone
+#: becomes. Nothing else, so it can be offered as a link; blank clears it.
+StoreUrl = Annotated[
+    str | None, Field(max_length=1000), AfterValidator(_store_address_or_none)
+]
+
+#: A web address is only ever `http://` or `https://` -- the same rule
+#: `PurchaseOrderDetailOut.source_url` is filtered by before it is offered as
+#: a link. Refused at entry rather than silently stored and withheld later,
+#: since a value being entered is worth telling the caller is wrong.
+_HTTP_URL = re.compile(r"^https?://", re.IGNORECASE)
+
+
+def _require_http_url(value: str | None) -> str | None:
+    """Refuse a URL that is not `http://` or `https://`."""
+    if value is not None and not _HTTP_URL.match(value):
+        raise ValueError("must start with http:// or https://")
+    return value
+
+
+class SellerOut(BaseModel):
+    """A seller, for picking on a purchase."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    store_url: str | None = None
+    #: Purchases that name this seller -- a seller with none may be deleted.
+    order_count: int = 0
+
+
+class SellerCreate(BaseModel):
+    """A seller added inline while entering a purchase.
+
+    Names are unique, checked case-insensitively, as vendors' are.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=255)
+    #: Their store or profile page, or a `mailto:` address; blank is none.
+    store_url: StoreUrl = None
+
+    @field_validator("name")
+    @classmethod
+    def _trimmed_name(cls, value: str) -> str:
+        """Surrounding space is never part of a seller's name."""
+        return _name_or_refuse(value)
+
+
+class SellerUpdate(BaseModel):
+    """A change to a seller; only the fields sent change."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    #: Blank clears it.
+    store_url: StoreUrl = None
+
+    @field_validator("name")
+    @classmethod
+    def _trimmed_name(cls, value: str | None) -> str | None:
+        """A name sent is trimmed and may not be blank."""
+        if value is None:
+            return None
+        return _name_or_refuse(value)
+
+
+class VendorOut(BaseModel):
+    """A vendor, for picking on the entry panels."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    url: str | None = None
+    #: A `vendor_kind` code: marketplace, auction, mint, dealer, private,
+    #: unknown.
+    vendor_kind: str | None = None
+    #: Purchases and sales platforms that name this vendor -- a vendor with
+    #: none may be deleted.
+    order_count: int = 0
+
+
+class VendorUpdate(BaseModel):
+    """A correction to a vendor; only the fields sent change."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    #: Blank clears it; the host is worked out again from it.
+    url: str | None = Field(default=None, max_length=500)
+    vendor_kind: str | None = Field(default=None, max_length=64)
+
+    @field_validator("name")
+    @classmethod
+    def _trimmed_name(cls, value: str | None) -> str | None:
+        """A name sent is trimmed and may not be blank."""
+        if value is None:
+            return None
+        return _name_or_refuse(value)
+
+    @field_validator("url")
+    @classmethod
+    def _blank_url(cls, value: str | None) -> str | None:
+        """A blank link is no link; any other is `http://` or `https://`."""
+        return _require_http_url(_strip_or_none(value))
+
+
+class VendorCreate(BaseModel):
+    """A vendor added inline while entering a purchase.
+
+    Names are unique, checked case-insensitively -- "eBay.com" and "ebay.com"
+    are refused as the same vendor rather than becoming two rows a report
+    then has to know to merge.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=255)
+    url: str | None = Field(default=None, max_length=500)
+    #: A `vendor_kind` code. Null becomes `unknown`: a vendor named with
+    #: nothing else known about it.
+    vendor_kind: str | None = Field(default=None, max_length=64)
+
+    @field_validator("name")
+    @classmethod
+    def _trimmed_name(cls, value: str) -> str:
+        """Leading and trailing whitespace is never part of a vendor's name."""
+        return _name_or_refuse(value)
+
+    @field_validator("url")
+    @classmethod
+    def _http_url(cls, value: str | None) -> str | None:
+        """Only `http://` or `https://`."""
+        return _require_http_url(value)
+
+
+_VENUE_CODE = r"^[a-z0-9][a-z0-9_-]*$"
+_URL_PLACEHOLDER = "{external_id}"
+
+
+def _template_has_placeholder(value: str | None) -> str | None:
+    """A listing URL template says where the listing number goes, on the web.
+
+    It becomes a listing's link wherever the listing has none of its own, so
+    it is held to the `http://` or `https://` every other link is.
+    """
+    if value is not None and _URL_PLACEHOLDER not in value:
+        raise ValueError(f"must contain {_URL_PLACEHOLDER}")
+    return _require_http_url(value)
+
+
+class SalesVenueOut(BaseModel):
+    """A sales platform, for the Platforms page."""
+
+    code: str
+    name: str
+    #: A `sales_venue_kind` code.
+    kind: str
+    is_own_store: bool
+    vendor_id: int | None = None
+    vendor_name: str | None = None
+    account_handle: str | None = None
+    listing_url_template: str | None = None
+    commission_rate: Decimal | None = None
+    processing_rate: Decimal | None = None
+    processing_fixed: Decimal | None = None
+    listing_fee: Decimal | None = None
+    terms_as_of: date | None = None
+    notes: str | None = None
+    is_active: bool
+    version: int
+
+
+class _SalesVenueFields(BaseModel):
+    """The editable fields a platform shares between create and update."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    account_handle: str | None = Field(default=None, max_length=255)
+    listing_url_template: str | None = Field(default=None, max_length=500)
+    commission_rate: Rate | None = None
+    processing_rate: Rate | None = None
+    processing_fixed: Money | None = None
+    listing_fee: Money | None = None
+    terms_as_of: date | None = None
+    notes: str | None = None
+    vendor_id: int | None = None
+
+    @field_validator("listing_url_template")
+    @classmethod
+    def _placeholder(cls, value: str | None) -> str | None:
+        """The template names where the listing number goes."""
+        return _template_has_placeholder(value)
+
+
+class SalesVenueCreate(_SalesVenueFields):
+    """A new platform. The web store already exists and cannot be added."""
+
+    code: str = Field(min_length=1, max_length=64, pattern=_VENUE_CODE)
+    name: str = Field(min_length=1, max_length=255)
+    kind: str = Field(min_length=1, max_length=64)
+
+
+class SalesVenueUpdate(_SalesVenueFields):
+    """A change to a platform. Omitted fields are left alone; `code` is fixed."""
+
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    kind: str | None = Field(default=None, min_length=1, max_length=64)
+    is_active: bool | None = None
+    #: The version the form loaded; a mismatch is a 409. Required: an
+    #: edit made against nothing would overwrite another's unseen.
+    version: int
+
+
+class OfferItemIn(BaseModel):
+    """One item in an offer batch, and what it is offered for."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    item_id: int
+    #: Shaped like `listing.price`, `Numeric(12, 2)`. Without the precision
+    #: limits a price of `10.005` is rounded by PostgreSQL on the way in and
+    #: the response still reports what was sent, and twelve integer digits
+    #: raise `DataError` -- which is not `IntegrityError` and is caught
+    #: nowhere. Both become a 422 here instead.
+    price: Money
+    title: str = Field(default="", max_length=500)
+    description: str = ""
+    external_id: str | None = Field(default=None, max_length=128)
+
+
+#: The lot half of `OfferIn`: what a lot listing is priced and worded as.
+#: Meaningless on a batch of items, which carries a row per item instead, so
+#: `OfferIn._one_subject` refuses them together rather than ignoring these.
+_LOT_ONLY_FIELDS = ("price", "title", "description", "external_id")
+
+
+class OfferIn(BaseModel):
+    """Offer one or more items, **or** one assembled lot, on one platform.
+
+    One platform and one format for the whole batch: offering the same five
+    items half on eBay and half in the shop is two requests, and a batch that
+    could span platforms would have to decide what a partial refusal means.
+
+    A lot is one thing however many coins are in it, so a lot body carries
+    one price, title, description and external id at the top level rather
+    than a row per item. Exactly one of `items` and `lot_id`: refusing both or
+    neither is what keeps `offering_writes.offer`'s two `ValueError`s
+    unreachable from outside this API; that `offer` raises them is pinned by
+    `test_offering_neither_an_item_nor_a_lot_is_a_programming_error` and
+    `test_offering_both_an_item_and_a_lot_is_a_programming_error`
+    (`test_offering_writes.py`).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    #: A `sales_venue` code.
+    venue: str = Field(min_length=1, max_length=64)
+    #: `fixed_price` or `auction`.
+    format: str = "fixed_price"
+    #: Held to `listing.quantity_available`, an INTEGER.
+    quantity: int = Field(default=1, ge=1, le=2**31 - 1)
+    #: Capped because one batch is one transaction holding one `FOR UPDATE`
+    #: row lock per item: an unbounded list is a single request that can lock
+    #: every item in the table. 200 is well past any real screenful -- the
+    #: console offers what an administrator has selected -- and far short of
+    #: a lock set that would matter.
+    #:
+    #: No `min_length=1`: an empty list is one half of "neither", which
+    #: `_one_subject` refuses by name. A `min_length` here would answer an
+    #: empty *body* and an empty *lot* with the same 422, and a test that
+    #: meant to prove the second would pass on the first.
+    items: list[OfferItemIn] = Field(default_factory=list, max_length=200)
+    #: The assembled lot to offer as one thing, instead of `items`.
+    lot_id: int | None = None
+    #: The lot's price. The precision limits of `OfferItemIn.price`, for the
+    #: same two reasons. Required with `lot_id`, refused without it.
+    price: Money | None = None
+    #: The lot's wording, as `OfferItemIn` carries an item's.
+    title: str = Field(default="", max_length=500)
+    description: str = ""
+    external_id: str | None = Field(default=None, max_length=128)
+
+    @model_validator(mode="after")
+    def _one_subject(self) -> OfferIn:
+        """Exactly one subject, with only the fields that subject can use.
+
+        A lot-only field sent alongside `items` is refused rather than
+        ignored: silently dropping a price someone typed is the same data
+        loss `ItemCreate._refuse_cross_kind_details` refuses above.
+
+        `quantity` is refused rather than overridden for a lot.
+        `ck_listing_lot_quantity_one` caps a lot listing at one unit and
+        `offering_writes.offer` already forces it, so an explicit `2` would
+        be accepted and quietly ignored -- the caller would believe two lots
+        were on offer. So it is a 422 instead.
+        """
+        if self.lot_id is not None and self.items:
+            raise ValueError("Offer items or a lot, not both")
+        if self.lot_id is None and not self.items:
+            raise ValueError("Offer at least one item, or a lot")
+        if self.lot_id is not None:
+            if self.price is None:
+                raise ValueError("price is required when offering a lot")
+            if self.quantity != 1:
+                raise ValueError("a lot is one thing: quantity must be 1")
+            return self
+        sent = sorted(f for f in _LOT_ONLY_FIELDS if f in self.model_fields_set)
+        if sent:
+            raise ValueError(
+                f"{', '.join(sent)}: belongs on each item of a batch, not on the batch"
+            )
+        return self
+
+
+class OfferRefusalOut(BaseModel):
+    """Why one item of a batch could not be offered."""
+
+    item_code: str
+    reason: str
+
+
+class ListingOut(BaseModel):
+    """One offer, for the owner's console. Admin-only: it carries cost basis.
+
+    `external_url` is **computed for this response** from the platform's
+    `listing_url_template` when the listing has an external id and no URL of
+    its own; it is never written back to the row. Nothing in the application
+    writes `listing.external_url` -- a row holds one only if it was put
+    there directly -- and a derived value stored there would go stale the
+    day a platform changes its URLs.
+
+    **A listing offers an item or a lot, never both** (`ck_listing_item_xor_lot`),
+    so the two pairs below are mutually exclusive and both are optional:
+    `routers.offers.listing_out` fills the item pair for an item listing and
+    the lot pair for a lot listing, and never reads the item of a lot
+    listing, which has none.
+    """
+
+    id: int
+    #: Null on a lot listing; `sales_lot_id` is filled instead.
+    item_id: int | None = None
+    item_code: str | None = None
+    #: The item's `source_title`, or the **lot's** title for a lot listing:
+    #: one field the console can always show, whichever kind this is.
+    item_title: str
+    #: A `sales_venue` code.
+    venue: str
+    venue_name: str
+    format: str
+    status: str
+    price: Decimal
+    currency: str
+    quantity_available: int
+    title: str
+    description: str
+    external_id: str | None = None
+    external_url: WebLinkOut = None
+    listed_at: datetime
+    ended_at: datetime | None = None
+    paused_by_listing_id: int | None = None
+    #: Null on an item listing; the lot being offered, for a lot listing.
+    sales_lot_id: int | None = None
+    #: How many coins that lot holds, so the Listings page can say "3 items"
+    #: without a request per row. Null on an item listing, which is one.
+    member_count: int | None = None
+    #: `inventory_item.total_cost`, or the sum of the members' for a lot.
+    #: Staff-only, and never added to `CatalogItemOut`, which a customer
+    #: reads.
+    cost_basis: Decimal | None = None
+    #: The auction this listing is a lot of, else null. Such a listing is
+    #: ended and sold only through its auction, so the console offers
+    #: neither End nor Record sale on it.
+    auction_id: int | None = None
+    #: Send this back on a PATCH to be told about a conflicting edit. An
+    #: `int`, like `SalesVenueOut.version` and unlike `CatalogItemOut.version`
+    #: -- that one is a composite token over two separately versioned rows,
+    #: while this is one `listing.version` column and nothing else.
+    version: int
+
+
+class OfferBatchOut(BaseModel):
+    """What a successful offer batch wrote."""
+
+    listings: list[ListingOut]
+
+
+class OfferTitlesOut(BaseModel):
+    """A suggested public title per item id (`app.offer_titles`).
+
+    Ids that do not exist are absent rather than an error: the dialog asking
+    is only filling in defaults, and keeps the wording it already has.
+    """
+
+    titles: dict[int, str]
+
+
+class OfferRefusedOut(BaseModel):
+    """The 409 body when a batch is refused: nothing was written."""
+
+    detail: str
+    refused: list[OfferRefusalOut]
+
+
+class ListingUpdate(BaseModel):
+    """A change to an offer. Omitted fields are left alone."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    #: The precision limits of `OfferItemIn.price`, for the same two reasons.
+    price: Money | None = None
+    title: str | None = Field(default=None, max_length=500)
+    description: str | None = None
+    external_id: str | None = Field(default=None, max_length=128)
+    #: The version the form loaded; a mismatch is a 409. Required, as a
+    #: platform's is.
+    version: int
+
+
+# --------------------------------------------------------------------------
+# Sales lots
+# --------------------------------------------------------------------------
+
+
+class SalesLotIn(BaseModel):
+    """Start a lot. It begins `assembling` and empty; members are a PATCH."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    title: str = Field(min_length=1, max_length=255)
+    description: str = ""
+
+
+class SalesLotUpdate(BaseModel):
+    """A change to an assembling lot: its wording, its membership, or both.
+
+    One endpoint rather than three, because the three are one edit as far as
+    the person assembling a lot is concerned, and splitting them would give
+    a screenful of changes three chances to lose a race instead of one.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    title: str | None = Field(default=None, min_length=1, max_length=255)
+    description: str | None = None
+    #: Capped for the reason `OfferIn.items` is: one request is one
+    #: transaction holding one row lock per item named here.
+    add_item_ids: list[int] = Field(default_factory=list, max_length=200)
+    remove_item_ids: list[int] = Field(default_factory=list, max_length=200)
+    #: The version the form loaded; a mismatch is a 409. Required, as a
+    #: platform's is.
+    version: int
+
+
+class SalesLotMemberOut(BaseModel):
+    """One coin in a lot, with the two staff-only figures a lot is judged on."""
+
+    inventory_item_id: int
+    item_code: str
+    title: str
+    #: `inventory_item.total_cost`. A `Decimal` field, so it crosses the wire
+    #: as a string; the same figure in a plain `dict` would be a float.
+    cost_basis: Decimal
+    #: `inventory_item.numismatic_value`, the hand-entered collector premium.
+    #: Null when nobody has valued this coin yet.
+    value: Decimal | None = None
+
+
+class SalesLotOut(BaseModel):
+    """One lot for the console. Admin-only: the figures below are staff-only.
+
+    `cost_basis` and `value` are running totals over the members, which is
+    what an owner assembling a lot is watching -- what the group cost against
+    what it is thought to be worth, as coins go in and out.
+    """
+
+    id: int
+    title: str
+    description: str
+    #: `assembling`, `offered`, `sold` or `dissolved`.
+    status: str
+    version: int
+    members: list[SalesLotMemberOut]
+    #: The members' `total_cost`, summed.
+    cost_basis: Decimal
+    #: The members' `numismatic_value`, summed. An unvalued member
+    #: contributes nothing, so this is a floor rather than an estimate --
+    #: `unvalued_count` says how many coins are missing from it.
+    value: Decimal
+    unvalued_count: int
+
+
+class SalesLotListOut(BaseModel):
+    """One page of the lots the filter matched, and how many it matched."""
+
+    lots: list[SalesLotOut]
+    #: Every lot the filter matched, not only this page's.
+    total: int
+
+
+class FeeLineIn(BaseModel):
+    """One actual fee from the platform's statement."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: str
+    #: The precision limits of `OfferItemIn.price`, for the same two reasons:
+    #: `max_digits` alone admits `1E+11`, which passes `record_sale`'s own
+    #: check and then overflows `sales_order_fee.amount`'s `Numeric(12, 2)`
+    #: as a `DataError` PostgreSQL raises, not pydantic -- `decimal_places`
+    #: must be given alongside `max_digits` for the ten-whole-digit limit to
+    #: apply at all. `ge=0` closes the same gap for sign: `record_sale_lines`
+    #: checks a fee's sign itself too, for auction settlement, which does
+    #: not pass through this schema; here the schema refuses a negative fee
+    #: before the request reaches it.
+    amount: Money
+    note: str | None = Field(default=None, max_length=255)
+
+
+class RecordSaleIn(BaseModel):
+    """A sale that happened on an outside platform, entered after the fact."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    #: Same bound as `FeeLineIn.amount`, for the same reason.
+    price: Money
+    buyer_username: str | None = Field(default=None, max_length=128)
+    external_order_id: str | None = Field(default=None, max_length=128)
+    fees: list[FeeLineIn] = Field(default_factory=list)
+    equal_shares: bool = False
+
+
+class SaleRecordedOut(BaseModel):
+    """What was recorded, with the arithmetic the console shows back."""
+
+    id: int
+    external_order_id: str | None
+    total_amount: Decimal
+    fee_total: Decimal
+    net_amount: Decimal
+    buyer: str
+    item_codes: list[str]
+
+
+# --------------------------------------------------------------------------
+# Auctions
+# --------------------------------------------------------------------------
+
+
+class AuctionIn(BaseModel):
+    """Start an auction. It begins `draft`, with no lots."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    #: A `sales_venue` code.
+    venue: str = Field(min_length=1, max_length=64)
+    title: str = Field(min_length=1, max_length=255)
+    #: The house's own number for the sale.
+    external_id: str | None = Field(default=None, max_length=128)
+    starts_at: datetime | None = None
+    ends_at: datetime | None = None
+    notes: str | None = None
+
+
+class AuctionUpdate(BaseModel):
+    """A change to an auction's own wording or dates. Omitted fields are left alone.
+
+    Never the platform: an auction's lots are already offered on
+    `auction.sales_venue`, and changing it here would desync them from the
+    listings `add_lot` created against the venue this row named at the time.
+    Never the status either -- each transition is its own endpoint, because
+    moving from one status to the next has consequences a field assignment
+    cannot express.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    title: str | None = Field(default=None, min_length=1, max_length=255)
+    external_id: str | None = Field(default=None, max_length=128)
+    starts_at: datetime | None = None
+    ends_at: datetime | None = None
+    notes: str | None = None
+    #: The version the form loaded; a mismatch is a 409. Required, as a
+    #: platform's is.
+    version: int
+
+
+class AuctionLotIn(BaseModel):
+    """Add a lot to an auction: an assembled lot, or a single item as a lot of one.
+
+    Exactly one of `item_id` and `lot_id` -- the same discipline `OfferIn`
+    holds `items` and `lot_id` to, and for the same reason: a request naming
+    both or neither is ambiguous rather than merely redundant.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    lot_number: str = Field(min_length=1, max_length=32)
+    item_id: int | None = None
+    lot_id: int | None = None
+    reserve: Money | None = None
+    #: The starting bid. Defaults to 0 when omitted, `add_lot`'s own meaning
+    #: for "none given".
+    price: Money | None = None
+    title: str | None = Field(default=None, max_length=500)
+    description: str | None = None
+    external_id: str | None = Field(default=None, max_length=128)
+
+    @model_validator(mode="after")
+    def _one_subject(self) -> AuctionLotIn:
+        """Exactly one of `item_id`, `lot_id` -- never both, never neither."""
+        if (self.item_id is None) == (self.lot_id is None):
+            raise ValueError("Exactly one of item_id or lot_id is required")
+        return self
+
+
+class AuctionLotUpdate(BaseModel):
+    """Renumber a lot, or change its reserve. Omitted fields are left alone."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    lot_number: str | None = Field(default=None, min_length=1, max_length=32)
+    reserve: Money | None = None
+    #: The **auction's** version as the page loaded it: a lot row has no
+    #: version of its own, so the auction's stands for it, and a lot edit
+    #: moves it. A mismatch is a 409.
+    version: int
+
+
+class AuctionConsignIn(BaseModel):
+    """Mark an auction consigned: when custody moved to the house."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    on_date: date
+
+
+class AuctionCancelIn(BaseModel):
+    """Cancel an auction, and where its consigned items come back to, if any."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    returned_to_location_id: int | None = None
+
+
+class AuctionLotOut(BaseModel):
+    """One lot in an auction: its slot in the sale, and the listing behind it."""
+
+    id: int
+    lot_number: str
+    reserve: Decimal | None = None
+    #: `sold`, `unsold` or `withdrawn`; null until the auction is settled.
+    result: str | None = None
+    hammer_price: Decimal | None = None
+    #: The buyer's display name, once the lot has sold. Null before
+    #: settlement, and for an auction house that never named one.
+    buyer: str | None = None
+    listing: ListingOut
+
+
+class AuctionOut(BaseModel):
+    """One auction, with every lot it currently holds."""
+
+    id: int
+    #: A `sales_venue` code.
+    venue: str
+    venue_name: str
+    title: str
+    external_id: str | None = None
+    starts_at: datetime | None = None
+    ends_at: datetime | None = None
+    status: str
+    #: When custody moved to the house. Null unless the house holds its lots:
+    #: settling or cancelling the auction clears it.
+    consigned_on: date | None = None
+    notes: str | None = None
+    #: Send this back on a PATCH to be told about a conflicting edit.
+    version: int
+    lots: list[AuctionLotOut]
+
+
+class AuctionListOut(BaseModel):
+    """Every auction the filter matched. An object, so a page count can be added."""
+
+    auctions: list[AuctionOut]
+
+
+class SettlementLineIn(BaseModel):
+    """One lot's outcome, as the settlement grid enters it.
+
+    `hammer_price` and `buyer_username` matter only when `result` is `sold`.
+    Beside an `unsold` or `withdrawn` result, `app.auctions.settle` refuses a
+    `hammer_price` and does not read a `buyer_username`: nothing is recorded
+    against that buyer.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    auction_lot_id: int
+    #: `sold`, `unsold` or `withdrawn`.
+    result: str
+    #: Same precision limits as `OfferItemIn.price`, for the same two reasons.
+    hammer_price: Money | None = None
+    buyer_username: str | None = Field(default=None, max_length=128)
+
+
+class SettlementFeesIn(BaseModel):
+    """One buyer's actual fees from the house's statement.
+
+    `buyer_username=None` is the auction house's standing undisclosed buyer
+    -- the same meaning `SettlementLineIn.buyer_username=None` carries --
+    never a blank the owner still has to fill in; the house's own statement
+    either names a buyer or it does not.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    buyer_username: str | None = Field(default=None, max_length=128)
+    fees: list[FeeLineIn] = Field(default_factory=list)
+
+
+class SettleIn(BaseModel):
+    """A whole settlement grid: every lot's result, and every buyer's fees."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    #: Capped for the reason `OfferIn.items` is: one request is one
+    #: transaction holding one row lock per item the auction's lots name.
+    #:
+    #: No `min_length=1`: an empty grid is `app.auctions.settle`'s own
+    #: refusal to make, naming every lot that has no result -- the same
+    #: reason `OfferIn.items` carries no minimum either.
+    lines: list[SettlementLineIn] = Field(default_factory=list, max_length=500)
+    fees: list[SettlementFeesIn] = Field(default_factory=list, max_length=200)
+    #: Where a house's unsold and withdrawn lots come back to. Required only
+    #: when the house still holds something and at least one lot is coming
+    #: back -- `app.auctions.settle` decides that, not this schema.
+    returned_to_location_id: int | None = None
+
+    @model_validator(mode="after")
+    def _refuse_duplicate_fee_buyers(self) -> SettleIn:
+        """Refuse two fee groups naming the same `buyer_username` exactly.
+
+        Two groups whose spelling merely *casefolds* to the same buyer --
+        `CoinFan88` and `coinfan88` -- are `app.auctions.settle`'s own job to
+        catch and name: each survives into the `Mapping`
+        `routers.auctions` builds from this list, because a `dict` keyed on
+        the literal strings keeps both. An **exact** repeat of one spelling
+        would not: building that `Mapping` from this list would let the second
+        entry silently overwrite the first, which is the "a lookup miss must not default
+        silently" hazard for a write instead of a read. Caught here, before
+        that `Mapping` is ever built, rather than let one buyer's fees
+        vanish.
+        """
+        seen: set[str | None] = set()
+        duplicated: list[str] = []
+        for group in self.fees:
+            if group.buyer_username in seen:
+                duplicated.append(group.buyer_username or "the undisclosed buyer")
+            seen.add(group.buyer_username)
+        if duplicated:
+            raise ValueError(
+                f"fees given twice for the same buyer_username: {', '.join(duplicated)}"
+            )
+        return self
+
+
+class SettleOut(BaseModel):
+    """What a settlement wrote: the auction as it now stands, and every order."""
+
+    auction: AuctionOut
+    orders: list[SaleRecordedOut]
+
+
+class AuctionRefusalOut(BaseModel):
+    """One problem a refused auction transition named, as `app.auctions.AuctionRefusal`.
+
+    `lot_number` is set when the problem names one lot in particular --
+    most of them do -- and null for one that does not (a buyer's fees, or
+    the auction as a whole), or for a refusal from `sales_writes` rather
+    than `app.auctions`, which carries no lot at all.
+    """
+
+    reason: str
+    lot_number: str | None = None
+
+
+class AuctionRefusedOut(BaseModel):
+    """The 409 or 422 body an `AuctionRefused`-family exception produces.
+
+    `refused` always holds at least one entry: most transitions refuse for
+    one reason, and `settle` may refuse for several. Built directly from the
+    raised exception's own `refusals` attribute
+    (`app.auctions.AuctionRefused.refusals`, a list of
+    `app.auctions.AuctionRefusal`) rather than by splitting `str(exc)` on
+    `"; "` -- a text convention that would break the moment a problem's own
+    words contained a semicolon, and that nothing type-checks. A
+    `sales_writes.SaleRefused`/`SaleInputInvalid`, which carries no such
+    attribute, still produces a `refused` list of exactly one entry, built
+    from its plain message.
+    """
+
+    detail: str
+    refused: list[AuctionRefusalOut]
+
+
+class PurchaseOrderCreate(BaseModel):
+    """A new purchase: a vendor, and everything else optional.
+
+    The order number is optional because a walk-in or show purchase has
+    none -- only a vendor is required, so entering one never blocks on a
+    field most purchases genuinely lack. A purchase created without one is
+    given the next generated number, `Order-0001` and up, so it can be found.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    vendor_id: int
+    order_number: str | None = Field(default=None, max_length=128)
+    #: Not in the future beyond today + 1 day -- the same bound
+    #: `POST /api/inventory/receive` applies to `arrived_on`, and for the
+    #: same reason: a caller's local "today" can be a day ahead of UTC's.
+    ordered_on: date | None = None
+    source_url: str | None = Field(default=None, max_length=1000)
+    #: Who sold it on the marketplace the vendor names (`/api/sellers`).
+    seller_id: int | None = None
+    notes: str | None = None
+
+    @field_validator("order_number")
+    @classmethod
+    def _blank_to_none(cls, value: str | None) -> str | None:
+        """An empty order number is the same absence as none at all."""
+        return _strip_or_none(value)
+
+    @field_validator("source_url")
+    @classmethod
+    def _http_url(cls, value: str | None) -> str | None:
+        """Trimmed, blank is none; otherwise `http://` or `https://`.
+
+        The same reading `PurchaseOrderUpdate` gives it, and the rule
+        `PurchaseOrderDetailOut` offers it as a link by.
+        """
+        return _require_http_url(_strip_or_none(value))
+
+
+class PurchaseOrderOut(BaseModel):
+    """One acquisition, with how much of it is still outstanding.
+
+    `outstanding` and `total` are line counts, not dollar amounts: this is
+    the row a receiving list shows before anyone opens the order.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    order_number: str | None
+    vendor: str
+    #: Who sold it on the marketplace the vendor names; null when none is
+    #: recorded.
+    seller: str | None = None
+    ordered_on: date | None
+    outstanding: int
+    total: int
+    #: What its live items cost in all -- price, shipping and tax.
+    total_cost: Decimal = Decimal("0")
+
+
+class PurchaseOrderLineOut(BaseModel):
+    """One line of a purchase order: an item and where it stands."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    item_code: str
+    #: The item's own title -- what `NewPurchase`'s items table shows, and
+    #: what the item editor wrote when the item was entered. `description`
+    #: is kept alongside it because a line can have a description and no
+    #: title.
+    source_title: str
+    description: str
+    #: An `item_kind` code: coin, currency, bullion, set, medal, token, other,
+    #: unknown.
+    item_kind: str
+    item_cost: Decimal
+    #: An `item_status` code: ordered, received, canceled, returned, missing,
+    #: unknown.
+    status: str
+
+
+class PurchaseOrderDetailOut(BaseModel):
+    """A purchase order and every line acquired on it."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    order_number: str | None
+    vendor: str
+    ordered_on: date | None
+    #: The vendor's page for the order or listing, when it is a web address.
+    #: Free text, so anything else -- "Gift" -- is withheld rather than
+    #: offered as a link.
+    source_url: WebLinkOut = None
+    #: The stored text itself, link or not, for the form that edits it.
+    source_text: str | None = None
+    #: Who sold it: the seller's id and name, and their store or profile
+    #: page (a web address or a `mailto:` address) -- all None when no
+    #: seller is named.
+    seller_id: int | None = None
+    seller: str | None = None
+    seller_url: StoreLinkOut = None
+    notes: str | None = None
+    #: The lot's page a new item on this purchase takes as its listing:
+    #: its web address when that is one lot's page, else None
+    #: (`listing_links.lot_page`).
+    lot_page: WebLinkOut = None
+    lines: list[PurchaseOrderLineOut]
+
+
+class PurchaseOrderUpdate(BaseModel):
+    """A change to a purchase's details; only the fields sent are changed.
+
+    An order number sent blank is not an absence: the purchase is given the
+    next generated one (`Order-0001`, ...), as a new purchase with none is,
+    so it can always be found by its number.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    order_number: str | None = Field(default=None, max_length=128)
+    ordered_on: date | None = None
+    source_url: str | None = Field(default=None, max_length=1000)
+    #: Null clears it.
+    seller_id: int | None = None
+    notes: str | None = None
+
+    @field_validator("order_number", "notes")
+    @classmethod
+    def _blank_to_none(cls, value: str | None) -> str | None:
+        """Surrounding space is not part of the value; nothing left is None."""
+        return _strip_or_none(value)
+
+    @field_validator("source_url")
+    @classmethod
+    def _http_url(cls, value: str | None) -> str | None:
+        """Blank clears it; otherwise `http://` or `https://`, as on create."""
+        if value is None or not value.strip():
+            return None
+        return _require_http_url(value.strip())
+
+
+class StorageLocationCreate(BaseModel):
+    """A place items are kept, added from an entry form's location picker.
+
+    `kind` is a `storage_location_kind` code. `consigned` and `sold` are not
+    made by hand: the auction code makes a consigned location, and `sold` is
+    reserved -- nothing creates one. A location is identified by its kind,
+    institution and identifier together.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: str = Field(max_length=64)
+    #: The bank, depository or building; blank is none.
+    institution: str | None = Field(default=None, max_length=255)
+    #: Box or container number; blank is none.
+    identifier: str | None = Field(default=None, max_length=128)
+    notes: str | None = None
+
+    @field_validator("institution", "identifier", "notes")
+    @classmethod
+    def _blank_to_none(cls, value: str | None) -> str | None:
+        """Surrounding space is not part of it; nothing left is None."""
+        return _strip_or_none(value)
+
+
+class StorageLocationOut(BaseModel):
+    """Where an item physically sits. Admin-only: never customer-visible."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    label: str
+    #: A `storage_location_kind` code: safe_deposit_box, safe, home, ...
+    kind: str
+    institution: str | None = None
+    identifier: str | None = None
+    notes: str | None = None
+    #: Items kept there now or recorded there before -- a location with none
+    #: may be deleted.
+    item_count: int = 0
+
+
+class StorageLocationUpdate(BaseModel):
+    """A correction to a storage location; only the fields sent change."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: str | None = Field(default=None, max_length=64)
+    institution: str | None = Field(default=None, max_length=255)
+    identifier: str | None = Field(default=None, max_length=128)
+    notes: str | None = None
+
+    @field_validator("institution", "identifier", "notes")
+    @classmethod
+    def _blank_to_none(cls, value: str | None) -> str | None:
+        """Surrounding space is not part of it; nothing left is None."""
+        return _strip_or_none(value)
+
+
+# --------------------------------------------------------------------------
+# Friedberg numbers: the owner's own catalog, not a licensed dataset
+# --------------------------------------------------------------------------
+
+
+class FriedbergNumberOut(BaseModel):
+    """One row of the owner's Friedberg catalog.
+
+    `verified` mirrors whether `verified_at` is set -- a confirmed row is a
+    fact the next lookup can trust, a proposal is not.
+    """
+
+    id: int
+    fr_number: str
+    note_type: str | None
+    denomination: str | None
+    series_year: int | None
+    series_letter: str | None
+    seal_color: str | None
+    signature_combination: str | None
+    district_letter: str | None
+    size_class: str | None
+    #: Printed on a web press; None when not known.
+    web_press: bool | None
+    #: `dc` (Washington) or `fw` (Fort Worth); None when not known.
+    printing_facility: str | None = None
+    description: str | None
+    #: A `provenance_source` value: seeded, derived, manual. Every row here is
+    #: `manual` today -- there is no licensed dataset to seed from -- but the
+    #: field is carried through so a later merge stays distinguishable.
+    source: str
+    verified: bool
+    verified_at: datetime | None
+
+
+def _checked_fr(value: str) -> str:
+    """`value` cleaned (`normalize_fr`), or a 422 saying why it is no number."""
+    number = normalize_fr(value)
+    problem = fr_problem(number)
+    if problem is not None:
+        raise ValueError(problem)
+    return number
+
+
+class FriedbergCatalogRow(FriedbergNumberOut):
+    """A catalog row on the Lists page, with how many items use it."""
+
+    item_count: int
+
+
+class FriedbergNumberUpdate(BaseModel):
+    """A correction to a catalog row; only the fields sent change.
+
+    The attributes that identify the type are not among them: a type recorded
+    with a wrong attribute is deleted, if unused, and recorded again. The
+    district is the exception: it follows a number corrected to carry one
+    (`9907` or `9907-E` to `9907-L`).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    fr_number: str | None = Field(default=None, min_length=1, max_length=32)
+    description: str | None = None
+    #: True confirms the row (stamps `verified_at`); false undoes that.
+    verified: bool | None = None
+
+    @field_validator("fr_number")
+    @classmethod
+    def _well_formed_number(cls, value: str | None) -> str | None:
+        """A number sent is cleaned, then must be in a Friedberg number's form."""
+        return None if value is None else _checked_fr(value)
+
+    @field_validator("description")
+    @classmethod
+    def _blank_description(cls, value: str | None) -> str | None:
+        """A blank description is none."""
+        return _strip_or_none(value)
+
+
+#: Note types printed without a seal: a Demand Note, a Military Payment
+#: Certificate, and Fractional Currency, whose first issue had none. A new
+#: number of any other type is recorded with its seal. Mirrored by the
+#: console's `FriedbergLookup.jsx`.
+NOTE_TYPES_WITHOUT_SEAL = frozenset(
+    {"demand_note", "military_payment_certificate", "fractional"}
+)
+
+
+class FriedbergNumberCreate(BaseModel):
+    """A Friedberg number read off a note or slab in the owner's hands.
+
+    The attribute tuple is the same one `GET /friedberg` filters on, and every
+    field but `fr_number` is optional -- a half-known type is a normal state
+    for a catalog built by hand as notes arrive.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    fr_number: str = Field(min_length=1, max_length=32)
+    note_type: str | None = None
+    denomination: str | None = None
+    series_year: SeriesYear | None = None
+
+    @field_validator("fr_number")
+    @classmethod
+    def _well_formed_number(cls, value: str) -> str:
+        """Cleaned, then in a Friedberg number's form (`app.fr_format`)."""
+        return _checked_fr(value)
+
+    series_letter: str | None = Field(default=None, max_length=4)
+
+    @field_validator("series_letter")
+    @classmethod
+    def _series_letter_in_capitals(cls, value: str | None) -> str | None:
+        """Trimmed and upper-cased; blank is none.
+
+        `a` and `A` are one series, and the letter is part of a type's
+        identity, so kept as typed one type could be recorded twice.
+        """
+        letter = _strip_or_none(value)
+        return letter.upper() if letter is not None else None
+
+    seal_color: str | None = None
+    signature_combination: str | None = None
+    #: The Federal Reserve district's letter, A (Boston) to L (San
+    #: Francisco), stored in capitals.
+    district_letter: str | None = Field(default=None, min_length=1, max_length=1)
+
+    @field_validator("district_letter")
+    @classmethod
+    def _district_in_capitals(cls, value: str | None) -> str | None:
+        """Upper-cased, and one of the twelve districts' letters."""
+        if value is None:
+            return None
+        letter = value.upper()
+        if letter not in "ABCDEFGHIJKL":
+            raise ValueError("district_letter must be a letter from A to L")
+        return letter
+
+    size_class: str | None = Field(default=None, pattern="^(large|small|fractional)$")
+    web_press: bool | None = None
+    printing_facility: str | None = Field(default=None, pattern=_PRINTING_FACILITY)
+    description: str | None = None
+
+    @model_validator(mode="after")
+    def _number_of_the_notes_district(self) -> FriedbergNumberCreate:
+        """A number that carries a district carries the note's.
+
+        `9907-E` for a district K note is a slip in one or the other, and
+        recorded it would be offered to every later district K note of the
+        series.
+        """
+        carried = fr_district(self.fr_number)
+        if carried and self.district_letter and carried != self.district_letter:
+            raise ValueError(
+                f"{self.fr_number} is a district {carried} number, but this is a "
+                f"district {self.district_letter} note. Correct the number, or "
+                "the district."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _seal_of_a_type(self) -> FriedbergNumberCreate:
+        """A number sent with its note type is sent with its seal too.
+
+        The seal is part of a type. Recorded without one, the row is offered
+        to a note of any seal, and the next note of its type with its seal
+        entered records the same number a second time. A number alone, as
+        the catalog list adds one, is not a type yet and needs none; nor
+        does a note type printed without a seal.
+        """
+        if (
+            self.note_type is not None
+            and self.note_type not in NOTE_TYPES_WITHOUT_SEAL
+            and self.seal_color is None
+        ):
+            raise ValueError(
+                f"Set the seal colour before recording {self.fr_number}: the "
+                "seal is part of its type."
+            )
+        return self
+
+
+class SignatureChoice(BaseModel):
+    """One Treasurer / Secretary pair the lookup may offer."""
+
+    code: str
+    label: str
+
+
+class SignatureChoicesOut(BaseModel):
+    """The signature pairs a note of the given series can carry.
+
+    `source` says how sure the list is: `note_issue` is the seeded facts for
+    that series, `term` is the fallback for a series with none (every pair
+    still in office at or after the series year), and `all` means nothing
+    was given to narrow by.
+    """
+
+    values: list[SignatureChoice]
+    source: str
+
+
+#: `MuleStatusOut.says`.
+MuleSays = Literal["mule", "not_mule", "undecided", "needs_back_plate", "no_rule"]
+
+
+class MuleStatusOut(BaseModel):
+    """What the plate rules (`app.mule_rules`) say of a note's typed facts.
+
+    `mule` and `not_mule` are the rule's answer; `undecided` is a back plate
+    the number cannot decide, left to a person; `needs_back_plate` is a
+    series a rule covers with no back plate number typed as digits yet;
+    `no_rule` is a class, value or series no rule speaks of.
+    """
+
+    says: MuleSays
+
+
+class FriedbergAttachIn(BaseModel):
+    """Attach a catalog row to a currency item's `currency_detail`."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    friedberg_id: int
+    #: The `friedberg_status` to attach with: proposed, confirmed or
+    #: conflicting. `unknown` is a note with no number, so it is refused.
+    status: str
+
+
+class FriedbergAttachOut(BaseModel):
+    """The result of attaching a Friedberg number to an item."""
+
+    inventory_item_id: int
+    friedberg_id: int
+    friedberg_status: str
+    fr_number: str
+    verified: bool
+    verified_at: datetime | None
+
+
+# --------------------------------------------------------------------------
+# Spot prices
+# --------------------------------------------------------------------------
+
+#: A spot price per troy ounce, as `metal_price.price_per_ozt` holds it:
+#: `NUMERIC(12,4)`, never negative. Four places, because copper is quoted in
+#: cents an ounce.
+SpotPrice = Annotated[Decimal, Field(ge=Decimal("0"), max_digits=12, decimal_places=4)]
+
+
+class MetalPriceIn(BaseModel):
+    """A spot price to record for a metal, as of now."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    #: A `metal` code.
+    metal: str = Field(min_length=1, max_length=64)
+    price_per_ozt: SpotPrice
+
+
+class MetalPriceOut(BaseModel):
+    """One metal on the Spot prices page: its newest quote and what is held."""
+
+    #: The `metal` code and its label.
+    metal: str
+    label: str
+    #: The newest quote; null for a metal never quoted.
+    price_per_ozt: Decimal | None
+    quoted_at: datetime | None
+    #: Where the quote came from: `manual` for one typed in.
+    source: str | None
+    #: Fine troy ounces in hand: live items received and held or listed.
+    #: Null when none of them has a weight.
+    fine_ozt_held: Decimal | None
+    #: The ounces at the newest quote; null without both.
+    melt_value: Decimal | None

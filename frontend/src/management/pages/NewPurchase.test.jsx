@@ -1,0 +1,1760 @@
+import userEvent from '@testing-library/user-event'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { useNavigate } from 'react-router-dom'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+vi.mock('../api', () => ({
+  api: {
+    listVendors: vi.fn(),
+    createVendor: vi.fn(),
+    listSellers: vi.fn(),
+    createSeller: vi.fn(),
+    listPurchaseOrders: vi.fn(),
+    getPurchaseOrder: vi.fn(),
+    createPurchaseOrder: vi.fn(),
+    updatePurchaseOrder: vi.fn(),
+    createInventoryItem: vi.fn(),
+    getInventoryItem: vi.fn(),
+    deleteInventoryItem: vi.fn(),
+    // The item editor's, were it mounted in place of its stand-in below.
+    previewItem: vi.fn(() => new Promise(() => {})),
+  },
+}))
+
+// The editor itself is tested on its own; here it stands in for the dialog
+// the purchase page opens, and says which item it was given.
+vi.mock('./inventory/ItemEditDialog', () => ({
+  default: ({ itemId, onSaved, onClose }) => (
+    <div role="dialog" aria-label="Edit item">
+      editing item {itemId}
+      <button onClick={onSaved}>stub save</button>
+      <button onClick={onClose}>stub close</button>
+    </div>
+  ),
+}))
+
+import { api } from '../api'
+import { renderWithProviders } from '../../test/helpers'
+import NewPurchase from './NewPurchase'
+
+const VENDORS = [
+  { id: 3, name: 'ebay.com', url: 'https://www.ebay.com', vendor_kind: 'marketplace' },
+]
+
+const SELLERS = [
+  { id: 5, name: 'coinhound', store_url: 'https://www.ebay.com/usr/coinhound' },
+  { id: 6, name: 'examplecoins', store_url: null },
+]
+
+const EXISTING_ORDERS = [
+  {
+    id: 11,
+    order_number: 'PO-1',
+    vendor: 'Heritage',
+    ordered_on: '2026-01-05',
+    outstanding: 1,
+    total: 2,
+  },
+]
+
+const FRESH_PURCHASE = {
+  id: 22,
+  order_number: 'PO-2',
+  vendor: 'ebay.com',
+  ordered_on: '2026-02-01',
+  source_url: null,
+  lines: [],
+}
+
+/** A button that moves the route as the browser's own Back/Forward would. */
+function NavigateButton({ to }) {
+  const navigate = useNavigate()
+  return (
+    <button type="button" onClick={() => navigate(to)}>
+      go
+    </button>
+  )
+}
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  api.listVendors.mockResolvedValue(VENDORS)
+  api.listSellers.mockResolvedValue(SELLERS)
+  api.listPurchaseOrders.mockResolvedValue(EXISTING_ORDERS)
+})
+
+describe('NewPurchase: creating a vendor inline', () => {
+  it('adds a vendor and selects it', async () => {
+    const user = userEvent.setup()
+    api.createVendor.mockResolvedValue({
+      id: 9,
+      name: 'New Vendor',
+      url: null,
+      vendor_kind: 'unknown',
+    })
+    renderWithProviders(<NewPurchase />)
+
+    await screen.findByRole('combobox', { name: 'Vendor' })
+    await user.selectOptions(
+      screen.getByRole('combobox', { name: 'Vendor' }),
+      '__add__',
+    )
+
+    await user.type(screen.getByPlaceholderText('Vendor name'), 'New Vendor')
+    await user.click(screen.getByRole('button', { name: 'Add' }))
+
+    await waitFor(() =>
+      expect(api.createVendor).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'New Vendor' }),
+      ),
+    )
+    expect(await screen.findByRole('combobox', { name: 'Vendor' })).toHaveValue('9')
+  })
+
+  it('asks for the web address first and proposes the name from its last part', async () => {
+    const user = userEvent.setup()
+    api.createVendor.mockResolvedValue({
+      id: 9,
+      name: 'exampleauctions.hibid.com',
+      url: 'https://exampleauctions.hibid.com/',
+      vendor_kind: null,
+    })
+    renderWithProviders(<NewPurchase />)
+    await user.selectOptions(
+      await screen.findByRole('combobox', { name: 'Vendor' }),
+      '__add__',
+    )
+    const address = screen.getByRole('textbox', { name: 'Vendor web address' })
+    const name = screen.getByPlaceholderText('Vendor name')
+    // The address comes before the name, and has the cursor.
+    expect(address.compareDocumentPosition(name)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+    expect(address).toHaveFocus()
+
+    // Not an address yet: nothing to propose.
+    await user.type(address, 'https://www')
+    expect(name).toHaveValue('')
+    await user.type(address, '.ebay.com')
+    // Only a site so far: the site, without www.
+    expect(name).toHaveValue('ebay.com')
+    await user.type(address, '/usr/example_seller')
+    // A page on it: the page's last part, the account on the marketplace.
+    expect(name).toHaveValue('example_seller')
+
+    // What follows ? is no part of a name, and the case is the address's.
+    await user.clear(address)
+    expect(name).toHaveValue('')
+    await user.type(
+      address,
+      'https://www.etsy.com/shop/ExampleCoinShop?ref=view_receipt',
+    )
+    expect(name).toHaveValue('ExampleCoinShop')
+
+    // A site of the vendor's own under the marketplace's: its first part,
+    // whatever page follows.
+    await user.clear(address)
+    await user.type(address, 'https://exampleauctions.hibid.com/lots')
+    expect(name).toHaveValue('exampleauctions')
+
+    await user.click(screen.getByRole('button', { name: 'Add' }))
+    await waitFor(() =>
+      expect(api.createVendor).toHaveBeenCalledWith({
+        name: 'exampleauctions',
+        vendor_kind: null,
+        url: 'https://exampleauctions.hibid.com/lots',
+      }),
+    )
+  })
+
+  it('names a plain site for the site', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<NewPurchase />)
+    await user.selectOptions(
+      await screen.findByRole('combobox', { name: 'Vendor' }),
+      '__add__',
+    )
+
+    await user.type(
+      screen.getByRole('textbox', { name: 'Vendor web address' }),
+      'https://usmint.gov/',
+    )
+
+    expect(screen.getByPlaceholderText('Vendor name')).toHaveValue('usmint.gov')
+  })
+
+  it('proposes a name from an address typed without https://', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<NewPurchase />)
+    await user.selectOptions(
+      await screen.findByRole('combobox', { name: 'Vendor' }),
+      '__add__',
+    )
+
+    await user.type(
+      screen.getByRole('textbox', { name: 'Vendor web address' }),
+      'WWW.APMEX.com',
+    )
+
+    expect(screen.getByPlaceholderText('Vendor name')).toHaveValue('apmex.com')
+  })
+
+  it('sends an address typed without https:// with it in front', async () => {
+    // The server takes only http(s) addresses, and the form has already
+    // read this one as a site.
+    const user = userEvent.setup()
+    api.createVendor.mockResolvedValue({
+      id: 9,
+      name: 'apmex.com',
+      url: 'https://www.apmex.com',
+      vendor_kind: null,
+    })
+    renderWithProviders(<NewPurchase />)
+    await user.selectOptions(
+      await screen.findByRole('combobox', { name: 'Vendor' }),
+      '__add__',
+    )
+    await user.type(
+      screen.getByRole('textbox', { name: 'Vendor web address' }),
+      'www.apmex.com',
+    )
+    await user.click(screen.getByRole('button', { name: 'Add' }))
+
+    await waitFor(() =>
+      expect(api.createVendor).toHaveBeenCalledWith({
+        name: 'apmex.com',
+        vendor_kind: null,
+        url: 'https://www.apmex.com',
+      }),
+    )
+  })
+
+  it('keeps a name typed by hand when the address changes', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<NewPurchase />)
+    await user.selectOptions(
+      await screen.findByRole('combobox', { name: 'Vendor' }),
+      '__add__',
+    )
+    const name = screen.getByPlaceholderText('Vendor name')
+
+    await user.type(name, 'Local coin shop')
+    await user.type(
+      screen.getByRole('textbox', { name: 'Vendor web address' }),
+      'https://example.com',
+    )
+
+    expect(name).toHaveValue('Local coin shop')
+  })
+
+  it('proposes a name again once the name has been cleared by hand', async () => {
+    // An empty name is nobody's choice: it follows the address like one
+    // the address gave.
+    const user = userEvent.setup()
+    renderWithProviders(<NewPurchase />)
+    await user.selectOptions(
+      await screen.findByRole('combobox', { name: 'Vendor' }),
+      '__add__',
+    )
+    const address = screen.getByRole('textbox', { name: 'Vendor web address' })
+    const name = screen.getByPlaceholderText('Vendor name')
+    await user.type(address, 'https://www.ebay.com')
+    expect(name).toHaveValue('ebay.com')
+
+    await user.clear(name)
+    await user.type(address, '/usr/example_seller')
+
+    expect(name).toHaveValue('example_seller')
+  })
+
+  it('keeps Add live with no name, and says what is missing on a press', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<NewPurchase />)
+    await user.selectOptions(
+      await screen.findByRole('combobox', { name: 'Vendor' }),
+      '__add__',
+    )
+    const add = screen.getByRole('button', { name: 'Add' })
+    expect(add).toBeEnabled()
+
+    await user.click(add)
+
+    expect(screen.getByText("Type the vendor's name first.")).toBeInTheDocument()
+    expect(api.createVendor).not.toHaveBeenCalled()
+    await user.type(screen.getByPlaceholderText('Vendor name'), 'New Vendor')
+    expect(screen.queryByText("Type the vendor's name first.")).toBeNull()
+  })
+
+  it('does not submit the outer purchase form when Enter is pressed in the vendor name field', async () => {
+    const user = userEvent.setup()
+    api.createVendor.mockResolvedValue({
+      id: 9,
+      name: 'New Vendor',
+      url: null,
+      vendor_kind: 'unknown',
+    })
+    renderWithProviders(<NewPurchase />)
+
+    await user.selectOptions(
+      await screen.findByRole('combobox', { name: 'Vendor' }),
+      '__add__',
+    )
+    await user.type(screen.getByPlaceholderText('Vendor name'), 'New Vendor{Enter}')
+
+    await waitFor(() => expect(api.createVendor).toHaveBeenCalled())
+    expect(api.createPurchaseOrder).not.toHaveBeenCalled()
+  })
+
+  it('cancels the vendor draft when Enter activates Cancel, without creating it', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<NewPurchase />)
+
+    await user.selectOptions(
+      await screen.findByRole('combobox', { name: 'Vendor' }),
+      '__add__',
+    )
+    await user.type(screen.getByPlaceholderText('Vendor name'), 'Abandoned')
+    // Tab to Cancel and press Enter, as a keyboard user would.
+    screen.getByRole('button', { name: 'Cancel' }).focus()
+    await user.keyboard('{Enter}')
+
+    expect(api.createVendor).not.toHaveBeenCalled()
+    expect(await screen.findByRole('combobox', { name: 'Vendor' })).toBeInTheDocument()
+  })
+})
+
+describe('NewPurchase: creating a purchase', () => {
+  it('creates a new purchase for the picked vendor', async () => {
+    const user = userEvent.setup()
+    api.createPurchaseOrder.mockResolvedValue(FRESH_PURCHASE)
+    renderWithProviders(<NewPurchase />)
+
+    const vendorSelect = await screen.findByRole('combobox', { name: 'Vendor' })
+    await user.selectOptions(vendorSelect, '3')
+    await user.type(screen.getByLabelText(/order number/i), 'PO-2')
+    await user.click(screen.getByRole('button', { name: /create purchase/i }))
+
+    await waitFor(() =>
+      expect(api.createPurchaseOrder).toHaveBeenCalledWith(
+        expect.objectContaining({ vendor_id: 3, order_number: 'PO-2' }),
+      ),
+    )
+    expect(await screen.findByText(/PO-2/)).toBeInTheDocument()
+    expect(screen.getByText(/no items entered yet/i)).toBeInTheDocument()
+  })
+
+  it('keeps Create purchase live with no vendor, and says why on a press', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<NewPurchase />)
+    await screen.findByRole('combobox', { name: 'Vendor' })
+    const create = screen.getByRole('button', { name: /create purchase/i })
+    expect(create).toBeEnabled()
+
+    await user.click(create)
+
+    expect(screen.getByText(/pick a vendor first/i)).toBeInTheDocument()
+    expect(api.createPurchaseOrder).not.toHaveBeenCalled()
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Vendor' }), '3')
+    expect(screen.queryByText(/pick a vendor first/i)).toBeNull()
+  })
+
+  it('explains each purchase and item field when it has focus', async () => {
+    const user = userEvent.setup()
+    api.createPurchaseOrder.mockResolvedValue(FRESH_PURCHASE)
+    renderWithProviders(<NewPurchase />)
+
+    await user.click(screen.getByLabelText(/order date/i))
+    expect(screen.getByText(/not the date it arrived/)).toBeInTheDocument()
+
+    const vendorSelect = await screen.findByRole('combobox', { name: 'Vendor' })
+    await user.selectOptions(vendorSelect, '3')
+    await user.click(screen.getByRole('button', { name: /create purchase/i }))
+    await screen.findByText(/no items entered yet/i)
+
+    // The New item row inside the page shares the page's help area.
+    await user.click(screen.getByRole('textbox', { name: /title/i }))
+    expect(screen.getByText(/kept as the seller's words/)).toBeInTheDocument()
+    await user.click(screen.getByLabelText(/tax rate/i))
+    expect(screen.getByText(/Every item entered below is stamped/)).toBeInTheDocument()
+  })
+
+  it('puts the choice it opens on first: new, then existing', () => {
+    renderWithProviders(<NewPurchase />)
+    const radios = screen.getAllByRole('radio')
+    expect(radios.map((radio) => radio.value)).toEqual(['new', 'existing'])
+    expect(radios[0]).toBeChecked()
+  })
+
+  it('explains the existing-or-new choice when a radio is chosen', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<NewPurchase />)
+    await user.click(
+      screen.getByRole('radio', { name: /add to an existing purchase/i }),
+    )
+    expect(
+      screen.getByText(/Every item belongs to exactly one purchase/),
+    ).toBeInTheDocument()
+  })
+
+  it('keeps what was typed when the order is refused as a duplicate', async () => {
+    const user = userEvent.setup()
+    api.createPurchaseOrder.mockRejectedValue(
+      new Error('ebay.com order PO-2 is already recorded'),
+    )
+    renderWithProviders(<NewPurchase />)
+
+    const vendorSelect = await screen.findByRole('combobox', { name: 'Vendor' })
+    await user.selectOptions(vendorSelect, '3')
+    await user.type(screen.getByLabelText(/order number/i), 'PO-2')
+    await user.click(screen.getByRole('button', { name: /create purchase/i }))
+
+    expect(await screen.findByText(/already recorded/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/order number/i)).toHaveValue('PO-2')
+  })
+})
+
+describe('NewPurchase: changing a purchase after it is made', () => {
+  const PURCHASE = {
+    ...FRESH_PURCHASE,
+    order_number: 'Order-0001',
+    notes: 'from the show',
+    source_text: 'Gift',
+  }
+
+  it('opens the purchase an item links to', async () => {
+    api.getPurchaseOrder.mockResolvedValue(PURCHASE)
+    renderWithProviders(<NewPurchase />, { route: '/?order=22' })
+    expect(await screen.findByText(/Order-0001/)).toBeInTheDocument()
+    expect(api.getPurchaseOrder).toHaveBeenCalledWith(22)
+  })
+
+  it('says so when the purchase a link names cannot be read', async () => {
+    // The page opens on "Start a new purchase": a refusal shown only under
+    // the other choice would leave a blank form and no word why.
+    api.getPurchaseOrder.mockRejectedValue(new Error('Purchase order not found'))
+    renderWithProviders(<NewPurchase />, { route: '/?order=22' })
+    expect(await screen.findByText('Purchase order not found')).toBeInTheDocument()
+    expect(screen.queryByText('Loading purchase #22...')).toBeNull()
+  })
+
+  it('says the linked purchase is being read until it answers', async () => {
+    let answer
+    api.getPurchaseOrder.mockReturnValue(
+      new Promise((resolve) => {
+        answer = resolve
+      }),
+    )
+    renderWithProviders(<NewPurchase />, { route: '/?order=22' })
+    expect(await screen.findByText('Loading purchase #22...')).toBeInTheDocument()
+
+    await act(async () => {
+      answer(PURCHASE)
+    })
+    expect(screen.queryByText('Loading purchase #22...')).toBeNull()
+    expect(screen.getByText(/Order-0001/)).toBeInTheDocument()
+  })
+
+  it('shows one purchase at a time when the link moves to another', async () => {
+    // The details of the purchase left behind must go with it: its Save
+    // would write to a purchase no longer on screen.
+    const user = userEvent.setup()
+    api.getPurchaseOrder.mockImplementation((id) =>
+      Promise.resolve({ ...PURCHASE, id, order_number: `Order-00${id}` }),
+    )
+    renderWithProviders(
+      <>
+        <NewPurchase />
+        <NavigateButton to="/?order=23" />
+      </>,
+      { route: '/?order=22' },
+    )
+    await user.click(await screen.findByRole('button', { name: 'Edit details' }))
+    expect(screen.getByRole('button', { name: 'Save details' })).toBeInTheDocument()
+
+    await user.click(screen.getByText('go'))
+
+    expect(
+      await screen.findByRole('heading', { name: /Order-0023/ }),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Save details' })).toBeNull()
+    expect(screen.getAllByRole('button', { name: 'Edit details' })).toHaveLength(1)
+  })
+
+  it('sends only the details changed, and shows what the server kept', async () => {
+    const user = userEvent.setup()
+    api.getPurchaseOrder.mockResolvedValue(PURCHASE)
+    api.updatePurchaseOrder.mockResolvedValue({ ...PURCHASE, order_number: 'SD-77' })
+    renderWithProviders(<NewPurchase />, { route: '/?order=22' })
+
+    await user.click(await screen.findByRole('button', { name: 'Edit details' }))
+    const number = screen.getByRole('textbox', { name: /order number/i })
+    expect(number).toHaveValue('Order-0001')
+    // The web address box holds the stored text, link or not.
+    expect(screen.getByRole('textbox', { name: /^web address/i })).toHaveValue('Gift')
+    await user.clear(number)
+    await user.type(number, 'SD-77')
+    await user.click(screen.getByRole('button', { name: 'Save details' }))
+
+    await waitFor(() =>
+      expect(api.updatePurchaseOrder).toHaveBeenCalledWith(22, {
+        order_number: 'SD-77',
+      }),
+    )
+    expect(await screen.findByText(/SD-77/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Save details' })).toBeNull()
+  })
+
+  it('gives a purchase with no number one on save, box left blank', async () => {
+    const user = userEvent.setup()
+    const unnumbered = { ...PURCHASE, order_number: null }
+    api.getPurchaseOrder.mockResolvedValue(unnumbered)
+    api.updatePurchaseOrder.mockResolvedValue({
+      ...unnumbered,
+      order_number: 'Order-0001',
+    })
+    renderWithProviders(<NewPurchase />, { route: '/?order=22' })
+
+    await user.click(await screen.findByRole('button', { name: 'Edit details' }))
+    await user.click(screen.getByRole('button', { name: 'Save details' }))
+
+    await waitFor(() =>
+      expect(api.updatePurchaseOrder).toHaveBeenCalledWith(22, { order_number: null }),
+    )
+    // The heading, not the help band, which names the pattern too.
+    expect(await screen.findByRole('heading', { level: 2 })).toHaveTextContent(
+      'Order-0001',
+    )
+  })
+
+  it('keeps the form open, as typed, when the number is refused', async () => {
+    const user = userEvent.setup()
+    api.getPurchaseOrder.mockResolvedValue(PURCHASE)
+    api.updatePurchaseOrder.mockRejectedValue(
+      new Error('ebay.com order PO-1 is already recorded'),
+    )
+    renderWithProviders(<NewPurchase />, { route: '/?order=22' })
+
+    await user.click(await screen.findByRole('button', { name: 'Edit details' }))
+    const number = screen.getByRole('textbox', { name: /order number/i })
+    await user.clear(number)
+    await user.type(number, 'PO-1')
+    await user.click(screen.getByRole('button', { name: 'Save details' }))
+
+    expect(await screen.findByText(/PO-1 is already recorded/)).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: /order number/i })).toHaveValue('PO-1')
+  })
+})
+
+describe('NewPurchase: picking an existing purchase', () => {
+  it('opens the item form once an existing purchase is picked', async () => {
+    const user = userEvent.setup()
+    const detail = { ...FRESH_PURCHASE, id: 11, order_number: 'PO-1', lines: [] }
+    api.getPurchaseOrder.mockResolvedValue(detail)
+    renderWithProviders(<NewPurchase />)
+
+    await user.click(
+      screen.getByRole('radio', { name: /add to an existing purchase/i }),
+    )
+    await user.click(await screen.findByText(/PO-1/))
+
+    expect(api.getPurchaseOrder).toHaveBeenCalledWith(11)
+    expect(await screen.findByRole('heading', { name: /PO-1/ })).toBeInTheDocument()
+  })
+
+  it('renders each row as a button, so it is reachable by keyboard', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<NewPurchase />)
+
+    await user.click(
+      screen.getByRole('radio', { name: /add to an existing purchase/i }),
+    )
+
+    expect(await screen.findByRole('button', { name: /PO-1/ })).toBeInTheDocument()
+  })
+
+  it('ignores a stale response from an earlier pick', async () => {
+    const user = userEvent.setup()
+    api.listPurchaseOrders.mockResolvedValue([
+      ...EXISTING_ORDERS,
+      {
+        id: 12,
+        order_number: 'PO-2',
+        vendor: 'Other Vendor',
+        ordered_on: '2026-01-06',
+        outstanding: 0,
+        total: 1,
+      },
+    ])
+    let resolveFirst
+    api.getPurchaseOrder.mockImplementation((id) => {
+      if (id === 11) {
+        return new Promise((resolve) => {
+          resolveFirst = () =>
+            resolve({ ...FRESH_PURCHASE, id: 11, order_number: 'PO-1' })
+        })
+      }
+      return Promise.resolve({ ...FRESH_PURCHASE, id: 12, order_number: 'PO-2' })
+    })
+    renderWithProviders(<NewPurchase />)
+
+    await user.click(
+      screen.getByRole('radio', { name: /add to an existing purchase/i }),
+    )
+    // The slower pick (PO-1) is made first, the faster one (PO-2) second --
+    // PO-2's response lands first, and PO-1's must not overwrite it when it
+    // finally arrives.
+    await user.click(await screen.findByRole('button', { name: /PO-1/ }))
+    await user.click(screen.getByRole('button', { name: /PO-2/ }))
+    await screen.findByRole('heading', { name: /PO-2/ })
+
+    // `act` is what makes this test able to fail. A bare `resolveFirst()`
+    // followed by `waitFor` passes even with the guard deleted: waitFor runs
+    // its callback synchronously first, before PO-1's `.then` microtask has
+    // flushed, so it only ever sees the state from before the late response.
+    await act(async () => {
+      resolveFirst()
+    })
+    expect(screen.getByRole('heading', { name: /PO-2/ })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: /PO-1/ })).not.toBeInTheDocument()
+  })
+
+  it('filters the list by order number or vendor, case-insensitively', async () => {
+    const user = userEvent.setup()
+    api.listPurchaseOrders.mockResolvedValue([
+      ...EXISTING_ORDERS,
+      {
+        id: 12,
+        order_number: 'PO-2',
+        vendor: 'Other Vendor',
+        ordered_on: '2026-01-06',
+        outstanding: 0,
+        total: 1,
+      },
+    ])
+    renderWithProviders(<NewPurchase />)
+
+    await user.click(
+      screen.getByRole('radio', { name: /add to an existing purchase/i }),
+    )
+    await screen.findByRole('button', { name: /PO-1/ })
+
+    await user.type(screen.getByRole('textbox', { name: /filter/i }), 'heritage')
+
+    expect(screen.getByRole('button', { name: /PO-1/ })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /PO-2/ })).not.toBeInTheDocument()
+  })
+
+  it.each(['12', '#12', ' #12 '])(
+    'finds a purchase by its own number, typed as "%s"',
+    async (typed) => {
+      const user = userEvent.setup()
+      api.listPurchaseOrders.mockResolvedValue([
+        ...EXISTING_ORDERS,
+        {
+          id: 12,
+          order_number: 'PO-2',
+          vendor: 'Other Vendor',
+          ordered_on: '2026-01-06',
+          outstanding: 0,
+          total: 1,
+        },
+      ])
+      renderWithProviders(<NewPurchase />)
+
+      await user.click(
+        screen.getByRole('radio', { name: /add to an existing purchase/i }),
+      )
+      await screen.findByRole('button', { name: /PO-1/ })
+
+      await user.type(screen.getByRole('textbox', { name: /filter/i }), typed)
+
+      expect(screen.getByRole('button', { name: /PO-2/ })).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /PO-1/ })).not.toBeInTheDocument()
+    },
+  )
+
+  it('matches a purchase number exactly, not as part of a longer one', async () => {
+    const user = userEvent.setup()
+    api.listPurchaseOrders.mockResolvedValue([
+      ...EXISTING_ORDERS,
+      {
+        id: 112,
+        order_number: 'PO-3',
+        vendor: 'Other Vendor',
+        ordered_on: '2026-01-06',
+        outstanding: 0,
+        total: 1,
+      },
+    ])
+    renderWithProviders(<NewPurchase />)
+
+    await user.click(
+      screen.getByRole('radio', { name: /add to an existing purchase/i }),
+    )
+    await screen.findByRole('button', { name: /PO-1/ })
+
+    await user.type(screen.getByRole('textbox', { name: /filter/i }), '#11')
+
+    expect(screen.getByRole('button', { name: /PO-1/ })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /PO-3/ })).not.toBeInTheDocument()
+  })
+})
+
+describe('NewPurchase: items on the purchase', () => {
+  async function openPurchase(options = {}) {
+    api.createPurchaseOrder.mockResolvedValue(FRESH_PURCHASE)
+    const user = userEvent.setup()
+    renderWithProviders(<NewPurchase />, options)
+    const vendorSelect = await screen.findByRole('combobox', { name: 'Vendor' })
+    await user.selectOptions(vendorSelect, '3')
+    await user.click(screen.getByRole('button', { name: /create purchase/i }))
+    await screen.findByText(/no items entered yet/i)
+    return user
+  }
+
+  it('lists item code, title, kind, cost and status from the purchase lines', async () => {
+    api.createPurchaseOrder.mockResolvedValue({
+      ...FRESH_PURCHASE,
+      lines: [
+        {
+          id: 1,
+          item_code: 'CC-000001',
+          source_title: 'Morgan dollar',
+          item_kind: 'coin',
+          item_cost: '25.00',
+          status: 'ordered',
+        },
+      ],
+    })
+    const user = userEvent.setup()
+    renderWithProviders(<NewPurchase />)
+    const vendorSelect = await screen.findByRole('combobox', { name: 'Vendor' })
+    await user.selectOptions(vendorSelect, '3')
+    await user.click(screen.getByRole('button', { name: /create purchase/i }))
+
+    const row = (await screen.findByText('CC-000001')).closest('tr')
+    expect(within(row).getByText('Morgan dollar')).toBeInTheDocument()
+    expect(within(row).getByText('coin')).toBeInTheDocument()
+    expect(within(row).getByText('25.00')).toBeInTheDocument()
+    expect(within(row).getByText('ordered')).toBeInTheDocument()
+  })
+
+  it('offers a Receive these link built from the router, not a hard-coded shop path', async () => {
+    // The console mounts at basename "/management" (management/main.jsx); a `<Link>`
+    // folds that into the rendered href, while a hard-coded
+    // `<a href="/receiving?...">` would not and would send the browser to
+    // the shop at the site root instead of Receiving.
+    await openPurchase({ basename: '/management', route: '/management/purchases/new' })
+    const link = screen.getByRole('link', { name: /receive these/i })
+    expect(link).toHaveAttribute('href', '/management/receiving?order=22')
+  })
+
+  it('sends the resolved tax defaults with a new item', async () => {
+    api.createInventoryItem.mockResolvedValue({ id: 100 })
+    const user = await openPurchase()
+
+    await user.type(screen.getByLabelText(/^tax rate/i), '0.05')
+    await user.type(screen.getByRole('textbox', { name: /title/i }), 'A note')
+    await user.click(screen.getByRole('button', { name: 'Add item' }))
+
+    await waitFor(() =>
+      expect(api.createInventoryItem).toHaveBeenCalledWith(
+        expect.objectContaining({ purchase_order_id: 22, tax_rate: '0.05' }),
+      ),
+    )
+  })
+
+  it('sends a zero rate once "No sales tax charged" is ticked', async () => {
+    api.createInventoryItem.mockResolvedValue({ id: 101 })
+    const user = await openPurchase()
+
+    await user.click(screen.getByRole('checkbox', { name: /no sales tax charged/i }))
+    await user.type(screen.getByRole('textbox', { name: /title/i }), 'A note')
+    await user.click(screen.getByRole('button', { name: 'Add item' }))
+
+    await waitFor(() =>
+      expect(api.createInventoryItem).toHaveBeenCalledWith(
+        expect.objectContaining({ tax_rate: '0' }),
+      ),
+    )
+  })
+
+  it('sends a null rate -- the configured default -- when the field is left blank', async () => {
+    api.createInventoryItem.mockResolvedValue({ id: 102 })
+    const user = await openPurchase()
+
+    await user.type(screen.getByRole('textbox', { name: /title/i }), 'A note')
+    await user.click(screen.getByRole('button', { name: 'Add item' }))
+
+    await waitFor(() =>
+      expect(api.createInventoryItem).toHaveBeenCalledWith(
+        expect.objectContaining({ tax_rate: null }),
+      ),
+    )
+  })
+
+  it('accepts a leading-dot tax rate, as the server does', async () => {
+    api.createInventoryItem.mockResolvedValue({ id: 103 })
+    const user = await openPurchase()
+
+    await user.type(screen.getByLabelText(/^tax rate/i), '.0635')
+    expect(screen.queryByText(/enter a rate between/i)).not.toBeInTheDocument()
+    await user.type(screen.getByRole('textbox', { name: /title/i }), 'A note')
+    await user.click(screen.getByRole('button', { name: 'Add item' }))
+
+    await waitFor(() =>
+      expect(api.createInventoryItem).toHaveBeenCalledWith(
+        expect.objectContaining({ tax_rate: '.0635' }),
+      ),
+    )
+  })
+
+  it('says why items cannot be saved, and saves none, while the tax rate is invalid', async () => {
+    const user = await openPurchase()
+
+    await user.type(screen.getByLabelText(/^tax rate/i), 'abc')
+
+    const add = screen.getByRole('button', { name: 'Add item' })
+    expect(add).toBeEnabled()
+    await user.type(screen.getByRole('textbox', { name: /title/i }), 'A note')
+    await user.click(add)
+    expect(
+      screen.getByText(/fix the tax rate above before saving items/i),
+    ).toBeInTheDocument()
+    expect(api.createInventoryItem).not.toHaveBeenCalled()
+  })
+
+  it('unblocks saving when "No sales tax charged" settles an invalid rate', async () => {
+    // Ticking the box disables the rate box. A refusal that points at a field
+    // the user can no longer edit is a dead end: the only way out would be to
+    // untick, fix the rate, and tick again.
+    api.createInventoryItem.mockResolvedValue({ id: 104 })
+    const user = await openPurchase()
+
+    await user.type(screen.getByLabelText(/^tax rate/i), 'abc')
+    await user.click(screen.getByRole('checkbox', { name: /no sales tax charged/i }))
+
+    expect(
+      screen.queryByText(/fix the tax rate above before saving items/i),
+    ).not.toBeInTheDocument()
+    expect(screen.queryByText(/enter a rate between/i)).not.toBeInTheDocument()
+
+    await user.type(screen.getByRole('textbox', { name: /title/i }), 'A note')
+    await user.click(screen.getByRole('button', { name: 'Add item' }))
+
+    await waitFor(() =>
+      expect(api.createInventoryItem).toHaveBeenCalledWith(
+        expect.objectContaining({ tax_rate: '0' }),
+      ),
+    )
+  })
+
+  describe('Tax on shipping', () => {
+    it('sends null ("As configured") by default', async () => {
+      api.createInventoryItem.mockResolvedValue({ id: 200 })
+      const user = await openPurchase()
+
+      await user.type(screen.getByRole('textbox', { name: /title/i }), 'A note')
+      await user.click(screen.getByRole('button', { name: 'Add item' }))
+
+      await waitFor(() =>
+        expect(api.createInventoryItem).toHaveBeenCalledWith(
+          expect.objectContaining({ tax_includes_shipping: null }),
+        ),
+      )
+    })
+
+    it('sends false once "Not taxed" is chosen', async () => {
+      api.createInventoryItem.mockResolvedValue({ id: 201 })
+      const user = await openPurchase()
+
+      await user.selectOptions(
+        screen.getByRole('combobox', { name: /tax on shipping/i }),
+        'Not taxed',
+      )
+      await user.type(screen.getByRole('textbox', { name: /title/i }), 'A note')
+      await user.click(screen.getByRole('button', { name: 'Add item' }))
+
+      await waitFor(() =>
+        expect(api.createInventoryItem).toHaveBeenCalledWith(
+          expect.objectContaining({ tax_includes_shipping: false }),
+        ),
+      )
+    })
+
+    it('sends true once "Taxed" is chosen', async () => {
+      api.createInventoryItem.mockResolvedValue({ id: 202 })
+      const user = await openPurchase()
+
+      await user.selectOptions(
+        screen.getByRole('combobox', { name: /tax on shipping/i }),
+        'Taxed',
+      )
+      await user.type(screen.getByRole('textbox', { name: /title/i }), 'A note')
+      await user.click(screen.getByRole('button', { name: 'Add item' }))
+
+      await waitFor(() =>
+        expect(api.createInventoryItem).toHaveBeenCalledWith(
+          expect.objectContaining({ tax_includes_shipping: true }),
+        ),
+      )
+    })
+  })
+
+  it('shows the error rather than swallowing it when reloading the purchase fails', async () => {
+    api.createInventoryItem.mockResolvedValue({ id: 400 })
+    const user = await openPurchase()
+    api.getPurchaseOrder.mockRejectedValueOnce(new Error('lost connection'))
+
+    await user.type(screen.getByRole('textbox', { name: /title/i }), 'A note')
+    await user.click(screen.getByRole('button', { name: 'Add item' }))
+
+    expect(await screen.findByText(/lost connection/i)).toBeInTheDocument()
+  })
+
+  it('offers another like the latest item, then like the one opened from the table', async () => {
+    const withTwo = {
+      ...FRESH_PURCHASE,
+      lines: [
+        {
+          id: 1,
+          item_code: 'CC-000001',
+          source_title: 'Morgan dollar',
+          item_kind: 'coin',
+          item_cost: '25.00',
+          status: 'ordered',
+        },
+        {
+          id: 2,
+          item_code: 'CC-000002',
+          source_title: 'Peace dollar',
+          item_kind: 'coin',
+          item_cost: '30.00',
+          status: 'ordered',
+        },
+      ],
+    }
+    api.createPurchaseOrder.mockResolvedValue(withTwo)
+    // Read again when the editor closes.
+    api.getPurchaseOrder.mockResolvedValue(withTwo)
+    const user = userEvent.setup()
+    renderWithProviders(<NewPurchase />)
+    await user.selectOptions(
+      await screen.findByRole('combobox', { name: 'Vendor' }),
+      '3',
+    )
+    await user.click(screen.getByRole('button', { name: /create purchase/i }))
+
+    // Nothing opened yet: the latest entry.
+    expect(
+      await screen.findByRole('button', { name: 'Add another like CC-000002' }),
+    ).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'CC-000001' }))
+    await user.click(await screen.findByRole('button', { name: 'stub close' }))
+
+    expect(
+      await screen.findByRole('button', { name: 'Add another like CC-000001' }),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /like CC-000002/ })).toBeNull()
+  })
+
+  it('offers a Start another purchase button that returns to step 1', async () => {
+    const user = await openPurchase()
+
+    await user.click(screen.getByRole('button', { name: /start another purchase/i }))
+
+    expect(
+      screen.getByRole('radio', { name: /add to an existing purchase/i }),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: /PO-2/ })).not.toBeInTheDocument()
+  })
+
+  it('starts another purchase with the tax boxes as they first open', async () => {
+    // A rate and a "not taxed" left over from the last purchase would be
+    // stamped on the next one's items.
+    api.createInventoryItem.mockResolvedValue({ id: 105 })
+    const user = await openPurchase()
+    await user.type(screen.getByLabelText(/^tax rate/i), '0.05')
+    await user.click(screen.getByRole('checkbox', { name: /no sales tax charged/i }))
+    await user.selectOptions(
+      screen.getByRole('combobox', { name: /tax on shipping/i }),
+      'Not taxed',
+    )
+
+    await user.click(screen.getByRole('button', { name: /start another purchase/i }))
+    await user.selectOptions(
+      await screen.findByRole('combobox', { name: 'Vendor' }),
+      '3',
+    )
+    await user.click(screen.getByRole('button', { name: /create purchase/i }))
+    await screen.findByText(/no items entered yet/i)
+    await user.type(screen.getByRole('textbox', { name: /title/i }), 'A note')
+    await user.click(screen.getByRole('button', { name: 'Add item' }))
+
+    await waitFor(() =>
+      expect(api.createInventoryItem).toHaveBeenCalledWith(
+        expect.objectContaining({ tax_rate: null, tax_includes_shipping: null }),
+      ),
+    )
+  })
+
+  it('reads the purchases again on Start another, so the one just made is listed', async () => {
+    const user = await openPurchase()
+    expect(api.listPurchaseOrders).toHaveBeenCalledTimes(1)
+
+    await user.click(screen.getByRole('button', { name: /start another purchase/i }))
+
+    await waitFor(() => expect(api.listPurchaseOrders).toHaveBeenCalledTimes(2))
+  })
+})
+
+describe('NewPurchase: the purchases table', () => {
+  const ORDERS = [
+    {
+      id: 1,
+      order_number: 'B-10',
+      vendor: 'hibid.com',
+      ordered_on: '2026-03-01',
+      outstanding: 0,
+      total: 1,
+    },
+    {
+      id: 2,
+      order_number: 'B-9',
+      vendor: 'eBay.com',
+      ordered_on: '2026-09-06',
+      outstanding: 0,
+      total: 1,
+    },
+    {
+      id: 3,
+      order_number: null,
+      vendor: 'Coin show',
+      ordered_on: null,
+      outstanding: 0,
+      total: 1,
+    },
+    {
+      id: 4,
+      order_number: 'A-1',
+      vendor: 'Apmex',
+      ordered_on: '2025-12-24',
+      outstanding: 0,
+      total: 1,
+    },
+  ]
+
+  async function openTable(user) {
+    api.listPurchaseOrders.mockResolvedValue(ORDERS)
+    renderWithProviders(<NewPurchase />)
+    await user.click(
+      await screen.findByRole('radio', { name: /add to an existing purchase/i }),
+    )
+    return screen.findByRole('table', { name: /purchases/i })
+  }
+
+  //: Each body row's order number, as the first cell shows it.
+  function numbers(table) {
+    return within(table)
+      .getAllByRole('row')
+      .slice(1)
+      .map((row) => within(row).getAllByRole('cell')[0].textContent)
+  }
+
+  function header(table, name) {
+    return within(table).getByRole('columnheader', { name: new RegExp(name, 'i') })
+  }
+
+  it('shows order number, date and vendor in their own columns', async () => {
+    const table = await openTable(userEvent.setup())
+    expect(
+      within(table)
+        .getAllByRole('columnheader')
+        .map((th) => th.textContent.replace(/[^A-Za-z ]/g, '').trim()),
+    ).toEqual(['Order number', 'Date', 'Vendor', 'No'])
+    const row = within(table).getAllByRole('row')[1]
+    expect(
+      within(row)
+        .getAllByRole('cell')
+        .map((c) => c.textContent),
+    ).toEqual(['B-9', 'Sep 6, 2026', 'eBay.com', '#2'])
+  })
+
+  it('sorts by purchase number, highest first, and back', async () => {
+    const user = userEvent.setup()
+    const table = await openTable(user)
+    await user.click(within(header(table, 'No')).getByRole('button'))
+    expect(numbers(table)).toEqual(['A-1', 'no order number', 'B-9', 'B-10'])
+    await user.click(within(header(table, 'No')).getByRole('button'))
+    expect(numbers(table)).toEqual(['B-10', 'B-9', 'no order number', 'A-1'])
+  })
+
+  it('lists the newest purchase first, an undated one last', async () => {
+    const table = await openTable(userEvent.setup())
+    expect(header(table, 'date')).toHaveAttribute('aria-sort', 'descending')
+    expect(numbers(table)).toEqual(['B-9', 'B-10', 'A-1', 'no order number'])
+  })
+
+  it('turns the date order around, an undated purchase still last', async () => {
+    const user = userEvent.setup()
+    const table = await openTable(user)
+    await user.click(within(header(table, 'date')).getByRole('button'))
+    expect(header(table, 'date')).toHaveAttribute('aria-sort', 'ascending')
+    expect(numbers(table)).toEqual(['A-1', 'B-10', 'B-9', 'no order number'])
+  })
+
+  it('sorts by vendor A to Z, ignoring case, and back', async () => {
+    const user = userEvent.setup()
+    const table = await openTable(user)
+    await user.click(within(header(table, 'vendor')).getByRole('button'))
+    expect(header(table, 'vendor')).toHaveAttribute('aria-sort', 'ascending')
+    expect(header(table, 'date')).toHaveAttribute('aria-sort', 'none')
+    expect(numbers(table)).toEqual(['A-1', 'no order number', 'B-9', 'B-10'])
+
+    await user.click(within(header(table, 'vendor')).getByRole('button'))
+    expect(numbers(table)).toEqual(['B-10', 'B-9', 'no order number', 'A-1'])
+  })
+
+  it('sorts order numbers as people read them, B-9 before B-10', async () => {
+    const user = userEvent.setup()
+    const table = await openTable(user)
+    await user.click(within(header(table, 'order number')).getByRole('button'))
+    expect(numbers(table)).toEqual(['A-1', 'B-9', 'B-10', 'no order number'])
+  })
+
+  it("lists one vendor's purchases newest first", async () => {
+    const user = userEvent.setup()
+    api.listPurchaseOrders.mockResolvedValue([
+      {
+        id: 7,
+        order_number: 'W-old',
+        vendor: 'whatnot.com',
+        ordered_on: '2026-01-02',
+        outstanding: 0,
+        total: 1,
+      },
+      {
+        id: 5,
+        order_number: 'W-new',
+        vendor: 'whatnot.com',
+        ordered_on: '2026-08-30',
+        outstanding: 0,
+        total: 1,
+      },
+    ])
+    renderWithProviders(<NewPurchase />)
+    await user.click(
+      await screen.findByRole('radio', { name: /add to an existing purchase/i }),
+    )
+    const table = await screen.findByRole('table', { name: /purchases/i })
+    await user.click(within(header(table, 'vendor')).getByRole('button'))
+
+    expect(numbers(table)).toEqual(['W-new', 'W-old'])
+  })
+
+  it('picks a purchase from its row by keyboard', async () => {
+    const user = userEvent.setup()
+    api.getPurchaseOrder.mockResolvedValue({
+      ...FRESH_PURCHASE,
+      id: 2,
+      order_number: 'B-9',
+    })
+    const table = await openTable(user)
+    within(table).getByRole('button', { name: 'B-9' }).focus()
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(api.getPurchaseOrder).toHaveBeenCalledWith(2))
+  })
+
+  describe('only purchases with items not yet received', () => {
+    // The open purchases are neither first nor last by date, and the newest
+    // has everything in: a list cut by position would not pass for this one.
+    const MIXED = [
+      { ...ORDERS[0], outstanding: 2, total: 2 },
+      ORDERS[1],
+      ORDERS[2],
+      { ...ORDERS[3], outstanding: 1, total: 5 },
+    ]
+
+    async function openMixed(user, orders = MIXED) {
+      api.listPurchaseOrders.mockResolvedValue(orders)
+      renderWithProviders(<NewPurchase />)
+      await user.click(
+        await screen.findByRole('radio', { name: /add to an existing purchase/i }),
+      )
+      await screen.findByRole('table', { name: /purchases/i })
+      return screen.getByRole('checkbox', { name: /items not yet received/i })
+    }
+
+    const table = () => screen.getByRole('table', { name: /purchases/i })
+
+    it('lists every purchase until it is ticked', async () => {
+      const only = await openMixed(userEvent.setup())
+      expect(only).not.toBeChecked()
+      expect(numbers(table())).toEqual(['B-9', 'B-10', 'A-1', 'no order number'])
+    })
+
+    it('leaves out a purchase with everything in, and brings it back', async () => {
+      const user = userEvent.setup()
+      const only = await openMixed(user)
+      await user.click(only)
+      expect(numbers(table())).toEqual(['B-10', 'A-1'])
+      await user.click(only)
+      expect(numbers(table())).toEqual(['B-9', 'B-10', 'A-1', 'no order number'])
+    })
+
+    it('narrows along with the filter', async () => {
+      const user = userEvent.setup()
+      await user.click(await openMixed(user))
+      await user.type(screen.getByRole('textbox', { name: /filter/i }), 'apmex')
+      expect(numbers(table())).toEqual(['A-1'])
+    })
+
+    it('says so when nothing is still to arrive, and stays to be unticked', async () => {
+      const user = userEvent.setup()
+      const only = await openMixed(user, ORDERS)
+      await user.click(only)
+      expect(
+        screen.queryByRole('table', { name: /purchases/i }),
+      ).not.toBeInTheDocument()
+      expect(
+        screen.getByText('No purchase has an item not yet received.'),
+      ).toBeInTheDocument()
+      await user.click(only)
+      expect(numbers(table())).toHaveLength(4)
+    })
+  })
+})
+
+describe('NewPurchase: Ctrl+S', () => {
+  const PURCHASE_22 = {
+    id: 22,
+    order_number: 'Order-0001',
+    vendor: 'ebay.com',
+    vendor_id: 3,
+    ordered_on: '2026-02-01',
+    source_url: null,
+    notes: null,
+    lines: [],
+  }
+
+  it("saves the purchase's details while they are being edited", async () => {
+    const user = userEvent.setup()
+    api.getPurchaseOrder.mockResolvedValue(PURCHASE_22)
+    api.updatePurchaseOrder.mockResolvedValue({ ...PURCHASE_22, order_number: 'SD-77' })
+    renderWithProviders(<NewPurchase />, { route: '/?order=22' })
+    await user.click(await screen.findByRole('button', { name: 'Edit details' }))
+    const number = screen.getByRole('textbox', { name: /order number/i })
+    await user.clear(number)
+    await user.type(number, 'SD-77')
+
+    fireEvent.keyDown(document, { key: 's', ctrlKey: true })
+
+    await waitFor(() =>
+      expect(api.updatePurchaseOrder).toHaveBeenCalledWith(22, {
+        order_number: 'SD-77',
+      }),
+    )
+    expect(api.createInventoryItem).not.toHaveBeenCalled()
+  })
+
+  it('adds the new item on Enter once the details editor is closed again', async () => {
+    const user = userEvent.setup()
+    api.getPurchaseOrder.mockResolvedValue(PURCHASE_22)
+    api.createInventoryItem.mockResolvedValue({ id: 30, item_code: 'CC-000030' })
+    renderWithProviders(<NewPurchase />, { route: '/?order=22' })
+    await user.click(await screen.findByRole('button', { name: 'Edit details' }))
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    await user.type(screen.getByRole('textbox', { name: /title/i }), 'A dime{Enter}')
+
+    await waitFor(() => expect(api.createInventoryItem).toHaveBeenCalledTimes(1))
+    expect(api.updatePurchaseOrder).not.toHaveBeenCalled()
+  })
+})
+
+describe('NewPurchase: the seller', () => {
+  const STORE = 'https://www.ebay.com/usr/coinhound'
+
+  it('is picked for a new purchase and linked in its heading', async () => {
+    const user = userEvent.setup()
+    api.createPurchaseOrder.mockResolvedValue({
+      ...FRESH_PURCHASE,
+      seller_id: 5,
+      seller: 'coinhound',
+      seller_url: STORE,
+    })
+    renderWithProviders(<NewPurchase />)
+    await user.selectOptions(
+      await screen.findByRole('combobox', { name: 'Vendor' }),
+      '3',
+    )
+    await user.selectOptions(
+      await screen.findByRole('combobox', { name: 'Seller' }),
+      '5',
+    )
+    await user.click(screen.getByRole('button', { name: /create purchase/i }))
+
+    await waitFor(() =>
+      expect(api.createPurchaseOrder).toHaveBeenCalledWith(
+        expect.objectContaining({ seller_id: 5 }),
+      ),
+    )
+    const link = await screen.findByRole('link', { name: 'coinhound' })
+    expect(link).toHaveAttribute('href', STORE)
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer')
+  })
+
+  it('is added inline with a name and store, and chosen', async () => {
+    const user = userEvent.setup()
+    api.createSeller.mockResolvedValue({ id: 9, name: 'newseller', store_url: STORE })
+    api.createPurchaseOrder.mockResolvedValue(FRESH_PURCHASE)
+    renderWithProviders(<NewPurchase />)
+    await user.selectOptions(
+      await screen.findByRole('combobox', { name: 'Vendor' }),
+      '3',
+    )
+    await user.selectOptions(
+      await screen.findByRole('combobox', { name: 'Seller' }),
+      '__add__',
+    )
+    await user.type(screen.getByPlaceholderText('Seller name'), ' newseller ')
+    await user.type(screen.getByPlaceholderText('Store web address or email'), STORE)
+    await user.click(screen.getByRole('button', { name: 'Add seller' }))
+
+    await waitFor(() =>
+      expect(api.createSeller).toHaveBeenCalledWith({
+        name: 'newseller',
+        store_url: STORE,
+      }),
+    )
+    expect(await screen.findByRole('combobox', { name: 'Seller' })).toHaveValue('9')
+    await user.click(screen.getByRole('button', { name: /create purchase/i }))
+    await waitFor(() =>
+      expect(api.createPurchaseOrder).toHaveBeenCalledWith(
+        expect.objectContaining({ seller_id: 9 }),
+      ),
+    )
+  })
+
+  it('asks for the store first and proposes the name from its address', async () => {
+    const user = userEvent.setup()
+    api.createSeller.mockResolvedValue({
+      id: 9,
+      name: 'example_seller',
+      store_url: 'https://www.ebay.com/usr/example_seller',
+    })
+    api.createPurchaseOrder.mockResolvedValue(FRESH_PURCHASE)
+    renderWithProviders(<NewPurchase />)
+    await user.selectOptions(
+      await screen.findByRole('combobox', { name: 'Seller' }),
+      '__add__',
+    )
+    const store = screen.getByRole('textbox', { name: 'Store web address or email' })
+    const name = screen.getByPlaceholderText('Seller name')
+    // The store comes before the name, and has the cursor.
+    expect(store.compareDocumentPosition(name)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+    expect(store).toHaveFocus()
+
+    await user.type(store, 'https://www.ebay.com/usr/example_seller')
+    expect(name).toHaveValue('example_seller')
+
+    await user.click(screen.getByRole('button', { name: 'Add seller' }))
+    await waitFor(() =>
+      expect(api.createSeller).toHaveBeenCalledWith({
+        name: 'example_seller',
+        store_url: 'https://www.ebay.com/usr/example_seller',
+      }),
+    )
+  })
+
+  it('proposes no name from a mail address, and keeps one typed by hand', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<NewPurchase />)
+    await user.selectOptions(
+      await screen.findByRole('combobox', { name: 'Seller' }),
+      '__add__',
+    )
+    const store = screen.getByRole('textbox', { name: 'Store web address or email' })
+    const name = screen.getByPlaceholderText('Seller name')
+
+    await user.type(store, 'coins@example.com')
+    expect(name).toHaveValue('')
+    // Live with no name yet: a press says what is missing and sends nothing.
+    const add = screen.getByRole('button', { name: 'Add seller' })
+    expect(add).toBeEnabled()
+    await user.click(add)
+    expect(screen.getByText("Type the seller's name first.")).toBeInTheDocument()
+    expect(api.createSeller).not.toHaveBeenCalled()
+
+    await user.type(name, 'By Mail Coins')
+    await user.clear(store)
+    await user.type(store, 'https://www.ebay.com/usr/someone')
+    expect(name).toHaveValue('By Mail Coins')
+  })
+
+  it('proposes a name again once the name has been cleared by hand', async () => {
+    // An empty name is nobody's choice: it follows the store like one the
+    // store gave.
+    const user = userEvent.setup()
+    renderWithProviders(<NewPurchase />)
+    await user.selectOptions(
+      await screen.findByRole('combobox', { name: 'Seller' }),
+      '__add__',
+    )
+    const store = screen.getByRole('textbox', { name: 'Store web address or email' })
+    const name = screen.getByPlaceholderText('Seller name')
+    await user.type(store, 'https://www.ebay.com')
+    expect(name).toHaveValue('ebay.com')
+
+    await user.clear(name)
+    await user.type(store, '/usr/example_seller')
+
+    expect(name).toHaveValue('example_seller')
+  })
+
+  it('sends a store typed without https:// with it in front', async () => {
+    const user = userEvent.setup()
+    api.createSeller.mockResolvedValue({
+      id: 9,
+      name: 'example_seller',
+      store_url: 'https://www.ebay.com/usr/example_seller',
+    })
+    renderWithProviders(<NewPurchase />)
+    await user.selectOptions(
+      await screen.findByRole('combobox', { name: 'Seller' }),
+      '__add__',
+    )
+    await user.type(
+      screen.getByRole('textbox', { name: 'Store web address or email' }),
+      'www.ebay.com/usr/example_seller',
+    )
+    await user.click(screen.getByRole('button', { name: 'Add seller' }))
+
+    await waitFor(() =>
+      expect(api.createSeller).toHaveBeenCalledWith({
+        name: 'example_seller',
+        store_url: 'https://www.ebay.com/usr/example_seller',
+      }),
+    )
+  })
+
+  it('sends a mail address as it was typed', async () => {
+    // The server makes it a mailto: address; https:// in front would not be one.
+    const user = userEvent.setup()
+    api.createSeller.mockResolvedValue({ id: 9, name: 'By Mail Coins' })
+    renderWithProviders(<NewPurchase />)
+    await user.selectOptions(
+      await screen.findByRole('combobox', { name: 'Seller' }),
+      '__add__',
+    )
+    await user.type(
+      screen.getByRole('textbox', { name: 'Store web address or email' }),
+      'coins@example.com',
+    )
+    await user.type(screen.getByPlaceholderText('Seller name'), 'By Mail Coins')
+    await user.click(screen.getByRole('button', { name: 'Add seller' }))
+
+    await waitFor(() =>
+      expect(api.createSeller).toHaveBeenCalledWith({
+        name: 'By Mail Coins',
+        store_url: 'coins@example.com',
+      }),
+    )
+  })
+
+  it('says so when the sellers cannot be read', async () => {
+    // An empty picker would read as "no sellers yet" and invite adding one
+    // that is already there.
+    api.listSellers.mockRejectedValue(new Error('lost connection'))
+    renderWithProviders(<NewPurchase />)
+    expect(await screen.findByText('lost connection')).toBeInTheDocument()
+  })
+
+  it('keeps what is typed elsewhere while a seller is being added', async () => {
+    const user = userEvent.setup()
+    let created
+    api.createSeller.mockReturnValue(
+      new Promise((resolve) => {
+        created = resolve
+      }),
+    )
+    renderWithProviders(<NewPurchase />)
+    await user.selectOptions(
+      await screen.findByRole('combobox', { name: 'Seller' }),
+      '__add__',
+    )
+    await user.type(screen.getByPlaceholderText('Seller name'), 'newseller')
+    await user.click(screen.getByRole('button', { name: 'Add seller' }))
+    // Typed before the new seller's answer arrives.
+    const notes = screen.getByRole('textbox', { name: /^notes/i })
+    await user.type(notes, 'from the show')
+
+    await act(async () => {
+      created({ id: 9, name: 'newseller', store_url: null })
+    })
+
+    expect(await screen.findByRole('combobox', { name: 'Seller' })).toHaveValue('9')
+    expect(notes).toHaveValue('from the show')
+  })
+
+  it('shows a seller with no store as a name, not a link', async () => {
+    api.getPurchaseOrder.mockResolvedValue({
+      ...FRESH_PURCHASE,
+      id: 22,
+      seller_id: 6,
+      seller: 'examplecoins',
+      seller_url: null,
+    })
+    renderWithProviders(<NewPurchase />, { route: '/?order=22' })
+    expect(await screen.findByText(/examplecoins/)).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'examplecoins' })).toBeNull()
+  })
+
+  it('is changed under Edit details', async () => {
+    const user = userEvent.setup()
+    const purchase = { ...FRESH_PURCHASE, id: 22, seller_id: null, source_text: null }
+    api.getPurchaseOrder.mockResolvedValue(purchase)
+    api.updatePurchaseOrder.mockResolvedValue({
+      ...purchase,
+      seller_id: 5,
+      seller: 'coinhound',
+    })
+    renderWithProviders(<NewPurchase />, { route: '/?order=22' })
+    await user.click(await screen.findByRole('button', { name: 'Edit details' }))
+    const pick = await screen.findByRole('combobox', { name: 'Seller' })
+    await user.selectOptions(pick, '5')
+    await user.click(screen.getByRole('button', { name: 'Save details' }))
+
+    await waitFor(() =>
+      expect(api.updatePurchaseOrder).toHaveBeenCalledWith(22, { seller_id: 5 }),
+    )
+  })
+
+  it('is cleared by choosing none', async () => {
+    const user = userEvent.setup()
+    const purchase = { ...FRESH_PURCHASE, id: 22, seller_id: 5, seller: 'coinhound' }
+    api.getPurchaseOrder.mockResolvedValue(purchase)
+    api.updatePurchaseOrder.mockResolvedValue({
+      ...purchase,
+      seller_id: null,
+      seller: null,
+    })
+    renderWithProviders(<NewPurchase />, { route: '/?order=22' })
+    await user.click(await screen.findByRole('button', { name: 'Edit details' }))
+    await user.selectOptions(
+      await screen.findByRole('combobox', { name: 'Seller' }),
+      '',
+    )
+    await user.click(screen.getByRole('button', { name: 'Save details' }))
+
+    await waitFor(() =>
+      expect(api.updatePurchaseOrder).toHaveBeenCalledWith(22, { seller_id: null }),
+    )
+  })
+})
+
+describe("NewPurchase: a lot's page as the item's listing", () => {
+  const LOT = 'https://hibid.com/lot/280623476/1986-2024-american-eagle'
+
+  it('offers the lot page the server names to the new item', async () => {
+    api.getPurchaseOrder.mockResolvedValue({
+      ...FRESH_PURCHASE,
+      id: 40,
+      vendor: 'hibid.com',
+      source_url: LOT,
+      lot_page: LOT,
+    })
+    api.createInventoryItem.mockResolvedValue({ id: 60, item_code: 'CC-000060' })
+    const user = userEvent.setup()
+    renderWithProviders(<NewPurchase />, { route: '/?order=40' })
+    await user.type(await screen.findByRole('textbox', { name: /title/i }), 'Lot 12')
+    await user.click(screen.getByRole('button', { name: 'Add item' }))
+
+    await waitFor(() =>
+      expect(api.createInventoryItem).toHaveBeenCalledWith(
+        expect.objectContaining({ purchase_order_id: 40, listing_url: LOT }),
+      ),
+    )
+  })
+
+  it('offers no address the server does not name as a lot page', async () => {
+    // A shop's location page is the purchase's address, but no listing.
+    api.getPurchaseOrder.mockResolvedValue({
+      ...FRESH_PURCHASE,
+      id: 42,
+      vendor: 'silasdeanepawn.com',
+      source_url: 'https://silasdeanepawn.com/locations/manchester/',
+      lot_page: null,
+    })
+    api.createInventoryItem.mockResolvedValue({ id: 62, item_code: 'CC-000062' })
+    const user = userEvent.setup()
+    renderWithProviders(<NewPurchase />, { route: '/?order=42' })
+    await user.type(await screen.findByRole('textbox', { name: /title/i }), 'A ring')
+    await user.click(screen.getByRole('button', { name: 'Add item' }))
+
+    await waitFor(() => expect(api.createInventoryItem).toHaveBeenCalledTimes(1))
+    expect(api.createInventoryItem.mock.calls[0][0]).not.toHaveProperty('listing_url')
+  })
+
+  it("does not offer an eBay order's page, which is no listing", async () => {
+    api.getPurchaseOrder.mockResolvedValue({
+      ...FRESH_PURCHASE,
+      id: 41,
+      vendor: 'ebay.com',
+      source_url: 'https://order.ebay.com/ord/show?orderId=1',
+    })
+    api.createInventoryItem.mockResolvedValue({ id: 61, item_code: 'CC-000061' })
+    const user = userEvent.setup()
+    renderWithProviders(<NewPurchase />, { route: '/?order=41' })
+    await user.type(await screen.findByRole('textbox', { name: /title/i }), 'A dime')
+    await user.click(screen.getByRole('button', { name: 'Add item' }))
+
+    await waitFor(() => expect(api.createInventoryItem).toHaveBeenCalledTimes(1))
+    expect(api.createInventoryItem.mock.calls[0][0]).not.toHaveProperty('listing_url')
+  })
+})
+
+describe('NewPurchase: fixing an item already entered', () => {
+  const WITH_LINE = {
+    ...FRESH_PURCHASE,
+    lines: [
+      {
+        id: 501,
+        item_code: 'CC-000501',
+        source_title: '1942 dime',
+        description: '',
+        item_kind: 'coin',
+        item_cost: '3.00',
+        status: 'ordered',
+      },
+    ],
+  }
+
+  it('opens the editor from the item code, and shows the fix once saved', async () => {
+    const user = userEvent.setup()
+    // The second read answers with the title as the editor left it.
+    api.getPurchaseOrder.mockResolvedValueOnce(WITH_LINE).mockResolvedValue({
+      ...WITH_LINE,
+      lines: [{ ...WITH_LINE.lines[0], source_title: '1942-D dime' }],
+    })
+    renderWithProviders(<NewPurchase />, { route: '/?order=22' })
+
+    await user.click(await screen.findByRole('button', { name: 'CC-000501' }))
+    expect(screen.getByRole('dialog', { name: 'Edit item' })).toHaveTextContent(
+      'editing item 501',
+    )
+    expect(screen.getByText('1942 dime')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'stub save' }))
+
+    expect(screen.queryByRole('dialog', { name: 'Edit item' })).toBeNull()
+    expect(await screen.findByText('1942-D dime')).toBeInTheDocument()
+    expect(screen.queryByText('1942 dime')).toBeNull()
+  })
+
+  it('reads the purchase again when the editor is closed without a save', async () => {
+    // A save that wrote part of its changes leaves the editor open; closing
+    // it must still show them.
+    const user = userEvent.setup()
+    api.getPurchaseOrder.mockResolvedValue(WITH_LINE)
+    renderWithProviders(<NewPurchase />, { route: '/?order=22' })
+    await user.click(await screen.findByRole('button', { name: 'CC-000501' }))
+    const reads = api.getPurchaseOrder.mock.calls.length
+
+    await user.click(screen.getByRole('button', { name: 'stub close' }))
+
+    expect(screen.queryByRole('dialog', { name: 'Edit item' })).toBeNull()
+    await waitFor(() =>
+      expect(api.getPurchaseOrder.mock.calls.length).toBeGreaterThan(reads),
+    )
+  })
+})
+
+describe('NewPurchase: an order number already entered', () => {
+  const ENTERED = {
+    id: 11,
+    order_number: 'PO-1',
+    vendor: 'Heritage',
+    ordered_on: '2026-01-05',
+    source_url: null,
+    lines: [],
+  }
+
+  it('says so as it is typed, and opens it once the box is left', async () => {
+    const user = userEvent.setup()
+    api.getPurchaseOrder.mockResolvedValue(ENTERED)
+    renderWithProviders(<NewPurchase />)
+    const number = await screen.findByRole('textbox', { name: /order number/i })
+    await waitFor(() => expect(api.listPurchaseOrders).toHaveBeenCalled())
+
+    await user.type(number, ' po-1')
+    expect(screen.getByText(/already entered/i)).toHaveTextContent('Heritage')
+    expect(api.getPurchaseOrder).not.toHaveBeenCalled()
+
+    await user.tab()
+    await waitFor(() => expect(api.getPurchaseOrder).toHaveBeenCalledWith(11))
+    expect(api.createPurchaseOrder).not.toHaveBeenCalled()
+  })
+
+  it('opens it on Enter, without creating a purchase', async () => {
+    const user = userEvent.setup()
+    api.getPurchaseOrder.mockResolvedValue(ENTERED)
+    renderWithProviders(<NewPurchase />)
+    const number = await screen.findByRole('textbox', { name: /order number/i })
+    await waitFor(() => expect(api.listPurchaseOrders).toHaveBeenCalled())
+
+    await user.type(number, 'PO-1{Enter}')
+    await waitFor(() => expect(api.getPurchaseOrder).toHaveBeenCalledWith(11))
+    expect(api.createPurchaseOrder).not.toHaveBeenCalled()
+  })
+
+  it('lets one be chosen when two vendors have the number', async () => {
+    const user = userEvent.setup()
+    api.listPurchaseOrders.mockResolvedValue([
+      ...EXISTING_ORDERS,
+      {
+        id: 12,
+        order_number: 'PO-1',
+        vendor: 'ebay.com',
+        ordered_on: null,
+        outstanding: 0,
+        total: 1,
+      },
+    ])
+    api.getPurchaseOrder.mockResolvedValue({ ...ENTERED, id: 12, vendor: 'ebay.com' })
+    renderWithProviders(<NewPurchase />)
+    const number = await screen.findByRole('textbox', { name: /order number/i })
+    await waitFor(() => expect(api.listPurchaseOrders).toHaveBeenCalled())
+
+    await user.type(number, 'PO-1')
+    await user.tab()
+    expect(api.getPurchaseOrder).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', { name: /open .*ebay\.com/i }))
+    await waitFor(() => expect(api.getPurchaseOrder).toHaveBeenCalledWith(12))
+  })
+
+  it("opens the chosen vendor's when two vendors have the number", async () => {
+    const user = userEvent.setup()
+    api.listPurchaseOrders.mockResolvedValue([
+      ...EXISTING_ORDERS,
+      {
+        id: 12,
+        order_number: 'PO-1',
+        vendor: 'ebay.com',
+        ordered_on: null,
+        outstanding: 0,
+        total: 1,
+      },
+    ])
+    api.getPurchaseOrder.mockResolvedValue({ ...ENTERED, id: 12, vendor: 'ebay.com' })
+    renderWithProviders(<NewPurchase />)
+    await user.selectOptions(
+      await screen.findByRole('combobox', { name: 'Vendor' }),
+      '3',
+    )
+    await waitFor(() => expect(api.listPurchaseOrders).toHaveBeenCalled())
+
+    await user.type(screen.getByRole('textbox', { name: /order number/i }), 'PO-1')
+    await user.tab()
+    await waitFor(() => expect(api.getPurchaseOrder).toHaveBeenCalledWith(12))
+  })
+})

@@ -1,0 +1,385 @@
+"""Assembling a sales lot, and what cannot be in one."""
+
+from __future__ import annotations
+
+from decimal import Decimal
+
+import pytest
+from app import lot_writes
+from app.buyers import venue_buyer
+from app.lot_writes import LotRefused, add_member, create_lot, remove_member
+from app.models import (
+    InventoryItem,
+    Listing,
+    SalesLot,
+    SalesLotStatus,
+    SalesOrderStatus,
+    SalesVenue,
+    User,
+    utcnow,
+)
+from app.order_writes import Line, place_order, return_stock
+from app.references import require_code
+from app.sales_writes import record_sale
+from sqlalchemy import select, text, update
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
+from tests.builders import ItemFactory, set_disposition
+from tests.conftest import item_id_of, item_of
+
+
+def _lot(db: Session, title: str = "Three Morgan Dollars") -> SalesLot:
+    """An empty assembling lot, through the writer rather than by hand."""
+    return create_lot(db, title=title, description="")
+
+
+def test_a_new_lot_is_assembling_and_empty(db: Session) -> None:
+    """Nothing is grouped until someone adds it."""
+    lot = _lot(db)
+    assert lot.status is SalesLotStatus.assembling
+    assert lot_writes.open_members(db, lot) == []
+
+
+def test_membership_is_frozen_once_offered(
+    db: Session, received_item: InventoryItem
+) -> None:
+    """The buyer is looking at that exact group."""
+    lot = _lot(db)
+    lot.status = SalesLotStatus.offered
+    db.flush()
+    with pytest.raises(LotRefused, match="offered"):
+        add_member(db, lot, received_item)
+
+
+def test_an_item_with_stock_above_one_cannot_join(
+    db: Session, listing: Listing
+) -> None:
+    """A claim covers a whole item; a partly-sold item is not a whole item.
+
+    The `listing` fixture's `quantity_available` is 5 (conftest's
+    `build_listing` default), which is exactly the shape this refuses.
+    """
+    item = listing.inventory_item
+    assert item is not None
+    with pytest.raises(LotRefused, match="quantity"):
+        add_member(db, _lot(db), item)
+
+
+def test_a_split_item_cannot_join(db: Session, received_item: InventoryItem) -> None:
+    """Offer the pieces, the same refusal `offering_writes` gives."""
+    received_item.split_at = utcnow()
+    db.flush()
+    with pytest.raises(LotRefused, match="split"):
+        add_member(db, _lot(db), received_item)
+
+
+def test_an_item_already_in_an_open_lot_cannot_join_another(
+    db: Session, received_item: InventoryItem
+) -> None:
+    """Refused with a message, not an IntegrityError in the user's face."""
+    first, second = _lot(db, "First"), _lot(db, "Second")
+    add_member(db, first, received_item)
+    with pytest.raises(LotRefused, match="already in lot"):
+        add_member(db, second, received_item)
+
+
+def test_removing_a_member_deletes_its_membership(
+    db: Session, received_item: InventoryItem
+) -> None:
+    """Removal deletes the membership row; the item can then join another lot.
+
+    While a lot is `assembling` nothing has been offered or sold, so a
+    removal is an edit, not history -- `released_at` is the record of a lot
+    that sold or was dissolved, and only `offering_writes` writes it.
+    Asserting `released_at is not None` here would be wrong.
+    """
+    first, second = _lot(db, "First"), _lot(db, "Second")
+    add_member(db, first, received_item)
+    remove_member(db, first, received_item)
+    membership = db.scalars(
+        select(lot_writes.SalesLotItem).where(
+            lot_writes.SalesLotItem.sales_lot_id == first.id,
+            lot_writes.SalesLotItem.inventory_item_id == received_item.id,
+        )
+    ).one_or_none()
+    assert membership is None
+    add_member(db, second, received_item)  # must not raise
+    assert [row.inventory_item_id for row in lot_writes.open_members(db, second)] == [
+        received_item.id
+    ]
+
+
+def test_a_refused_add_writes_nothing(
+    db: Session, listing: Listing, make_item: ItemFactory
+) -> None:
+    """A refused change leaves the lot exactly as it was.
+
+    The same discipline `offering_writes.offer` follows: every condition is
+    checked before anything is written, so a batch can be all or nothing.
+    """
+    lot = _lot(db)
+    good = make_item(title="Joins fine", item_cost=Decimal("10.00"))
+    add_member(db, lot, good)
+    busy = listing.inventory_item
+    assert busy is not None
+    with pytest.raises(LotRefused):
+        add_member(db, lot, busy)
+    assert [row.inventory_item_id for row in lot_writes.open_members(db, lot)] == [
+        good.id
+    ]
+
+
+def test_a_cancelled_orders_stock_does_not_bar_a_lot_join(
+    db: Session,
+    ebay_listing: Listing,
+    admin_user: User,
+    ebay_venue: SalesVenue,
+) -> None:
+    """A cancelled order must not permanently bar an item from every lot.
+
+    A `sales_order_item` row is permanent even after the order that made it
+    is cancelled and its stock returned, so "sold units" restated as a bare
+    join with no filter on order status would bar the item forever.
+    `sale_state.orders_holding` excludes a cancelled order via
+    `OPEN_ORDER_STATUSES`; `_refuse_partial` reaches that same, single
+    definition instead of a second one that forgets to.
+
+    Built the way `routers.orders.update_order_status` builds it for a real
+    cancellation: `order_writes.place_order` then
+    `order_writes.return_stock`, not a hand-rolled row.
+    """
+    buyer = venue_buyer(db, ebay_venue, "coinfan88")
+    order = place_order(
+        db,
+        buyer,
+        [Line(listing_id=ebay_listing.id, quantity=1, unit_price=Decimal("120.00"))],
+        admin_user,
+        venue=ebay_venue,
+        status_code="paid",
+    )
+    order.sales_order_status_id = require_code(
+        db, SalesOrderStatus, "cancelled", "status"
+    )
+    return_stock(db, order)
+    db.flush()
+    item = ebay_listing.inventory_item
+    assert item is not None
+    add_member(db, _lot(db), item)  # must not raise
+
+
+def test_removing_an_item_not_in_the_lot_is_refused(
+    db: Session, received_item: InventoryItem
+) -> None:
+    """A double-clicked remove refuses, not a raw `NoResultFound`.
+
+    A bare `NoResultFound` would reach the caller as a 500 instead of the
+    409 every other refusal in this module produces.
+    """
+    lot = _lot(db)
+    with pytest.raises(LotRefused, match="not in lot"):
+        remove_member(db, lot, received_item)
+
+
+def test_an_unrelated_integrity_error_still_propagates(
+    db: Session, received_item: InventoryItem
+) -> None:
+    """Only `uq_sales_lot_item_open` is reported as "already in lot".
+
+    A stale *released* row for this exact (lot, item) pair -- not a shape
+    this module's own `remove_member` can leave behind, since it deletes
+    rather than releases, but one a row written outside this module could
+    have -- collides with `uq_sales_lot_item_pair` instead, a different
+    constraint, when `add_member` tries to insert a fresh open row for the
+    same pair. That must propagate as an `IntegrityError`, not get
+    misreported as "already in lot": an unscoped `except IntegrityError`
+    would swallow it.
+    """
+    lot = _lot(db)
+    db.execute(
+        text(
+            "INSERT INTO sales_lot_item "
+            "(sales_lot_id, inventory_item_id, released_at, created_at, updated_at) "
+            "VALUES (:lot_id, :item_id, now(), now(), now())"
+        ),
+        {"lot_id": lot.id, "item_id": received_item.id},
+    )
+    with pytest.raises(IntegrityError):
+        add_member(db, lot, received_item)
+
+
+def test_open_members_are_ordered_by_inventory_item_id(
+    db: Session, make_item: ItemFactory
+) -> None:
+    """`open_members`'s order is id-ascending, not insertion order.
+
+    Items are added to the lot in descending id order -- the exact reverse
+    of the expected result -- so this only passes if the query truly orders
+    by `inventory_item_id`. A naive version of this test that added items in
+    ascending order would pass even with the `ORDER BY` deleted, because
+    insertion order and id order would coincide on a fresh database.
+    """
+    lot = _lot(db)
+    items = [make_item(title=f"Member {n}") for n in range(3)]
+    for item in reversed(items):
+        add_member(db, lot, item)
+    assert [row.inventory_item_id for row in lot_writes.open_members(db, lot)] == [
+        item.id for item in items
+    ]
+
+
+def test_removing_a_member_is_frozen_once_offered(
+    db: Session, received_item: InventoryItem
+) -> None:
+    """`remove_member` refuses once a lot is no longer assembling.
+
+    A buyer looking at the group must not have it silently shrink.
+    """
+    lot = _lot(db)
+    add_member(db, lot, received_item)
+    lot.status = SalesLotStatus.offered
+    db.flush()
+    with pytest.raises(LotRefused, match="frozen"):
+        remove_member(db, lot, received_item)
+
+
+@pytest.mark.parametrize("disposition", ["sold", "shipped", "delivered"])
+def test_a_sold_item_cannot_be_grouped(
+    db: Session, received_item: InventoryItem, disposition: str
+) -> None:
+    """A coin a buyer has bought is not the business's to group and sell again.
+
+    `_refuse_partial` does not cover this: its order half asks
+    `sale_state.orders_holding`, which filters to `OPEN_ORDER_STATUSES` and
+    stops seeing the item once the order ships. All three `SOLD_AWAY`
+    dispositions, because the shipped and delivered ones are exactly the two
+    an open-order check cannot reach.
+
+    The disposition is set directly;
+    `test_a_member_sold_inside_a_lot_cannot_be_grouped_again` below drives
+    the sold case end to end, and this one covers the shipped and delivered
+    cases a single sale cannot reach.
+    """
+    lot = _lot(db)
+    set_disposition(db, received_item, disposition)
+
+    with pytest.raises(LotRefused, match="has already been sold"):
+        add_member(db, lot, received_item)
+
+
+def test_a_member_sold_inside_a_lot_cannot_be_grouped_again(
+    db: Session, offered_lot_listing: Listing, admin_user: User
+) -> None:
+    """The coin really sold, through the real sale path, and is refused for it.
+
+    The end-to-end case the parametrised test above cannot take:
+    `record_sale` moves lot members to `sold`, which makes the guard
+    testable against the route an operator actually walks.
+
+    `match` names the disposition refusal specifically, so the test cannot
+    pass on some other gate -- `_refuse_unless_assembling` (a fresh lot is
+    assembling), `_refuse_partial` (which `_refuse_unofferable` runs before)
+    or "already in lot #n" (the membership was released by the sale) each
+    raise `LotRefused` with a different message.
+    """
+    lot = offered_lot_listing.sales_lot
+    assert lot is not None
+    member = lot_writes.open_members(db, lot)[0].item
+
+    record_sale(
+        db,
+        offered_lot_listing,
+        price=Decimal("1000.00"),
+        buyer_username="coinfan88",
+        external_order_id="EB-1",
+        fees=[],
+        recorded_by=admin_user,
+    )
+
+    assert member.disposition.code == "sold"
+    with pytest.raises(LotRefused, match="has already been sold"):
+        add_member(db, _lot(db, title="A second lot"), member)
+
+
+def test_a_returned_item_can_still_be_grouped(
+    db: Session, received_item: InventoryItem
+) -> None:
+    """`returned_by_buyer` is deliberately not in `SOLD_AWAY`.
+
+    That coin came back, and offering it again -- alone or in a group -- is
+    exactly what happens next. A lot must never be stricter than an offer,
+    and `offering_writes._refuse_sold` lets this one through.
+    """
+    lot = _lot(db)
+    set_disposition(db, received_item, "returned_by_buyer")
+
+    row = add_member(db, lot, received_item)
+
+    assert row.inventory_item_id == received_item.id
+
+
+def test_the_lot_lock_re_reads_the_row_it_locked(
+    db: Session, make_item: ItemFactory
+) -> None:
+    """A membership change reads `status` from the row, not from the session.
+
+    The twin of `test_offering_writes.py`'s
+    `test_the_item_lock_re_reads_the_row_it_locked`, and the reason
+    `_refuse_unless_assembling` takes the lot FOR UPDATE: under READ
+    COMMITTED a request that waited on that lock resumes holding the values
+    it read *before* the wait, so a lock without a re-read would let an add
+    that saw `assembling` put a member into a lot `offering_writes.offer`
+    has since frozen -- a coin inside a group a buyer is looking at, with no
+    claim on it.
+
+    `synchronize_session=False` is what makes the session's copy stale on
+    purpose: without it SQLAlchemy would helpfully update the identity map,
+    and the test would pass whether or not anything re-read the row. There is
+    no second connection here, so this measures the re-read, not the wait;
+    the wait is Postgres's to keep, and measuring it takes the committing,
+    threaded sessions of `test_offer_races.py`.
+
+    The item is built *before* the UPDATE, and that ordering is the test.
+    `make_item` commits, and this session expires on commit, so building it
+    afterwards would reload `lot.status` by itself, and the test would pass
+    with the lock deleted.
+    """
+    lot = _lot(db)
+    joiner = make_item()
+    db.execute(
+        update(SalesLot)
+        .where(SalesLot.id == lot.id)
+        .values(status=SalesLotStatus.offered, version=SalesLot.version + 1)
+        .execution_options(synchronize_session=False)
+    )
+    assert lot.status is SalesLotStatus.assembling  # stale, on purpose
+
+    with pytest.raises(LotRefused, match="frozen"):
+        add_member(db, lot, joiner)
+
+
+def test_the_single_item_test_helpers_refuse_a_lot_listing(
+    store_lot_listing: Listing,
+) -> None:
+    """Proof that `item_of`/`item_id_of` are checks, not ways to quiet mypy.
+
+    Tests read a listing's item through these two helpers, because
+    `listing.inventory_item` is nullable: a listing may name a lot instead.
+    A helper that narrowed by asserting something always true would be a
+    `cast` wearing an assert's clothes: the type would go quiet and every one
+    of those callers would lose the check it appears to have. So the
+    precondition is exercised here against the one listing shape that
+    violates it -- a real lot listing, built by `offering_writes.offer`, not
+    a `Listing` with the field blanked by hand.
+
+    Matching on the message rather than on `AssertionError` alone: pytest
+    rewrites assertions, so any failed assert anywhere inside the call would
+    raise the same class and satisfy a bare `raises`.
+    """
+    assert store_lot_listing.inventory_item_id is None  # the shape under test
+
+    with pytest.raises(AssertionError, match="names no single item"):
+        item_of(store_lot_listing)
+
+    with pytest.raises(AssertionError, match="names no single item"):
+        item_id_of(store_lot_listing)

@@ -1,0 +1,912 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        width: 1280px;
+        height: 640px;
+        overflow: hidden;
+      }
+      .copy {
+        position: absolute;
+        left: 80px;
+        top: 0;
+        height: 640px;
+        width: 560px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        font-family: Georgia, 'Times New Roman', serif;
+        z-index: 2;
+      }
+      .kicker {
+        color: #c8a464;
+        font-size: 22px;
+        letter-spacing: 6px;
+        margin-bottom: 22px;
+      }
+      .name {
+        color: #f3ecd8;
+        font-size: 84px;
+        font-weight: bold;
+        line-height: 1;
+      }
+      .sub {
+        color: #c8a464;
+        font-size: 38px;
+        margin-top: 14px;
+      }
+      .rule {
+        width: 120px;
+        height: 3px;
+        background: #c8a464;
+        margin: 28px 0 26px;
+      }
+      .line {
+        color: #dcd6c4;
+        font-size: 27px;
+        line-height: 1.42;
+      }
+      .stack {
+        color: #8fa596;
+        font-family: Consolas, 'Courier New', monospace;
+        font-size: 20px;
+        margin-top: 64px;
+      }
+      .scene {
+        position: absolute;
+        left: 660px;
+        top: 0;
+        width: 600px;
+        height: 640px;
+        perspective: 2100px;
+        perspective-origin: 50% 50%;
+      }
+      /* The table the money lies on: lighter where the light falls, darker
+     toward the edges. Flat, behind the tilted scene. */
+      body {
+        background: radial-gradient(
+          ellipse 60% 75% at 70% 46%,
+          #2e473b 0%,
+          #1a2a22 55%,
+          #0d1612 100%
+        );
+      }
+      /* Seen from the front and above: the scene tips back about its middle,
+     so the notes recede and the coins come forward. */
+      svg {
+        display: block;
+        transform: translateY(40px) rotateX(38deg) scale(1.06);
+        transform-origin: 50% 55%;
+      }
+      /* The name, flat, split above and below the scene, inside the circle
+     GitHub crops to. */
+      .brand {
+        position: absolute;
+        left: 150px;
+        top: 664px;
+        line-height: 0.96;
+        font-family: Georgia, 'Times New Roman', serif;
+        font-size: 88px;
+        font-weight: bold;
+        letter-spacing: 1px;
+        color: #f0d48a;
+        text-shadow:
+          0 2px 0 #6f4c12,
+          0 6px 18px rgba(0, 0, 0, 0.6);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="copy">
+      <div class="kicker">COINS · CURRENCY · BULLION</div>
+      <div class="name">ClassObjects</div>
+      <div class="sub">ccwebdb</div>
+      <div class="rule"></div>
+      <div class="line">
+        Numismatic and currency platform<br />for inventory and sales
+      </div>
+      <div class="stack">FastAPI · React · PostgreSQL · Apache-2.0</div>
+    </div>
+    <div class="scene">
+      <svg
+        id="art"
+        width="600"
+        height="640"
+        viewBox="40 170 900 720"
+        preserveAspectRatio="xMidYMid meet"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <defs>
+          <radialGradient id="bg" cx="50%" cy="40%" r="72%">
+            <stop offset="0" stop-color="#2b4236" />
+            <stop offset="1" stop-color="#0f1915" />
+          </radialGradient>
+          <linearGradient id="paperA" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#eeeedd" />
+            <stop offset="0.55" stop-color="#e2e4cc" />
+            <stop offset="1" stop-color="#cfd5b8" />
+          </linearGradient>
+          <linearGradient id="paperB" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#e6e7d2" />
+            <stop offset="1" stop-color="#c4cbac" />
+          </linearGradient>
+          <!-- A colour-shifting wash over each paper, as modern notes carry. -->
+          <linearGradient id="tintA" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stop-color="#eeac62" />
+            <stop offset="0.45" stop-color="#f0deb6" />
+            <stop offset="1" stop-color="#8cc8c1" />
+          </linearGradient>
+          <linearGradient id="tintB" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stop-color="#97b7e8" />
+            <stop offset="0.5" stop-color="#dfe3d3" />
+            <stop offset="1" stop-color="#e8a2ae" />
+          </linearGradient>
+          <!-- A soft crease across the note, as a handled note has. -->
+          <linearGradient id="crease" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0.47" stop-color="#000" stop-opacity="0" />
+            <stop offset="0.5" stop-color="#000" stop-opacity="0.07" />
+            <stop offset="0.505" stop-color="#fff" stop-opacity="0.18" />
+            <stop offset="0.54" stop-color="#fff" stop-opacity="0" />
+          </linearGradient>
+
+          <radialGradient id="silverFace" cx="35%" cy="28%" r="85%">
+            <stop offset="0" stop-color="#ffffff" />
+            <stop offset="0.35" stop-color="#dfe3e6" />
+            <stop offset="0.75" stop-color="#a9b0b6" />
+            <stop offset="1" stop-color="#7c848b" />
+          </radialGradient>
+          <linearGradient id="silverEdge" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stop-color="#6b7279" />
+            <stop offset="0.3" stop-color="#c9ced2" />
+            <stop offset="0.55" stop-color="#8d959b" />
+            <stop offset="1" stop-color="#5a6167" />
+          </linearGradient>
+          <radialGradient id="goldFace" cx="35%" cy="28%" r="85%">
+            <stop offset="0" stop-color="#fff4c4" />
+            <stop offset="0.35" stop-color="#efc75e" />
+            <stop offset="0.75" stop-color="#c3922f" />
+            <stop offset="1" stop-color="#8a6116" />
+          </radialGradient>
+          <linearGradient id="goldEdge" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stop-color="#7d5713" />
+            <stop offset="0.3" stop-color="#e8bf5a" />
+            <stop offset="0.55" stop-color="#a77a26" />
+            <stop offset="1" stop-color="#6a4810" />
+          </linearGradient>
+
+          <!-- Polish: a soft sheen over the upper left of a face, and a bright
+         reflection along its rim, as a struck coin under a lamp shows. -->
+          <radialGradient id="sheen" cx="32%" cy="26%" r="58%">
+            <stop offset="0" stop-color="#ffffff" stop-opacity="0.75" />
+            <stop offset="0.35" stop-color="#ffffff" stop-opacity="0.22" />
+            <stop offset="1" stop-color="#ffffff" stop-opacity="0" />
+          </radialGradient>
+          <linearGradient id="rimShine" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#ffffff" stop-opacity="0.95" />
+            <stop offset="0.4" stop-color="#ffffff" stop-opacity="0.1" />
+            <stop offset="0.7" stop-color="#000000" stop-opacity="0.12" />
+            <stop offset="1" stop-color="#000000" stop-opacity="0.3" />
+          </linearGradient>
+          <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur stdDeviation="1.4" />
+          </filter>
+          <!-- Relief: the design's own shape lit from the upper left, so raised
+         lettering and devices catch light and cast a little shadow. -->
+          <filter id="relief" x="-10%" y="-10%" width="120%" height="120%">
+            <feGaussianBlur in="SourceAlpha" stdDeviation="1.6" result="blur" />
+            <feSpecularLighting
+              in="blur"
+              surfaceScale="3.6"
+              specularConstant="1.45"
+              specularExponent="26"
+              lighting-color="#ffffff"
+              result="spec"
+            >
+              <feDistantLight azimuth="225" elevation="42" />
+            </feSpecularLighting>
+            <feComposite in="spec" in2="SourceAlpha" operator="in" result="specIn" />
+            <feOffset in="SourceAlpha" dx="1.4" dy="1.8" result="off" />
+            <feGaussianBlur in="off" stdDeviation="1" result="offBlur" />
+            <feFlood flood-color="#000" flood-opacity="0.35" />
+            <feComposite in2="offBlur" operator="in" result="shadow" />
+            <feMerge>
+              <feMergeNode in="shadow" />
+              <feMergeNode in="SourceGraphic" />
+              <feMergeNode in="specIn" />
+            </feMerge>
+          </filter>
+          <filter id="drop" x="-30%" y="-30%" width="160%" height="160%">
+            <feDropShadow
+              dx="0"
+              dy="14"
+              stdDeviation="16"
+              flood-color="#000"
+              flood-opacity="0.5"
+            />
+          </filter>
+          <filter id="dropSoft" x="-30%" y="-30%" width="160%" height="160%">
+            <feDropShadow
+              dx="0"
+              dy="6"
+              stdDeviation="7"
+              flood-color="#000"
+              flood-opacity="0.45"
+            />
+          </filter>
+          <!-- Paper grain. -->
+          <filter id="grain" x="0" y="0" width="100%" height="100%">
+            <feTurbulence
+              type="fractalNoise"
+              baseFrequency="0.9"
+              numOctaves="2"
+              seed="7"
+              result="n"
+            />
+            <feColorMatrix
+              in="n"
+              type="matrix"
+              values="0 0 0 0 0.35  0 0 0 0 0.38  0 0 0 0 0.3  0 0 0 0.16 0"
+            />
+            <feComposite in2="SourceAlpha" operator="in" />
+          </filter>
+        </defs>
+
+        <g id="notes"></g>
+        <g id="coins"></g>
+      </svg>
+    </div>
+
+    <script>
+      const NS = 'http://www.w3.org/2000/svg'
+      function el(tag, attrs, parent) {
+        const node = document.createElementNS(NS, tag)
+        for (const [k, v] of Object.entries(attrs || {})) node.setAttribute(k, v)
+        if (parent) parent.appendChild(node)
+        return node
+      }
+      // A small seeded random, so the fibres are the same on every render.
+      let seed = 1234567
+      function rnd() {
+        seed = (seed * 16807) % 2147483647
+        return (seed - 1) / 2147483646
+      }
+
+      // A spirograph rosette, as a geometric lathe engraves one.
+      function rosette(cx, cy, R, r, d, turns, scale) {
+        let path = ''
+        const steps = 1400
+        for (let i = 0; i <= steps; i++) {
+          const t = (i / steps) * Math.PI * 2 * turns
+          const x = (R - r) * Math.cos(t) + d * Math.cos(((R - r) / r) * t)
+          const y = (R - r) * Math.sin(t) - d * Math.sin(((R - r) / r) * t)
+          path += `${i ? 'L' : 'M'}${(cx + x * scale).toFixed(2)} ${(cy + y * scale).toFixed(2)}`
+        }
+        return path
+      }
+
+      // A strip of interlaced sine waves along a straight line, for the border.
+      function lathe(x0, y0, x1, y1, amp, period, phases) {
+        const len = Math.hypot(x1 - x0, y1 - y0)
+        const ux = (x1 - x0) / len
+        const uy = (y1 - y0) / len
+        let d = ''
+        for (let p = 0; p < phases; p++) {
+          const ph = (p / phases) * Math.PI * 2
+          for (let s = 0; s <= len; s += 1.5) {
+            const off = amp * Math.sin((s / period) * Math.PI * 2 + ph)
+            const x = x0 + ux * s - uy * off
+            const y = y0 + uy * s + ux * off
+            d += `${s ? 'L' : 'M'}${x.toFixed(2)} ${y.toFixed(2)}`
+          }
+        }
+        return d
+      }
+
+      // Each note's inks: the engraving, the coloured lathe-work, the seal and
+      // serials, and the tints of its counters, vignette and columns.
+      const GREEN_NOTE = {
+        ink: '#24452f',
+        light: '#c0560f',
+        seal: '#13764b',
+        serial: '#13764b',
+        accent: '#c0560f',
+        counter: '#f2bd80',
+        vignette: '#f1d9ac',
+        column: '#dbb987',
+      }
+      const BLUE_NOTE = {
+        ink: '#1b3566',
+        light: '#2f64b5',
+        seal: '#b51d29',
+        serial: '#b51d29',
+        accent: '#b51d29',
+        counter: '#b7cdf0',
+        vignette: '#d6e2f6',
+        column: '#adc3e8',
+      }
+
+      function note(parent, { x, y, angle, fill, serial, pal }) {
+        const { ink: INK, light: INK_LIGHT, seal: SEAL, serial: SERIAL } = pal
+        const W = 620
+        const H = 264
+        const g = el(
+          'g',
+          {
+            transform: `translate(${x} ${y}) rotate(${angle} ${W / 2} ${H / 2})`,
+            filter: 'url(#drop)',
+          },
+          parent,
+        )
+        el('rect', { width: W, height: H, rx: 7, fill }, g)
+        el(
+          'rect',
+          { width: W, height: H, rx: 7, fill: '#000', filter: 'url(#grain)' },
+          g,
+        )
+        // Fibres in the paper, red and blue.
+        for (let i = 0; i < 70; i++) {
+          const fx = 8 + rnd() * (W - 16)
+          const fy = 8 + rnd() * (H - 16)
+          const a = rnd() * Math.PI
+          const l = 4 + rnd() * 9
+          el(
+            'path',
+            {
+              d: `M${fx} ${fy} q${(Math.cos(a) * l) / 2} ${(Math.sin(a) * l) / 2 + 2} ${Math.cos(a) * l} ${Math.sin(a) * l}`,
+              stroke: rnd() < 0.5 ? '#b0353b' : '#2c4e9a',
+              'stroke-width': 0.7,
+              fill: 'none',
+              opacity: 0.55,
+            },
+            g,
+          )
+        }
+        // Frame: outer rule, lathe-work band, inner rules.
+        el(
+          'rect',
+          {
+            x: 12,
+            y: 12,
+            width: W - 24,
+            height: H - 24,
+            rx: 3,
+            fill: 'none',
+            stroke: INK,
+            'stroke-width': 2.6,
+          },
+          g,
+        )
+        const band = el(
+          'g',
+          { stroke: INK_LIGHT, 'stroke-width': 0.55, fill: 'none', opacity: 0.9 },
+          g,
+        )
+        el('path', { d: lathe(22, 21, W - 22, 21, 4, 9, 4) }, band)
+        el('path', { d: lathe(22, H - 21, W - 22, H - 21, 4, 9, 4) }, band)
+        el('path', { d: lathe(21, 22, 21, H - 22, 4, 9, 4) }, band)
+        el('path', { d: lathe(W - 21, 22, W - 21, H - 22, 4, 9, 4) }, band)
+        el(
+          'rect',
+          {
+            x: 29,
+            y: 29,
+            width: W - 58,
+            height: H - 58,
+            rx: 2,
+            fill: 'none',
+            stroke: INK,
+            'stroke-width': 1.2,
+          },
+          g,
+        )
+        // Background lathe-work across the field.
+        const field = el(
+          'g',
+          { stroke: INK_LIGHT, 'stroke-width': 0.4, fill: 'none', opacity: 0.5 },
+          g,
+        )
+        for (let row = 44; row < H - 40; row += 12) {
+          el('path', { d: lathe(34, row, W - 34, row, 3, 14, 2) }, field)
+        }
+        // Corner counters: rosettes with the value.
+        for (const [cx, cy] of [
+          [66, 66],
+          [W - 66, 66],
+          [66, H - 66],
+          [W - 66, H - 66],
+        ]) {
+          el('circle', { cx, cy, r: 31, fill: pal.counter }, g)
+          el(
+            'path',
+            {
+              d: rosette(cx, cy, 30, 7, 9, 7, 0.95),
+              stroke: INK,
+              'stroke-width': 0.5,
+              fill: 'none',
+            },
+            g,
+          )
+          el(
+            'circle',
+            { cx, cy, r: 31, fill: 'none', stroke: INK, 'stroke-width': 1.4 },
+            g,
+          )
+          // Small enough to sit inside the counter's circle (r 31) with room to spare.
+          const t = el(
+            'text',
+            {
+              x: cx,
+              y: cy + 7.5,
+              'text-anchor': 'middle',
+              'font-family': 'Georgia, serif',
+              'font-size': 21,
+              'font-weight': 'bold',
+              fill: pal.accent,
+            },
+            g,
+          )
+          t.textContent = '10'
+        }
+        // Central vignette: an oval of fine horizontal hatching with a domed building.
+        const vx = W / 2
+        const vy = H / 2 + 4
+        const clipId = `vig${Math.round(x)}${Math.round(y)}`
+        const clip = el('clipPath', { id: clipId }, g)
+        el('ellipse', { cx: vx, cy: vy, rx: 86, ry: 92 }, clip)
+        el('ellipse', { cx: vx, cy: vy, rx: 86, ry: 92, fill: pal.vignette }, g)
+        const hatch = el(
+          'g',
+          { 'clip-path': `url(#${clipId})`, stroke: INK, 'stroke-width': 0.6 },
+          g,
+        )
+        for (let hy = vy - 92; hy < vy + 92; hy += 2.6) {
+          // Darker toward the bottom, as an engraved sky lightens upward.
+          el(
+            'line',
+            {
+              x1: vx - 90,
+              y1: hy,
+              x2: vx + 90,
+              y2: hy,
+              opacity: 0.18 + ((hy - (vy - 92)) / 184) * 0.4,
+            },
+            hatch,
+          )
+        }
+        // The building: steps, colonnade, pediment, dome.
+        const b = el(
+          'g',
+          {
+            'clip-path': `url(#${clipId})`,
+            fill: pal.vignette,
+            stroke: INK,
+            'stroke-width': 1.2,
+          },
+          g,
+        )
+        el('rect', { x: vx - 70, y: vy + 44, width: 140, height: 10 }, b)
+        el('rect', { x: vx - 62, y: vy + 36, width: 124, height: 8 }, b)
+        el('rect', { x: vx - 56, y: vy - 4, width: 112, height: 40 }, b)
+        for (let c = 0; c < 8; c++) {
+          const cx = vx - 50 + c * 14.3
+          el('rect', { x: cx, y: vy - 2, width: 5, height: 36, fill: pal.column }, b)
+          el(
+            'line',
+            {
+              x1: cx + 3.6,
+              y1: vy - 2,
+              x2: cx + 3.6,
+              y2: vy + 34,
+              'stroke-width': 0.5,
+            },
+            b,
+          )
+        }
+        el(
+          'path',
+          { d: `M${vx - 60} ${vy - 4} L${vx} ${vy - 28} L${vx + 60} ${vy - 4} Z` },
+          b,
+        )
+        el('rect', { x: vx - 22, y: vy - 44, width: 44, height: 16 }, b)
+        el(
+          'path',
+          { d: `M${vx - 26} ${vy - 44} A26 30 0 0 1 ${vx + 26} ${vy - 44} Z` },
+          b,
+        )
+        for (let k = -2; k <= 2; k++) {
+          el(
+            'path',
+            {
+              d: `M${vx + k * 8} ${vy - 44} Q${vx + k * 5} ${vy - 62} ${vx} ${vy - 74}`,
+              fill: 'none',
+              'stroke-width': 0.6,
+            },
+            b,
+          )
+        }
+        el('line', { x1: vx, y1: vy - 74, x2: vx, y2: vy - 84 }, b)
+        el(
+          'ellipse',
+          {
+            cx: vx,
+            cy: vy,
+            rx: 86,
+            ry: 92,
+            fill: 'none',
+            stroke: INK,
+            'stroke-width': 2.4,
+          },
+          g,
+        )
+        el(
+          'ellipse',
+          {
+            cx: vx,
+            cy: vy,
+            rx: 92,
+            ry: 98,
+            fill: 'none',
+            stroke: INK,
+            'stroke-width': 0.8,
+          },
+          g,
+        )
+        // Left rosette with the value written out; right, the toothed seal.
+        el(
+          'path',
+          {
+            d: rosette(158, H / 2 + 6, 46, 11, 15, 11, 1),
+            stroke: INK_LIGHT,
+            'stroke-width': 0.45,
+            fill: 'none',
+          },
+          g,
+        )
+        const ten = el(
+          'text',
+          {
+            x: 158,
+            y: H / 2 + 18,
+            'text-anchor': 'middle',
+            'font-family': 'Georgia, serif',
+            'font-size': 34,
+            'font-weight': 'bold',
+            fill: pal.accent,
+            'letter-spacing': 2,
+          },
+          g,
+        )
+        ten.textContent = 'TEN'
+        const sx = W - 158
+        const sy = H / 2 + 6
+        let teeth = ''
+        for (let i = 0; i <= 72; i++) {
+          const a = (i / 72) * Math.PI * 2
+          const rr = i % 2 ? 34 : 39
+          teeth += `${i ? 'L' : 'M'}${(sx + rr * Math.cos(a)).toFixed(2)} ${(sy + rr * Math.sin(a)).toFixed(2)}`
+        }
+        el(
+          'path',
+          { d: teeth + 'Z', fill: 'none', stroke: SEAL, 'stroke-width': 2.2 },
+          g,
+        )
+        el(
+          'circle',
+          { cx: sx, cy: sy, r: 27, fill: 'none', stroke: SEAL, 'stroke-width': 1.2 },
+          g,
+        )
+        el(
+          'path',
+          {
+            d: rosette(sx, sy, 26, 6, 8, 6, 0.9),
+            stroke: SEAL,
+            'stroke-width': 0.6,
+            fill: 'none',
+          },
+          g,
+        )
+        // Serial numbers, top left and bottom right.
+        // Between the corner counters and the oval, where it narrows.
+        for (const [tx, ty] of [
+          [106, 62],
+          [W - 242, H - 46],
+        ]) {
+          const s = el(
+            'text',
+            {
+              x: tx,
+              y: ty,
+              'font-family': "'Courier New', monospace",
+              'font-size': 15,
+              'font-weight': 'bold',
+              fill: SERIAL,
+              'letter-spacing': 1,
+            },
+            g,
+          )
+          s.textContent = serial
+        }
+        // A small specimen overprint: the note is a picture, not money.
+        const sp = el(
+          'text',
+          {
+            x: 158,
+            y: H / 2 + 72,
+            'text-anchor': 'middle',
+            'font-family': 'Georgia, serif',
+            'font-size': 11,
+            fill: '#9a3a32',
+            'letter-spacing': 4,
+            opacity: 0.85,
+          },
+          g,
+        )
+        sp.textContent = 'SPECIMEN'
+        el('rect', { width: W, height: H, rx: 7, fill: 'url(#crease)' }, g)
+      }
+
+      // One coin seen from above and a little in front: its reeded edge shows
+      // below the face. `design` draws the face's relief.
+      function coin(parent, { cx, cy, r, face, edge, rim, ink, design, thick = 13 }) {
+        const g = el('g', { filter: 'url(#dropSoft)' }, parent)
+        // The edge: a band below the face, reeded.
+        el('ellipse', { cx, cy: cy + thick, rx: r, ry: r * 0.97, fill: edge }, g)
+        el('rect', { x: cx - r, y: cy, width: 2 * r, height: thick, fill: edge }, g)
+        const reeds = el('g', { stroke: '#000', 'stroke-width': 0.8, opacity: 0.28 }, g)
+        for (let i = 1; i < 90; i++) {
+          const a = Math.PI * (i / 90)
+          const x = cx - r * Math.cos(a)
+          const yTop = cy + r * 0.97 * Math.sin(a)
+          el('line', { x1: x, y1: yTop, x2: x, y2: yTop + thick }, reeds)
+        }
+        // The face, its raised rim and a ring of beads.
+        el('ellipse', { cx, cy, rx: r, ry: r * 0.97, fill: face }, g)
+        el(
+          'ellipse',
+          {
+            cx,
+            cy,
+            rx: r - 3,
+            ry: (r - 3) * 0.97,
+            fill: 'none',
+            stroke: rim,
+            'stroke-width': 6,
+            filter: 'url(#relief)',
+          },
+          g,
+        )
+        const beads = el('g', { fill: rim, filter: 'url(#relief)' }, g)
+        for (let i = 0; i < 80; i++) {
+          const a = (i / 80) * Math.PI * 2
+          el(
+            'circle',
+            {
+              cx: cx + (r - 14) * Math.cos(a),
+              cy: cy + (r - 14) * 0.97 * Math.sin(a),
+              r: 2.1,
+            },
+            beads,
+          )
+        }
+        const relief = el('g', { filter: 'url(#relief)', fill: ink, stroke: 'none' }, g)
+        design(relief, cx, cy, r)
+        // The shine over it all: sheen, a lit rim, and a glint where the rim
+        // catches the light.
+        el('ellipse', { cx, cy, rx: r, ry: r * 0.97, fill: 'url(#sheen)' }, g)
+        el(
+          'ellipse',
+          {
+            cx,
+            cy,
+            rx: r - 1.5,
+            ry: (r - 1.5) * 0.97,
+            fill: 'none',
+            stroke: 'url(#rimShine)',
+            'stroke-width': 3,
+          },
+          g,
+        )
+        const gx = cx - r * 0.55
+        const gy = cy - r * 0.62
+        const L = r * 0.16
+        const glint = `M${gx} ${gy - L} L${gx + L * 0.12} ${gy - L * 0.12} L${gx + L} ${gy} L${gx + L * 0.12} ${gy + L * 0.12} L${gx} ${gy + L} L${gx - L * 0.12} ${gy + L * 0.12} L${gx - L} ${gy} L${gx - L * 0.12} ${gy - L * 0.12} Z`
+        el('path', { d: glint, fill: '#ffffff', filter: 'url(#glow)', opacity: 0.9 }, g)
+        el('path', { d: glint, fill: '#ffffff' }, g)
+      }
+
+      // Text along an arc. Along the top it runs clockwise; along the bottom
+      // (`bottom`) it runs the other way, left to right, so it stays upright.
+      function curvedText(
+        parent,
+        cx,
+        cy,
+        radius,
+        text,
+        size,
+        fill,
+        startDeg,
+        sweepDeg,
+        id,
+        bottom = false,
+      ) {
+        const from = bottom ? startDeg + sweepDeg : startDeg
+        const to = bottom ? startDeg : startDeg + sweepDeg
+        const a0 = (from * Math.PI) / 180
+        const a1 = (to * Math.PI) / 180
+        const p = el(
+          'path',
+          {
+            id,
+            d: `M${cx + radius * Math.cos(a0)} ${cy + radius * Math.sin(a0)} A${radius} ${radius} 0 0 ${bottom ? 0 : 1} ${cx + radius * Math.cos(a1)} ${cy + radius * Math.sin(a1)}`,
+            fill: 'none',
+          },
+          parent,
+        )
+        const t = el(
+          'text',
+          {
+            'font-family': 'Georgia, serif',
+            'font-size': size,
+            fill,
+            'letter-spacing': 3,
+          },
+          parent,
+        )
+        const tp = el(
+          'textPath',
+          { href: `#${id}`, startOffset: '50%', 'text-anchor': 'middle' },
+          t,
+        )
+        tp.textContent = text
+        return p
+      }
+
+      function wreath(parent, cx, cy, radius, fill) {
+        for (const side of [-1, 1]) {
+          el(
+            'path',
+            {
+              d: `M${cx + side * 6} ${cy + radius} Q${cx + side * radius * 1.05} ${cy + radius * 0.6} ${cx + side * radius * 0.82} ${cy - radius * 0.55}`,
+              fill: 'none',
+              stroke: fill,
+              'stroke-width': 2.4,
+            },
+            parent,
+          )
+          for (let i = 0; i < 9; i++) {
+            const t = 0.08 + i * 0.1
+            const a = Math.PI / 2 - side * (0.15 + t * 2.1)
+            const lx = cx + Math.cos(a) * radius * (0.98 - t * 0.12)
+            const ly = cy + Math.sin(a) * radius * (0.98 - t * 0.12)
+            const deg = (a * 180) / Math.PI + (side > 0 ? 60 : -60) + 90
+            el(
+              'ellipse',
+              {
+                cx: lx,
+                cy: ly,
+                rx: 9,
+                ry: 4,
+                transform: `rotate(${deg} ${lx} ${ly})`,
+                fill,
+              },
+              parent,
+            )
+          }
+        }
+      }
+
+      function star(parent, cx, cy, R, fill) {
+        let d = ''
+        for (let i = 0; i < 10; i++) {
+          const a = -Math.PI / 2 + (i * Math.PI) / 5
+          const rr = i % 2 ? R * 0.42 : R
+          d += `${i ? 'L' : 'M'}${(cx + rr * Math.cos(a)).toFixed(2)} ${(cy + rr * Math.sin(a)).toFixed(2)}`
+        }
+        el('path', { d: d + 'Z', fill }, parent)
+      }
+
+      const silverDesign = (g, cx, cy, r) => {
+        // A ring of stars and a wreath around a large star: no real coin's device.
+        for (let i = 0; i < 13; i++) {
+          const a = Math.PI + 0.35 + (i / 12) * (Math.PI - 0.7)
+          star(
+            g,
+            cx + (r - 34) * Math.cos(a),
+            cy + (r - 34) * 0.97 * Math.sin(a),
+            7,
+            '#9aa2a8',
+          )
+        }
+        wreath(g, cx, cy + 8, r * 0.52, '#99a1a7')
+        star(g, cx, cy + 4, r * 0.3, '#a3abb1')
+        curvedText(
+          g,
+          cx,
+          cy,
+          r - 44,
+          'ONE OUNCE · FINE SILVER',
+          15,
+          '#8a9298',
+          5,
+          170,
+          `s${cx}${cy}`,
+          true,
+        )
+      }
+
+      const goldDesign = (g, cx, cy, r) => {
+        // Sun rays behind a wreath: a gold piece's look, no real coin's device.
+        for (let i = 0; i < 24; i++) {
+          const a = (i / 24) * Math.PI * 2
+          el(
+            'path',
+            {
+              d: `M${cx + Math.cos(a - 0.05) * r * 0.2} ${cy + Math.sin(a - 0.05) * r * 0.2} L${cx + Math.cos(a) * r * 0.6} ${cy + Math.sin(a) * r * 0.6} L${cx + Math.cos(a + 0.05) * r * 0.2} ${cy + Math.sin(a + 0.05) * r * 0.2} Z`,
+              fill: '#c9993a',
+            },
+            g,
+          )
+        }
+        el('circle', { cx, cy, r: r * 0.2, fill: '#d4a646' }, g)
+        wreath(g, cx, cy + 6, r * 0.66, '#b8872b')
+        curvedText(
+          g,
+          cx,
+          cy,
+          r - 30,
+          'FINE GOLD · 1/2 OZ',
+          13,
+          '#a77a26',
+          205,
+          130,
+          `g${cx}${cy}`,
+        )
+      }
+
+      const notes = document.getElementById('notes')
+      note(notes, {
+        x: 70,
+        y: 262,
+        angle: -13,
+        fill: 'url(#tintB)',
+        serial: 'B 20581734 *',
+        pal: BLUE_NOTE,
+      })
+      note(notes, {
+        x: 100,
+        y: 352,
+        angle: -4,
+        fill: 'url(#tintA)',
+        serial: 'C 41738292 F',
+        pal: GREEN_NOTE,
+      })
+
+      const coins = document.getElementById('coins')
+      const SILVER = {
+        face: 'url(#silverFace)',
+        edge: 'url(#silverEdge)',
+        rim: '#b9c0c5',
+        ink: '#a3abb1',
+        design: silverDesign,
+      }
+      const GOLD = {
+        face: 'url(#goldFace)',
+        edge: 'url(#goldEdge)',
+        rim: '#d7a84a',
+        ink: '#c9993a',
+        design: goldDesign,
+      }
+      // Both stacks to the right of the notes, resting a little on their right
+      // end: two silver behind, two gold in front, half on the front note.
+      coin(coins, { cx: 772, cy: 492, r: 138, ...SILVER })
+      coin(coins, { cx: 782, cy: 466, r: 138, ...SILVER })
+      coin(coins, { cx: 640, cy: 596, r: 110, thick: 11, ...GOLD })
+      coin(coins, { cx: 649, cy: 573, r: 110, thick: 11, ...GOLD })
+    </script>
+  </body>
+</html>

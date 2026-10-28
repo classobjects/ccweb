@@ -1,0 +1,295 @@
+import { useEffect, useRef, useState } from 'react'
+
+import { api } from '../../api'
+import { fitsKind, sideFor } from '../../../shared/kinds'
+import { ReferenceSelect } from '../../../shared/reference'
+import { useReference } from '../../../shared/reference-context'
+import ForSaleNotice from '../ForSaleNotice'
+
+/**
+ * The set as it leaves this panel: no note is null, never the empty string.
+ *
+ * A row added with the note box left alone holds null; a note typed and then
+ * cleared holds "". The two mean the same thing to a person and are different
+ * rows to the database, where "" would come back as an empty note that reads
+ * as a note. Normalized on the way out only: what is
+ * being typed stays exactly as typed.
+ */
+function withNoEmptyDetails(rows) {
+  return rows.map((row) => ({
+    ...row,
+    details: row.details === '' ? null : row.details,
+  }))
+}
+
+/**
+ * Mint and printing errors recorded against one item -- a bill is commonly
+ * miscut AND misprinted, so this is a set, each entry carrying its own note.
+ *
+ * Two modes, one for each place it is mounted. With an `itemId` -- in
+ * Receiving -- the panel is self-loading and self-saving: it fetches its own
+ * set on mount and PUTs the whole set again whenever a row is added,
+ * removed, or edited. With `itemId` null the panel holds no state of its
+ * own: `value` is the whole set, and every change is reported through
+ * `onChange` for the caller to send -- the item editor, when its Save is
+ * pressed.
+ *
+ * A save that fails shows the message but never rolls the edit back: the row
+ * a person just typed stays on screen, still editable, rather than vanishing
+ * along with the note they wrote.
+ */
+export default function ErrorsPanel({ itemId, kind, value, onChange, saleState }) {
+  const controlled = itemId == null
+  // null means "not loaded yet"; the controlled mode never reads this and
+  // renders through `value` instead.
+  const [rows, setRows] = useState(null)
+  // The set as the server last held it -- read, or saved from here -- sent
+  // as `base` so a save over someone else's change since is refused. Not
+  // `rows`: a change that failed to save is in `rows` and not on the server.
+  const saved = useRef(null)
+  // The set the server will hold once the saves still out land: `saved`,
+  // or the last set sent. A save that fails puts it back to `saved`, so
+  // leaving a note box sends that set again.
+  const sent = useRef(null)
+  // The saves, one after another. A save asked for while another is out
+  // waits for it, so its base is what that one left on the server: sent at
+  // once, it would carry the set read before, and the server would refuse
+  // it as overwriting someone else's change.
+  const saving = useRef(Promise.resolve())
+  // Why the set could not be read, while it could not; and a count of the
+  // readings asked for, so "Try again" reads it once more. Until it has been
+  // read there is nothing to edit: every change sends the whole set, and one
+  // built up from nothing would replace the errors that were never seen.
+  const [unread, setUnread] = useState('')
+  const [reading, setReading] = useState(0)
+  // Sticky for the editing session: this panel PUTs on every change, and an
+  // acknowledgement asked per save would be asked on every keystroke-ish
+  // action -- add a row, remove one, blur a note box -- which teaches an
+  // operator to tick it blind. Ticked once, it holds for as long as the
+  // panel stays mounted.
+  const [acknowledged, setAcknowledged] = useState(false)
+  const [error, setError] = useState('')
+  const [type, setType] = useState('')
+  const [details, setDetails] = useState('')
+  // `includeRetired`, for the same reason ReferenceSelect asks for it: a type
+  // already recorded against an item may since have been retired, and without
+  // the retired values here its row would render the raw code instead of its
+  // label. The picker below still offers only active ones -- that filtering
+  // is ReferenceSelect's, not this list's.
+  const vocabulary = useReference('error_type', { includeRetired: true }) ?? []
+  const byCode = new Map(vocabulary.map((entry) => [entry.code, entry]))
+
+  useEffect(() => {
+    if (controlled) return
+    let cancelled = false
+    api
+      .getItemErrors(itemId)
+      .then((body) => {
+        if (cancelled) return
+        const read = (body.errors ?? []).map((e) => ({
+          error_type: e.error_type,
+          details: e.details ?? '',
+        }))
+        saved.current = withNoEmptyDetails(read)
+        sent.current = saved.current
+        setRows(read)
+        setError('')
+      })
+      .catch((err) => {
+        // A load failure must not leave the panel stuck showing "Loading...":
+        // the reason, and a way to read again, is the recoverable state.
+        if (!cancelled) setUnread(err.message)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [itemId, controlled, reading])
+
+  /** Read the set again after a reading that failed. */
+  function readAgain() {
+    setUnread('')
+    setReading((n) => n + 1)
+  }
+
+  const list = controlled ? (value ?? []) : (rows ?? [])
+
+  /** Applies `next` where it lives: the caller's state, or this panel's own. */
+  function setList(next) {
+    if (controlled) onChange(withNoEmptyDetails(next))
+    else setRows(next)
+  }
+
+  /**
+   * PUTs the whole set, after any save still out. No-op in the controlled
+   * mode -- the caller sends it.
+   *
+   * No "still mounted?" guard (`useMounted`): both continuations only call
+   * this panel's own `setError`, and React 19 makes a `setState` on an
+   * unmounted component a no-op rather than a warning.
+   */
+  function save(next) {
+    if (controlled) return
+    const sending = withNoEmptyDetails(next)
+    sent.current = sending
+    saving.current = saving.current.then(() =>
+      api
+        .setItemErrors(itemId, sending, {
+          acknowledgeForSale: acknowledged,
+          base: saved.current,
+        })
+        .then(() => {
+          saved.current = sending
+          setError('')
+        })
+        .catch((err) => {
+          if (sent.current === sending) sent.current = saved.current
+          setError(err.message)
+        }),
+    )
+  }
+
+  function addRow() {
+    // Live with nothing chosen, and says what it wants rather than greying.
+    if (!type) {
+      setError('Choose the error first.')
+      return
+    }
+    setError('')
+    const next = [
+      ...list,
+      { error_type: type, details: details === '' ? null : details },
+    ]
+    setList(next)
+    save(next)
+    setType('')
+    setDetails('')
+  }
+
+  function removeRow(code) {
+    const next = list.filter((row) => row.error_type !== code)
+    setList(next)
+    save(next)
+  }
+
+  function editDetails(code, text) {
+    // Local (or reported to the controlled caller) on every keystroke, but
+    // not saved until the box loses focus -- a PUT of the whole set per
+    // character typed would be one request per keystroke.
+    setList(
+      list.map((row) => (row.error_type === code ? { ...row, details: text } : row)),
+    )
+  }
+
+  /**
+   * Save on leaving a note box, when the set differs from what was last read
+   * or sent. Tabbing through the boxes changes nothing, and a PUT per box
+   * passed through would be a write per press of Tab.
+   */
+  function saveIfEdited() {
+    if (JSON.stringify(withNoEmptyDetails(list)) === JSON.stringify(sent.current)) {
+      return
+    }
+    save(list)
+  }
+
+  const loading = !controlled && rows === null && !unread
+
+  // The heading is inside the panel rather than at each of its mount points,
+  // so both say what this is: without it the panel reads as a stray dropdown
+  // whose only accessible name is the table's own name, `error_type`. `field`
+  // is the shape the item editor's other rows use (see AttributesField): the
+  // label in the first grid column, the controls in the second. In
+  // Receiving, where no `.edit-form` grid is in play, it lays out as a plain
+  // block, still labeled.
+  if (unread) {
+    return (
+      <div className="field errors-panel" data-help="errors">
+        <span>Errors</span>
+        <div className="error-body">
+          <p className="error">The errors could not be read: {unread}</p>
+          <button type="button" onClick={readAgain}>
+            Try again
+          </button>
+        </div>
+        <span />
+        <span />
+      </div>
+    )
+  }
+
+  return (
+    <div className="field errors-panel" data-help="errors">
+      <span>Errors</span>
+      <div className="error-body">
+        <ForSaleNotice
+          uses={saleState ?? []}
+          checked={acknowledged}
+          onChange={setAcknowledged}
+          action="Record it anyway"
+        />
+        {loading && <p className="muted">Loading...</p>}
+        {!loading && error && <p className="error">{error}</p>}
+        {!loading && (
+          <ul className="error-list">
+            {list.map((row) => {
+              const label = byCode.get(row.error_type)?.label ?? row.error_type
+              return (
+                <li key={row.error_type}>
+                  <span>{label}</span>
+                  <input
+                    aria-label={`${label} details`}
+                    data-help="error_details"
+                    value={row.details ?? ''}
+                    onChange={(e) => editDetails(row.error_type, e.target.value)}
+                    onBlur={saveIfEdited}
+                  />
+                  <button type="button" onClick={() => removeRow(row.error_type)}>
+                    Remove {label}
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+        )}
+        {!loading && (
+          <div className="add-error">
+            <ReferenceSelect
+              table="error_type"
+              value={type}
+              onChange={(e) => setType(e.target.value)}
+              allowAdd
+              labelOnly
+              // No top-level `applies_to` field -- see AttributesField.jsx
+              // for the same shape. An error type added here
+              // without the item's side would be stored as `any` and offered
+              // for coins and notes alike (`fitsKind`, whose
+              // exact inverse `sideFor` is); `error_type` has no
+              // `attribute_group` column, so nothing else goes in `extra`.
+              addFields={{ applies_to: sideFor(kind) }}
+              filter={(entry) =>
+                fitsKind(entry, kind) &&
+                !list.some((row) => row.error_type === entry.code)
+              }
+            />
+            {/* Labeled, not just placeheld: a placeholder disappears the
+                moment anything is typed, and "details" beside a picker whose
+                own name is `error_type` says nothing about which error it
+                belongs to. */}
+            <input
+              aria-label="details for the error being added"
+              data-help="error_details"
+              placeholder="details"
+              value={details}
+              onChange={(e) => setDetails(e.target.value)}
+            />
+            <button type="button" onClick={addRow}>
+              Add error
+            </button>
+          </div>
+        )}
+      </div>
+      <span />
+      <span />
+    </div>
+  )
+}

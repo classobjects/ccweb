@@ -1,0 +1,327 @@
+"""Create the first administrator and a small demo catalog.
+
+Reference data is *not* seeded here -- that is `app.seeding`, which loads the
+shipped vocabulary from `backend/data/reference/`. Run that first; this module
+assumes the classifiers it names already exist.
+
+    python -m app.seeding load
+    python -m app.seed
+
+For a new, empty database: one that already holds items or purchases is
+refused, and nothing is written to it, unless `--into-existing` is given.
+"""
+
+from __future__ import annotations
+
+import argparse
+from collections.abc import Sequence
+from decimal import Decimal
+
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
+
+from . import grades, offering_writes
+from .config import settings
+from .database import SessionLocal
+from .lifecycle_writes import record_initial_status
+from .models import (
+    Authenticity,
+    Country,
+    Denomination,
+    Disposition,
+    Grade,
+    GradingService,
+    InventoryItem,
+    ItemKind,
+    ItemStatus,
+    ListingFormat,
+    Metal,
+    ProvenanceSource,
+    PurchaseOrder,
+    ReferenceMixin,
+    SalesVenue,
+    StorageForm,
+    StrikeType,
+    User,
+    UserRole,
+    ValuationBasis,
+)
+from .security import account_by_email, hash_password, normalize_email_if_valid
+
+#: A demo catalog. Classifiers are given as codes, matching how they cross
+#: the API -- see `app.references`.
+SAMPLE_CATALOG: list[dict] = [
+    {
+        "title": "1881-S Morgan Silver Dollar",
+        "description": "Brilliant uncirculated, exceptional strike and lustre.",
+        "item_kind": "coin",
+        "country": "US",
+        "denomination": "usd_coin_1_00",
+        "grade": "MS64",
+        "grading_service": "PCGS",
+        "year_start": 1881,
+        "price": Decimal("189.00"),
+        "quantity_available": 5,
+    },
+    {
+        "title": "1916-D Mercury Dime",
+        "description": "Key date. Strong rims, fully readable mint mark.",
+        "item_kind": "coin",
+        "country": "US",
+        "denomination": "usd_coin_0_10",
+        "grade": "G4",
+        "year_start": 1916,
+        "price": Decimal("1250.00"),
+        "quantity_available": 1,
+    },
+    {
+        "title": "2021 American Silver Eagle",
+        "description": "One troy ounce of .999 fine silver, Type 2 reverse.",
+        "item_kind": "bullion",
+        "country": "US",
+        "metal": "silver",
+        "grade": "MS70",
+        "year_start": 2021,
+        "price": Decimal("46.50"),
+        "quantity_available": 20,
+        "fineness": Decimal("0.9990"),
+        "gross_weight_ozt": Decimal("1.000000"),
+        "fine_weight_ozt": Decimal("0.999000"),
+    },
+    {
+        "title": "1957-B $1 Silver Certificate",
+        "description": "Blue seal. Crisp, well centered, bright paper.",
+        "item_kind": "currency",
+        "country": "US",
+        "denomination": "usd_note_1",
+        # The paper-money scale's Uncirculated: a note is never given a coin grade.
+        "grade": "N60",
+        "year_start": 1957,
+        "price": Decimal("24.00"),
+        "quantity_available": 8,
+    },
+    {
+        "title": "1964 Kennedy Half Dollar",
+        "description": "The only 90% silver year for the Kennedy half.",
+        "item_kind": "coin",
+        "country": "US",
+        "denomination": "usd_coin_0_50",
+        "grade": "AU58",
+        "year_start": 1964,
+        "price": Decimal("18.75"),
+        "quantity_available": 12,
+    },
+]
+
+
+def _code_id(db: Session, model: type[ReferenceMixin], code: str | None) -> int | None:
+    """The id of the vocabulary value with this code; None for no code.
+
+    Exits, naming the loader to run, when the reference data is not there.
+    """
+    if not code:
+        return None
+    found = db.execute(select(model.id).where(model.code == code)).scalar_one_or_none()
+    if found is None:
+        raise SystemExit(
+            f"{model.__tablename__} has no code {code!r}. "
+            "Run `python -m app.seeding load` first."
+        )
+    return found
+
+
+def _store_venue(db: Session) -> SalesVenue:
+    """The web store platform every demo listing is offered into."""
+    venue = db.scalar(select(SalesVenue).where(SalesVenue.is_own_store.is_(True)))
+    if venue is None:
+        raise SystemExit(
+            "No web store platform: run `alembic upgrade head` on this database"
+        )
+    return venue
+
+
+def _build(db: Session, row: dict) -> None:
+    """Create one demo item, received and held, and offer it in the store."""
+    # Demo rows name grades as collectors write them: MS64 is 64, business.
+    grade, strike = grades.split_fields(row.get("grade"), None)
+    item = InventoryItem(
+        source_title=row["title"],
+        description=row.get("description", ""),
+        year_start=row.get("year_start"),
+        # A demo item names one year, which is stored as a single year --
+        # start and end equal, the shape every item uses (`app.years`).
+        # Leaving the end unset would make these five the only items in a
+        # second shape.
+        year_end=row.get("year_end", row.get("year_start")),
+        fineness=row.get("fineness"),
+        gross_weight_ozt=row.get("gross_weight_ozt"),
+        fine_weight_ozt=row.get("fine_weight_ozt"),
+        item_kind_id=_code_id(db, ItemKind, row["item_kind"]),
+        country_id=_code_id(db, Country, row.get("country")),
+        denomination_id=_code_id(db, Denomination, row.get("denomination")),
+        grade_id=_code_id(db, Grade, grade),
+        strike_type_id=_code_id(db, StrikeType, strike),
+        grading_service_id=_code_id(db, GradingService, row.get("grading_service")),
+        metal_id=_code_id(db, Metal, row.get("metal")),
+        storage_form_id=_code_id(db, StorageForm, "single"),
+        authenticity_id=_code_id(db, Authenticity, "genuine"),
+        status_id=_code_id(db, ItemStatus, "received"),
+        # `held`, not `listed`: `offering_writes.offer` below is the one
+        # writer of the `listed` transition, the same as every other offer.
+        disposition_id=_code_id(db, Disposition, "held"),
+        valuation_basis_id=_code_id(db, ValuationBasis, "numismatic"),
+        source=ProvenanceSource.seeded,
+    )
+    db.add(item)
+    db.flush()
+
+    # Every creation path writes the opening row for its item's history --
+    # see `lifecycle_writes.record_initial_status`.
+    record_initial_status(db, item, note="set at seed")
+
+    # Offered through the one writer of listings and claims -- see
+    # `app.offering_writes`. Demo data is not an exception to "every
+    # listing has a claim": `offer` writes both in one transaction, the
+    # same as a real listing made through the API.
+    offering_writes.offer(
+        db,
+        item=item,
+        venue=_store_venue(db),
+        listing_format=ListingFormat.fixed_price,
+        price=row["price"],
+        title=row["title"],
+        description=row.get("description", ""),
+        external_id=None,
+        quantity=row["quantity_available"],
+    )
+
+
+#: The shortest first-administrator password `seed` accepts.
+MIN_ADMIN_PASSWORD_LENGTH = 12
+
+#: Passwords this repository has published, as a default or in its examples
+#: and tests. Any of them would let a reader of the repository sign in as the
+#: manager.
+PUBLISHED_PASSWORDS = frozenset({"adminpassword", "customerpassword"})
+
+
+def weak_admin_password_problem(password: str) -> str | None:
+    """What is wrong with a manager's password, or None when it will do.
+
+    The account is a manager's: whoever knows its password holds every cost,
+    customer and console write. Shared with `app.create_admin`.
+    """
+    if password in PUBLISHED_PASSWORDS:
+        return "is published in this repository"
+    if len(password) < MIN_ADMIN_PASSWORD_LENGTH:
+        return f"is shorter than {MIN_ADMIN_PASSWORD_LENGTH} characters"
+    return None
+
+
+def refuse_a_weak_admin_password(password: str) -> None:
+    """Exit unless the first administrator's password is long and unpublished."""
+    problem = weak_admin_password_problem(password)
+    if problem is None:
+        return
+    raise SystemExit(
+        f"FIRST_ADMIN_PASSWORD {problem}, so nothing was written. Set a "
+        "password of your own in .env and run the seed again."
+    )
+
+
+def _refuse_a_collection(db: Session) -> None:
+    """Exit unless the database holds nothing but this module's own demo items.
+
+    The demo items are offered in the shop, where a buyer could order a coin
+    nobody has, and the account made here is a manager's. A purchase, or an
+    item that is not one of the demo catalog's, means the database is
+    somebody's record.
+    """
+    titles = [row["title"] for row in SAMPLE_CATALOG]
+    purchases = db.scalar(select(func.count()).select_from(PurchaseOrder)) or 0
+    items = (
+        db.scalar(
+            select(func.count())
+            .select_from(InventoryItem)
+            .where(InventoryItem.source_title.not_in(titles))
+        )
+        or 0
+    )
+    if purchases or items:
+        raise SystemExit(
+            f"This database already holds {items} item(s) and {purchases} "
+            "purchase(s) that are not demo data, so nothing was written. "
+            "`app.seed` is for a new, empty database; pass --into-existing "
+            "to add the demo items and the first administrator anyway."
+        )
+
+
+def seed(db: Session | None = None, *, into_existing: bool = False) -> None:
+    """Create the first administrator and a small demo catalog.
+
+    Assumes the reference vocabularies are already loaded; run
+    `python -m app.seeding load` first. Refuses a database that holds a
+    collection (`_refuse_a_collection`) unless `into_existing` is set.
+
+    `db` is the session to write through; without one the application's own
+    `SessionLocal` is opened. A caller that has a session -- the test suite,
+    whose transaction is rolled back -- passes it, and no other is opened.
+    """
+    if db is None:
+        with SessionLocal() as own:
+            seed(own, into_existing=into_existing)
+        return
+
+    if not into_existing:
+        _refuse_a_collection(db)
+
+    # In the form sign-in looks it up by, and found whatever the case of its
+    # letters, so a second run does not make a second account for one address.
+    email = normalize_email_if_valid(settings.first_admin_email)
+    admin = account_by_email(db, email)
+    if admin is None:
+        refuse_a_weak_admin_password(settings.first_admin_password)
+        admin = User(
+            email=email,
+            full_name="Site Administrator",
+            hashed_password=hash_password(settings.first_admin_password),
+            role=UserRole.manager,
+        )
+        db.add(admin)
+        print(f"created admin {email}")
+    else:
+        print(f"admin {admin.email} already exists")
+
+    created = 0
+    for row in SAMPLE_CATALOG:
+        # Matched on source_title: the schema has no artificial unique key
+        # per catalog row, because two identical coins are two objects.
+        exists = db.scalar(
+            select(InventoryItem.id).where(InventoryItem.source_title == row["title"])
+        )
+        if exists is None:
+            _build(db, row)
+            created += 1
+
+    print(
+        f"created {created} catalog item(s); "
+        f"{len(SAMPLE_CATALOG) - created} already present"
+    )
+    db.commit()
+
+
+def _main(argv: Sequence[str] | None = None) -> None:
+    """Run the command line: seed, refusing a database in use unless told."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--into-existing",
+        action="store_true",
+        help="write the demo items and administrator into a database that "
+        "already holds items or purchases",
+    )
+    args = parser.parse_args(argv)
+    seed(into_existing=args.into_existing)
+
+
+if __name__ == "__main__":
+    _main()

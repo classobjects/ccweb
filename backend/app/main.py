@@ -1,0 +1,280 @@
+"""FastAPI application entry point."""
+
+from __future__ import annotations
+
+import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI, Request, status
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+
+from . import auctions, media_check, sales_writes
+from .config import settings
+from .database import get_db
+from .errors import ReferenceDataMissing
+from .routers import (
+    acquisitions,
+    auth,
+    catalog,
+    customers,
+    defaults,
+    friedberg,
+    image_links,
+    images,
+    inventory,
+    lots,
+    metal_prices,
+    offers,
+    orders,
+    reference,
+    reports,
+    sales_venues,
+    users,
+)
+from .routers import (
+    auctions as auctions_router,
+)
+
+_log = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def _lifespan(started: FastAPI) -> AsyncIterator[None]:
+    """Check the photograph folder before the first request (`app.media_check`).
+
+    The session comes through `get_db` as any request's does, overrides
+    included, so a test client checks the test database, never live.
+    """
+    media_check.check_at_startup(started.dependency_overrides.get(get_db, get_db))
+    yield
+
+
+app = FastAPI(
+    title="ccwebdb",
+    description="Numismatic and currency inventory and sales platform",
+    version="0.1.0",
+    lifespan=_lifespan,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    # A paged list carries its total in this header; a browser hides any
+    # response header not named here from a cross-origin caller.
+    expose_headers=["X-Total-Count"],
+)
+
+app.include_router(auth.router, prefix=settings.api_prefix)
+app.include_router(catalog.router, prefix=settings.api_prefix)
+app.include_router(catalog.shop_router, prefix=settings.api_prefix)
+app.include_router(images.router, prefix=settings.api_prefix)
+app.include_router(image_links.router, prefix=settings.api_prefix)
+app.include_router(inventory.router, prefix=settings.api_prefix)
+app.include_router(reference.router, prefix=settings.api_prefix)
+app.include_router(defaults.router, prefix=settings.api_prefix)
+app.include_router(orders.router, prefix=settings.api_prefix)
+app.include_router(users.router, prefix=settings.api_prefix)
+app.include_router(customers.router, prefix=settings.api_prefix)
+app.include_router(acquisitions.vendors_router, prefix=settings.api_prefix)
+app.include_router(acquisitions.sellers_router, prefix=settings.api_prefix)
+app.include_router(acquisitions.purchase_orders_router, prefix=settings.api_prefix)
+app.include_router(acquisitions.storage_locations_router, prefix=settings.api_prefix)
+app.include_router(friedberg.friedberg_router, prefix=settings.api_prefix)
+app.include_router(friedberg.item_router, prefix=settings.api_prefix)
+app.include_router(sales_venues.router, prefix=settings.api_prefix)
+app.include_router(metal_prices.router, prefix=settings.api_prefix)
+app.include_router(offers.router, prefix=settings.api_prefix)
+app.include_router(lots.router, prefix=settings.api_prefix)
+app.include_router(auctions_router.router, prefix=settings.api_prefix)
+app.include_router(reports.router, prefix=settings.api_prefix)
+
+
+# ---------------------------------------------------------------------------
+# Exception handlers (docs/specs/selling-design.md)
+#
+# Registered **per class**, not decided by an `except` clause's position.
+# `sales_writes.SaleInputInvalid` subclasses `sales_writes.SaleRefused`, and
+# `auctions.SettlementInputInvalid` subclasses `auctions.AuctionRefused` --
+# each pair is bad input (422) beside a genuine conflict (409), and an
+# ordered `try`/`except` reversed by a later edit would silently turn every
+# 422 into a 409 with nothing catching the mistake: mypy accepts either
+# order, because the narrower type is still assignable to the wider one.
+#
+# A registered handler has no order to get wrong. Starlette's
+# `_exception_handler._lookup_exception_handler` walks the raised
+# exception's `__mro__` and returns the **first class in that MRO** with a
+# registered handler -- `SettlementInputInvalid`'s own entry, found before
+# `AuctionRefused`'s, regardless of which was registered first or which
+# `app.add_exception_handler` call appears first in this file. The hazard
+# above is not merely avoided; it has no code path left to reintroduce it.
+#
+# `test_settlement_input_invalid_is_a_422_not_a_409` and
+# `test_a_plain_auction_refused_from_settle_is_still_a_409`
+# (`backend/tests/test_auctions_api.py`) are what stand behind this, the same
+# way `test_sale_input_invalid_from_record_sale_is_a_422_not_a_409` stands
+# behind this module's own registration for `sales_writes`' identical pair.
+#
+# `routers/offers.py`'s `record_listing_sale` carries no `except
+# SaleInputInvalid` / `except SaleRefused` clauses of its own: it lets both
+# propagate to the handlers registered here, as every `app.auctions` caller
+# does, so the reversed-clause hazard is unwritable there too, not merely
+# documented.
+# ---------------------------------------------------------------------------
+
+
+def _refusal_body(exc: Exception) -> dict[str, object]:
+    """The `{detail, refused: [...]}` body every refusal in this API answers with.
+
+    Built from the raised exception's own `refusals` attribute when it has
+    one -- `auctions.AuctionRefused` and its narrower `SettlementInputInvalid`
+    both do, one `auctions.AuctionRefusal` per problem `auctions.settle`
+    found, `lot_number` included where the problem named one. Splitting
+    `str(exc)` on `"; "` instead would be a text convention standing in for
+    this structure: it breaks silently the moment any one problem's own
+    words hold a semicolon, and nothing type-checks it. `str(exc)` itself is
+    `detail`.
+
+    `sales_writes.SaleRefused` and its narrower `SaleInputInvalid` carry no
+    `refusals` attribute -- `record_sale_lines` stops at the first problem
+    rather than collecting a grid's worth -- so `getattr` falls back to a
+    `refused` list of exactly one entry, built from the plain message. That
+    fallback is exact, not an approximation: a single-reason refusal *is*
+    one entry, whichever class raised it.
+    """
+    message = str(exc)
+    refusals = getattr(exc, "refusals", None)
+    if refusals is None:
+        return {"detail": message, "refused": [{"reason": message, "lot_number": None}]}
+    return {
+        "detail": message,
+        "refused": [
+            {"reason": refusal.reason, "lot_number": refusal.lot_number}
+            for refusal in refusals
+        ],
+    }
+
+
+def _refused(_request: Request, exc: Exception) -> JSONResponse:
+    """A genuine conflict from `sales_writes` or `auctions`: 409.
+
+    Registered for `sales_writes.SaleRefused` and `auctions.AuctionRefused`
+    -- see this module's own note above on why registration, not `except`
+    order, is what keeps this from ever catching the narrower sibling each
+    one has.
+    """
+    return JSONResponse(
+        status_code=status.HTTP_409_CONFLICT, content=_refusal_body(exc)
+    )
+
+
+def _bad_input(_request: Request, exc: Exception) -> JSONResponse:
+    """Malformed input from `sales_writes` or `auctions`: 422.
+
+    Registered for `sales_writes.SaleInputInvalid` and
+    `auctions.SettlementInputInvalid`, the narrow half of each pair `_refused`
+    handles the wide half of.
+    """
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, content=_refusal_body(exc)
+    )
+
+
+def _server_misconfigured(request: Request, exc: Exception) -> JSONResponse:
+    """A precondition the operator must fix, not a bug in one request: 500.
+
+    `auctions._consigned_location` (reached from `consign`) and
+    `sales_venues.ensure_store_venue`/`store_venue_id` each raise
+    `errors.ReferenceDataMissing`, naming exactly what is missing
+    and the command that fixes it -- a migrated-but-unseeded database. With
+    no handler
+    registered for it, that message would reach only the server log:
+    Starlette's default handler for an exception nothing catches answers a
+    bare, bodyless 500, and an operator staring at the console learns nothing
+    actionable from "Internal Server Error". This handler makes the message
+    reach them instead -- still a 500, because this is a server-side
+    precondition and not something the request itself got wrong, but with the
+    same `{"detail": ...}` shape every other refusal in this API answers
+    with.
+
+    **Registered on `errors.ReferenceDataMissing`, never on `RuntimeError`
+    itself.** `RuntimeError` is also the base of `NotImplementedError` and
+    `RecursionError`, and of every incidental `RuntimeError` anywhere in the
+    app, shop routes included -- handling the base class would hand a
+    stranger's internal message to an anonymous caller, and because
+    `ExceptionMiddleware` would already have handled the exception, it would
+    never reach `ServerErrorMiddleware`: no logged traceback, and
+    `TestClient` would stop re-raising it, so a genuine bug that happened to
+    be a `RuntimeError` would become a tidy, misleadingly-labeled 500 instead
+    of the crash it was. `test_an_unrelated_runtime_error_is_not_swallowed`
+    (`test_auctions_api.py`) is the regression test: a plain `RuntimeError`
+    from a monkeypatched writer must still escape `TestClient` unhandled.
+
+    **Only an administrator's request is told what is missing.**
+    `sales_venues.store_venue_id` raises this
+    from the shop's public routes too, and "run `alembic upgrade head` on
+    this database" is an operator's instruction, not a stranger's business.
+    `deps.require_admin` marks an admin request; everyone else gets a
+    generic message, and the full one goes to the log either way, so the
+    operator still finds it.
+    """
+    _log.error("server misconfigured: %s", exc)
+    if getattr(request.state, "is_admin", False):
+        detail = str(exc)
+    else:
+        detail = "The shop is not fully set up yet. Please try again later."
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={"detail": detail},
+    )
+
+
+def _field_conflicts(_request: Request, exc: Exception) -> JSONResponse:
+    """Render `FieldConflicts` as a 409 with the per-field list beside the sentence."""
+    assert isinstance(exc, inventory.FieldConflicts)
+    return JSONResponse(
+        status_code=status.HTTP_409_CONFLICT,
+        content={"detail": exc.detail, "conflicts": exc.conflicts},
+    )
+
+
+def _combination_recorded(_request: Request, exc: Exception) -> JSONResponse:
+    """Render `CombinationRecorded` as a 409 naming the row that holds it."""
+    assert isinstance(exc, friedberg.CombinationRecorded)
+    return JSONResponse(
+        status_code=status.HTTP_409_CONFLICT,
+        content={"detail": exc.detail, "existing": exc.existing},
+    )
+
+
+def _number_recorded(_request: Request, exc: Exception) -> JSONResponse:
+    """Render `NumberRecorded` as a 409 carrying the row that holds it."""
+    assert isinstance(exc, friedberg.NumberRecorded)
+    return JSONResponse(
+        status_code=status.HTTP_409_CONFLICT,
+        content={"detail": exc.detail, "recorded": exc.recorded},
+    )
+
+
+app.add_exception_handler(inventory.FieldConflicts, _field_conflicts)
+app.add_exception_handler(friedberg.NumberRecorded, _number_recorded)
+app.add_exception_handler(friedberg.CombinationRecorded, _combination_recorded)
+app.add_exception_handler(sales_writes.SaleInputInvalid, _bad_input)
+app.add_exception_handler(sales_writes.SaleRefused, _refused)
+app.add_exception_handler(auctions.SettlementInputInvalid, _bad_input)
+app.add_exception_handler(auctions.AuctionRefused, _refused)
+app.add_exception_handler(ReferenceDataMissing, _server_misconfigured)
+
+
+@app.get("/health", tags=["meta"])
+def health() -> dict[str, str]:
+    """Liveness probe.
+
+    Deliberately touches nothing, so it stays honest about the process rather
+    than about the database.
+    """
+    return {"status": "ok"}

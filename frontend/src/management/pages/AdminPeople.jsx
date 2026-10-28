@@ -1,0 +1,564 @@
+import { useCallback, useEffect, useState } from 'react'
+
+import { api } from '../api'
+import { useAuth } from '../../shared/auth-context'
+import { SaveButton, SaveShortcut } from '../SaveButton'
+
+/**
+ * People administration, in two tabs.
+ *
+ * Accounts and customers are separate tables joined by a nullable `user_id`,
+ * because a sale recorded from another platform creates a customer with no
+ * account and an account holder who has never bought anything has no
+ * customer record. One tab each
+ * keeps that honest -- a merged grid would imply every customer can sign in.
+ */
+
+const PHONE_DEFAULT_CC = '+1'
+
+/** One line of address, as the customers table shows it. */
+function addressLine(a) {
+  const region = a.region ? ' ' + a.region : ''
+  return `${a.line1}, ${a.city}${region} ${a.postal_code ?? ''}`
+}
+
+/** The two tab buttons; `active` is the key shown, `onChange` takes the other. */
+function Tabs({ active, onChange }) {
+  return (
+    <div className="tabs">
+      {[
+        ['accounts', 'Accounts'],
+        ['customers', 'Customers'],
+      ].map(([key, label]) => (
+        <button
+          key={key}
+          className={key === active ? 'tab tab-active' : 'tab'}
+          onClick={() => onChange(key)}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+const NO_ACCOUNT = { email: '', full_name: '', role: 'customer', password: '' }
+
+/**
+ * Opening an account for someone else: a customer who asked, or a colleague.
+ *
+ * The shop's own registration only ever makes customers, so this is the one
+ * way to open an account for someone who has not registered. There is no
+ * mail to send an invitation, so the administrator sets the first password
+ * and passes it on, as "Set password" already works. A refusal is shown here rather than in place of
+ * the table, so what was typed survives to be corrected.
+ */
+function NewAccountForm({ onCreated, onCancel }) {
+  const [form, setForm] = useState(NO_ACCOUNT)
+  const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
+  const set = (k) => (e) => setForm({ ...form, [k]: e.target.value })
+
+  async function create() {
+    setSaving(true)
+    try {
+      const created = await api.createUser(form)
+      onCreated(created)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="search-panel">
+      {error && <p className="error">{error}</p>}
+      <div className="filter-grid">
+        <label>
+          Email{/* */}
+          <input type="email" value={form.email} onChange={set('email')} />
+        </label>
+        <label>
+          Name{/* */}
+          <input value={form.full_name} onChange={set('full_name')} />
+        </label>
+        <label>
+          Role{/* */}
+          <select value={form.role} onChange={set('role')}>
+            <option value="customer">customer</option>
+            <option value="manager">manager</option>
+          </select>
+        </label>
+        <label>
+          Initial password{/* */}
+          <input
+            type="password"
+            autoComplete="new-password"
+            placeholder="at least 8 characters"
+            value={form.password}
+            onChange={set('password')}
+          />
+        </label>
+      </div>
+      <div className="row">
+        <button disabled={saving} onClick={create}>
+          {saving ? 'Creating...' : 'Create account'}
+        </button>
+        <button className="link" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * The accounts tab: every sign-in, with its role, whether it is active, and
+ * a way to set its password or open a new account.
+ *
+ * A change to a role or to the active flag is saved as it is made, and a
+ * new password signs that account out everywhere. `notify` takes the line
+ * that says what was done. A refused change -- the last administrator cannot
+ * be demoted or deactivated -- is shown above the table, which stays.
+ */
+function Accounts({ notify }) {
+  const { user: me } = useAuth()
+  const [rows, setRows] = useState(null)
+  const [error, setError] = useState('')
+  const [pwFor, setPwFor] = useState(null)
+  const [pw, setPw] = useState('')
+  const [adding, setAdding] = useState(false)
+
+  const load = useCallback(() => {
+    api
+      .listUsers()
+      .then((body) => {
+        setRows(body)
+        setError('')
+      })
+      .catch((err) => setError(err.message))
+  }, [])
+
+  useEffect(load, [load])
+
+  async function patch(id, payload, what) {
+    try {
+      await api.updateUser(id, payload)
+      notify(what)
+      load()
+    } catch (err) {
+      // The last-administrator refusal arrives here as a 409. It is the
+      // whole point of the guard, so it is shown rather than swallowed.
+      setError(err.message)
+    }
+  }
+
+  async function savePassword(id) {
+    try {
+      await api.setUserPassword(id, pw)
+      setPwFor(null)
+      setPw('')
+      notify('Password changed. That account has been signed out everywhere.')
+      load()
+    } catch (err) {
+      setError(err.message)
+    }
+  }
+
+  // Only when the list never loaded. A failed action lands in `error` too --
+  // the last-administrator 409 most of all -- and that refusal is information
+  // about a row, so the rows and the password field stay on screen.
+  if (error && !rows) return <p className="error">{error}</p>
+  if (!rows) return <p className="muted">Loading...</p>
+
+  return (
+    <>
+      {error && <p className="error">{error}</p>}
+      <p className="muted">
+        Accounts are never deleted, only deactivated -- a person who has placed orders
+        cannot be removed without breaking that history.
+      </p>
+      {adding ? (
+        <NewAccountForm
+          onCancel={() => setAdding(false)}
+          onCreated={(created) => {
+            setAdding(false)
+            notify(
+              `Created ${created.email}. There is no email to send it, so pass ` +
+                'the password on to them yourself.',
+            )
+            load()
+          }}
+        />
+      ) : (
+        <div className="row">
+          <button onClick={() => setAdding(true)}>New account</button>
+        </div>
+      )}
+      <table className="table">
+        <thead>
+          <tr>
+            <th>Email</th>
+            <th>Name</th>
+            <th>Role</th>
+            <th>Active</th>
+            <th>Password</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((u) => (
+            <tr key={u.id}>
+              <td className="mono">
+                {u.email}
+                {u.id === me?.id && <span className="badge">you</span>}
+              </td>
+              <td>{u.full_name || <span className="muted">-</span>}</td>
+              <td>
+                <select
+                  value={u.role}
+                  onChange={(e) =>
+                    patch(
+                      u.id,
+                      { role: e.target.value },
+                      `${u.email} is now ${e.target.value}`,
+                    )
+                  }
+                >
+                  <option value="customer">customer</option>
+                  <option value="manager">manager</option>
+                </select>
+              </td>
+              <td>
+                <button
+                  className="link"
+                  onClick={() =>
+                    patch(
+                      u.id,
+                      { is_active: !u.is_active },
+                      `${u.email} ${u.is_active ? 'deactivated' : 'reactivated'}`,
+                    )
+                  }
+                >
+                  {u.is_active ? 'Active' : 'Disabled'}
+                </button>
+              </td>
+              <td>
+                {pwFor === u.id ? (
+                  <span className="row">
+                    <input
+                      type="password"
+                      autoFocus
+                      placeholder="at least 8 characters"
+                      value={pw}
+                      onChange={(e) => setPw(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && savePassword(u.id)}
+                    />
+                    <button onClick={() => savePassword(u.id)}>Set</button>
+                    <button className="link" onClick={() => setPwFor(null)}>
+                      Cancel
+                    </button>
+                  </span>
+                ) : (
+                  <button
+                    className="link"
+                    onClick={() => {
+                      setPwFor(u.id)
+                      setPw('')
+                    }}
+                  >
+                    Set password
+                  </button>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </>
+  )
+}
+
+/**
+ * The form for a customer's new shipping address, opened in their row.
+ *
+ * Saving adds the address rather than editing the one on file, which is
+ * retired and kept. `onSaved` runs after a successful save; a refusal goes
+ * to the customers tab through `setError` and the form stays open.
+ */
+function AddressForm({ customerId, onSaved, onCancel, notify, setError }) {
+  const [form, setForm] = useState({
+    line1: '',
+    line2: '',
+    city: '',
+    region: '',
+    postal_code: '',
+    country: 'US',
+  })
+  const [saving, setSaving] = useState(false)
+  const set = (k) => (e) => setForm({ ...form, [k]: e.target.value })
+
+  // One request at a time: each one retires the address before it and adds
+  // a row, so a second behind the first would leave a retired copy.
+  async function save() {
+    setSaving(true)
+    try {
+      await api.addCustomerAddress(customerId, { ...form, address_kind: 'shipping' })
+      notify(
+        'Shipping address recorded. The previous one was retired, not overwritten.',
+      )
+      onSaved()
+    } catch (err) {
+      setError(err.message)
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="search-panel">
+      <div className="filter-grid">
+        <label>
+          Address line 1{/* */}
+          <input value={form.line1} onChange={set('line1')} />
+        </label>
+        <label>
+          Line 2{/* */}
+          <input value={form.line2} onChange={set('line2')} />
+        </label>
+        <label>
+          City{/* */}
+          <input value={form.city} onChange={set('city')} />
+        </label>
+        <label>
+          State / region{/* */}
+          <input value={form.region} onChange={set('region')} />
+        </label>
+        <label>
+          Postal code{/* */}
+          <input value={form.postal_code} onChange={set('postal_code')} />
+        </label>
+        <label>
+          Country{/* */}
+          <input
+            value={form.country}
+            onChange={set('country')}
+            placeholder="two-letter code"
+          />
+        </label>
+      </div>
+      <div className="row">
+        <SaveButton
+          label="Save address"
+          saving={saving}
+          disabled={saving}
+          onClick={save}
+        />
+        <SaveShortcut onSave={save} enabled={!saving} />
+        <button className="link" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * The customers tab: each customer's name, email, phone and default
+ * shipping address, edited one row at a time.
+ *
+ * Only the fields typed into are sent on save. A refusal is shown above the
+ * table and the row stays in edit, so what was typed is not lost. `notify`
+ * takes the line that says what was done.
+ */
+function Customers({ notify }) {
+  const [rows, setRows] = useState(null)
+  const [error, setError] = useState('')
+  const [editing, setEditing] = useState(null)
+  const [addressFor, setAddressFor] = useState(null)
+  const [draft, setDraft] = useState({})
+  // True while a row's save is out, so Ctrl+S held down sends it once.
+  const [saving, setSaving] = useState(false)
+
+  const load = useCallback(() => {
+    api
+      .listCustomers()
+      .then((body) => {
+        setRows(body)
+        setError('')
+      })
+      .catch((err) => setError(err.message))
+  }, [])
+
+  useEffect(load, [load])
+
+  async function saveEdit(id) {
+    const changes = { ...draft }
+    if ('display_name' in changes && changes.display_name.trim() === '') {
+      setError('A customer needs a name.')
+      return
+    }
+    // No email is null to the server, which refuses an empty string as an
+    // address that is not one.
+    if ('email' in changes && changes.email.trim() === '') changes.email = null
+    setSaving(true)
+    try {
+      await api.updateCustomer(id, changes)
+      setEditing(null)
+      notify('Customer updated')
+      load()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // Only when the list never loaded. `saveEdit` puts its refusal here, and
+  // the row being edited must stay mounted: `draft`, the operator's unsaved
+  // typing, is on screen only while it is, and nothing clears `error` but a
+  // later successful load.
+  if (error && !rows) return <p className="error">{error}</p>
+  if (!rows) return <p className="muted">Loading...</p>
+  if (rows.length === 0)
+    return (
+      <p className="muted">
+        No customers yet. A customer record is created by a purchase -- an order in the
+        shop or placed for them, or a sale recorded from another platform -- so this
+        fills up once the store is selling.
+      </p>
+    )
+
+  return (
+    <>
+      {error && <p className="error">{error}</p>}
+      <table className="table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Email</th>
+            <th>Phone</th>
+            <th>Shipping address</th>
+            <th />
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((c) => {
+            const shipping = (c.addresses ?? []).find(
+              (a) => a.address_kind === 'shipping' && a.is_default,
+            )
+            const isEditing = editing === c.id
+            return (
+              <tr key={c.id}>
+                <td>
+                  {isEditing ? (
+                    <input
+                      value={draft.display_name ?? c.display_name}
+                      onChange={(e) =>
+                        setDraft({ ...draft, display_name: e.target.value })
+                      }
+                    />
+                  ) : (
+                    c.display_name
+                  )}
+                </td>
+                <td className="mono">
+                  {isEditing ? (
+                    <input
+                      value={draft.email ?? c.email ?? ''}
+                      onChange={(e) => setDraft({ ...draft, email: e.target.value })}
+                    />
+                  ) : (
+                    c.email || <span className="muted">-</span>
+                  )}
+                </td>
+                <td className="mono">
+                  {isEditing ? (
+                    <input
+                      // Prefilled with the country code rather than storing it
+                      // separately: the number is kept whole in E.164 so it is
+                      // dialable from anywhere, and two columns could disagree.
+                      value={draft.phone ?? c.phone ?? PHONE_DEFAULT_CC}
+                      onChange={(e) => setDraft({ ...draft, phone: e.target.value })}
+                      placeholder="country code, then the number"
+                    />
+                  ) : (
+                    c.phone || <span className="muted">-</span>
+                  )}
+                </td>
+                <td>
+                  {shipping ? (
+                    addressLine(shipping)
+                  ) : (
+                    <span className="muted">none</span>
+                  )}
+                </td>
+                <td>
+                  {isEditing ? (
+                    <span className="row">
+                      <SaveButton
+                        saving={saving}
+                        disabled={saving}
+                        onClick={() => saveEdit(c.id)}
+                      />
+                      {/* Rendered with the row's edit, so held only then. */}
+                      <SaveShortcut onSave={() => saveEdit(c.id)} enabled={!saving} />
+                      <button className="link" onClick={() => setEditing(null)}>
+                        Cancel
+                      </button>
+                    </span>
+                  ) : (
+                    <span className="row">
+                      <button
+                        className="link"
+                        onClick={() => {
+                          setEditing(c.id)
+                          setDraft({})
+                        }}
+                      >
+                        Edit
+                      </button>
+                      <button className="link" onClick={() => setAddressFor(c.id)}>
+                        New address
+                      </button>
+                    </span>
+                  )}
+                  {addressFor === c.id && (
+                    <AddressForm
+                      customerId={c.id}
+                      notify={notify}
+                      setError={setError}
+                      onCancel={() => setAddressFor(null)}
+                      onSaved={() => {
+                        setAddressFor(null)
+                        load()
+                      }}
+                    />
+                  )}
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </>
+  )
+}
+
+/** The People page: the tab chosen, and the last action's message above it. */
+export default function AdminPeople() {
+  const [tab, setTab] = useState('accounts')
+  const [message, setMessage] = useState('')
+
+  return (
+    <section>
+      <h1>People</h1>
+      <Tabs active={tab} onChange={setTab} />
+      {message && <p className="notice">{message}</p>}
+      {tab === 'accounts' ? (
+        <Accounts notify={setMessage} />
+      ) : (
+        <Customers notify={setMessage} />
+      )}
+    </section>
+  )
+}
