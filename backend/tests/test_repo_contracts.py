@@ -46,6 +46,7 @@ _SETTLED = (
     "ccweb_psql",
     "ccweb_testdb",
     "ccweb_check",
+    "ccweb_api",
 )
 
 
@@ -628,6 +629,48 @@ def test_ccweb_settings_cmd_exits_2_and_sets_nothing_on_a_refusal(
     )
     assert "rc=2 repo=[] port=[80a]" in shown.stdout.splitlines()
     assert "CCWEB_API_PORT" in shown.stderr
+
+
+_API_REFUSED = "api FAILED - a setting in .env was refused; the API was not started"
+
+
+@windows_only
+def test_api_cmd_starts_nothing_on_a_refused_setting(tmp_path: Path) -> None:
+    """The start-up task's script stops with 2 before uvicorn ever runs."""
+    shown = _run_cmd_probe(
+        tmp_path,
+        f'call "{SCRIPTS}\\ccweb_api.cmd"\necho rc=%errorlevel%\n',
+        CCWEB_API_PORT="80a",
+    )
+    assert _API_REFUSED in shown.stdout.splitlines(), shown.stdout + shown.stderr
+    assert "rc=2" in shown.stdout.splitlines()
+
+
+def test_api_sh_starts_nothing_on_a_refused_setting() -> None:
+    """The bash twin stops the same way, with the same words."""
+    bash = _bash()
+    if bash is None:
+        pytest.skip("no bash here other than WSL's launcher")
+    environment = {k: v for k, v in os.environ.items() if not k.startswith("CCWEB_")}
+    shown = subprocess.run(
+        [bash, (SCRIPTS / "ccweb_api.sh").as_posix()],
+        capture_output=True,
+        text=True,
+        env={**environment, "CCWEB_API_PORT": "80a"},
+        timeout=60,
+        check=False,
+    )
+    assert _API_REFUSED in shown.stdout.splitlines(), shown.stdout + shown.stderr
+    assert shown.returncode == 2
+
+
+def test_the_windows_start_up_task_runs_the_repository_script() -> None:
+    """The deployment guide registers ccweb_api.cmd, not a copy made by hand."""
+    guide = (REPO_ROOT / "docs" / "deployment-windows.md").read_text(encoding="utf-8")
+    created = re.findall(r'schtasks /create /tn "ccwebdb api"[^\n]*', guide)
+    assert created, "no task registration in the guide"
+    assert all("scripts\\ccweb_api.cmd" in line for line in created), created
+    assert "ccwebdb-run" not in guide
 
 
 #: The loopback addresses a script may write itself, and why each is not a
