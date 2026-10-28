@@ -362,44 +362,35 @@ Build again after every update.
 
 ## 6. Run the API at start-up
 
-The API is started by a scheduled task that runs at boot, whether or not
-anyone is signed in. `python -m uvicorn` rather than `uvicorn.exe`: Smart
-App Control blocks unsigned `.exe` wrappers on some machines.
+The API is started by a scheduled task that runs
+`scripts\ccweb_api.cmd` at boot, whether or not anyone is signed in. The
+script is part of the repository, so an update to how the API starts
+arrives with the code. It takes everything from the settings:
+- it listens on `CCWEB_API_HOST` and `CCWEB_API_PORT`;
+- its output goes through `backend\app\logpipe.py` into `backend.log` in
+  the log folder, as `ccweb_startup.cmd` sends it on the development
+  machine. So `backend.log` starts afresh each time the task starts and
+  never grows past `CCWEB_LOG_MAX_BYTES`, with `CCWEB_LOG_KEEP` files kept
+  ([logs/README.md](../logs/README.md)).
 
-Save as `C:\ccwebdb-run\api.cmd` (outside the repository, so an update
-never overwrites it). `%USERPROFILE%` is the folder of the account the task
-runs as, which is the account that installed the system in step 2. It takes
-the API's address and the log folder from the settings, as the
-repository's own scripts do:
-
-```console
-@echo off
-cd /d "%USERPROFILE%\dev\ccweb\backend"
-call ..\scripts\ccweb_env.cmd || exit /b 2
-call ..\scripts\ccweb_settings.cmd || exit /b 2
-if not exist "%CCWEB_LOG_DIR%" mkdir "%CCWEB_LOG_DIR%"
-"%ENVDIR%\python.exe" -m uvicorn app.main:app --host %CCWEB_API_HOST% --port %CCWEB_API_PORT% --proxy-headers --forwarded-allow-ips %CCWEB_API_HOST% 2>&1 | "%ENVDIR%\python.exe" "%CCWEB_REPO%\backend\app\logpipe.py" "%CCWEB_LOG_DIR%\backend.log"
-```
-
-The API's output goes through `backend\app\logpipe.py`, as
-`ccweb_startup.cmd` sends it on the development machine, so `backend.log`
-starts afresh each time the task starts and never grows past
-`CCWEB_LOG_MAX_BYTES`, with `CCWEB_LOG_KEEP` files kept
-([logs/README.md](../logs/README.md)).
-
+It runs `python -m uvicorn` rather than `uvicorn.exe`, because Smart App
+Control blocks unsigned `.exe` wrappers on some machines.
 `--proxy-headers` with `--forwarded-allow-ips` set to the API's own address
 makes the API see the visitor's address and `https` from Caddy's headers,
-and trust those headers from Caddy alone. (An `api.cmd` written before
-these settings existed, naming `127.0.0.1` and `8000` itself, behaves the
-same while the settings keep those defaults.) Register it from an
-administrator cmd, signed in as the account that installed the system,
-which can read the repository and `MEDIA_ROOT`. The command asks for that
-account's password, so it is given alone -- pasted with others, the next
-line would be taken as the password:
+and trust those headers from Caddy alone.
+
+Register it from an administrator cmd, signed in as the account that
+installed the system in step 2, which can read the repository and
+`MEDIA_ROOT`. The command asks for that account's password, so it is
+given alone -- pasted with others, the next line would be taken as the
+password. `/f` replaces a task of that name that is already there:
 
 ```console
-schtasks /create /tn "ccwebdb api" /sc onstart /ru "%USERDOMAIN%\%USERNAME%" /rp * /tr "C:\ccwebdb-run\api.cmd"
+schtasks /create /tn "ccwebdb api" /sc onstart /ru "%USERDOMAIN%\%USERNAME%" /rp * /tr "\"%USERPROFILE%\dev\ccweb\scripts\ccweb_api.cmd\"" /f
 ```
+
+The task stores that password. After the account's password changes, run
+this command again, or the API does not start at the next boot.
 
 Then start it and check it answers (at the default address; use
 `CCWEB_API_HOST` and `CCWEB_API_PORT` if `.env` sets them):

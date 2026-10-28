@@ -359,6 +359,10 @@ connection dies.
   auto-fixes first. See [code-quality.md](code-quality.md).
 - **`ccweb_testdb.cmd`** creates and starts a cluster for the tests alone
   (`stop`, `status`); see *A cluster for the tests*.
+- **`ccweb_api.cmd`** runs the API alone in the foreground, as a production
+  server's start-up task does
+  ([deployment-windows.md](deployment-windows.md), step 6). Development
+  uses `ccweb_startup.cmd` instead.
 - **Helpers**, called by the scripts above rather than run directly:
   `ccweb_env.cmd` (the conda environment), `ccweb_settings.cmd` (the
   settings), `ccweb_logdir.cmd` (sets the log folder from `CCWEB_LOG_DIR`)
