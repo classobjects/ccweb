@@ -378,9 +378,9 @@ answers `No module named 'app'` -- so the change of folder and the check are
 one line. If cmd answers `The system cannot find the path specified`, the
 repository is somewhere else on this machine: change the folder in the line.
 It needs step 7's dependencies, so on a new machine run it after step 7.
-[system-administration.md](system-administration.md) (*Settings*) lists every
-setting -- photographs' folder, allowed web origins and the rest -- and says
-which must change before anything outside this machine can reach the system.
+[settings.md](settings.md) lists every setting -- whether it is required,
+its default and the values it takes -- and says which must change before
+anything outside this machine can reach the system.
 
 ## 7. Install dependencies
 

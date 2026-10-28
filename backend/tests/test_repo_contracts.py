@@ -799,3 +799,18 @@ def test_env_example_names_every_setting_and_no_other() -> None:
     read = {name.upper() for name in Settings.model_fields}
     assert sorted(read - documented) == [], "read by the code, not in .env.example"
     assert sorted(documented - read) == [], "in .env.example, read by nothing"
+
+
+#: A setting's row in docs/settings.md: its name, code-quoted, first in the row.
+_SETTINGS_ROW = re.compile(r"^\| `([A-Z][A-Z0-9_]+)` \|", re.MULTILINE)
+
+
+def test_settings_reference_has_a_row_for_every_setting_and_no_other() -> None:
+    """docs/settings.md tells what each setting takes; one left out is undocumented."""
+    text = (REPO_ROOT / "docs" / "settings.md").read_text(encoding="utf-8")
+    tables = text.split("## Environment variables that are not `.env` settings")[0]
+    rows = _SETTINGS_ROW.findall(tables)
+    read = {name.upper() for name in Settings.model_fields}
+    assert sorted(read - set(rows)) == [], "read by the code, no row in settings.md"
+    assert sorted(set(rows) - read) == [], "a row in settings.md, read by nothing"
+    assert len(rows) == len(set(rows)), "a setting with two rows in settings.md"
