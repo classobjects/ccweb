@@ -22,6 +22,7 @@ from typing import Annotated, Any, Literal
 from pydantic import (
     AfterValidator,
     BaseModel,
+    BeforeValidator,
     ConfigDict,
     EmailStr,
     Field,
@@ -469,6 +470,21 @@ class ShopStatus(BaseModel):
 _E164 = re.compile(r"^\+[1-9]\d{6,14}$")
 
 
+def _e164_or_none(value: str | None) -> str | None:
+    """Require E.164, so a number is dialable from anywhere.
+
+    A bare '555 1234' is ambiguous the moment the other party is not in the
+    same country, and this collection already has overseas buyers in
+    prospect. Spaces, brackets, dashes and dots are dropped; empty clears it.
+    """
+    if value is None or value.strip() == "":
+        return None
+    compact = re.sub(r"[\s()\-.]", "", value.strip())
+    if not _E164.match(compact):
+        raise ValueError("phone must be in international form, e.g. +12125551234")
+    return compact
+
+
 class AddressOut(BaseModel):
     """An address as the API returns it.
 
@@ -528,18 +544,8 @@ class CustomerUpdate(BaseModel):
     @field_validator("phone")
     @classmethod
     def _e164(cls, value: str | None) -> str | None:
-        """Require E.164, so a number is dialable from anywhere.
-
-        A bare '555 1234' is ambiguous the moment a customer is not in the
-        same country as the seller, and this collection already has overseas
-        buyers in prospect. Empty clears the number.
-        """
-        if value is None or value.strip() == "":
-            return None
-        compact = re.sub(r"[\s()\-.]", "", value.strip())
-        if not _E164.match(compact):
-            raise ValueError("phone must be in international form, e.g. +12125551234")
-        return compact
+        """Require E.164 (`_e164_or_none`); empty clears the number."""
+        return _e164_or_none(value)
 
 
 class AddressIn(BaseModel):
@@ -1761,6 +1767,16 @@ def _store_address_or_none(value: str | None) -> str | None:
 StoreUrl = Annotated[
     str | None, Field(max_length=1000), AfterValidator(_store_address_or_none)
 ]
+#: The person behind a seller's account; blank clears it.
+ContactName = Annotated[
+    str | None, Field(max_length=255), AfterValidator(_strip_or_none)
+]
+#: Their mail address; blank clears it, and anything else must be one.
+ContactEmail = Annotated[
+    Annotated[EmailStr, Field(max_length=255)] | None, BeforeValidator(_strip_or_none)
+]
+#: Their phone, in E.164 as a customer's is; blank clears it.
+ContactPhone = Annotated[str | None, AfterValidator(_e164_or_none)]
 
 #: A web address is only ever `http://` or `https://` -- the same rule
 #: `PurchaseOrderDetailOut.source_url` is filtered by before it is offered as
@@ -1784,6 +1800,9 @@ class SellerOut(BaseModel):
     id: int
     name: str
     store_url: str | None = None
+    contact_name: str | None = None
+    contact_email: str | None = None
+    contact_phone: str | None = None
     #: Purchases that name this seller -- a seller with none may be deleted.
     order_count: int = 0
 
@@ -1799,6 +1818,9 @@ class SellerCreate(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     #: Their store or profile page, or a `mailto:` address; blank is none.
     store_url: StoreUrl = None
+    contact_name: ContactName = None
+    contact_email: ContactEmail = None
+    contact_phone: ContactPhone = None
 
     @field_validator("name")
     @classmethod
@@ -1813,8 +1835,11 @@ class SellerUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str | None = Field(default=None, min_length=1, max_length=255)
-    #: Blank clears it.
+    #: Blank clears it, as it does each contact field.
     store_url: StoreUrl = None
+    contact_name: ContactName = None
+    contact_email: ContactEmail = None
+    contact_phone: ContactPhone = None
 
     @field_validator("name")
     @classmethod

@@ -38,9 +38,12 @@ export const FIELD_HELP = {
     title: 'Seller',
     text:
       'Who sold it on the marketplace the vendor names -- the eBay seller, the ' +
-      'Whatnot shop. Pick one, or "+ Add a seller..." for a new one with a name ' +
-      'and store link -- a web address, or their email address. Shown by name, ' +
-      'linked to their store, on the order and in Receiving.',
+      'Whatnot shop. Pick one, type their store address to find or add them, or ' +
+      '"+ Add a seller..." for a new one with a name and store link -- a web ' +
+      'address, or their email address -- and, if wanted, the contact behind ' +
+      'it: name, email and phone (country code first). Shown by name, linked to ' +
+      'their store, on the order and in Receiving; the contact is kept in ' +
+      'Settings > Lists > Sellers.',
   },
   purchase_notes: {
     title: 'Notes',

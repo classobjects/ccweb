@@ -56,7 +56,7 @@ describe('SellerField: a store address', () => {
     expect(api.createSeller).not.toHaveBeenCalled()
   })
 
-  it('adds a seller for a store not on file, named as the address names it', async () => {
+  it('opens the add form for a store not on file, named as the address names it', async () => {
     api.createSeller.mockResolvedValue({
       id: 9,
       name: 'newhound',
@@ -65,19 +65,40 @@ describe('SellerField: a store address', () => {
     const onChange = await open()
     await userEvent.type(address(), 'newhound.hibid.com{Enter}')
 
+    // Nobody is added yet: the form asks for the contact first.
+    expect(api.createSeller).not.toHaveBeenCalled()
+    expect(
+      screen.getByRole('textbox', { name: 'Store web address or email' }),
+    ).toHaveValue('newhound.hibid.com')
+    expect(screen.getByRole('textbox', { name: 'Seller name' })).toHaveValue('newhound')
+    await userEvent.type(
+      screen.getByRole('textbox', { name: 'Contact name' }),
+      'Pat Dealer',
+    )
+    await userEvent.click(screen.getByRole('button', { name: 'Add seller' }))
+
     await waitFor(() =>
       expect(api.createSeller).toHaveBeenCalledWith({
         name: 'newhound',
         store_url: 'https://newhound.hibid.com',
+        contact_name: 'Pat Dealer',
       }),
     )
     expect(onChange).toHaveBeenCalledWith('9')
-    expect(await screen.findByText(/newhound.*added/)).toBeInTheDocument()
-
-    // Leaving the box after Enter picks nothing again: no second seller.
-    await userEvent.tab()
     expect(api.createSeller).toHaveBeenCalledTimes(1)
-    expect(screen.getByText(/newhound.*added/)).toBeInTheDocument()
+  })
+
+  it('leaves the form empty again when an address-opened add is cancelled', async () => {
+    await open()
+    await userEvent.type(address(), 'newhound.hibid.com{Enter}')
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+
+    expect(address()).toHaveValue('')
+    await userEvent.selectOptions(
+      screen.getByRole('combobox', { name: 'Seller' }),
+      '+ Add a seller...',
+    )
+    expect(screen.getByRole('textbox', { name: 'Seller name' })).toHaveValue('')
   })
 
   it('hides the pulldown while an address is typed, and shows it again when cleared', async () => {
@@ -96,5 +117,51 @@ describe('SellerField: a store address', () => {
     expect(screen.getByText(/not a web address/i)).toBeInTheDocument()
     expect(onChange).not.toHaveBeenCalled()
     expect(api.createSeller).not.toHaveBeenCalled()
+  })
+})
+
+describe('SellerField: adding a seller', () => {
+  it('sends the contact typed, the phone as typed after its country code', async () => {
+    api.createSeller.mockResolvedValue({ id: 10, name: 'Coin show table 12' })
+    const onChange = await open()
+    await userEvent.selectOptions(
+      screen.getByRole('combobox', { name: 'Seller' }),
+      '+ Add a seller...',
+    )
+    const phone = screen.getByRole('textbox', { name: 'Contact phone' })
+    // The country code is there to type after, not a value already chosen.
+    expect(phone).toHaveValue('+1')
+    await userEvent.type(
+      screen.getByRole('textbox', { name: 'Seller name' }),
+      'Coin show table 12',
+    )
+    await userEvent.type(
+      screen.getByRole('textbox', { name: 'Contact email' }),
+      'pat@example.com',
+    )
+    await userEvent.type(phone, ' 860 555 1234')
+    await userEvent.click(screen.getByRole('button', { name: 'Add seller' }))
+
+    await waitFor(() =>
+      expect(api.createSeller).toHaveBeenCalledWith({
+        name: 'Coin show table 12',
+        contact_email: 'pat@example.com',
+        contact_phone: '+1 860 555 1234',
+      }),
+    )
+    expect(onChange).toHaveBeenCalledWith('10')
+  })
+
+  it('sends no contact when none is typed', async () => {
+    api.createSeller.mockResolvedValue({ id: 11, name: 'x' })
+    await open()
+    await userEvent.selectOptions(
+      screen.getByRole('combobox', { name: 'Seller' }),
+      '+ Add a seller...',
+    )
+    await userEvent.type(screen.getByRole('textbox', { name: 'Seller name' }), 'x')
+    await userEvent.click(screen.getByRole('button', { name: 'Add seller' }))
+
+    await waitFor(() => expect(api.createSeller).toHaveBeenCalledWith({ name: 'x' }))
   })
 })

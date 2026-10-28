@@ -50,6 +50,9 @@ def test_a_seller_is_added_with_a_name_and_store(
         "id": res.json()["id"],
         "name": "coinhound",
         "store_url": STORE,
+        "contact_name": None,
+        "contact_email": None,
+        "contact_phone": None,
         "order_count": 0,
     }
 
@@ -149,6 +152,88 @@ def test_a_listing_address_is_never_a_mailto() -> None:
     """Only a seller's store may be a mail address; a listing is a page."""
     with pytest.raises(ValidationError):
         TypeAdapter(ListingUrl).validate_python("mailto:coins@example.com")
+
+
+def test_a_seller_is_added_with_a_contact(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    res = client.post(
+        "/api/sellers",
+        json={
+            "name": "coinhound",
+            "contact_name": "  Pat Dealer  ",
+            "contact_email": " pat@example.com ",
+            "contact_phone": "+1 (860) 555-1234",
+        },
+        headers=admin_headers,
+    )
+    assert res.status_code == 201, res.text
+    body = res.json()
+    assert (body["contact_name"], body["contact_email"], body["contact_phone"]) == (
+        "Pat Dealer",
+        "pat@example.com",
+        "+18605551234",
+    )
+    listed = client.get("/api/sellers", headers=admin_headers).json()
+    assert listed[0]["contact_phone"] == "+18605551234"
+
+
+def test_a_sellers_contact_is_changed_and_cleared(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    seller = _seller(db)
+    set_ = client.patch(
+        f"/api/sellers/{seller.id}",
+        json={
+            "contact_name": "Pat",
+            "contact_email": "pat@example.com",
+            "contact_phone": "+442071234567",
+        },
+        headers=admin_headers,
+    )
+    assert set_.status_code == 200, set_.text
+    assert set_.json()["contact_phone"] == "+442071234567"
+    assert set_.json()["store_url"] == STORE
+
+    cleared = client.patch(
+        f"/api/sellers/{seller.id}",
+        json={"contact_name": " ", "contact_email": "", "contact_phone": ""},
+        headers=admin_headers,
+    )
+    assert cleared.status_code == 200, cleared.text
+    body = cleared.json()
+    assert (body["contact_name"], body["contact_email"], body["contact_phone"]) == (
+        None,
+        None,
+        None,
+    )
+    db.expire_all()
+    assert db.get_one(Seller, seller.id).contact_email is None
+
+
+def test_a_sellers_phone_must_be_international(
+    client: TestClient, admin_headers: dict[str, str]
+) -> None:
+    """E.164, as a customer's: a bare local number is ambiguous abroad."""
+    for phone in ("555 1234", "8605551234", "+0123456789", "+1"):
+        res = client.post(
+            "/api/sellers",
+            json={"name": "x", "contact_phone": phone},
+            headers=admin_headers,
+        )
+        assert res.status_code == 422, phone
+        assert "international form" in res.text, phone
+
+
+def test_a_sellers_contact_email_must_be_an_address(
+    client: TestClient, admin_headers: dict[str, str]
+) -> None:
+    res = client.post(
+        "/api/sellers",
+        json={"name": "x", "contact_email": "not an address"},
+        headers=admin_headers,
+    )
+    assert res.status_code == 422
 
 
 def test_sellers_are_listed_by_name(

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 
 import { api } from '../api'
 import { useAuth } from '../../shared/auth-context'
+import { PHONE_DEFAULT_CC } from '../phone'
 import { SaveButton, SaveShortcut } from '../SaveButton'
 
 /**
@@ -13,8 +14,6 @@ import { SaveButton, SaveShortcut } from '../SaveButton'
  * customer record. One tab each
  * keeps that honest -- a merged grid would imply every customer can sign in.
  */
-
-const PHONE_DEFAULT_CC = '+1'
 
 /** One line of address, as the customers table shows it. */
 function addressLine(a) {

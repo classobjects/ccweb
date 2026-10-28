@@ -433,14 +433,26 @@ def _seller_orders(db: Session, seller_id: int) -> int:
     )
 
 
-def _seller_out(db: Session, seller: Seller) -> SellerOut:
-    """A seller for the wire, with how many purchases name them."""
+#: A seller's fields that are written as sent, blank clearing each.
+_SELLER_DETAILS = ("store_url", "contact_name", "contact_email", "contact_phone")
+
+
+def _seller_wire(seller: Seller, order_count: int) -> SellerOut:
+    """A seller for the wire, named on `order_count` purchases."""
     return SellerOut(
         id=seller.id,
         name=seller.name,
         store_url=seller.store_url,
-        order_count=_seller_orders(db, seller.id),
+        contact_name=seller.contact_name,
+        contact_email=seller.contact_email,
+        contact_phone=seller.contact_phone,
+        order_count=order_count,
     )
+
+
+def _seller_out(db: Session, seller: Seller) -> SellerOut:
+    """A seller for the wire, with how many purchases name them."""
+    return _seller_wire(seller, _seller_orders(db, seller.id))
 
 
 @sellers_router.get("")
@@ -456,22 +468,17 @@ def list_sellers(db: DbSession, _admin: AdminUser) -> list[SellerOut]:
         .all()
     )
     sellers = db.scalars(select(Seller).order_by(func.lower(Seller.name))).all()
-    return [
-        SellerOut(
-            id=seller.id,
-            name=seller.name,
-            store_url=seller.store_url,
-            order_count=counts.get(seller.id, 0),
-        )
-        for seller in sellers
-    ]
+    return [_seller_wire(seller, counts.get(seller.id, 0)) for seller in sellers]
 
 
 @sellers_router.post("", status_code=status.HTTP_201_CREATED)
 def create_seller(payload: SellerCreate, db: DbSession, _admin: AdminUser) -> SellerOut:
     """Add a seller inline, while entering a purchase."""
     _refuse_seller_name(db, payload.name, None)
-    seller = Seller(name=payload.name, store_url=payload.store_url)
+    seller = Seller(
+        name=payload.name,
+        **{field: getattr(payload, field) for field in _SELLER_DETAILS},
+    )
     db.add(seller)
     _commit_seller(db, payload.name)
     db.refresh(seller)
@@ -482,14 +489,15 @@ def create_seller(payload: SellerCreate, db: DbSession, _admin: AdminUser) -> Se
 def update_seller(
     seller_id: int, payload: SellerUpdate, db: DbSession, _admin: AdminUser
 ) -> SellerOut:
-    """Rename a seller or change their store; only the fields sent change."""
+    """Rename a seller or change their store or contact; only fields sent change."""
     seller = get_or_404(db, Seller, seller_id, "Seller not found")
     sent = payload.model_fields_set
     if "name" in sent and payload.name is not None:
         _refuse_seller_name(db, payload.name, seller.id)
         seller.name = payload.name
-    if "store_url" in sent:
-        seller.store_url = payload.store_url
+    for field in _SELLER_DETAILS:
+        if field in sent:
+            setattr(seller, field, getattr(payload, field))
     _commit_seller(db, seller.name)
     db.refresh(seller)
     return _seller_out(db, seller)
