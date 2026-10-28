@@ -1,0 +1,226 @@
+import userEvent from '@testing-library/user-event'
+import { screen, waitFor } from '@testing-library/react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+vi.mock('../../api', () => ({
+  api: { splitItem: vi.fn() },
+}))
+
+import { api } from '../../api'
+import { FIELD_HELP } from '../../fieldHelp'
+import { renderWithProviders } from '../../../test/helpers'
+import SplitDialog from './SplitDialog'
+
+// The nine proof sets of order 49-49494-94949, bought as one listing.
+const LOT = {
+  id: 41,
+  item_code: 'CC-000041',
+  source_title: '9 Set Lot of U.S. Proof & Mint Sets ORIGINAL',
+  description: 'US Proof Set',
+  year_start: 1980,
+  piece_count: 9,
+  item_cost: '63.54',
+  shipping_cost: '0.00',
+  sale_state: [],
+}
+
+const RESULT = {
+  parent_item_code: 'CC-000041',
+  parent_total_cost: '63.54',
+  allocated_total_cost: '63.54',
+  pieces: [{ item_code: 'CC-000042' }, { item_code: 'CC-000043' }],
+}
+
+const descriptions = () => screen.getAllByLabelText(/^Description of piece/)
+
+function open(item = LOT) {
+  const onSplit = vi.fn()
+  renderWithProviders(<SplitDialog item={item} onSplit={onSplit} onClose={vi.fn()} />)
+  return onSplit
+}
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  api.splitItem.mockResolvedValue(RESULT)
+})
+
+describe('SplitDialog', () => {
+  it('starts with a row per piece the lot records, each costed', () => {
+    open()
+    expect(descriptions()).toHaveLength(9)
+    expect(descriptions()[8]).toHaveValue('US Proof Set')
+    // 9 x 7.06 is exactly the lot's 63.54.
+    expect(screen.getAllByText('7.06')).toHaveLength(9)
+  })
+
+  it('sends each piece its own description and year, keeping the seller title', async () => {
+    const user = userEvent.setup()
+    const onSplit = open({ ...LOT, piece_count: 2 })
+    await user.clear(descriptions()[0])
+    await user.type(descriptions()[0], '1980 US Proof Set')
+    await user.clear(screen.getByLabelText('Year of piece 2'))
+    await user.type(screen.getByLabelText('Year of piece 2'), '1981')
+    await user.click(screen.getByRole('button', { name: 'Split into 2 pieces' }))
+
+    expect(api.splitItem).toHaveBeenCalledWith(41, {
+      mode: 'equal',
+      pieces: [
+        {
+          source_title: LOT.source_title,
+          piece_count: 1,
+          description: '1980 US Proof Set',
+          year_start: 1980,
+        },
+        {
+          source_title: LOT.source_title,
+          piece_count: 1,
+          description: 'US Proof Set',
+          year_start: 1981,
+        },
+      ],
+    })
+    await waitFor(() => expect(onSplit).toHaveBeenCalledWith(RESULT))
+  })
+
+  it('leaves Year blank for a lot dated as a range, so each piece keeps the range', async () => {
+    const user = userEvent.setup()
+    open({ ...LOT, piece_count: 2, year_start: 1964, year_end: 1970 })
+    expect(screen.getByLabelText('Year of piece 1')).toHaveValue('')
+    expect(screen.getByLabelText('Year of piece 2')).toHaveValue('')
+    await user.click(screen.getByRole('button', { name: 'Split into 2 pieces' }))
+
+    const sent = api.splitItem.mock.calls[0][1]
+    expect(sent.pieces.map((piece) => piece.year_start)).toEqual([undefined, undefined])
+  })
+
+  it('starts Year at the lot year for a lot of one year, stored with both ends', () => {
+    open({ ...LOT, piece_count: 2, year_start: 1980, year_end: 1980 })
+    expect(screen.getByLabelText('Year of piece 1')).toHaveValue('1980')
+  })
+
+  it("asks no year of a note lot's pieces: a note's year is its series year", async () => {
+    const user = userEvent.setup()
+    open({ ...LOT, item_kind: 'currency', year_start: null, piece_count: 2 })
+    expect(screen.queryByRole('columnheader', { name: 'Year' })).toBeNull()
+    expect(screen.queryByLabelText('Year of piece 1')).toBeNull()
+    await user.click(screen.getByRole('button', { name: 'Split into 2 pieces' }))
+
+    const sent = api.splitItem.mock.calls[0][1]
+    expect(sent.pieces.every((piece) => !('year_start' in piece))).toBe(true)
+  })
+
+  it('divides by value only once every piece has one', async () => {
+    const user = userEvent.setup()
+    open({ ...LOT, piece_count: 2, item_cost: '91.00' })
+    await user.selectOptions(screen.getByRole('combobox'), 'relative')
+    const button = screen.getByRole('button', { name: 'Split into 2 pieces' })
+    expect(button).toBeDisabled()
+    expect(screen.getByText(/needs a value for every piece/)).toBeInTheDocument()
+
+    await user.type(screen.getByLabelText('Value of piece 1'), '0.01')
+    await user.type(screen.getByLabelText('Value of piece 2'), '0.50')
+    // 91.00 in the proportion 1:50.
+    expect(screen.getByText('1.78')).toBeInTheDocument()
+    expect(screen.getByText('89.21')).toBeInTheDocument()
+    await user.click(button)
+    const sent = api.splitItem.mock.calls[0][1]
+    expect(sent.mode).toBe('relative')
+    expect(sent.pieces.map((piece) => piece.relative_value)).toEqual(['0.01', '0.50'])
+  })
+
+  it('reads a value typed without the zero before its point', async () => {
+    const user = userEvent.setup()
+    open({ ...LOT, piece_count: 2, item_cost: '91.00' })
+    await user.selectOptions(screen.getByRole('combobox'), 'relative')
+
+    await user.type(screen.getByLabelText('Value of piece 1'), '.01')
+    await user.type(screen.getByLabelText('Value of piece 2'), '.5')
+
+    // The same 1:50 as 0.01 and 0.50.
+    expect(screen.getByText('1.78')).toBeInTheDocument()
+    expect(screen.getByText('89.21')).toBeInTheDocument()
+    const button = screen.getByRole('button', { name: 'Split into 2 pieces' })
+    expect(button).toBeEnabled()
+    await user.click(button)
+    expect(api.splitItem.mock.calls[0][1].pieces.map((p) => p.relative_value)).toEqual([
+      '.01',
+      '.5',
+    ])
+  })
+
+  it('grows and shrinks the rows with Pieces, which can be retyped', async () => {
+    const user = userEvent.setup()
+    open({ ...LOT, piece_count: 2 })
+    const pieces = screen.getByRole('spinbutton')
+    await user.clear(pieces)
+    await user.type(pieces, '6')
+    await user.tab()
+    expect(descriptions()).toHaveLength(6)
+    await user.clear(pieces)
+    await user.type(pieces, '3{Enter}')
+    expect(descriptions()).toHaveLength(3)
+    expect(screen.getByRole('button', { name: 'Split into 3 pieces' })).toBeEnabled()
+  })
+
+  it('keeps what the rows hold while a longer count is being typed', async () => {
+    const user = userEvent.setup()
+    open()
+    await user.clear(descriptions()[8])
+    await user.type(descriptions()[8], '1988 US Mint Set')
+
+    // Nine to twelve passes through "1": no row may go on the way.
+    const pieces = screen.getByRole('spinbutton')
+    await user.clear(pieces)
+    await user.type(pieces, '12')
+    expect(descriptions()).toHaveLength(9)
+    await user.tab()
+
+    expect(descriptions()).toHaveLength(12)
+    expect(descriptions()[8]).toHaveValue('1988 US Mint Set')
+  })
+
+  it('refuses one piece', async () => {
+    const user = userEvent.setup()
+    open({ ...LOT, piece_count: 2 })
+    const pieces = screen.getByRole('spinbutton')
+    await user.clear(pieces)
+    await user.type(pieces, '1')
+    await user.tab()
+    expect(screen.getByRole('button', { name: 'Split into 1 pieces' })).toBeDisabled()
+    expect(screen.getByText(/at least two pieces/)).toBeInTheDocument()
+  })
+
+  it('asks before splitting a listed lot, and says so to the server', async () => {
+    const user = userEvent.setup()
+    open({
+      ...LOT,
+      piece_count: 2,
+      sale_state: [{ kind: 'listing', id: 3, text: 'offered on eBay' }],
+    })
+    const button = screen.getByRole('button', { name: 'Split into 2 pieces' })
+    expect(button).toBeDisabled()
+    await user.click(screen.getByLabelText('End the offer and split it'))
+    await user.click(button)
+    expect(api.splitItem.mock.calls[0][1].acknowledge_for_sale).toBe(true)
+  })
+
+  it('shows the refusal and stays open', async () => {
+    const user = userEvent.setup()
+    api.splitItem.mockRejectedValue(new Error('CC-000041 appears in an order'))
+    const onSplit = open({ ...LOT, piece_count: 2 })
+    await user.click(screen.getByRole('button', { name: 'Split into 2 pieces' }))
+    expect(await screen.findByText('CC-000041 appears in an order')).toBeInTheDocument()
+    expect(onSplit).not.toHaveBeenCalled()
+  })
+
+  it('explains every control, in both modes', async () => {
+    const user = userEvent.setup()
+    open({ ...LOT, piece_count: 2 })
+    await user.selectOptions(screen.getByRole('combobox'), 'relative')
+    const bare = [...document.querySelectorAll('dialog input, dialog select')]
+      .filter((control) => control.type !== 'checkbox')
+      .map((control) => control.closest('[data-help]')?.dataset.help)
+      .filter((key) => !key || !FIELD_HELP[key])
+    expect(bare).toEqual([])
+  })
+})

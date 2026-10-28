@@ -1,0 +1,271 @@
+"""Lifecycle and physical location.
+
+Two independent axes. How an item **came in** (ordered, received, canceled)
+and how it **goes out** (held, listed, sold, shipped) are different questions,
+and collapsing them into one column makes "received and sold" unrepresentable.
+Both live as foreign keys on `inventory_item`; the history of each lives here.
+
+History is a table rather than overwritten columns, so that "when did this
+actually arrive" survives a later correction to the status.
+"""
+
+from __future__ import annotations
+
+from datetime import date, datetime
+from typing import Any
+
+from sqlalchemy import (
+    Date,
+    DateTime,
+    ForeignKey,
+    Index,
+    String,
+    Text,
+    UniqueConstraint,
+    text,
+)
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from .base import Base, TimestampMixin, utcnow
+from .reference import StorageLocationKind
+
+__all__ = [
+    "ItemFieldChange",
+    "ItemFieldSource",
+    "ItemStatusHistory",
+    "LocationHistory",
+    "StorageLocation",
+]
+
+
+# Foreign-key targets stay strings so SQLAlchemy resolves them at
+# mapper-configuration time; a column object would force an import
+# between model modules.
+_FK_INVENTORY_ITEM = "inventory_item.id"
+
+_FK_USERS = "users.id"
+
+_ON_DELETE_SET_NULL = "SET NULL"
+
+
+class StorageLocation(TimestampMixin, Base):
+    """Where items physically are.
+
+    Never customer-visible. This is an authorization boundary, not a
+    convention -- a public listing that leaked the safe-deposit box holding
+    the item would be a security failure, not a cosmetic one.
+
+    What enforces it is `routers.catalog.to_catalog_item`, which builds every
+    public response field by field, and the test that asserts the result
+    carries no location. **Not** the `public_catalog` view: that view forbids
+    the column too, but no endpoint reads it (see `models.views`), so
+    trusting it to keep this column private would be trusting something that
+    is not on the path.
+    """
+
+    __tablename__ = "storage_location"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    storage_location_kind_id: Mapped[int] = mapped_column(
+        ForeignKey("storage_location_kind.id", ondelete="RESTRICT"),
+        index=True,
+        nullable=False,
+    )
+    #: The bank, depository or building. Free text: institutions are not a
+    #: classifier anyone searches across.
+    institution: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    #: Box or container number.
+    identifier: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    kind: Mapped[StorageLocationKind] = relationship()
+
+    __table_args__ = (
+        # A location's identity: its kind, institution and box, whatever
+        # their case, an absent part read as empty -- so a box-less
+        # location is one row too (Postgres treats two NULLs as distinct),
+        # and concurrent first consignments to one house
+        # (`auctions._consigned_location`) cannot each insert it. Written as
+        # PostgreSQL stores the expressions (see ITEM_CODE_DEFAULT in core.py).
+        Index(
+            "uq_storage_location_identity",
+            "storage_location_kind_id",
+            text("lower(COALESCE(institution, ''::character varying)::text)"),
+            text("lower(COALESCE(identifier, ''::character varying)::text)"),
+            unique=True,
+        ),
+    )
+
+
+class ItemStatusHistory(Base):
+    """Every acquisition-status transition.
+
+    Status is per item, not per order: an order may contain many items, split
+    shipments are normal, and partial receipt must leave the remainder
+    `ordered`.
+    """
+
+    __tablename__ = "item_status_history"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    inventory_item_id: Mapped[int] = mapped_column(
+        ForeignKey(_FK_INVENTORY_ITEM, ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
+    #: Null on the first row -- an item has no status before it has one.
+    from_status_id: Mapped[int | None] = mapped_column(
+        ForeignKey("item_status.id", ondelete="RESTRICT"), nullable=True
+    )
+    to_status_id: Mapped[int] = mapped_column(
+        ForeignKey("item_status.id", ondelete="RESTRICT"), nullable=False
+    )
+    changed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+    changed_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey(_FK_USERS, ondelete=_ON_DELETE_SET_NULL), nullable=True
+    )
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: The date the parcel actually arrived, when that differs from when
+    #: somebody recorded it. A box that sat unopened over a weekend arrived on
+    #: the Friday and was logged on the Monday, and `changed_at` is the wrong
+    #: answer to "what arrived last week". Null on every status change that is
+    #: not an arrival -- a cancellation has no arrival date, and neither does
+    #: an item's opening row.
+    arrived_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+
+    __table_args__ = (
+        Index(
+            "ix_item_status_history_item_time",
+            "inventory_item_id",
+            text("changed_at DESC"),
+        ),
+    )
+
+
+class LocationHistory(Base):
+    """Every physical move.
+
+    "Where was this in March" is a question worth being able to answer. One
+    row per move, written by `lifecycle_writes.set_location`.
+    """
+
+    __tablename__ = "location_history"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    inventory_item_id: Mapped[int] = mapped_column(
+        ForeignKey(_FK_INVENTORY_ITEM, ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
+    storage_location_id: Mapped[int | None] = mapped_column(
+        ForeignKey("storage_location.id", ondelete="RESTRICT"), nullable=True
+    )
+    moved_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+    moved_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey(_FK_USERS, ondelete=_ON_DELETE_SET_NULL), nullable=True
+    )
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        Index(
+            "ix_location_history_item_time",
+            "inventory_item_id",
+            text("moved_at DESC"),
+        ),
+    )
+
+
+class ItemFieldChange(Base):
+    """One field of one item changed under a person's name: who, when, from what.
+
+    Written by `PATCH /inventory/{id}`, the bulk edit, the errors endpoint,
+    a vocabulary merge, attaching or clearing a Friedberg number, a delete
+    (`deleted_at`), a detach from a lot (`parent_item_id`), a split (`split_at`,
+    on the lot) and the passes run under a named person (`--by`), in
+    the same transaction as the change, one row per field whose value moved
+    (`app.field_changes.record`). It is what lets the item editor say *who*
+    changed a field it is warning about, and it is an edit history besides.
+    Values are stored as the item editor sees them -- codes for classifiers,
+    strings for money -- in JSONB.
+
+    Not written by the passes that name no person (they mark their fields in
+    `ItemFieldSource`) or by status moves outside the editor (receiving has
+    `ItemStatusHistory`): a field changed that way has no row here, and a
+    warning about it says only that it changed.
+    """
+
+    __tablename__ = "item_field_change"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    inventory_item_id: Mapped[int] = mapped_column(
+        ForeignKey(_FK_INVENTORY_ITEM, ondelete="CASCADE"), nullable=False
+    )
+    #: The field as the editor and the API name it: `description`,
+    #: `seal_color`, `attributes`.
+    field_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    old_value: Mapped[Any] = mapped_column(JSONB, nullable=True)
+    new_value: Mapped[Any] = mapped_column(JSONB, nullable=True)
+    changed_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey(_FK_USERS, ondelete=_ON_DELETE_SET_NULL), nullable=True
+    )
+    changed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+
+    __table_args__ = (
+        # The editor asks for each field's latest change on one item.
+        Index(
+            "ix_item_field_change_item_field_at",
+            "inventory_item_id",
+            "field_name",
+            "changed_at",
+        ),
+    )
+
+
+class ItemFieldSource(Base):
+    """One field of one item holding a default derived from known facts.
+
+    A row means "the machine filled this in": a note type looked up from the
+    note's denomination and series, a composition from a coin's denomination
+    and year. A pass may refresh such a field when the facts improve. No row
+    means the value is a person's, or came with the data -- and no pass ever
+    touches it. Saving a field by hand deletes its row. The one row that is
+    not a rule's is `held`: a person emptied the field, and no pass fills it
+    until someone sets it again (`app.field_sources`).
+
+    Per field rather than per item: an item is partly derived and partly
+    typed as a normal state.
+
+    `field_name` is the column -- `note_type_id`,
+    `series_id`, `fineness` -- whether the column is on the item or on its
+    currency detail.
+    """
+
+    __tablename__ = "item_field_source"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    inventory_item_id: Mapped[int] = mapped_column(
+        ForeignKey(_FK_INVENTORY_ITEM, ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
+    field_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    #: Which rule filled it -- one of the constants in `app.field_sources`
+    #: (`note_issue`, `composition`, `series_classify`, ...) -- or `held`.
+    #: Shown in the report and the editor's tooltip.
+    derived_by: Mapped[str] = mapped_column(String(64), nullable=False)
+    derived_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "inventory_item_id", "field_name", name="uq_item_field_source"
+        ),
+    )

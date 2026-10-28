@@ -1,2 +1,372 @@
 # ccweb
-Currency and Coins Website Development
+
+Numismatic and Currency Web Platform for Inventory and Sales.
+
+An inventory and sales system for a coin and paper-money collector or small
+dealer: record what was bought and what it cost, describe each item in the
+hobby's standard terms, photograph it, and sell it -- in your own web shop
+and on outside platforms such as eBay, Whatnot and auction houses -- without
+ever selling an item twice. It answers three questions a business depends
+on: what exactly each item is, what was paid for it, and whether it is still
+available to sell.
+
+New here? Start with [docs/overview.md](docs/overview.md) (what it is and
+how it is built), then [docs/architecture.md](docs/architecture.md). This
+README is the developer's entry point: the stack, the code layout, the API
+and where to find everything else. Why the system exists, and what it
+deliberately does not do, is in [docs/project-purpose.md](docs/project-purpose.md).
+Licensed under the [Apache License 2.0](LICENSE).
+
+A FastAPI backend and two React applications share one PostgreSQL database:
+
+- the **management console** (`/management`), where the owner records
+  purchases, receives, attributes, photographs, offers and sells items, and
+  runs reports;
+- the **shop** (`/`), where customers browse listed items, register and
+  order.
+
+The `ccwebdb` database is the system of record for the collection. Data is
+corrected in the console or by passes over stored items, and the whole
+database is backed up and restored as a workbook by `app.workbook_backup`
+([docs/system-administration.md](docs/system-administration.md)).
+
+## Stack
+
+| Layer    | Choice                                                      |
+| -------- | ----------------------------------------------------------- |
+| Backend  | FastAPI, SQLAlchemy 2.0, Alembic, Pydantic v2, Pillow        |
+| Database | PostgreSQL 17 or later (18 in the conda environment; no Docker) |
+| Auth     | JWT access + refresh tokens, argon2 password hashing         |
+| Frontend | React 19 + React Router 7, Vite 8, Vitest, plain JavaScript  |
+| Tooling  | Miniforge/conda for binaries, uv for Python dependencies     |
+
+## Getting started
+
+The system is developed and hosted on Windows 11 and on Ubuntu LTS; every
+script in `scripts/` comes as a `.cmd` for Windows and a `.sh` for Linux
+that do the same. You need Git; everything else -- Python 3.13, uv, Node,
+PostgreSQL -- is installed into one conda environment by the setup
+documents, which also fetch the code. First time on a machine, follow
+**[docs/environment-setup-windows.md](docs/environment-setup-windows.md)**
+or **[docs/environment-setup-linux.md](docs/environment-setup-linux.md)**.
+After that, one command starts the database, the API and both
+applications. On Windows, in cmd:
+
+```console
+cd /d %USERPROFILE%\dev\ccweb
+.\scripts\ccweb_startup.cmd
+```
+
+On Linux, in bash:
+
+```console
+cd ~/dev/ccweb
+./scripts/ccweb_startup.sh
+```
+
+Stop with `ccweb_shutdown`; see what is running with `ccweb_status`.
+[docs/runtime-operations-windows.md](docs/runtime-operations-windows.md) and
+[docs/runtime-operations-linux.md](docs/runtime-operations-linux.md) cover
+every script, and their *Quick reference* lists the addresses of the shop,
+the console and the API. Every port, host and folder is a setting in
+`.env`; `.env.example` lists them all with their defaults.
+
+To run a public shop on a server, follow
+[docs/deployment-windows.md](docs/deployment-windows.md) or
+[docs/deployment-linux.md](docs/deployment-linux.md): a new installation
+starts from an empty database and makes its first manager with
+`python -m app.create_admin`.
+
+## Documentation
+
+| Document | What it covers |
+|---|---|
+| [docs/overview.md](docs/overview.md) | What the software is, the problem it solves, how it is built |
+| [docs/architecture.md](docs/architecture.md) | Components, backend layers, data model, request flows |
+| [docs/project-purpose.md](docs/project-purpose.md) | Why the system exists; the rules every design follows |
+| [docs/workflow-new-collection.md](docs/workflow-new-collection.md) | An item's path from purchase to sale, in the console |
+| [docs/system-administration.md](docs/system-administration.md) | Every console screen, setting, pass, backup and release step |
+| [docs/environment-setup-windows.md](docs/environment-setup-windows.md), [-linux](docs/environment-setup-linux.md) | Building the development environment on a clean machine |
+| [docs/runtime-operations-windows.md](docs/runtime-operations-windows.md), [-linux](docs/runtime-operations-linux.md) | Starting, stopping and checking the servers |
+| [docs/deployment-windows.md](docs/deployment-windows.md), [-linux](docs/deployment-linux.md) | Running the public site on a server |
+| [docs/database-design.md](docs/database-design.md) | The schema |
+| [docs/code-quality.md](docs/code-quality.md) | The quality gates and their exceptions |
+| [docs/reference-data.md](docs/reference-data.md) | What reference data may be shipped with the product |
+| [docs/specs/](docs/specs/) | One design document per feature |
+| [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md) | How to contribute; how to report a vulnerability |
+
+## Layout
+
+```
+backend/
+  app/
+    main.py, config.py, runtime_settings.py (every port, host and folder,
+    shared with the scripts), database.py, deps.py, security.py,
+    throttle.py (sign-in limits), clock.py (local dates), schemas.py,
+    errors.py
+    models/              the schema by subject area: base (shared
+                         conventions), core, reference, identification,
+                         valuation, lifecycle, images, sales, auctions,
+                         views, scaffold (the users table)
+    routers/             the HTTP API (see below); _resolve.py turns what a
+                         client sent into rows or the error naming what is
+                         missing, _tx.py is the shared commit-or-roll-back,
+                         _paging.py the limit/offset and X-Total-Count of a
+                         paged list
+    single writers       each table with a history has exactly one module
+                         that writes it: lifecycle_writes (status, location),
+                         offering_writes (listing status, offer claims, the
+                         lock order), order_writes (every sales order: shop,
+                         on behalf, platform sales, settlements), sales_writes
+                         (recorded sales' fees), lot_writes (sales lots),
+                         auctions (auction transitions), image_links
+                         (item_image), field_changes (item_field_change),
+                         field_sources (which fields a rule filled)
+    selling helpers      sale_state (is an item for sale), auction_holding
+                         (which listings are auction lots), sale_snapshot,
+                         offer_titles, buyers, sales_venues
+    inventory helpers    inventory_search (search and facets over the base
+                         tables), issues (named diagnostics), live (the
+                         shared live-row predicate), splitting + allocation
+                         (lot splits to the penny), item_history,
+                         item_descriptions, item_attributes, aliases,
+                         reference_merge, references, grades, years, plates,
+                         composition, fr_format, item_kinds (the detail row
+                         follows the kind), field_sources (which fields hold
+                         a derived default), attribute_rules, reference_fields
+                         (a vocabulary's own columns), purchases (purchase
+                         order text conventions), short_titles, gift_rule (a
+                         banknote saved at no cost is given the Gift
+                         attribute), serial_pairs (the star note of a note's
+                         serial number already in the collection, or a star
+                         note's plain twins), cell_text (text written to a
+                         workbook cell stays text, never a formula)
+    photographs          imaging (strip, orient, hash), image_store,
+                         storage, image_fetch (from a web address),
+                         image_urls (an address at its host's full size),
+                         photo_names (the CC-000412_01.jpg convention)
+    passes               classifier_defaults, series_match, series_classify,
+                         serial_patterns, photo_import, vendor_cleanup,
+                         ebay_orders, listing_links, bullion_weights,
+                         image_sources, image_enlarge, seller_titles:
+                         corrections over stored
+                         items, run as python -m app.<name>; dry run unless
+                         --commit. pass_cli is the --commit --by EMAIL
+                         command line the ones that write History share
+    reports/             read-only reports: registry, API, CLI
+                         (python -m app.reports list|run), workbook export
+                         (docs/specs/reporting-design.md)
+    seeding.py           load and export reference data (backend/data/reference/)
+    create_admin.py      the first manager of a new installation, no demo data
+    seed.py              first administrator plus five demo items (refused on
+                         a database that holds a collection)
+    backup.py            database-to-database copy with --verify
+    workbook_backup.py   the whole database to and from one Excel workbook
+    backup_run.py        one whole backup: export, prove by restoring, then tidy
+    media_backup.py      the photographs' bytes copied to a folder, checked there,
+                         and pruned of files no image names
+    logpipe.py           size-bounded log files for the dev runtime
+  alembic/               migrations, from a squashed baseline.sql
+  data/reference/        shipped vocabularies as versioned JSON
+  tests/                 pytest, against its own ccwebdb_test database
+frontend/
+  index.html, management.html two entries, built as two isolated bundles
+  src/store/             the shop
+  src/management/        the management console
+  src/shared/            API client, auth, formatting, vocabularies, the
+                         request and debounce hooks
+  src/test/              vitest setup and test helpers
+  scripts/               check-bundle-isolation.mjs
+scripts/                 ccweb_*.cmd and their ccweb_*.sh twins: startup,
+                         shutdown, status, check, testdb, psql, pgadmin,
+                         backup, claude, sonar_*; env, settings, logdir and
+                         pgstart are helpers the others call
+deploy/                  Caddyfile and systemd templates, rendered from
+                         settings by python -m app.runtime_settings --render
+docs/                    project, operations and design documents; designs
+                         for individual features are in docs/specs/
+```
+
+## API
+
+Everything is under `/api`; the live OpenAPI page at `/docs` is the complete
+reference. "Manager" is the administrator role (`UserRole.manager`, checked
+by `deps.require_admin`). By area:
+
+| Area | Prefix | Access |
+|---|---|---|
+| Accounts | `/auth` (register, login, refresh, logout -- which retires every token of the account -- and me), `/users`, `/customers` (including orders placed on a customer's behalf) | sign-in public; administration manager |
+| Shop | `/shop` (is the shop open), `/catalog` | `/shop` public; `/catalog` public while `SHOP_OPEN`, signed-in only otherwise; read only |
+| Customer orders | `/orders` (at most 50 lines, and a few pending orders, per customer; paged for managers) | customers their own; managers all |
+| Inventory | `/inventory` (search, create, bulk, edit, receive, split, detach a piece, errors, history, sales, suggested description, preview, serial pairs, delete) | manager |
+| Purchases | `/vendors`, `/sellers`, `/purchase-orders`, `/storage-locations` | manager |
+| Vocabularies | `/reference` (the shop's vocabularies readable by anyone; every other read, retired values, and add, rename, alias, merge manager), `/defaults` (suggested classifiers while entering an item) | mixed |
+| Photographs | `/images` (upload, from a web address, file against an item, list, delete, renditions), `/image-links` (role, primary, move, detach) | renditions public, by content hash; the rest manager |
+| Selling | `/sales-venues`, `/metal-prices` (spot prices), `/offers`, `/listings` (edit, end, record a sale), `/sales-lots`, `/auctions` | manager |
+| Friedberg numbers | `/friedberg`, `/inventory/{id}/friedberg` | manager; the owner's own numbers only |
+| Reports | `/reports` (catalog, run, `/workbook`) | manager |
+| Health | `GET /health`, outside `/api` | public; touches nothing |
+
+Rules that hold across the API:
+
+- **Classifiers cross the API as codes, not ids** (`"grade": "MS64"`). An
+  unknown code is a 422 naming the field; the API never invents a vocabulary
+  row. An unrecognised search filter is also a 422, never ignored -- a dropped
+  filter returns the whole collection and looks like a result.
+- **Concurrent edits are detected.** Reads return a `version`; a write that
+  sends a stale one is refused with 409 and the current state.
+- **No item is offered twice.** At most one active offer per item, enforced
+  by the partial unique index `uq_offer_claim_active`. Every selling write
+  locks lot rows, then items, then listings, each in id order
+  ([docs/specs/lock-order-design.md](docs/specs/lock-order-design.md)).
+- **Order lines record the price paid** (`sales_order_item.unit_price`) and
+  a snapshot of the item as sold, so later edits do not rewrite history.
+- **Every item has a permanent `item_code`** (`CC-000123`), issued once from
+  a sequence and never reused.
+- **Photographs are stripped of metadata at ingest** (they carry GPS), and
+  only generated `thumb` and `web` renditions are ever served, addressed by
+  the hash of their content; an original never leaves the server. The shop
+  shows a listed item's primary photograph; storage location, cost and
+  history never reach a customer -- `routers/catalog.py` builds each public
+  response field by field.
+- **Long lists are paged.** Orders, listings and auctions take `limit` and
+  `offset` and carry the unpaged total in the `X-Total-Count` header.
+- **Money is `NUMERIC` and `Decimal`**, never a float; lot splits reconcile to
+  the penny.
+
+## Looking at the data
+
+In a browser, with pgAdmin. Windows (cmd):
+
+```console
+cd /d %USERPROFILE%\dev\ccweb
+.\scripts\ccweb_pgadmin.cmd
+```
+
+Linux (bash):
+
+```console
+cd ~/dev/ccweb
+./scripts/ccweb_pgadmin.sh
+```
+
+It opens pgAdmin on http://127.0.0.1:5050 with the `ccwebdb` connection
+already registered; it asks once for the password in `DATABASE_URL`. pgAdmin is not a project
+dependency; install it once into its own uv tool environment, pinned to
+Python 3.13 (the script header says why):
+
+```console
+uv tool install --python 3.13 pgadmin4
+```
+
+At the command line, with psql (every argument passes straight to psql):
+
+Interactive psql. Windows (cmd):
+
+```console
+cd /d %USERPROFILE%\dev\ccweb
+.\scripts\ccweb_psql.cmd
+```
+
+Linux (bash):
+
+```console
+cd ~/dev/ccweb
+./scripts/ccweb_psql.sh
+```
+
+One statement. Windows (cmd):
+
+```console
+cd /d %USERPROFILE%\dev\ccweb
+.\scripts\ccweb_psql.cmd -c "select * from metal;"
+```
+
+Linux (bash):
+
+```console
+cd ~/dev/ccweb
+./scripts/ccweb_psql.sh -c "select * from metal;"
+```
+
+A file, Windows (cmd):
+
+```console
+cd /d %USERPROFILE%\dev\ccweb
+.\scripts\ccweb_psql.cmd -f query.sql
+```
+
+Linux (bash):
+
+```console
+cd ~/dev/ccweb
+./scripts/ccweb_psql.sh -f query.sql
+```
+
+The views `coin_inventory`, `currency_inventory`, `item_valuation` and
+`public_catalog` resolve foreign keys to readable codes and exclude split and
+deleted rows, which makes them the easy place to query by hand. The
+application itself does not read them (the search queries the base tables,
+which is many times faster).
+
+One trap: `source_title` often holds only denomination text (`0.25`,
+`Mint Set`), not a name. The words a person searches for are in
+`description`. Search both:
+
+```sql
+select item_code, description, year_start, grade from coin_inventory
+where coalesce(source_title, '') || ' ' || coalesce(description, '') ilike '%morgan%';
+```
+
+## Code quality and tests
+
+Every gate: ruff (format, lint), mutation-scaffolding guard, mypy, pytest,
+eslint, prettier, vitest, bundle isolation. Windows (cmd):
+
+```console
+cd /d %USERPROFILE%\dev\ccweb
+.\scripts\ccweb_check.cmd
+```
+
+Linux (bash):
+
+```console
+cd ~/dev/ccweb
+./scripts/ccweb_check.sh
+```
+
+Auto-fix first, then check. Windows (cmd):
+
+```console
+cd /d %USERPROFILE%\dev\ccweb
+.\scripts\ccweb_check.cmd fix
+```
+
+Linux (bash):
+
+```console
+cd ~/dev/ccweb
+./scripts/ccweb_check.sh fix
+```
+
+Every gate is at zero, so any finding is new.
+[docs/code-quality.md](docs/code-quality.md) lists what runs and the three
+justified lint exceptions. The Python suite builds and drops its own
+`ccwebdb_test` database and never touches `ccwebdb`.
+
+## Useful tools
+
+- **eBay purchase history:** the Chrome extension
+  [eBay Purchase History Downloader](https://chromewebstore.google.com/detail/ebay-purchase-history-dow/dhccpfcjgmlajnnoigjhokbfgpaamhpe)
+  saves a year of eBay purchases as a workbook (`Ebay_Purchase_History_<year>.xlsx`),
+  a row per item bought, with its order number and eBay item id.
+  `python -m app.ebay_orders FILE... [--commit --by EMAIL] [--review OUT.xlsx]`
+  reads those workbooks to fill missing order numbers and each item's
+  listing id, and merges purchases that were one eBay order (see
+  [docs/specs/ebay-order-recovery-design.md](docs/specs/ebay-order-recovery-design.md)).
+
+## Dependencies
+
+Python dependencies are managed **only** by uv (`uv add`, `uv sync`) and land
+in the conda `ccwebdb` environment. Never `conda install` or `pip install` a
+Python package there; see [docs/environment-setup-windows.md](docs/environment-setup-windows.md).

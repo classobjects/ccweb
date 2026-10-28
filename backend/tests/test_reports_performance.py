@@ -1,0 +1,419 @@
+"""A performance guard: every registered report runs in under a second.
+
+A guard, not a benchmark (`docs/specs/reporting-design.md`, *Testing*):
+`REPORTS` is parametrized directly, so a report added later is
+covered the moment its module is registered, with no test of its own to
+write. The data set is modest -- enough that a report's query touches more
+than a handful of rows at every join, not enough to make building it itself
+slow. At that size the time budget catches an unindexed scan or a runaway
+join, but not an accidental N+1 (a Python loop issuing one query per row
+rather than one query per report), which costs only milliseconds here; that
+is caught by counting the queries sent as the collection doubles.
+"""
+
+from __future__ import annotations
+
+import time
+from datetime import date, timedelta
+from decimal import Decimal
+
+import pytest
+from app.models import (
+    Auction,
+    CurrencyDetail,
+    Customer,
+    Denomination,
+    Image,
+    InventoryItem,
+    ItemAttribute,
+    ItemAttributeLink,
+    ItemKind,
+    ItemStatus,
+    ItemStatusHistory,
+    Listing,
+    ListingStatus,
+    Metal,
+    MetalPrice,
+    SalesFeeKind,
+    SalesLot,
+    SalesLotItem,
+    SalesLotStatus,
+    SalesOrder,
+    SalesOrderFee,
+    SalesOrderItem,
+    SalesOrderItemShare,
+    SalesOrderStatus,
+    SalesVenue,
+    SalesVenueKind,
+    StorageLocation,
+    StorageLocationKind,
+    utcnow,
+)
+from app.reports import REPORTS
+from sqlalchemy import event
+from sqlalchemy.orm import Session
+
+from tests.builders import build_bare_item, build_purchase_order, code_id, usd_id
+
+#: However slow the slowest report may run against this data set -- well
+#: under what a real N+1 query or an unindexed scan would take, and well
+#: over what any registered report actually takes today (a few
+#: milliseconds each, measured on the live collection -- see the spec's
+#: "What reports are built on").
+_BUDGET_SECONDS = 1.0
+
+#: A spread of coin and note denominations, so `cb_holdings` groups more
+#: than one row per kind and `dq_completeness` sees more than one value per
+#: field.
+_COIN_DENOMINATIONS = [
+    "usd_coin_0_01",
+    "usd_coin_0_05",
+    "usd_coin_0_10",
+    "usd_coin_0_25",
+    "usd_coin_0_50",
+    "usd_coin_1_00",
+]
+_NOTE_DENOMINATIONS = ["usd_note_1", "usd_note_5", "usd_note_10", "usd_note_20"]
+_STATUSES = ["received", "ordered", "missing", "canceled", "returned"]
+
+
+def _venue(db: Session, code: str) -> SalesVenue:
+    """A marketplace platform to list against."""
+    venue = SalesVenue(
+        code=code,
+        name=code.title(),
+        sales_venue_kind_id=code_id(db, SalesVenueKind, "marketplace"),
+    )
+    db.add(venue)
+    db.flush()
+    return venue
+
+
+def _listing(
+    db: Session,
+    item: InventoryItem,
+    venue: SalesVenue,
+    currency_id: int,
+    *,
+    status: ListingStatus,
+    price: Decimal = Decimal("50.00"),
+) -> Listing:
+    """A bare listing offering `item` -- no claim, no offer history needed."""
+    listing = Listing(
+        inventory_item_id=item.id,
+        sales_venue_id=venue.id,
+        currency_id=currency_id,
+        price=price,
+        quantity_available=1,
+        status=status,
+        title="",
+    )
+    db.add(listing)
+    db.flush()
+    return listing
+
+
+def _build_modest_collection(db: Session, tag: str = "") -> None:
+    """A few dozen items, purchases and listings -- not the collection's thousands.
+
+    One of each shape a report groups by: coins across several
+    denominations and five acquisition statuses, notes across several
+    denominations; some items with no
+    denomination at all (`cb_holdings`'s "No denomination" row); purchase
+    orders with items still `ordered` or `missing`, some old enough to be
+    overdue; and a spread of listings -- active and paused, an item and a
+    lot -- so `sl_offered` walks both of its row sources.
+
+    `tag` is added to every name that must be unique, so a second call with
+    another tag builds the same collection again beside the first.
+    """
+    currency_id = usd_id(db)
+
+    for index in range(36):
+        denom = _COIN_DENOMINATIONS[index % len(_COIN_DENOMINATIONS)]
+        status = _STATUSES[index % len(_STATUSES)]
+        build_bare_item(
+            db,
+            denomination_id=code_id(db, Denomination, denom),
+            status_id=code_id(db, ItemStatus, status),
+            item_cost=Decimal("25.00") + index,
+            tax_rate=Decimal("0"),
+            shipping_cost=Decimal("0"),
+        )
+
+    for index in range(6):
+        build_bare_item(
+            db,
+            denomination_id=None,
+            item_cost=Decimal("10.00") + index,
+            tax_rate=Decimal("0"),
+            shipping_cost=Decimal("0"),
+        )
+
+    for index in range(12):
+        denom = _NOTE_DENOMINATIONS[index % len(_NOTE_DENOMINATIONS)]
+        note = build_bare_item(
+            db,
+            item_kind_id=code_id(db, ItemKind, "currency"),
+            denomination_id=code_id(db, Denomination, denom),
+            item_cost=Decimal("15.00") + index,
+            tax_rate=Decimal("0"),
+            shipping_cost=Decimal("0"),
+        )
+        # `cb_serials` reads serials: a note and the star note of its
+        # digits, so it has a set to report. Both serials are made up.
+        if index < 2:
+            serial = "B12345678A" if index == 0 else "C12345678*"
+            db.add(CurrencyDetail(inventory_item_id=note.id, serial_number=serial))
+            db.commit()
+
+    today = date.today()
+    for index in range(10):
+        order = build_purchase_order(
+            db,
+            vendor_name=f"Vendor {index}{tag}",
+            order_number=f"ORD-{index}{tag}",
+            ordered_on=today - timedelta(days=5 + index * 8),
+            commit=False,
+        )
+        db.flush()
+        status = "ordered" if index % 2 == 0 else "missing"
+        item = build_bare_item(
+            db,
+            status_id=code_id(db, ItemStatus, status),
+            item_cost=Decimal("40.00"),
+            tax_rate=Decimal("0"),
+            shipping_cost=Decimal("0"),
+        )
+        item.purchase_order_id = order.id
+        db.commit()
+
+    # `pr_received` reads `item_status_history` rows reaching `received`;
+    # nothing built above has one, so it would otherwise run its query over
+    # zero rows and never exercise its own join at all.
+    received_status_id = code_id(db, ItemStatus, "received")
+    for index in range(4):
+        order = build_purchase_order(
+            db,
+            vendor_name=f"Receiving Vendor {index}{tag}",
+            order_number=f"RCV-{index}{tag}",
+            ordered_on=today - timedelta(days=3 + index),
+            commit=False,
+        )
+        db.flush()
+        item = build_bare_item(
+            db,
+            status_id=received_status_id,
+            item_cost=Decimal("20.00") + index,
+            tax_rate=Decimal("0"),
+            shipping_cost=Decimal("0"),
+        )
+        item.purchase_order_id = order.id
+        db.flush()
+        db.add(
+            ItemStatusHistory(
+                inventory_item_id=item.id,
+                from_status_id=code_id(db, ItemStatus, "ordered"),
+                to_status_id=received_status_id,
+                changed_at=utcnow(),
+                # Half with an `arrived_on`, half falling back to
+                # `changed_at`'s local date -- both of `pr_received`'s own
+                # code paths.
+                arrived_on=today - timedelta(days=index) if index % 2 == 0 else None,
+            )
+        )
+        db.commit()
+
+    venue = _venue(db, f"test_venue{tag}")
+    listing_items = [
+        build_bare_item(
+            db,
+            item_cost=Decimal("60.00"),
+            tax_rate=Decimal("0"),
+            shipping_cost=Decimal("0"),
+        )
+        for _ in range(8)
+    ]
+    db.commit()
+    for offset, item in enumerate(listing_items[:6]):
+        _listing(
+            db,
+            item,
+            venue,
+            currency_id,
+            status=ListingStatus.active if offset % 2 == 0 else ListingStatus.paused,
+        )
+
+    lot = SalesLot(title="A lot", status=SalesLotStatus.offered)
+    db.add(lot)
+    db.flush()
+    for item in listing_items[6:]:
+        db.add(SalesLotItem(sales_lot_id=lot.id, inventory_item_id=item.id))
+    db.flush()
+    lot_listing = Listing(
+        sales_lot_id=lot.id,
+        sales_venue_id=venue.id,
+        currency_id=currency_id,
+        price=Decimal("100.00"),
+        quantity_available=1,
+        status=ListingStatus.active,
+        title="A lot",
+    )
+    db.add(lot_listing)
+    db.commit()
+
+    # `dq_locations` groups by storage location; `dq_photos`' "Unfiled
+    # photographs" row reads `image` left unlinked by any `item_image` row.
+    # Cheap to add here so the performance guard exercises both paths too.
+    location = StorageLocation(
+        storage_location_kind_id=code_id(db, StorageLocationKind, "home"),
+        identifier=f"Perf test box{tag}",
+    )
+    db.add(location)
+    db.flush()
+    listing_items[0].storage_location_id = location.id
+    db.add(
+        Image(
+            sha256=f"{tag:0>64}",
+            storage_key=f"orig/unfiled-perf{tag}.jpg",
+            media_type="image/jpeg",
+            byte_size=10,
+        )
+    )
+
+    # `cb_metal` reads the latest `metal_price`; `cb_attributes` reads
+    # `item_attribute_link`. Cheap to add here so the performance guard
+    # exercises both paths too.
+    listing_items[1].metal_id = code_id(db, Metal, "silver")
+    listing_items[1].fine_weight_ozt = Decimal("0.500000")
+    db.add(
+        MetalPrice(
+            metal_id=code_id(db, Metal, "silver"), price_per_ozt=Decimal("25.0000")
+        )
+    )
+    db.add(
+        ItemAttributeLink(
+            inventory_item_id=listing_items[2].id,
+            item_attribute_id=code_id(db, ItemAttribute, "mule"),
+        )
+    )
+    # `mn_value` reads `numismatic_value`; cheap to set one here so the
+    # performance guard exercises that path too.
+    listing_items[3].numismatic_value = Decimal("45.00")
+    db.commit()
+
+    # `sl_sales` and `sl_fulfilment` read `sales_order_item_share`;
+    # `sl_auctions` reads `auction`. Cheap to add one of each here so the
+    # performance guard exercises both paths too.
+    customer = Customer(display_name=f"Perf Customer{tag}", email=None)
+    db.add(customer)
+    db.flush()
+    order_item = build_bare_item(
+        db,
+        item_cost=Decimal("75.00"),
+        tax_rate=Decimal("0"),
+        shipping_cost=Decimal("0"),
+    )
+    order_listing = _listing(
+        db,
+        order_item,
+        venue,
+        currency_id,
+        status=ListingStatus.ended,
+        price=Decimal("75.00"),
+    )
+    sales_order = SalesOrder(
+        customer_id=customer.id,
+        sales_venue_id=venue.id,
+        sales_order_status_id=code_id(db, SalesOrderStatus, "pending"),
+        total_amount=Decimal("75.00"),
+    )
+    db.add(sales_order)
+    db.flush()
+    order_line = SalesOrderItem(
+        sales_order_id=sales_order.id,
+        listing_id=order_listing.id,
+        quantity=1,
+        unit_price=Decimal("75.00"),
+    )
+    db.add(order_line)
+    db.flush()
+    db.add(
+        SalesOrderItemShare(
+            sales_order_item_id=order_line.id,
+            inventory_item_id=order_item.id,
+            amount=Decimal("75.00"),
+            fee_amount=Decimal("5.00"),
+        )
+    )
+    db.add(
+        SalesOrderFee(
+            sales_order_id=sales_order.id,
+            sales_fee_kind_id=code_id(db, SalesFeeKind, "commission"),
+            amount=Decimal("5.00"),
+        )
+    )
+    db.add(Auction(sales_venue_id=venue.id, title=f"Perf test auction{tag}"))
+    db.commit()
+
+
+def _statements(db: Session, report_id: str) -> int:
+    """How many queries one run of the report sends, at its default parameters."""
+    sent: list[str] = []
+
+    def _record(
+        conn: object,
+        cursor: object,
+        statement: str,
+        parameters: object,
+        context: object,
+        executemany: bool,
+    ) -> None:
+        """Keep each query's text; a savepoint the session opens is not one."""
+        if statement.lstrip().upper().startswith(("SELECT", "WITH")):
+            sent.append(statement)
+
+    report = REPORTS[report_id]
+    bind = db.get_bind()
+    event.listen(bind, "before_cursor_execute", _record)
+    try:
+        report.run(db, report.params())
+    finally:
+        event.remove(bind, "before_cursor_execute", _record)
+    return len(sent)
+
+
+@pytest.mark.parametrize("report_id", sorted(REPORTS))
+def test_report_sends_no_more_queries_when_the_collection_doubles(
+    report_id: str, db: Session
+) -> None:
+    """A report's query count is a property of the report, not of its data.
+
+    The elapsed-time budget below cannot see one query per row at this size:
+    a few dozen extra queries cost milliseconds. Counted instead, on the
+    statements actually sent: the same collection built a second time beside
+    the first doubles every row a report reads and must add no query.
+    """
+    _build_modest_collection(db)
+    once = _statements(db, report_id)
+    _build_modest_collection(db, tag="b")
+
+    assert once > 0
+    assert _statements(db, report_id) == once
+
+
+@pytest.mark.parametrize("report_id", sorted(REPORTS))
+def test_report_runs_under_a_second(report_id: str, db: Session) -> None:
+    """`report.run`, with its default parameters, finishes inside the budget."""
+    _build_modest_collection(db)
+    report = REPORTS[report_id]
+    params = report.params()
+
+    started = time.perf_counter()
+    report.run(db, params)
+    elapsed = time.perf_counter() - started
+
+    assert elapsed < _BUDGET_SECONDS, (
+        f"{report_id} took {elapsed:.3f}s against a modest data set "
+        f"(budget {_BUDGET_SECONDS}s)"
+    )

@@ -1,0 +1,948 @@
+"""Load and export reference data.
+
+Reference data lives in versioned JSON under ``backend/data/reference/``,
+never hardcoded in Python. Two reasons:
+
+1. **A new installation should inherit it.** Most of these tables -- grades,
+   mints, Federal Reserve districts, coinage composition -- are public facts or
+   settled vocabulary, not one collection's opinions. Shipping them as data
+   means a fresh install starts useful instead of empty.
+
+2. **What we learn flows back out.** Classifiers learned from a real
+   collection carry ``source='derived'``, those a person adds
+   ``source='manual'``. ``export`` can then
+   dump the classifier tables and ``composition`` back to JSON, and the
+   ``--source`` filter is what keeps one collection's guesses out of the
+   shared catalog. It does not write ``series_alias``, ``series_year_range``,
+   ``reference_alias`` or ``note_issue``: those leave only in the shipped
+   seed files.
+
+Foreign keys are written as the *code* of the referenced row rather than its
+id, because ids are per-installation and codes are not. Resolution is generic:
+a key ``metal`` is matched to the column ``metal_id`` and looked up by code in
+whatever table that column points at.
+
+Usage::
+
+    python -m app.seeding load                  # idempotent, safe to re-run
+    python -m app.seeding export --out data/reference/exported
+    python -m app.seeding export --out DIR --source seeded derived
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+from collections import Counter
+from collections.abc import Iterable, Iterator, Sequence
+from decimal import Decimal
+from pathlib import Path
+from typing import Any
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from .database import SessionLocal
+from .models import (
+    REFERENCE_MODELS,
+    Composition,
+    Denomination,
+    NoteIssue,
+    NoteType,
+    ProvenanceSource,
+    ReferenceAlias,
+    ReferenceMerge,
+    ReferenceMixin,
+    SealColor,
+    Series,
+    SeriesAlias,
+    SeriesYearRange,
+    SignatureCombination,
+)
+
+#: backend/data/reference
+DATA_DIR = Path(__file__).resolve().parents[1] / "data" / "reference"
+
+#: A table the seeder understands. Every classifier is one, and so is
+#: Composition -- which shares the shape seeding needs (__tablename__ and
+#: __table__) but not ReferenceMixin's code and label columns. Neither
+#: class is a supertype of the other, so the union names both.
+SeedableModel = type[ReferenceMixin] | type[Composition]
+
+#: Tables the seeder understands, in dependency order: a table may only
+#: reference tables that appear before it.
+SEEDABLE: tuple[SeedableModel, ...] = (*REFERENCE_MODELS, Composition)
+
+#: Composition has no `code`, so its identity is the span it describes: the
+#: denomination or the design series, either of which a row may leave out,
+#: and the set form a row may name.
+NATURAL_KEYS: dict[str, tuple[str, ...]] = {
+    "composition": (
+        "denomination_id",
+        "series_id",
+        "set_form_id",
+        "country_id",
+        "year_from",
+        "metal_id",
+    ),
+}
+
+#: A key beginning with this is commentary: every loader drops it.
+_SKIP_PREFIX = "_"
+
+
+class SeedError(RuntimeError):
+    """A seed file refers to something that does not exist."""
+
+
+def _model_by_table() -> dict[str, SeedableModel]:
+    """Every seedable model, by the name of its table."""
+    return {model.__tablename__: model for model in SEEDABLE}
+
+
+def natural_key(model: SeedableModel) -> tuple[str, ...]:
+    """The columns identifying a row for re-loading -- `code`, or a span."""
+    return NATURAL_KEYS.get(model.__tablename__, ("code",))
+
+
+def iter_seed_files(data_dir: Path = DATA_DIR) -> Iterator[Path]:
+    """Every seed file, in a stable order so loads are reproducible."""
+    yield from sorted(data_dir.glob("*.json"))
+
+
+def load_seed_data(data_dir: Path = DATA_DIR) -> dict[str, list[dict[str, Any]]]:
+    """Merge every seed file into one mapping of table name to rows.
+
+    Two files may contribute to the same table; rows are concatenated in file
+    order. Keys beginning with an underscore are commentary and are dropped.
+    """
+    merged: dict[str, list[dict[str, Any]]] = {}
+    for path in iter_seed_files(data_dir):
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        for table, rows in payload.items():
+            if table.startswith(_SKIP_PREFIX):
+                continue
+            if not isinstance(rows, list):
+                raise SeedError(f"{path.name}: {table!r} must be a list of rows")
+            merged.setdefault(table, []).extend(rows)
+    return merged
+
+
+def _foreign_key_targets(model: SeedableModel) -> dict[str, tuple[str, str]]:
+    """Map a bare data key to the column it fills and the table it points at.
+
+    ``{"metal": ("metal_id", "metal")}`` -- so a seed row saying
+    ``"metal": "silver"`` resolves silver's id in the ``metal`` table.
+    """
+    targets: dict[str, tuple[str, str]] = {}
+    for column in model.__table__.columns:
+        if not column.foreign_keys or not column.name.endswith("_id"):
+            continue
+        bare = column.name[: -len("_id")]
+        target_table = next(iter(column.foreign_keys)).column.table.name
+        targets[bare] = (column.name, target_table)
+    return targets
+
+
+def _resolve_row(
+    row: dict[str, Any],
+    model: SeedableModel,
+    code_index: dict[str, dict[str, int]],
+    where: str,
+) -> dict[str, Any]:
+    """Turn a seed row into column values, resolving code references to ids."""
+    fk_targets = _foreign_key_targets(model)
+    columns = {c.name for c in model.__table__.columns}
+    values: dict[str, Any] = {}
+
+    for key, value in row.items():
+        if key.startswith(_SKIP_PREFIX):
+            continue
+        if key in fk_targets:
+            column_name, target_table = fk_targets[key]
+            if value is None:
+                values[column_name] = None
+                continue
+            index = code_index.get(target_table, {})
+            if value not in index:
+                raise SeedError(
+                    f"{where}: {key}={value!r} does not exist in {target_table}"
+                )
+            values[column_name] = index[value]
+        elif key in columns:
+            values[key] = value
+        else:
+            raise SeedError(f"{where}: unknown column {key!r} on {model.__tablename__}")
+    return values
+
+
+def _merged(session: Session) -> dict[str, dict[str, str]]:
+    """Merged codes, by table, to the code each was merged into.
+
+    A merged value is gone (app.reference_merge). A seed row for it is
+    skipped, and a seed row naming it names the value it became.
+    """
+    merged: dict[str, dict[str, str]] = {}
+    rows = session.execute(
+        select(
+            ReferenceMerge.table_name, ReferenceMerge.code, ReferenceMerge.merged_into
+        )
+    ).tuples()
+    for table, code, into in rows:
+        merged.setdefault(table, {})[code] = into
+    return merged
+
+
+def _with_merged(codes: dict[str, int], merged: dict[str, str]) -> dict[str, int]:
+    """Code -> id, with each merged code pointing at what it became."""
+    out = dict(codes)
+    for code, into in merged.items():
+        # Follow a chain: A merged into B, later B into C.
+        seen = {code}
+        while into in merged and into not in seen:
+            seen.add(into)
+            into = merged[into]
+        if code not in out and into in codes:
+            out[code] = codes[into]
+    return out
+
+
+def _table_codes(
+    session: Session, model: SeedableModel, merged: dict[str, dict[str, str]]
+) -> dict[str, int] | None:
+    """Code -> id for one table, merged codes included; None if it has no code.
+
+    Composition is seedable but has no code, so it gets None. Taking the
+    columns rather than the class attributes keeps this test and the
+    select() below reading from the same place.
+    """
+    columns = model.__table__.columns
+    if "code" not in columns:
+        return None
+    rows = session.execute(select(columns["code"], columns["id"])).tuples().all()
+    return _with_merged(dict(rows), merged.get(model.__tablename__, {}))
+
+
+def _build_code_index(
+    session: Session, merged: dict[str, dict[str, str]]
+) -> dict[str, dict[str, int]]:
+    """Current code -> id for every table that has a code column."""
+    index: dict[str, dict[str, int]] = {}
+    for model in SEEDABLE:
+        codes = _table_codes(session, model, merged)
+        if codes is not None:
+            index[model.__tablename__] = codes
+    return index
+
+
+def _upsert(
+    session: Session,
+    model: type,
+    values: dict[str, object],
+    keys: Sequence[str],
+    counter: Counter,
+) -> None:
+    """Insert, update, or leave alone one seeded row.
+
+    A row whose `source` is `manual` is never overwritten: a hand correction
+    outranks a shipped default.
+    """
+    lookup = {k: values[k] for k in keys}
+    existing = session.execute(select(model).filter_by(**lookup)).scalar_one_or_none()
+
+    if existing is None:
+        values.setdefault("source", ProvenanceSource.seeded)
+        session.add(model(**values))
+        counter["created"] += 1
+        return
+
+    if existing.source == ProvenanceSource.manual:
+        counter["skipped_manual"] += 1
+        return
+
+    changed = False
+    for column, value in values.items():
+        if _differs(getattr(existing, column), value):
+            setattr(existing, column, value)
+            changed = True
+    counter["updated" if changed else "unchanged"] += 1
+
+
+def _seed_table(
+    session: Session,
+    model: SeedableModel,
+    rows: list[dict[str, Any]],
+    code_index: dict[str, dict[str, int]] | None = None,
+    merged_codes: dict[str, dict[str, str]] | None = None,
+) -> Counter:
+    """Load one table's rows, matched on its natural key.
+
+    `code_index` and `merged_codes` are `seed_all`'s, built once per load;
+    read here when not given. This table's entry in `code_index` is
+    refreshed after its rows are written, so a table seeded later in the
+    same run can reference them -- SEEDABLE's dependency order means no
+    table references one after it.
+    """
+    table = model.__tablename__
+    counter: Counter = Counter()
+    keys = natural_key(model)
+    if merged_codes is None:
+        merged_codes = _merged(session)
+    if code_index is None:
+        code_index = _build_code_index(session, merged_codes)
+    merged = merged_codes.get(table, {})
+
+    for position, row in enumerate(rows, start=1):
+        where = f"{table}[{position}]"
+        if row.get("code") in merged:
+            counter["merged"] += 1
+            continue
+        values = _resolve_row(row, model, code_index, where)
+        # A part of the key the row leaves out and the table allows empty is
+        # empty: a composition names a denomination, a series, or both.
+        for key in keys:
+            if model.__table__.columns[key].nullable:
+                values.setdefault(key, None)
+        missing = [k for k in keys if k not in values]
+        if missing:
+            raise SeedError(f"{where}: missing natural key {missing}")
+        _upsert(session, model, values, keys, counter)
+
+    session.flush()
+    codes = _table_codes(session, model, merged_codes)
+    if codes is not None:
+        code_index[table] = codes
+    return counter
+
+
+def seed_all(
+    session: Session,
+    data_dir: Path = DATA_DIR,
+    *,
+    only: Sequence[str] | None = None,
+) -> dict[str, Counter]:
+    """Load every seed file into the database. Idempotent.
+
+    Existing rows are matched on their natural key and updated in place, so a
+    label can be reworded in a seed file and re-loaded without creating a
+    duplicate or disturbing rows that reference it by id.
+
+    Rows a person has since edited are **not** overwritten: anything whose
+    ``source`` is ``manual`` is left alone, because a hand correction outranks
+    a shipped default.
+    """
+    data = load_seed_data(data_dir)
+    stats: dict[str, Counter] = {}
+    # Built once for the whole load: `_seed_table` refreshes each table's
+    # entry as it writes it, and the tables seeded after read the index.
+    merged = _merged(session)
+    code_index = _build_code_index(session, merged)
+
+    for model in SEEDABLE:
+        table = model.__tablename__
+        if only and table not in only:
+            continue
+        rows = data.get(table)
+        if not rows:
+            continue
+        stats[table] = _seed_table(session, model, rows, code_index, merged)
+
+    if not only or "series_alias" in only:
+        stats["series_alias"] = _seed_series_aliases(session, data, code_index)
+    if not only or "series_year_range" in only:
+        stats["series_year_range"] = _seed_series_year_ranges(session, data, code_index)
+    if not only or "reference_alias" in only:
+        stats["reference_alias"] = _seed_reference_aliases(session, data, code_index)
+    if not only or "note_issue" in only:
+        stats["note_issue"] = _seed_note_issues(session, data, code_index)
+
+    session.commit()
+    return stats
+
+
+def _refuse_unknown_keys(
+    row: dict[str, Any], known: frozenset[str], where: str
+) -> None:
+    """Raise `SeedError` for a key the table's loader does not read.
+
+    A misspelt key would otherwise load as the value left out -- `letter`
+    for `letters` as a range that allows every letter. Commentary, which
+    begins with an underscore, is not a key.
+    """
+    unknown = sorted(
+        key for key in row if key not in known and not key.startswith(_SKIP_PREFIX)
+    )
+    if unknown:
+        raise SeedError(f"{where}: unknown key(s) {unknown}; known: {sorted(known)}")
+
+
+#: The keys each hand-written loader below reads from a row.
+_SERIES_ALIAS_KEYS = frozenset({"series", "alias"})
+_SERIES_YEAR_RANGE_KEYS = frozenset(
+    {"series", "denomination", "year_start", "year_end", "letters"}
+)
+_REFERENCE_ALIAS_KEYS = frozenset({"table", "code", "alias"})
+#: `sources` names where a row's facts were checked; it is not loaded.
+_NOTE_ISSUE_KEYS = frozenset(
+    {
+        "denomination",
+        "series_year",
+        "series_letter",
+        "note_type",
+        "seal_color",
+        "signatures",
+        "variant",
+        "serial_prefix",
+        "sources",
+    }
+)
+
+
+def _seed_series_aliases(
+    session: Session,
+    data: dict[str, list[dict[str, Any]]],
+    code_index: dict[str, dict[str, int]] | None = None,
+) -> Counter:
+    """Load the colloquial names, which the generic loader cannot carry.
+
+    `series_alias` has no `code` and no `label`, so it is not a classifier in
+    the sense the rest of this module means. It is a lookup that exists purely
+    so a search for "Mercury" finds a Winged Liberty Head Dime. As with
+    `reference_alias`, a retired row counts as present, so a removal sticks.
+    """
+    counter: Counter = Counter()
+    rows = data.get("series_alias") or []
+    if not rows:
+        return counter
+
+    series_ids = _codes(session, Series, code_index)
+    existing = {
+        (series_id, alias)
+        for series_id, alias in session.execute(
+            select(SeriesAlias.series_id, SeriesAlias.alias)
+        ).all()
+    }
+
+    for position, row in enumerate(rows, start=1):
+        _refuse_unknown_keys(row, _SERIES_ALIAS_KEYS, f"series_alias[{position}]")
+        code = row.get("series")
+        alias = row.get("alias")
+        if not code or not alias:
+            raise SeedError(f"series_alias[{position}]: needs 'series' and 'alias'")
+        series_id = series_ids.get(code)
+        if series_id is None:
+            raise SeedError(f"series_alias[{position}]: unknown series {code!r}")
+        if (series_id, alias) in existing:
+            counter["unchanged"] += 1
+            continue
+        session.add(SeriesAlias(series_id=series_id, alias=alias))
+        existing.add((series_id, alias))
+        counter["created"] += 1
+
+    session.flush()
+    return counter
+
+
+def _seed_series_year_ranges(
+    session: Session,
+    data: dict[str, list[dict[str, Any]]],
+    code_index: dict[str, dict[str, int]] | None = None,
+) -> Counter:
+    """Load each design's year ranges, which the generic loader cannot carry.
+
+    Unlike an alias, a range is corrected rather than accumulated: if a
+    design's single span is replaced by three ranges, keeping the old span as
+    well would leave every year it covered that design. So a design named
+    in the file gets exactly the file's ranges -- missing ones added, changed
+    ones updated, and ones no longer listed removed. A design the file does
+    not mention keeps whatever it has, and a design someone has edited by
+    hand (`source` manual) is left alone entirely. A row naming a merged
+    design or denomination names the value it became, as every loader reads.
+    """
+    counter: Counter = Counter()
+    rows = data.get("series_year_range") or []
+    if not rows:
+        return counter
+
+    sources = dict(session.execute(select(Series.id, Series.source)).tuples().all())
+    wanted = _wanted_year_ranges(
+        rows,
+        _codes(session, Series, code_index),
+        _codes(session, Denomination, code_index),
+    )
+
+    for series_id, source in sources.items():
+        if series_id not in wanted:
+            continue
+        if source == ProvenanceSource.manual:
+            counter["skipped_manual"] += 1
+            continue
+        _match_year_ranges(session, series_id, wanted[series_id], counter)
+
+    session.flush()
+    return counter
+
+
+#: A year range's identity within its design: denomination and first year.
+_RangeKey = tuple[int | None, int]
+#: What a range holds beside its identity: last year, and letters.
+_RangeFacts = tuple[int | None, str | None]
+
+
+def _wanted_year_ranges(
+    rows: list[dict[str, Any]],
+    series_ids: dict[str, int],
+    denominations: dict[str, int],
+) -> dict[int, dict[_RangeKey, _RangeFacts]]:
+    """The file's year ranges by design id, or a `SeedError` for a bad row."""
+    wanted: dict[int, dict[_RangeKey, _RangeFacts]] = {}
+    for position, row in enumerate(rows, start=1):
+        where = f"series_year_range[{position}]"
+        _refuse_unknown_keys(row, _SERIES_YEAR_RANGE_KEYS, where)
+        code = row.get("series")
+        if code not in series_ids:
+            raise SeedError(f"{where}: unknown series {code!r}")
+        start = row.get("year_start")
+        if not isinstance(start, int):
+            raise SeedError(f"{where}: year_start must be a year")
+        denomination = row.get("denomination")
+        if denomination is not None and denomination not in denominations:
+            raise SeedError(f"{where}: unknown denomination {denomination!r}")
+        key = (denominations[denomination] if denomination else None, start)
+        ranges = wanted.setdefault(series_ids[code], {})
+        if key in ranges:
+            raise SeedError(f"{where}: {code} lists that range twice")
+        ranges[key] = (row.get("year_end"), row.get("letters"))
+    return wanted
+
+
+def _match_year_ranges(
+    session: Session,
+    series_id: int,
+    want: dict[_RangeKey, _RangeFacts],
+    counter: Counter,
+) -> None:
+    """Make one design's ranges the file's: remove, add and correct, counting each."""
+    have = {
+        (r.denomination_id, r.year_start): r
+        for r in session.execute(
+            select(SeriesYearRange).where(SeriesYearRange.series_id == series_id)
+        ).scalars()
+    }
+    for key, stale in have.items():
+        if key not in want:
+            session.delete(stale)
+            counter["removed"] += 1
+    for (denomination_id, start), (end, letters) in want.items():
+        record = have.get((denomination_id, start))
+        if record is None:
+            session.add(
+                SeriesYearRange(
+                    series_id=series_id,
+                    denomination_id=denomination_id,
+                    year_start=start,
+                    year_end=end,
+                    letters=letters,
+                )
+            )
+            counter["created"] += 1
+        elif (record.year_end, record.letters) != (end, letters):
+            record.year_end, record.letters = end, letters
+            counter["updated"] += 1
+        else:
+            counter["unchanged"] += 1
+
+
+def _codes(
+    session: Session,
+    model: SeedableModel,
+    code_index: dict[str, dict[str, int]] | None = None,
+) -> dict[str, int]:
+    """Code to id for one classifier table, merged codes included.
+
+    From `code_index` when `seed_all` passed its own, else read now.
+    """
+    if code_index is not None and model.__tablename__ in code_index:
+        return code_index[model.__tablename__]
+    codes = _table_codes(session, model, _merged(session))
+    if codes is None:
+        raise SeedError(f"{model.__tablename__} has no code column")
+    return codes
+
+
+def _seed_reference_aliases(
+    session: Session,
+    data: dict[str, list[dict[str, Any]]],
+    code_index: dict[str, dict[str, int]] | None = None,
+) -> Counter:
+    """Load other names for classifier rows: {table, code, alias}.
+
+    Added, never removed, like `series_alias`: a nickname someone adds in the
+    console is as good as one shipped, and a load must not take it away. A
+    retired row (`is_active` false) still counts as present, so one removed
+    in the console is not brought back (app.aliases).
+    """
+    counter: Counter = Counter()
+    rows = data.get("reference_alias") or []
+    if not rows:
+        return counter
+
+    models = _model_by_table()
+    codes: dict[str, dict[str, int]] = {}
+    existing = set(
+        session.execute(
+            select(
+                ReferenceAlias.table_name, ReferenceAlias.row_id, ReferenceAlias.alias
+            )
+        )
+        .tuples()
+        .all()
+    )
+    for position, row in enumerate(rows, start=1):
+        where = f"reference_alias[{position}]"
+        _refuse_unknown_keys(row, _REFERENCE_ALIAS_KEYS, where)
+        table, code, alias = row.get("table"), row.get("code"), row.get("alias")
+        if not table or not code or not alias:
+            raise SeedError(f"{where}: needs 'table', 'code' and 'alias'")
+        model = models.get(table)
+        if model is None or "code" not in model.__table__.c:
+            raise SeedError(f"{where}: {table!r} is not a classifier table")
+        if table not in codes:
+            codes[table] = _codes(session, model, code_index)
+        row_id = codes[table].get(code)
+        if row_id is None:
+            raise SeedError(f"{where}: unknown {table} {code!r}")
+        key = (table, row_id, alias)
+        if key in existing:
+            counter["unchanged"] += 1
+            continue
+        session.add(ReferenceAlias(table_name=table, row_id=row_id, alias=alias))
+        existing.add(key)
+        counter["created"] += 1
+
+    session.flush()
+    return counter
+
+
+#: A note_issue row's identity: denomination, year, letter, class, seal.
+_IssueKey = tuple[int, int, str | None, int, int]
+
+
+def _seed_note_issues(
+    session: Session,
+    data: dict[str, list[dict[str, Any]]],
+    code_index: dict[str, dict[str, int]] | None = None,
+) -> Counter:
+    """Make `note_issue` match the file exactly.
+
+    These are published facts, owned by the file like series year ranges: a
+    row corrected in the file is corrected here, and a row removed from the
+    file is removed, so a fact found wrong cannot linger and keep deriving
+    wrong defaults. A file with no `note_issue` block leaves the table alone.
+    """
+    counter: Counter = Counter()
+    rows = data.get("note_issue")
+    if not rows:
+        return counter
+
+    lookups = {
+        "denomination": _codes(session, Denomination, code_index),
+        "note_type": _codes(session, NoteType, code_index),
+        "seal_color": _codes(session, SealColor, code_index),
+        "signatures": _codes(session, SignatureCombination, code_index),
+    }
+
+    wanted = _wanted_note_issues(rows, lookups)
+    _match_note_issues(session, wanted, counter)
+
+    session.flush()
+    return counter
+
+
+#: What a note_issue row holds beside its identity: signatures, variant, prefix.
+_IssueFacts = tuple[int | None, str | None, str | None]
+
+
+def _issue_code_id(
+    lookups: dict[str, dict[str, int]], where: str, kind: str, code: object
+) -> int:
+    """The id a code names in the `kind` vocabulary, or a `SeedError`."""
+    found = lookups[kind].get(str(code))
+    if found is None:
+        raise SeedError(f"{where}: unknown {kind} {code!r}")
+    return found
+
+
+def _wanted_note_issues(
+    rows: list[dict[str, Any]], lookups: dict[str, dict[str, int]]
+) -> dict[_IssueKey, _IssueFacts]:
+    """The file's note issues by identity, or a `SeedError` for a bad row."""
+    wanted: dict[_IssueKey, _IssueFacts] = {}
+    for position, row in enumerate(rows, start=1):
+        where = f"note_issue[{position}]"
+        _refuse_unknown_keys(row, _NOTE_ISSUE_KEYS, where)
+        year = row.get("series_year")
+        if not isinstance(year, int):
+            raise SeedError(f"{where}: series_year must be a year")
+        letter = row.get("series_letter") or None
+        if letter is not None and (len(letter) != 1 or not letter.isupper()):
+            raise SeedError(f"{where}: series_letter must be one capital letter")
+        key: _IssueKey = (
+            _issue_code_id(lookups, where, "denomination", row.get("denomination")),
+            year,
+            letter,
+            _issue_code_id(lookups, where, "note_type", row.get("note_type")),
+            _issue_code_id(lookups, where, "seal_color", row.get("seal_color")),
+        )
+        if key in wanted:
+            raise SeedError(f"{where}: that issue is listed twice")
+        signatures = row.get("signatures")
+        wanted[key] = (
+            None
+            if signatures is None
+            else _issue_code_id(lookups, where, "signatures", signatures),
+            row.get("variant") or None,
+            row.get("serial_prefix") or None,
+        )
+    return wanted
+
+
+def _match_note_issues(
+    session: Session, wanted: dict[_IssueKey, _IssueFacts], counter: Counter
+) -> None:
+    """Make the table's rows the file's: remove, add and correct, counting each."""
+    have = {
+        (
+            r.denomination_id,
+            r.series_year,
+            r.series_letter,
+            r.note_type_id,
+            r.seal_color_id,
+        ): r
+        for r in session.execute(select(NoteIssue)).scalars()
+    }
+    for key, stale in have.items():
+        if key not in wanted:
+            session.delete(stale)
+            counter["removed"] += 1
+    for key, (signatures, variant, prefix) in wanted.items():
+        record = have.get(key)
+        if record is None:
+            denomination_id, year, letter, note_type_id, seal_color_id = key
+            session.add(
+                NoteIssue(
+                    denomination_id=denomination_id,
+                    series_year=year,
+                    series_letter=letter,
+                    note_type_id=note_type_id,
+                    seal_color_id=seal_color_id,
+                    signature_combination_id=signatures,
+                    variant=variant,
+                    serial_prefix=prefix,
+                )
+            )
+            counter["created"] += 1
+        elif (
+            record.signature_combination_id,
+            record.variant,
+            record.serial_prefix,
+        ) != (signatures, variant, prefix):
+            record.signature_combination_id = signatures
+            record.variant = variant
+            record.serial_prefix = prefix
+            counter["updated"] += 1
+        else:
+            counter["unchanged"] += 1
+
+
+def _differs(current: object, incoming: object) -> bool:
+    """Compare tolerantly across the JSON/database type boundary.
+
+    Numerics arrive as strings so that no value passes through a float on its
+    way into the database, which means ``"0.9000"`` and ``Decimal("0.9000")``
+    must compare equal.
+    """
+    if isinstance(current, Decimal) and isinstance(incoming, str):
+        return current != Decimal(incoming)
+    if isinstance(current, ProvenanceSource) and isinstance(incoming, str):
+        return current.value != incoming
+    return current != incoming
+
+
+def export_reference_data(
+    session: Session,
+    out_dir: Path,
+    *,
+    sources: Iterable[str] = ("seeded",),
+    include_inactive: bool = False,
+) -> dict[str, int]:
+    """Write reference tables back out as seed files.
+
+    This is the path that lets one installation's curation benefit the next.
+    ``sources`` is the safety valve: exporting only ``seeded`` reproduces the
+    shipped rows of the tables it covers, while adding ``derived`` includes
+    classifiers learned from real data. ``manual`` rows are one operator's
+    private decisions and are excluded unless asked for explicitly.
+
+    It covers `SEEDABLE`: every classifier table, and ``composition``. The
+    four tables with loaders of their own -- ``series_alias``,
+    ``series_year_range``, ``reference_alias`` and ``note_issue`` -- are not
+    written, so a load of an export alone leaves a new installation without
+    nicknames, a design's year ranges or the note issues.
+    """
+    out_dir.mkdir(parents=True, exist_ok=True)
+    wanted = {ProvenanceSource(s) for s in sources}
+    written: dict[str, int] = {}
+
+    for model in SEEDABLE:
+        table = model.__tablename__
+        fk_targets = _foreign_key_targets(model)
+        by_column = {
+            column: (bare, target) for bare, (column, target) in fk_targets.items()
+        }
+
+        # Provenance filters in SQL rather than row by row in Python. Every
+        # seedable table has a source column -- ReferenceMixin declares one and
+        # Composition declares its own -- but a select() over the SeedableModel
+        # union cannot see either, so the column comes from the table. Sorted
+        # so the generated SQL is stable between runs.
+        stmt = select(model).where(model.__table__.c.source.in_(sorted(wanted)))
+        if not include_inactive and hasattr(model, "is_active"):
+            stmt = stmt.filter_by(is_active=True)
+        records = session.execute(stmt).scalars().all()
+
+        rows: list[dict[str, Any]] = [
+            _record_to_row(record, model, by_column, session) for record in records
+        ]
+
+        if not rows:
+            continue
+
+        payload = {
+            "_comment": [
+                f"Exported from {table}.",
+                f"Sources included: {', '.join(sorted(s.value for s in wanted))}.",
+            ],
+            table: rows,
+        }
+        path = out_dir / f"{table}.json"
+        path.write_text(
+            json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+        )
+        written[table] = len(rows)
+
+    return written
+
+
+def _as_code(
+    name: str,
+    value: object,
+    by_column: dict[str, tuple[str, str]],
+    models: dict[str, type],
+    session: Session,
+) -> tuple[str, Any]:
+    """A foreign key rendered as the target's code, so the row stays portable.
+
+    Falls back to the raw id under the original column name when the target
+    cannot be resolved -- an unresolvable id is still worth exporting.
+    """
+    bare, target_table = by_column[name]
+    target_model = models.get(target_table)
+    if target_model is not None:
+        target = session.get(target_model, value)
+        if target is not None:
+            return bare, target.code
+    return name, value
+
+
+def _portable(value: object) -> object:
+    """A column value in a form a seed file can carry.
+
+    Decimal becomes a string rather than a float, for the same reason it does
+    everywhere else in this schema; an enum becomes its value.
+    """
+    if isinstance(value, Decimal):
+        return str(value)
+    if isinstance(value, ProvenanceSource) or (
+        hasattr(value, "value") and not isinstance(value, (int, str, bool))
+    ):
+        return value.value
+    return value
+
+
+def _record_to_row(
+    record: object,
+    model: SeedableModel,
+    by_column: dict[str, tuple[str, str]],
+    session: Session,
+) -> dict[str, Any]:
+    """One database row as a portable seed row, with ids turned back to codes."""
+    models = _model_by_table()
+    row: dict[str, Any] = {}
+
+    for column in model.__table__.columns:
+        name = column.name
+        # A generated column cannot be written, so a row carrying one could
+        # not be inserted by the load that reads this file.
+        if name == "id" or column.computed is not None:
+            continue
+        value = getattr(record, name)
+        if value is None:
+            continue
+        if name in by_column:
+            key, out = _as_code(name, value, by_column, models, session)
+            row[key] = out
+        else:
+            row[name] = _portable(value)
+
+    # created_at/updated_at describe this installation, not the vocabulary.
+    for transient in ("created_at", "updated_at"):
+        row.pop(transient, None)
+    return row
+
+
+def _main(argv: Sequence[str] | None = None) -> int:
+    """Run the command line: `load` seed files, or `export` reference tables."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    load = sub.add_parser("load", help="load seed files into the database")
+    load.add_argument("--data-dir", type=Path, default=DATA_DIR)
+    load.add_argument("--only", nargs="*", help="limit to these tables")
+
+    export = sub.add_parser("export", help="dump reference tables to seed files")
+    export.add_argument("--out", type=Path, required=True)
+    export.add_argument(
+        "--source",
+        nargs="*",
+        default=["seeded"],
+        choices=[s.value for s in ProvenanceSource],
+    )
+    export.add_argument("--include-inactive", action="store_true")
+
+    args = parser.parse_args(argv)
+
+    with SessionLocal() as session:
+        if args.command == "load":
+            stats = seed_all(session, args.data_dir, only=args.only)
+            total: Counter = Counter()
+            for table, counter in sorted(stats.items()):
+                total.update(counter)
+                summary = ", ".join(f"{k} {v}" for k, v in sorted(counter.items()))
+                print(f"  {table:<24} {summary}")
+            print(f"\n{dict(total)}")
+        else:
+            written = export_reference_data(
+                session,
+                args.out,
+                sources=args.source,
+                include_inactive=args.include_inactive,
+            )
+            for table, count in sorted(written.items()):
+                print(f"  {table:<24} {count} rows")
+            print(f"\nwrote {len(written)} files to {args.out}")
+    return 0
+
+
+if __name__ == "__main__":  # pragma: no cover
+    raise SystemExit(_main())

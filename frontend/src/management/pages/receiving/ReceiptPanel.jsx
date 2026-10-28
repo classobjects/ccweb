@@ -1,0 +1,531 @@
+import { useState } from 'react'
+
+import { api } from '../../api'
+import { identifyChanges, identifyValues } from '../../identify'
+import ErrorsPanel from '../inventory/ErrorsPanel'
+import ReviewPane from '../inventory/ReviewPane'
+import ForSaleConfirm from '../ForSaleConfirm'
+import FriedbergLookup from './FriedbergLookup'
+import IdentifySection from './IdentifySection'
+import LocationSelect from '../../LocationSelect'
+import { useRequest } from '../../../shared/useRequest'
+import { useImageDrop } from '../../useImageDrop'
+
+//: Outcome value the backend expects, paired with the button's label. The
+//: backend spells the fourth one with a single L (`canceled`); the button
+//: keeps the common spelling since that is what an operator reads.
+const OUTCOMES = [
+  ['received', 'Receive'],
+  ['missing', 'Missing'],
+  ['returned', 'Returned'],
+  ['canceled', 'Cancelled'],
+]
+
+//: Today, as the operator's own calendar would show it -- built from local
+//: getters rather than `toISOString()`, which reports UTC's date instead.
+//: An arrival is a fact about the operator's "today," not UTC's: someone
+//: opening a parcel at 11pm in a zone behind UTC is not opening it
+//: "tomorrow" just because UTC has already turned over. The backend's
+//: `refuse_future` (`routers/_resolve.py`) is the other half of this
+//: pairing: its bound is UTC's today plus one day, so this local default is
+//: never itself refused.
+function todayLocal() {
+  const now = new Date()
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
+}
+
+/**
+ * Records what arrived: one request per click, covering every selected item.
+ *
+ * All-or-nothing on the backend (`POST /api/inventory/receive`), so whatever
+ * this panel is given is one transaction rather than a loop of per-item
+ * calls -- a partial state nobody could describe if the tenth of twenty
+ * failed is the thing that endpoint exists to prevent.
+ *
+ * The console mounts this in a dialog: for one line (a single id), or over
+ * every line of an order still ordered, for Receive all (several ids, one
+ * request). `docs/system-administration.md` describes both.
+ *
+ * On a refused request (409 already received, 422 future date, network) the
+ * catch block only ever sets `error` -- every field the operator typed stays
+ * exactly as they left it. Retyping a note after a rejected click is exactly
+ * the friction that stops people writing notes at all.
+ */
+export default function ReceiptPanel({ itemIds, onDone, initial = {} }) {
+  // `initial` seeds the fields once, at mount: one panel is mounted per
+  // dialog, so what the last receipt was recorded against is offered again
+  // rather than re-picked.
+  const [arrivedOn, setArrivedOn] = useState(() => initial.arrivedOn || todayLocal())
+  const [storageLocationId, setStorageLocationId] = useState(
+    initial.storageLocationId ?? '',
+  )
+  const [note, setNote] = useState('')
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [photos, setPhotos] = useState([])
+  const [photoInputKey, setPhotoInputKey] = useState(0)
+  const [uploadError, setUploadError] = useState('')
+  // The ids under review, frozen at the moment review was opened -- null
+  // means review is closed. `ReviewPane` takes its `ids` prop as frozen (see
+  // its own docstring) and keeps no copy, so handing it the live `itemIds`
+  // prop directly would let a later change to that prop shrink or reorder
+  // the queue out from under an index `ReviewPane` never clamps.
+  // Snapshotting here, once, is what "frozen" actually requires.
+  const [reviewIds, setReviewIds] = useState(null)
+  const [friedbergOpen, setFriedbergOpen] = useState(false)
+  // The refusal the server sent, held while the operator answers it.
+  const [forSaleRefusal, setForSaleRefusal] = useState(null)
+
+  const disabled = itemIds.length === 0 || busy
+  // A photograph is evidence of one physical object. With several items
+  // selected there is no honest way to say which of them the picture is of
+  // -- attaching it to all of them (or guessing "the first") would put a
+  // wrong provenance record on every item but one, and a wrong record reads
+  // as a right one. So the control itself refuses the ambiguous case rather
+  // than the submit path having to un-guess it later.
+  const singleItemSelected = itemIds.length === 1
+  const photoDisabled = disabled || !singleItemSelected
+  // Attaching a Friedberg number needs one item id to name, the same
+  // ambiguity a photograph runs into with several selected -- so this is
+  // `null` whenever the selection is not exactly one item.
+  const singleItemId = singleItemSelected ? itemIds[0] : null
+
+  // Closes the Friedberg lookup the moment the single-item selection
+  // changes, adjusted during render rather than in an effect -- calling
+  // setState synchronously in an effect body forces an extra render for
+  // every change; doing it here costs nothing extra, since a change to
+  // `singleItemId` was already about to re-render this component anyway.
+  const [trackedItemId, setTrackedItemId] = useState(singleItemId)
+  if (trackedItemId !== singleItemId) {
+    setTrackedItemId(singleItemId)
+    setFriedbergOpen(false)
+  }
+
+  // The one selected item, so the Friedberg lookup can start from what the
+  // note already records instead of blank fields. Null while it loads, when
+  // the read failed, and whenever no single item is selected: the request
+  // keeps an earlier item's answer while the next one loads, and that answer
+  // must not stand in for this item.
+  const selected = useRequest(singleItemId, () => api.getInventoryItem(singleItemId))
+  const itemDetail =
+    singleItemId != null && !selected.busy && !selected.error
+      ? (selected.data ?? null)
+      : null
+  // Its `item_kind`, so the Friedberg section can be offered only for a
+  // banknote -- a coin has no Friedberg number, and offering the lookup
+  // there is an invitation to the 404 `POST .../friedberg` returns for an
+  // item with no `currency_detail`. Unknown, not currency, when the read
+  // failed: the section stays hidden rather than offered against it.
+  const itemKind = itemDetail?.item_kind ?? null
+  // Its `sale_state` -- ErrorsPanel needs it to warn before recording an
+  // error against an item a buyer is looking at.
+  const itemSaleState = itemDetail?.sale_state ?? []
+
+  const isCurrency = singleItemId != null && itemKind === 'currency'
+
+  // The Identify section's text, and the item as last saved (`baseline`),
+  // which its changes are measured against and sent as `base`. Taken afresh
+  // whenever a new read of the item arrives -- another item, or a reload
+  // after the full editor saved -- adjusted during render like the
+  // Friedberg reset above.
+  const [identify, setIdentify] = useState({ source: null, values: {}, baseline: null })
+  if (itemDetail && identify.source !== itemDetail) {
+    setIdentify({
+      source: itemDetail,
+      values: identifyValues(itemDetail),
+      baseline: itemDetail,
+    })
+  }
+  const identified =
+    identify.baseline && singleItemId != null
+      ? identifyChanges(identify.baseline, identify.values)
+      : { changes: {}, base: {} }
+  const identifyDirty = Object.keys(identified.changes).length > 0
+  // Named so the render below can tell the operator exactly what is about to
+  // be silently dropped, rather than only that photos and multiple items
+  // don't mix.
+  const pendingPhotoNames = photos.map((file) => file.name)
+
+  // What choosing files from the box, dropping them and pasting one all
+  // funnel into (`useImageDrop`), and all three ADD to whatever is already
+  // staged: the file box is cleared after every pick, so nothing here ever
+  // needs to reconcile a native selection against the staged batch.
+  const drop = useImageDrop({
+    onImages: (files) => setPhotos((current) => [...current, ...files]),
+    disabled: photoDisabled,
+  })
+
+  function removePhoto(index) {
+    setPhotos((current) => current.filter((_, i) => i !== index))
+  }
+
+  async function submit(outcome, acknowledged = false) {
+    // The outcome buttons stay live: a press with nothing chosen says so
+    // and sends nothing.
+    if (itemIds.length === 0) {
+      setError('No item is chosen to receive: pick one from the search first.')
+      return
+    }
+    setBusy(true)
+    try {
+      // What the person identified is a fact about the piece in hand, so it
+      // is saved only when the piece is received -- before the receipt, so a
+      // refused save leaves nothing half-recorded. Once saved it is the new
+      // baseline: a receipt that then fails is retried without resending it.
+      if (outcome === 'received' && identifyDirty) {
+        const { changes, base } = identified
+        await api.updateInventoryItem(singleItemId, {
+          ...changes,
+          base,
+          ...(acknowledged ? { acknowledge_for_sale: true } : {}),
+        })
+        setIdentify((current) => ({
+          ...current,
+          baseline: { ...current.baseline, ...changes },
+        }))
+        // The server may store a value differently from how it was typed (a
+        // face plate's case, a series letter's), and a base of the typed one
+        // would read as someone else's change. Reading the item again makes
+        // what it stored the starting point.
+        selected.reload()
+      }
+      await api.receiveItems({
+        item_ids: itemIds,
+        outcome,
+        arrived_on: arrivedOn || undefined,
+        storage_location_id: storageLocationId ? Number(storageLocationId) : undefined,
+        note: note || undefined,
+        ...(acknowledged ? { acknowledge_for_sale: true } : {}),
+      })
+      setForSaleRefusal(null)
+      setError('')
+      setUploadError('')
+      // What was used, kept before the fields are cleared, so the caller can
+      // offer it again on the next line -- a box of twenty into one safe
+      // deposit box is otherwise twenty identical dropdown picks.
+      //
+      // The note is deliberately NOT carried: a location and an arrival date
+      // describe the parcel, and are the same for everything in it, but a
+      // note describes the object ("corner bent"), and repeating one onto the
+      // next item writes a fact about a coin nobody checked.
+      const used = { arrivedOn, storageLocationId }
+      setNote('')
+      setStorageLocationId('')
+      setArrivedOn(todayLocal())
+      // A review left open ends with the receipt. The caller closes the
+      // dialog on a clean one; when a failed photograph keeps the panel on
+      // screen, it is the receipt's own fields and that error that show,
+      // not the editor.
+      setReviewIds(null)
+
+      // The arrival above is the fact; a photograph is evidence added to it
+      // afterwards. A failed upload must not undo the receipt just recorded,
+      // so it is caught on its own -- reported by file name, and never
+      // allowed to roll the receipt back. There is no retry here: the
+      // photograph is added later from the item's own photographs.
+      //
+      // It runs BEFORE `onDone`, and `onDone` is skipped when it fails. The
+      // caller closes a dialog on `onDone`, which unmounts this component:
+      // reporting the failure first and then unmounting would write
+      // `uploadError` to a component nobody can see, and the operator would
+      // be told the receipt landed while the photograph silently did not.
+      // Leaving the panel open with the error on it is the whole point of
+      // catching this separately.
+      let uploadFailed = false
+      if (photos.length > 0 && singleItemSelected) {
+        const [itemId] = itemIds
+        const results = await Promise.allSettled(
+          photos.map((file, index) =>
+            api.uploadImage(itemId, file, {
+              isPrimary: index === 0,
+              // The same acknowledgement the receipt itself carried. Ending
+              // the listing does not always make the item no longer for
+              // sale -- an open order still holds it -- so `POST /api/images`
+              // asks about the very item the operator acknowledged moments
+              // ago in the dialog. Without this the upload 409s and the
+              // photograph is lost: the picker is cleared below and there is
+              // no retry.
+              acknowledgeForSale: acknowledged,
+            }),
+          ),
+        )
+        // allSettled, not all: one bad file must not hide whether the other
+        // photos in the same batch landed. Reported by name, since "it
+        // failed" without saying which file is not something the operator
+        // can act on.
+        const failures = results
+          .map((result, index) => [result, photos[index]])
+          .filter(([result]) => result.status === 'rejected')
+        uploadFailed = failures.length > 0
+        setUploadError(
+          failures
+            .map(([result, file]) => `${file.name}: ${result.reason.message}`)
+            .join('; '),
+        )
+        // Every photograph is cleared, the failed ones included. Keeping one
+        // in the picker would suggest a retry that does not exist: the only
+        // button that would send it also sends the receipt again -- a 409
+        // for an item now received, and for any other outcome a repeat of
+        // something that happened once.
+        setPhotos([])
+        setPhotoInputKey((key) => key + 1)
+      }
+
+      // The receipt is recorded either way. `onDone` is the caller's cue to
+      // close and move on, which is only honest when there is nothing left
+      // on this panel to read.
+      if (!uploadFailed) onDone?.(used)
+    } catch (err) {
+      // A refusal is a question, not a failure: hold it for the dialog rather
+      // than writing it into the panel's error line, where it would read as
+      // something that went wrong.
+      if (err.status === 409 && err.message.startsWith('For sale')) {
+        setForSaleRefusal({ detail: err.message, outcome })
+        return
+      }
+      // The dialog is modal -- ModalDialog's <dialog> opens with showModal()
+      // -- so an error left behind it while forSaleRefusal stays set is an
+      // error nobody can read. Clear it here so a resubmit's own failure
+      // (network, 500, an unrelated conflict) closes the dialog and surfaces
+      // where the operator can actually see it.
+      setForSaleRefusal(null)
+      setError(err.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="receipt-panel">
+      {/* Hidden while the full editor is open: it edits the same fields. */}
+      {identify.baseline && singleItemId != null && reviewIds === null && (
+        <>
+          <IdentifySection
+            item={identify.baseline}
+            values={identify.values}
+            onChange={(values) => setIdentify((current) => ({ ...current, values }))}
+            disabled={disabled}
+          />
+          {identifyDirty && (
+            <p className="muted">
+              Identify changes are saved only with Receive: Missing, Returned and
+              Cancelled leave the item as it was.
+            </p>
+          )}
+        </>
+      )}
+
+      <div className="filter-grid">
+        <label>
+          Arrived{/* */}
+          <input
+            type="date"
+            value={arrivedOn}
+            disabled={disabled}
+            onChange={(e) => setArrivedOn(e.target.value)}
+          />
+        </label>
+
+        <label>
+          Storage location
+          <LocationSelect
+            value={storageLocationId}
+            disabled={disabled}
+            onChange={setStorageLocationId}
+          />
+        </label>
+
+        <label>
+          Note{/* */}
+          <input
+            type="text"
+            value={note}
+            disabled={disabled}
+            onChange={(e) => setNote(e.target.value)}
+          />
+        </label>
+
+        <div
+          className={`photo-drop${drop.dragActive ? ' photo-drop-active' : ''}`}
+          tabIndex={photoDisabled ? -1 : 0}
+          aria-label="Add an image: drag one here, or paste one with Ctrl+V"
+          {...drop.target}
+        >
+          <label>
+            Photo{/* */}
+            <input
+              key={photoInputKey}
+              type="file"
+              accept="image/*"
+              multiple
+              disabled={photoDisabled}
+              onChange={drop.onFileInput}
+            />
+            {itemIds.length > 1 && pendingPhotoNames.length === 0 && (
+              <span className="muted">
+                Photographs attach to a single item -- receive this one on its own to
+                add one.
+              </span>
+            )}
+            {itemIds.length > 1 && pendingPhotoNames.length > 0 && (
+              <span className="muted">
+                {pendingPhotoNames.join(', ')} will not be uploaded -- receive this item
+                on its own to attach {pendingPhotoNames.length > 1 ? 'them' : 'it'}.
+              </span>
+            )}
+          </label>
+          <p className="muted">
+            Choose a file, drag one here, or paste an image (Ctrl+V).
+          </p>
+          {drop.pickError && <p className="error">{drop.pickError}</p>}
+          {/* Shown whenever anything is staged, single item or several --
+              the file box replacing what it showed was never the batch
+              itself, and a drop or a paste has no other trace on screen.
+              Without this a dropped photo could sit staged, invisible, and
+              be silently discarded the next time the file box was used. */}
+          {photos.length > 0 && (
+            <ul className="photo-staged" aria-label="Staged photographs">
+              {photos.map((file, index) => (
+                <li key={`${file.name}-${index}`}>
+                  <span>{file.name}</span>
+                  <button
+                    type="button"
+                    className="link"
+                    onClick={() => removePhoto(index)}
+                  >
+                    Remove
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+
+      <div className="receipt-actions">
+        {OUTCOMES.map(([outcome, label]) => (
+          <button key={outcome} disabled={busy} onClick={() => submit(outcome)}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {error && <p className="error">{error}</p>}
+      {uploadError && <p className="error">{uploadError}</p>}
+
+      {/* Collapsed by default -- expanding shows the item's fields,
+          composed from the same ReviewPane/ItemEditForm the inventory
+          page uses, so this never drifts from that page's editor. */}
+      <div className="review-toggle">
+        {reviewIds === null && (
+          <>
+            {/* The editor would open over Identify values it cannot see:
+                while they are unsaved a press opens nothing, and the
+                reason is printed beside the button. */}
+            <button
+              type="button"
+              onClick={() => {
+                if (!identifyDirty) setReviewIds(itemIds)
+              }}
+            >
+              Confirm or correct fields
+            </button>
+            {identifyDirty && (
+              <span className="muted">
+                {' '}
+                Receive or undo the Identify changes first.
+              </span>
+            )}
+          </>
+        )}
+        {reviewIds !== null && (
+          <ReviewPane
+            ids={reviewIds}
+            onClose={() => {
+              setReviewIds(null)
+              // Whatever the editor saved is the item's now: Identify reads it.
+              selected.reload()
+            }}
+          />
+        )}
+      </div>
+
+      {/* One item's id only -- `PUT /api/inventory/{id}/errors` replaces a
+          single item's set, so over the several items of Receive all there
+          is no bulk semantic to show this against; it is offered in the
+          one-item dialog only. Unlike the Friedberg section this is not gated on
+          `isCurrency`: a coin has its own mint errors (off-center, clipped
+          planchet) just as a note has printing ones.
+
+          Also gated on `reviewIds === null`: `ReviewPane` above mounts
+          `ItemEditForm` for the same item, which has its own ErrorsPanel.
+          Each PUT replaces the item's whole set -- the editor's on its Save,
+          this one on every change --
+          two mounted at once for the same item would let an error added in
+          one silently discard one added in the other the moment either
+          saved. One panel for one item at a time; the editor's is the
+          richer of the two.
+
+          And gated on the kind being KNOWN, not merely on one item being
+          selected. `itemKind` is null before the item's fetch returns and
+          stays null if it fails, and null is not a neutral value here:
+          `isCurrencyKind(null)` is false, so a banknote would be offered the
+          coin error types, and a type added from that picker would be posted
+          `applies_to: 'coin'` -- a mis-marked vocabulary row that then
+          vanishes from the picker that created it (`fitsKind`). On a failed
+          fetch that is the steady state, not one render. Better to offer
+          nothing than to offer the wrong half. */}
+      {singleItemId != null && itemKind != null && reviewIds === null && (
+        <ErrorsPanel
+          key={singleItemId}
+          itemId={singleItemId}
+          kind={itemKind}
+          saleState={itemSaleState}
+        />
+      )}
+
+      {/* Offered only for currency -- a coin has no Friedberg number, and
+          this section never even mounts to ask the question for one.
+          Collapsed by default: the owner asks for a lookup explicitly,
+          nothing here runs on its own. */}
+      {isCurrency && (
+        <div className="friedberg-toggle">
+          {!friedbergOpen && (
+            <button type="button" onClick={() => setFriedbergOpen(true)}>
+              Look up Friedberg number
+            </button>
+          )}
+          {/* A number known already -- off a graded note's holder -- is
+              typed straight in and attached, with no lookup. */}
+          {!friedbergOpen && itemDetail && (
+            <FriedbergLookup
+              key={`entry-${singleItemId}`}
+              itemId={singleItemId}
+              item={itemDetail}
+              entryOnly
+            />
+          )}
+          {friedbergOpen && (
+            <FriedbergLookup
+              key={singleItemId}
+              itemId={singleItemId}
+              item={itemDetail}
+              onClose={() => setFriedbergOpen(false)}
+            />
+          )}
+        </div>
+      )}
+
+      {forSaleRefusal && (
+        <ForSaleConfirm
+          detail={forSaleRefusal.detail}
+          outcome={forSaleRefusal.outcome}
+          busy={busy}
+          onConfirm={() => submit(forSaleRefusal.outcome, true)}
+          onCancel={() => setForSaleRefusal(null)}
+        />
+      )}
+    </div>
+  )
+}

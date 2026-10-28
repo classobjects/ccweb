@@ -1,0 +1,103 @@
+import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
+
+import { api } from '../../api'
+import { PAGE_SIZE } from './specs'
+
+/**
+ * The search, driven by the URL.
+ *
+ * The URL is the source of truth, so a filtered view can be bookmarked,
+ * shared with someone, or survive a reload.
+ *
+ * The result is stored *with the query that produced it*, so "still loading"
+ * is derived -- it is exactly "what is displayed does not match what is being
+ * asked for". A busy flag would be a second piece of state saying the same
+ * thing, able to disagree with the first.
+ *
+ * **`item` is not a filter.** `?item=CC-001234` -- a report's link to one
+ * item -- names the item whose editor to open (`itemCode`), and is kept out
+ * of the search: the API refuses a filter it does not know, and the address
+ * would otherwise turn a page of results into an error. `closeItem()` takes
+ * it out of the address again; any change to the filters drops it too.
+ */
+export function useInventorySearch(view) {
+  const [address, setParams] = useSearchParams()
+  const itemCode = address.get('item')
+  const params = new URLSearchParams(address)
+  params.delete('item')
+  const [result, setResult] = useState(null)
+  const [error, setError] = useState('')
+  // Bumped to fetch the same query again. After an edit the URL has not
+  // changed, so nothing the effect depends on has either; `apply({})` only
+  // rebuilds an identical query string, which re-runs nothing and would
+  // leave the edited row showing its old values.
+  const [reloads, setReloads] = useState(0)
+
+  const current = Object.fromEntries(params.entries())
+  const offset = Number(current.offset ?? 0)
+
+  // A plain string, so the dependency is a simple expression the linter and
+  // React can both reason about.
+  const query = params.toString()
+
+  useEffect(() => {
+    // Not only tidiness: filters change in quick succession -- a picker
+    // changed twice, pages clicked through -- and without this an early slow
+    // response can land after a later fast one and overwrite newer results
+    // with older ones.
+    let cancelled = false
+
+    api
+      .searchInventory(view, {
+        ...Object.fromEntries(new URLSearchParams(query)),
+        facets: true,
+        limit: PAGE_SIZE,
+      })
+      .then((body) => {
+        if (cancelled) return
+        setResult({ query, body })
+        setError('')
+      })
+      .catch((err) => {
+        if (cancelled) return
+        // An answer to this query, though an empty one: the rows of the last
+        // query do not stay up as if they matched this one, and nothing is
+        // left loading.
+        setResult({ query, body: null })
+        setError(err.message)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [view, query, reloads])
+
+  function apply(changes) {
+    const next = { ...current, ...changes }
+    // Any change to the filters returns to the first page: staying on page 7
+    // of a result set that no longer has one is disorienting.
+    if (!('offset' in changes)) delete next.offset
+    Object.keys(next).forEach((k) => {
+      if (next[k] === '' || next[k] === null || next[k] === undefined) delete next[k]
+    })
+    setParams(next)
+  }
+
+  return {
+    current,
+    apply,
+    clear: () => setParams({}),
+    itemCode,
+    // The filters as they were, without the item. `replace: true` so
+    // closing the editor does not push a history entry -- Back should leave
+    // the search, not reopen the editor it just closed.
+    closeItem: () => setParams(params, { replace: true }),
+    // The same filters, sort and page, fetched again.
+    refresh: () => setReloads((n) => n + 1),
+    page: result?.body,
+    busy: result?.query !== query,
+    error,
+    offset,
+  }
+}

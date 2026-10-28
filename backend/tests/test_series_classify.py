@@ -1,0 +1,799 @@
+"""Classifying items into design series from denomination, year and letter.
+
+Each test builds its own items on top of the seeded vocabulary, so the ranges
+under test are the ones that ship in data/reference/series.json.
+"""
+
+from __future__ import annotations
+
+import json
+from datetime import date
+from pathlib import Path
+
+from app.field_sources import HELD, SERIES_CLASSIFY, SUGGESTION, hold, record_derived
+from app.inventory_search import CURRENCY_VIEW, search
+from app.models import (
+    CurrencyDetail,
+    Denomination,
+    InventoryItem,
+    ItemFieldSource,
+    PurchaseOrder,
+    SealColor,
+    Series,
+    SeriesYearRange,
+    Vendor,
+)
+from app.seeding import seed_all
+from app.series_classify import classify, refresh_series, run
+from app.series_match import run as match_run
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from tests.builders import ItemFactory, build_purchase_order, code_id
+
+DIME, QUARTER, DOLLAR = "usd_coin_0_10", "usd_coin_0_25", "usd_coin_1_00"
+NOTE_1, NOTE_5 = "usd_note_1", "usd_note_5"
+
+
+def _series_code(db: Session, item: InventoryItem) -> str | None:
+    """The code of the series the item now holds, or None when it holds none."""
+    db.refresh(item)
+    if item.series_id is None:
+        return None
+    return db.get_one(Series, item.series_id).code
+
+
+def _coin(
+    db: Session, make_item: ItemFactory, denomination: str, year: int, **extra: object
+) -> InventoryItem:
+    """A coin of this denomination and year, its title naming no design."""
+    extra.setdefault("title", "Plain coin")
+    return make_item(
+        denomination_id=code_id(db, Denomination, denomination),
+        year_start=year,
+        **extra,
+    )
+
+
+def _note(
+    db: Session,
+    make_item: ItemFactory,
+    denomination: str,
+    series: int,
+    letter: str | None = None,
+    *,
+    seal: str | None = None,
+    **extra: object,
+) -> InventoryItem:
+    """A banknote of this series year, letter and seal, its title naming no design."""
+    extra.setdefault("title", "Plain note")
+    item = make_item(
+        kind="currency",
+        denomination_id=code_id(db, Denomination, denomination),
+        year_start=series,
+        **extra,
+    )
+    db.add(
+        CurrencyDetail(
+            inventory_item_id=item.id,
+            series_year=series,
+            series_letter=letter,
+            seal_color_id=code_id(db, SealColor, seal) if seal else None,
+        )
+    )
+    db.commit()
+    return item
+
+
+def _case(db: Session, item: InventoryItem) -> tuple[str, tuple[str, ...]] | None:
+    """Why classifying left the item for review, and the designs it could be."""
+    report = classify(db)
+    for case in report.review:
+        if case.item_code == item.item_code:
+            return case.reason, case.designs
+    return None
+
+
+# -- the facts decide ---------------------------------------------------------
+
+
+def test_a_single_candidate_is_assigned(db: Session, make_item: ItemFactory) -> None:
+    # Nothing in the text: the denomination and year are enough.
+    dime = _coin(db, make_item, DIME, 1942, description="10C MS65")
+
+    run(db, commit=True)
+
+    assert _series_code(db, dime) == "winged_liberty_head_dime"
+
+
+def test_a_dry_run_writes_nothing(db: Session, make_item: ItemFactory) -> None:
+    dime = _coin(db, make_item, DIME, 1942)
+
+    report = run(db, commit=False)
+
+    assert report.assignments.get(dime.id) == code_id(
+        db, Series, "winged_liberty_head_dime"
+    )
+    assert _series_code(db, dime) is None
+
+
+def test_an_item_with_a_series_is_never_touched(
+    db: Session, make_item: ItemFactory
+) -> None:
+    # The "wrong" series on purpose: a hand correction always stands.
+    barber = code_id(db, Series, "barber_dime")
+    dime = _coin(db, make_item, DIME, 1942, series_id=barber)
+
+    run(db, commit=True)
+
+    assert _series_code(db, dime) == "barber_dime"
+
+
+def test_a_re_run_changes_nothing(db: Session, make_item: ItemFactory) -> None:
+    dime = _coin(db, make_item, DIME, 1942)
+    run(db, commit=True)
+
+    again = classify(db)
+
+    assert dime.id not in again.assignments
+    assert _series_code(db, dime) == "winged_liberty_head_dime"
+
+
+def test_a_year_span_is_not_a_single_year(db: Session, make_item: ItemFactory) -> None:
+    dime = _coin(db, make_item, DIME, 1942, year_end=1944)
+
+    run(db, commit=True)
+
+    assert _series_code(db, dime) is None
+
+
+# -- boundaries, gaps and conflicts ------------------------------------------
+
+
+def test_a_boundary_year_goes_to_review(db: Session, make_item: ItemFactory) -> None:
+    dime = _coin(db, make_item, DIME, 1916)
+
+    assert _case(db, dime) == ("boundary", ("barber_dime", "winged_liberty_head_dime"))
+    run(db, commit=True)
+    assert _series_code(db, dime) is None
+
+
+def test_the_text_resolves_a_boundary_year(db: Session, make_item: ItemFactory) -> None:
+    dime = _coin(db, make_item, DIME, 1916, description="Nice Mercury, full bands")
+
+    run(db, commit=True)
+
+    assert _series_code(db, dime) == "winged_liberty_head_dime"
+
+
+def test_the_morgan_gap_is_not_morgan(db: Session, make_item: ItemFactory) -> None:
+    # Without the 1905-1920 gap, every dollar since 1878 would be a Morgan.
+    dollar = _coin(db, make_item, DOLLAR, 1910)
+
+    run(db, commit=True)
+
+    assert _series_code(db, dollar) is None
+    assert _case(db, dollar) is None
+
+
+def test_1921_is_both_morgan_and_peace(db: Session, make_item: ItemFactory) -> None:
+    dollar = _coin(db, make_item, DOLLAR, 1921)
+
+    assert _case(db, dollar) == ("boundary", ("morgan_dollar", "peace_dollar"))
+
+
+def test_text_naming_an_impossible_design_is_a_conflict(
+    db: Session, make_item: ItemFactory
+) -> None:
+    # A $1 note rated "funnyback" but recorded as Series 1923, a large-size
+    # note: the rating or the year is wrong, and the pass must say so rather
+    # than pick one.
+    note = _note(db, make_item, NOTE_1, 1923, rating="VF funnyback")
+
+    assert _case(db, note) == ("conflict", ("funnyback",))
+    run(db, commit=True)
+    assert _series_code(db, note) is None
+
+
+def test_lot_text_is_not_evidence_about_a_piece(
+    db: Session, make_item: ItemFactory
+) -> None:
+    # A lot's pieces carry the lot's listing,
+    # which names designs the piece is not. The 1943 cent is a Lincoln cent
+    # whatever the lot says; the same words on a piece alone are a conflict.
+    vendor = Vendor(name="Lot seller")
+    db.add(vendor)
+    db.flush()
+    order, single = (
+        PurchaseOrder(
+            vendor_id=vendor.id, order_number=number, ordered_on=date(2024, 12, 1)
+        )
+        for number in ("LOT-1", "ONE-1")
+    )
+    db.add_all([order, single])
+    db.flush()
+    lot = "Collection: Large Cents, Morgan dollars"
+    pieces = [
+        _coin(
+            db,
+            make_item,
+            "usd_coin_0_01",
+            1943,
+            description=lot,
+            purchase_order_id=order.id,
+        ),
+        _coin(
+            db,
+            make_item,
+            "usd_coin_0_05",
+            1943,
+            description=lot,
+            purchase_order_id=order.id,
+        ),
+    ]
+    # In an order of its own, so an item is not taken for its own sibling.
+    alone = _coin(
+        db,
+        make_item,
+        "usd_coin_0_01",
+        1944,
+        description=lot,
+        purchase_order_id=single.id,
+    )
+
+    run(db, commit=True)
+
+    assert _series_code(db, pieces[0]) == "lincoln_cent"
+    assert _series_code(db, pieces[1]) == "jefferson_nickel"
+    assert _series_code(db, alone) is None
+    assert _case(db, alone) == ("conflict", ("large_cent", "morgan_dollar"))
+
+
+def test_presidential_settles_a_dollar_of_the_presidential_years(
+    db: Session, make_item: ItemFactory
+) -> None:
+    """2007-2016 dollars are Presidential or Sacagawea until the piece says."""
+    said = _coin(
+        db, make_item, DOLLAR, 2008, title="2008 P James Monroe $1 Presidential Coin"
+    )
+    silent = _coin(db, make_item, DOLLAR, 2008)
+    # 2005: Sacagawea alone, and "Presidential" names a design not yet struck.
+    early = _coin(db, make_item, DOLLAR, 2005, title="Presidential Collection")
+
+    run(db, commit=True)
+
+    assert _series_code(db, said) == "presidential_dollar"
+    assert _series_code(db, silent) is None
+    assert _case(db, silent) == (
+        "boundary",
+        ("presidential_dollar", "sacagawea_dollar"),
+    )
+    assert _series_code(db, early) is None
+    assert _case(db, early) == ("conflict", ("presidential_dollar",))
+
+
+def test_a_trade_dollar_needs_its_word(db: Session, make_item: ItemFactory) -> None:
+    """A dollar of 1878-1885 that says nothing is a Morgan, not a boundary case."""
+    plain = _coin(db, make_item, DOLLAR, 1880)
+    worded = _coin(db, make_item, DOLLAR, 1878, title="1878-S Trade Dollar")
+    seated = _coin(db, make_item, DOLLAR, 1873)
+    # Only Trade dollars were struck in 1875, but it still has to say so.
+    lone = _coin(db, make_item, DOLLAR, 1875)
+
+    report = run(db, commit=True)
+
+    assert _series_code(db, plain) == "morgan_dollar"
+    assert _series_code(db, worded) == "trade_dollar"
+    assert _series_code(db, seated) == "seated_liberty_dollar"
+    assert _series_code(db, lone) is None
+    assert report.counts["boundary"] == 0
+    assert report.counts["ordinary"] == 1
+
+
+def test_a_commemorative_needs_its_word(db: Session, make_item: ItemFactory) -> None:
+    # A commemorative half shares its years with the Kennedy half, so only
+    # its own words tell the two apart.
+    worded = _coin(
+        db, make_item, "usd_coin_0_50", 1992, title="1992 Olympic Commemorative Half"
+    )
+    unworded = _coin(db, make_item, "usd_coin_0_50", 1992)
+    gold = _coin(db, make_item, DOLLAR, 1852, title="1852 Rare Gold Dollar AU")
+    # 1886: gold dollars were still struck, trade dollars no longer.
+    silver = _coin(db, make_item, DOLLAR, 1886)
+
+    run(db, commit=True)
+
+    assert _series_code(db, worded) == "commemorative_half"
+    assert _series_code(db, unworded) == "kennedy_half"
+    assert _series_code(db, gold) == "gold_dollar"
+    assert _series_code(db, silver) == "morgan_dollar"
+
+
+def test_a_lot_of_commemoratives_sends_its_pieces_to_review(
+    db: Session, make_item: ItemFactory
+) -> None:
+    order = build_purchase_order(
+        db,
+        vendor_name="Commem seller",
+        order_number="LOT-2",
+        ordered_on=date(2024, 12, 1),
+        commit=False,
+    )
+    lot = "Lot of 3 Washington/Carver Commemorative Half Dollars"
+    pieces = [
+        _coin(
+            db,
+            make_item,
+            "usd_coin_0_50",
+            year,
+            description=lot,
+            purchase_order_id=order.id,
+        )
+        for year in (1952, 1953)
+    ]
+
+    run(db, commit=True)
+
+    assert _series_code(db, pieces[0]) is None
+    assert _case(db, pieces[0]) == (
+        "boundary",
+        ("commemorative_half", "franklin_half"),
+    )
+
+
+def test_a_series_the_facts_rule_out_is_reported_not_changed(
+    db: Session, make_item: ItemFactory
+) -> None:
+    # Real case: "2010-D Franklin Pierce $1.00 Coin" matched as a Franklin half.
+    franklin = code_id(db, Series, "franklin_half")
+    dollar = _coin(db, make_item, DOLLAR, 2010, series_id=franklin)
+    agrees = _coin(db, make_item, "usd_coin_0_50", 1955, series_id=franklin)
+
+    assert _case(db, dollar) == ("disagrees", ("franklin_half",))
+    assert _case(db, agrees) is None
+    run(db, commit=True)
+    assert _series_code(db, dollar) == "franklin_half"
+
+
+def test_text_naming_a_candidate_as_well_is_not_a_conflict(
+    db: Session, make_item: ItemFactory
+) -> None:
+    # "Lincoln" is also a cent design; the facts say this can only be the
+    # presidential dollar, and the text agrees.
+    dollar = _coin(
+        db,
+        make_item,
+        DOLLAR,
+        2010,
+        title="2010-D Abraham Lincoln Presidential Dollar",
+    )
+
+    run(db, commit=True)
+
+    assert _series_code(db, dollar) == "presidential_dollar"
+
+
+# -- notes ------------------------------------------------------------------
+
+
+def test_every_1928_dollar_is_a_funnyback(db: Session, make_item: ItemFactory) -> None:
+    # The owner's decision: the red-seal United States Note counts too.
+    red = _note(db, make_item, NOTE_1, 1928, seal="red")
+    blue = _note(db, make_item, NOTE_1, 1928, "B", seal="blue")
+
+    run(db, commit=True)
+
+    assert _series_code(db, red) == "funnyback"
+    assert _series_code(db, blue) == "funnyback"
+
+
+def test_the_series_letter_decides_a_barr_note(
+    db: Session, make_item: ItemFactory
+) -> None:
+    barr = _note(db, make_item, NOTE_1, 1963, "B")
+    not_barr = _note(db, make_item, NOTE_1, 1963, "A")
+    plain = _note(db, make_item, NOTE_1, 1963)
+
+    run(db, commit=True)
+
+    assert _series_code(db, barr) == "barr_note"
+    assert _series_code(db, not_barr) is None
+    assert _series_code(db, plain) is None
+
+
+def test_a_needs_evidence_design_is_not_assigned_without_it(
+    db: Session, make_item: ItemFactory
+) -> None:
+    # A $5 1934A is also every ordinary note of that series.
+    ordinary = _note(db, make_item, NOTE_5, 1934, "A", seal="blue")
+
+    report = run(db, commit=True)
+
+    assert _series_code(db, ordinary) is None
+    assert report.counts["ordinary"] >= 1
+    assert _case(db, ordinary) is None
+
+
+def test_the_seal_is_evidence(db: Session, make_item: ItemFactory) -> None:
+    brown = _note(db, make_item, NOTE_5, 1934, "A", seal="brown")
+    yellow = _note(db, make_item, NOTE_5, 1934, "A", seal="yellow")
+
+    run(db, commit=True)
+
+    assert _series_code(db, brown) == "hawaii"
+    assert _series_code(db, yellow) == "north_africa"
+
+
+def test_the_text_is_evidence(db: Session, make_item: ItemFactory) -> None:
+    note = _note(db, make_item, NOTE_5, 1934, description="HAWAII overprint, VF")
+
+    run(db, commit=True)
+
+    assert _series_code(db, note) == "hawaii"
+
+
+def test_a_classified_funnyback_is_found_by_its_nickname(
+    db: Session, make_item: ItemFactory
+) -> None:
+    note = _note(db, make_item, NOTE_1, 1934, description="Silver certificate")
+    run(db, commit=True)
+
+    rows, _ = search(db, CURRENCY_VIEW, params={}, query="funnyback")
+
+    assert note.item_code in {row["item_code"] for row in rows}
+
+
+# -- series_match stays within its inventory --------------------------------
+
+
+def test_a_coin_saying_hawaii_is_not_a_hawaii_note(
+    db: Session, make_item: ItemFactory
+) -> None:
+    quarter = _coin(db, make_item, QUARTER, 2008, title="2008-P Hawaii State Quarter")
+
+    match_run(db, commit=True)
+
+    assert _series_code(db, quarter) == "state_quarters"
+
+
+def test_a_franklin_mint_piece_is_not_a_franklin_half(
+    db: Session, make_item: ItemFactory
+) -> None:
+    medal = make_item(title="Franklin Mint Sterling Medal", year_start=1950)
+    half = make_item(title="1950 Franklin Half", year_start=1950)
+
+    stats = match_run(db, commit=True)
+
+    assert _series_code(db, medal) is None
+    assert _series_code(db, half) == "franklin_half"
+    assert stats["contradicted"] == 0
+
+
+def test_a_name_the_items_year_rules_out_is_not_believed(
+    db: Session, make_item: ItemFactory
+) -> None:
+    """America the Beautiful quarters began in 2010."""
+    early = _coin(db, make_item, QUARTER, 2005, title="National Parks Quarter")
+    real = _coin(db, make_item, QUARTER, 2012, title="National Park Quarter")
+    # Morgans were not struck between 1904 and 1921: a gap, not just two ends.
+    gap = _coin(db, make_item, DOLLAR, 1910, title="Morgan Silver Dollar")
+
+    stats = match_run(db, commit=True)
+
+    assert _series_code(db, early) is None
+    assert _series_code(db, gap) is None
+    assert _series_code(db, real) == "atb_quarters"
+    assert stats["contradicted"] == 2
+    assert stats["matched"] == 1
+
+
+def test_a_name_the_items_denomination_rules_out_is_not_believed(
+    db: Session, make_item: ItemFactory
+) -> None:
+    """A commemorative half dollar is a half dollar."""
+    five = _coin(db, make_item, "usd_coin_5_00", 1986, title="$5 Commemorative")
+    half = _coin(db, make_item, "usd_coin_0_50", 1986, title="Commemorative")
+    # No denomination recorded: the name stands on the year alone, and no
+    # commemorative dollar was struck in 1946.
+    bare = make_item(title="Commemorative Half Dollar", year_start=1946)
+    # A design recorded with no denomination fits any.
+    eagle = _coin(db, make_item, DOLLAR, 1998, title="American Silver Eagle")
+
+    stats = match_run(db, commit=True)
+
+    assert _series_code(db, five) is None
+    assert _series_code(db, half) == "commemorative_half"
+    assert _series_code(db, bare) == "commemorative_half"
+    assert _series_code(db, eagle) == "american_silver_eagle"
+    assert stats["contradicted"] == 1
+
+
+def test_a_range_of_years_rules_no_name_out(
+    db: Session, make_item: ItemFactory
+) -> None:
+    """A lot of 1878-1935 dollars described as Morgans is not contradicted."""
+    lot = make_item(
+        title="Lot of Morgan Dollars",
+        denomination_id=code_id(db, Denomination, DOLLAR),
+        year_start=1878,
+        year_end=1935,
+    )
+    undated = make_item(title="Morgan Dollar, date worn off", year_start=None)
+
+    match_run(db, commit=True)
+
+    assert _series_code(db, lot) == "morgan_dollar"
+    assert _series_code(db, undated) == "morgan_dollar"
+
+
+def test_series_match_leaves_notes_to_the_facts(
+    db: Session, make_item: ItemFactory
+) -> None:
+    note = _note(db, make_item, NOTE_1, 1923, description="Funnyback")
+
+    match_run(db, commit=True)
+
+    assert _series_code(db, note) is None
+
+
+# -- seeding ----------------------------------------------------------------
+
+
+def _ranges(db: Session, code: str) -> set[tuple[int, int | None]]:
+    """The year ranges recorded for the series with this code."""
+    rows = db.execute(
+        select(SeriesYearRange.year_start, SeriesYearRange.year_end)
+        .join(Series, Series.id == SeriesYearRange.series_id)
+        .where(Series.code == code)
+    ).all()
+    return {(start, end) for start, end in rows}
+
+
+def test_seeded_ranges_load_and_reload_unchanged(db: Session) -> None:
+    assert _ranges(db, "morgan_dollar") == {(1878, 1904), (1921, 1921), (2021, None)}
+
+    stats = seed_all(db, only=["series_year_range"])
+
+    counter = stats["series_year_range"]
+    assert counter["created"] == counter["updated"] == counter["removed"] == 0
+    assert counter["unchanged"] >= 3
+
+
+def test_seeded_ranges_follow_the_file(db: Session, tmp_path: Path) -> None:
+    # A design named in the file gets exactly the file's ranges; one the file
+    # does not name keeps its own.
+    (tmp_path / "ranges.json").write_text(
+        json.dumps(
+            {
+                "series_year_range": [
+                    {"series": "morgan_dollar", "year_start": 1878, "year_end": 1921}
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    peace_before = _ranges(db, "peace_dollar")
+
+    seed_all(db, tmp_path, only=["series_year_range"])
+
+    assert _ranges(db, "morgan_dollar") == {(1878, 1921)}
+    assert _ranges(db, "peace_dollar") == peace_before
+
+
+# -- Series 1929 National Bank Notes: a design with a note class ---------------
+
+
+def _class(db: Session, item: InventoryItem, code: str) -> None:
+    """Record the note's class as the note type with this code."""
+    from app.models import NoteType
+
+    detail = db.execute(
+        select(CurrencyDetail).where(CurrencyDetail.inventory_item_id == item.id)
+    ).scalar_one()
+    detail.note_type_id = code_id(db, NoteType, code)
+    db.commit()
+
+
+def test_a_1929_national_needs_its_class(db: Session, make_item: ItemFactory) -> None:
+    # A 1929 note names its bank in the rating, and the
+    # brown seal is on both classes. The bank's name is not the design's: the
+    # word "National" is on a National bank's notes of every series, so it
+    # decides the note's class (`classifier_defaults`), and the class is the
+    # evidence.
+    named = _note(
+        db,
+        make_item,
+        "usd_note_10",
+        1929,
+        seal="brown",
+        rating="T1 National City Bank of New York 1461",
+    )
+    classed = _note(db, make_item, "usd_note_20", 1929, seal="brown")
+    _class(db, classed, "national_bank_note")
+    reserve = _note(
+        db, make_item, "usd_note_10", 1929, seal="brown", rating="Fed Res Boston"
+    )
+
+    run(db, commit=True)
+
+    assert _series_code(db, named) is None
+    assert _series_code(db, classed) == "national_bank_note_1929"
+    # A brown seal alone says nothing: Federal Reserve Bank Notes have one too.
+    assert _series_code(db, reserve) is None
+
+    # Once its class is recorded, the note that named its bank is one too.
+    _class(db, named, "national_bank_note")
+    run(db, commit=True)
+    assert _series_code(db, named) == "national_bank_note_1929"
+
+
+def test_a_national_banks_name_does_not_make_an_earlier_note_a_conflict(
+    db: Session, make_item: ItemFactory
+) -> None:
+    """A Series 1902 $20 of a National bank is not a mis-recorded 1929 note."""
+    note = _note(
+        db,
+        make_item,
+        "usd_note_20",
+        1902,
+        title="$20 Bill National City Bank of NY E 1461",
+        rating="Natl Bank",
+    )
+
+    run(db, commit=True)
+
+    assert _series_code(db, note) is None
+    assert _case(db, note) is None
+
+
+def test_a_federal_reserve_bank_note_is_never_a_national(
+    db: Session, make_item: ItemFactory
+) -> None:
+    # Its text says "Brown Seal" -- a description written from the record
+    # does -- and that is its seal, not evidence of the National's design,
+    # though the nickname still finds the Nationals in a search.
+    note = _note(
+        db,
+        make_item,
+        "usd_note_10",
+        1929,
+        seal="brown",
+        description="1929 $10 S/N B02074738A. Federal Reserve Bank Note Brown Seal.",
+    )
+    _class(db, note, "frbn")
+    said = _note(db, make_item, "usd_note_20", 1929, rating="Small Size National")
+    _class(db, said, "frbn")
+
+    run(db, commit=True)
+
+    assert _series_code(db, note) is None
+    assert _case(db, note) is None
+    # Text that does name the design is still a finding on another class.
+    assert _series_code(db, said) is None
+    assert _case(db, said) == ("conflict", ("national_bank_note_1929",))
+
+
+def test_a_national_recorded_as_another_class_is_reported(
+    db: Session, make_item: ItemFactory
+) -> None:
+    national = code_id(db, Series, "national_bank_note_1929")
+    note = _note(db, make_item, "usd_note_10", 1929, seal="brown", series_id=national)
+    _class(db, note, "frbn")
+
+    assert _case(db, note) == ("disagrees", ("national_bank_note_1929",))
+
+
+def test_brown_seal_finds_the_1929_nationals(
+    db: Session, make_item: ItemFactory
+) -> None:
+    national = code_id(db, Series, "national_bank_note_1929")
+    note = _note(db, make_item, "usd_note_5", 1929, seal="brown", series_id=national)
+
+    rows, _ = search(db, CURRENCY_VIEW, params={}, query="brown seal")
+
+    assert note.item_code in {row["item_code"] for row in rows}
+
+
+def _source(db: Session, item: InventoryItem) -> str | None:
+    """What the item's series is recorded as derived by, or None for no record."""
+    return db.execute(
+        select(ItemFieldSource.derived_by).where(
+            ItemFieldSource.inventory_item_id == item.id,
+            ItemFieldSource.field_name == "series_id",
+        )
+    ).scalar_one_or_none()
+
+
+def test_a_held_series_stays_empty_in_the_batch(
+    db: Session, make_item: ItemFactory
+) -> None:
+    dime = _coin(db, make_item, DIME, 1942)
+    hold(db, [dime.id], ["series_id"])
+    db.commit()
+
+    run(db, commit=True)
+
+    assert _series_code(db, dime) is None
+
+
+def test_refresh_assigns_only_the_items_named(
+    db: Session, make_item: ItemFactory
+) -> None:
+    dime = _coin(db, make_item, DIME, 1942)
+    other = _coin(db, make_item, DIME, 1942)
+
+    refresh_series(db, [dime.id])
+    db.commit()
+
+    assert _series_code(db, dime) == "winged_liberty_head_dime"
+    assert _source(db, dime) == SERIES_CLASSIFY
+    assert _series_code(db, other) is None
+
+
+def test_refresh_takes_back_its_own_guess_when_the_year_moves(
+    db: Session, make_item: ItemFactory
+) -> None:
+    dime = _coin(db, make_item, DIME, 1942)
+    refresh_series(db, [dime.id])
+    db.commit()
+
+    dime.year_start = dime.year_end = 1950
+    refresh_series(db, [dime.id])
+    db.commit()
+
+    assert _series_code(db, dime) == "roosevelt_dime"
+
+
+def test_refresh_clears_its_guess_when_the_facts_are_gone(
+    db: Session, make_item: ItemFactory
+) -> None:
+    dime = _coin(db, make_item, DIME, 1942)
+    refresh_series(db, [dime.id])
+    db.commit()
+
+    dime.denomination_id = None
+    refresh_series(db, [dime.id])
+    db.commit()
+
+    assert _series_code(db, dime) is None
+    assert _source(db, dime) is None
+
+
+def test_refresh_retracts_an_accepted_suggestion_the_facts_rule_out(
+    db: Session, make_item: ItemFactory
+) -> None:
+    wlh = code_id(db, Series, "winged_liberty_head_dime")
+    dime = _coin(db, make_item, DIME, 1942, series_id=wlh)
+    record_derived(db, dime.id, ["series_id"], SUGGESTION)
+    db.commit()
+
+    dime.year_start = dime.year_end = 1950
+    refresh_series(db, [dime.id])
+    db.commit()
+
+    assert _series_code(db, dime) == "roosevelt_dime"
+
+
+def test_refresh_never_clears_a_persons_series(
+    db: Session, make_item: ItemFactory
+) -> None:
+    barber = code_id(db, Series, "barber_dime")
+    dime = _coin(db, make_item, DIME, 1942, series_id=barber)
+
+    refresh_series(db, [dime.id])
+    db.commit()
+
+    assert _series_code(db, dime) == "barber_dime"
+
+
+def test_refresh_leaves_a_held_series_empty(
+    db: Session, make_item: ItemFactory
+) -> None:
+    dime = _coin(db, make_item, DIME, 1942)
+    hold(db, [dime.id], ["series_id"])
+
+    refresh_series(db, [dime.id])
+    db.commit()
+
+    assert _series_code(db, dime) is None
+    assert _source(db, dime) == HELD

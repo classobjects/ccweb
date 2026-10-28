@@ -1,0 +1,273 @@
+import userEvent from '@testing-library/user-event'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+vi.mock('../../api', () => ({
+  api: {
+    listCustomers: vi.fn(),
+    listUsers: vi.fn(),
+    listCatalog: vi.fn(),
+    listListings: vi.fn(),
+    createOrderFor: vi.fn(),
+    reviseOrder: vi.fn(),
+    customerForUser: vi.fn(),
+  },
+}))
+
+import { api } from '../../api'
+import OrderEditor from './OrderEditor'
+
+const ORDER = {
+  id: 12,
+  version: 3,
+  customer_id: 5,
+  customer_name: 'Ada Lovelace',
+  status: 'paid',
+  notes: null,
+  total_amount: '378.00',
+  items: [{ id: 1, listing_id: 3, title: 'Morgan', quantity: 2, unit_price: '189.00' }],
+}
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  api.listCustomers.mockResolvedValue([
+    { id: 5, user_id: 2, display_name: 'Ada Lovelace', email: 'ada@example.com' },
+    { id: 6, user_id: null, display_name: 'Walk-in', email: null },
+  ])
+  api.listUsers.mockResolvedValue([
+    { id: 2, email: 'ada@example.com', full_name: 'Ada Lovelace' },
+    { id: 9, email: 'new@example.com', full_name: 'New Person' },
+  ])
+  api.listListings.mockResolvedValue([
+    { id: 3, price: '189.00', quantity_available: 4 },
+  ])
+  api.listCatalog.mockResolvedValue({
+    items: [{ id: 4, title: 'Dime', price: '10.00', quantity_available: 7 }],
+  })
+  api.createOrderFor.mockResolvedValue({ id: 13 })
+  api.reviseOrder.mockResolvedValue({ id: 12 })
+})
+
+const setup = async (order = null) => {
+  const user = userEvent.setup()
+  const onSaved = vi.fn()
+  render(<OrderEditor order={order} onSaved={onSaved} onClose={vi.fn()} />)
+  await screen.findByRole('combobox', { name: 'Customer' })
+  return { user, onSaved }
+}
+
+/** The editor rendered and loaded, with the element it was rendered into. */
+const setupIn = async (order = null) => {
+  const rendered = render(
+    <OrderEditor order={order} onSaved={vi.fn()} onClose={vi.fn()} />,
+  )
+  await screen.findByRole('combobox', { name: 'Customer' })
+  return rendered
+}
+
+describe('OrderEditor', () => {
+  it('prefills an order being edited and shows the paid warning', async () => {
+    await setup(ORDER)
+    // Waited for, not read once: `setup` only waits for the select to exist,
+    // and a select reports '' until an <option> matching its value has
+    // rendered -- which needs both customer and account lists to resolve, and
+    // under a full parallel run that can land a tick late.
+    await waitFor(() =>
+      expect(screen.getByRole('combobox', { name: 'Customer' })).toHaveValue('c:5'),
+    )
+    expect(screen.getByRole('spinbutton', { name: 'Quantity of Morgan' })).toHaveValue(
+      2,
+    )
+    expect(screen.getByRole('textbox', { name: 'Price of Morgan' })).toHaveValue(
+      '189.00',
+    )
+    expect(screen.getByText(/this order is paid/i)).toBeInTheDocument()
+    expect(screen.getByText('Total $378.00')).toBeInTheDocument()
+  })
+
+  it('offers accounts without a customer record', async () => {
+    await setup()
+    const select = screen.getByRole('combobox', { name: 'Customer' })
+    const labels = Array.from(select.querySelectorAll('option')).map(
+      (o) => o.textContent,
+    )
+    expect(labels).toContain('New Person (new@example.com), account, no orders yet')
+    expect(labels.filter((l) => l.includes('ada@example.com'))).toHaveLength(1)
+  })
+
+  it('re-quantities, re-prices and saves a revision with the loaded version', async () => {
+    const { user, onSaved } = await setup(ORDER)
+    const qty = screen.getByRole('spinbutton', { name: 'Quantity of Morgan' })
+    await user.clear(qty)
+    await user.type(qty, '3')
+    const price = screen.getByRole('textbox', { name: 'Price of Morgan' })
+    await user.clear(price)
+    await user.type(price, '150')
+    expect(screen.getByText('Total $450.00')).toBeInTheDocument()
+    expect(screen.getByText('listing price $189.00')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Save order' }))
+
+    expect(api.reviseOrder).toHaveBeenCalledWith(12, {
+      version: 3,
+      customer_id: 5,
+      notes: null,
+      items: [{ listing_id: 3, quantity: 3, unit_price: '150.00' }],
+    })
+    await waitFor(() => expect(onSaved).toHaveBeenCalled())
+  })
+
+  it('adds an item from a catalog search and removes another', async () => {
+    const { user } = await setup(ORDER)
+    await user.type(screen.getByRole('searchbox', { name: 'Find item' }), 'dime')
+    await user.click(screen.getByRole('button', { name: 'Search' }))
+    await user.click(await screen.findByRole('button', { name: 'Add Dime' }))
+    await user.click(screen.getByRole('button', { name: 'Remove Morgan' }))
+    await user.click(screen.getByRole('button', { name: 'Save order' }))
+
+    expect(api.listCatalog).toHaveBeenCalledWith({
+      q: 'dime',
+      in_stock: true,
+      limit: 10,
+    })
+    expect(api.reviseOrder).toHaveBeenCalledWith(
+      12,
+      expect.objectContaining({
+        items: [{ listing_id: 4, quantity: 1, unit_price: '10.00' }],
+      }),
+    )
+  })
+
+  it('creates a customer record for an account before placing the order', async () => {
+    api.customerForUser.mockResolvedValue({ id: 77 })
+    const { user } = await setup()
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Customer' }), 'u:9')
+    await user.type(screen.getByRole('searchbox', { name: 'Find item' }), 'dime')
+    await user.click(screen.getByRole('button', { name: 'Search' }))
+    await user.click(await screen.findByRole('button', { name: 'Add Dime' }))
+    await user.click(screen.getByRole('button', { name: 'Save order' }))
+
+    await waitFor(() => expect(api.customerForUser).toHaveBeenCalledWith(9))
+    expect(api.createOrderFor).toHaveBeenCalledWith(77, {
+      notes: null,
+      items: [{ listing_id: 4, quantity: 1, unit_price: '10.00' }],
+    })
+  })
+
+  it('keeps the edits when the server refuses', async () => {
+    api.reviseOrder.mockRejectedValue(
+      new Error('Only 1 more of listing 3 are available'),
+    )
+    const { user, onSaved } = await setup(ORDER)
+    const qty = screen.getByRole('spinbutton', { name: 'Quantity of Morgan' })
+    await user.clear(qty)
+    await user.type(qty, '9')
+    await user.click(screen.getByRole('button', { name: 'Save order' }))
+
+    expect(await screen.findByText(/only 1 more of listing 3/i)).toBeInTheDocument()
+    expect(qty).toHaveValue(9)
+    expect(onSaved).not.toHaveBeenCalled()
+  })
+
+  it('refuses to save an order with no customer', async () => {
+    const { user } = await setup()
+    await user.click(screen.getByRole('button', { name: 'Save order' }))
+    expect(screen.getByText('Choose a customer.')).toBeInTheDocument()
+    expect(api.createOrderFor).not.toHaveBeenCalled()
+  })
+
+  it('refuses to save an empty order', async () => {
+    const { user } = await setup()
+    await user.selectOptions(
+      screen.getByRole('combobox', { name: 'Customer' }),
+      await screen.findByRole('option', { name: /Walk-in/ }),
+    )
+    await user.click(screen.getByRole('button', { name: 'Save order' }))
+    expect(
+      screen.getByText(
+        'An order needs at least one item. To empty an order, cancel it.',
+      ),
+    ).toBeInTheDocument()
+    expect(api.createOrderFor).not.toHaveBeenCalled()
+  })
+
+  it('gives the editor access keys and saves with Ctrl+Enter', async () => {
+    await setup(ORDER)
+    expect(screen.getByRole('combobox', { name: 'Customer' })).toHaveAttribute(
+      'accesskey',
+      'c',
+    )
+    expect(screen.getByRole('searchbox', { name: 'Find item' })).toHaveAttribute(
+      'accesskey',
+      'i',
+    )
+    expect(screen.getByRole('button', { name: 'Save order' })).toHaveAttribute(
+      'aria-keyshortcuts',
+      'Control+S',
+    )
+    fireEvent.keyDown(document, { key: 'Enter', ctrlKey: true })
+    await waitFor(() => expect(api.reviseOrder).toHaveBeenCalled())
+  })
+
+  it('underlines every Alt letter where it can be seen, each one once', async () => {
+    const { container } = await setupIn(ORDER)
+    const controls = [...container.querySelectorAll('[accesskey]')]
+    const letters = controls.map((control) => control.getAttribute('accesskey'))
+    expect(letters).toHaveLength(5)
+    expect(new Set(letters).size).toBe(letters.length)
+    expect(letters.filter((l) => 'def'.includes(l))).toEqual([])
+    for (const control of controls) {
+      const underlined = (control.closest('label') ?? control).querySelector('u')
+      expect(underlined?.textContent.toLowerCase()).toBe(
+        control.getAttribute('accesskey'),
+      )
+    }
+  })
+
+  it('says why a line has no availability when the listings cannot be read', async () => {
+    api.listListings.mockRejectedValue(new Error('cannot reach the server'))
+    await setup(ORDER)
+    expect(
+      await screen.findByText('not known: cannot reach the server'),
+    ).toBeInTheDocument()
+  })
+
+  it('says so for a line whose listing the answer leaves out', async () => {
+    api.listListings.mockResolvedValue([])
+    await setup(ORDER)
+    expect(await screen.findByText('not known: listing not found')).toBeInTheDocument()
+  })
+
+  it("reads every line's listing in one request, whatever its status", async () => {
+    const order = {
+      ...ORDER,
+      total_amount: '398.00',
+      items: [
+        ...ORDER.items,
+        { id: 2, listing_id: 8, title: 'Dime', quantity: 2, unit_price: '10.00' },
+      ],
+    }
+    api.listListings.mockResolvedValue([
+      { id: 3, price: '189.00', quantity_available: 4 },
+      // Ended on another platform since: still priced, not refused.
+      { id: 8, price: '12.00', quantity_available: 0, status: 'ended' },
+    ])
+    await setup(order)
+
+    expect(await screen.findByText('listing price $12.00')).toBeInTheDocument()
+    expect(api.listListings).toHaveBeenCalledTimes(1)
+    expect(api.listListings).toHaveBeenCalledWith({ ids: [3, 8], status: 'all' })
+    // The Available cell, the one before Remove.
+    const available = (title) => {
+      const price = screen.getByRole('textbox', { name: `Price of ${title}` })
+      return price.closest('tr').cells[3].textContent
+    }
+    expect(available('Morgan')).toBe('4')
+    expect(available('Dime')).toBe('0')
+  })
+
+  it('asks for no listings for a new order', async () => {
+    await setup()
+    expect(api.listListings).not.toHaveBeenCalled()
+  })
+})

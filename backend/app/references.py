@@ -1,0 +1,180 @@
+"""Resolving classifier codes supplied by API clients.
+
+Classifiers cross the API as codes because ids are per-installation and codes
+are the stable contract. Two rules make that safe:
+
+**An unknown code is an error, not a null.** Silently storing NULL for a code
+the caller believed in produces an item that is quietly unclassified, and the
+caller is never told. It raises 422 naming the field and the value.
+
+**A retired code is refused -- unless the row already holds it.**
+`routers.reference.get_table` serves retired values so a
+form can render an old record (`include_inactive`), and saving that record
+back sends the same code. Refusing it would make every save of an affected
+item fail once its classifier was retired, with a message saying its own
+rendered value does not exist. So `keep` names the id the row holds now:
+that value stays acceptable, and any *new* use of a retired value is still
+refused, with "Retired" in the message rather than "Unknown".
+
+**The API never creates classifier rows while resolving a code.** Letting a
+request invent classifiers that way is how a reference table fills up with
+typos.
+
+**Some values cannot be retired** (`retirable`): the vocabularies the
+application branches on value by value, and single values it looks up by
+code. Kept here, beside the lookups they protect, so the reference router
+and `reference_merge` ask one module without importing each other.
+"""
+
+from __future__ import annotations
+
+from fastapi import HTTPException, status
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from .models import ReferenceMixin
+
+__all__ = [
+    "code_of",
+    "code_to_id",
+    "extendable",
+    "id_to_code",
+    "require_code",
+    "retirable",
+]
+
+#: Vocabularies the application branches on value by value -- a status, a
+#: kind, a strike -- and single values it looks up by code. Any of them may be
+#: renamed, since a label is only what a person reads, but retiring one would
+#: make the lookup fail: receiving, a pass or a sale would stop.
+_CODE_KEYED_TABLES = frozenset(
+    {
+        "item_status",
+        "disposition",
+        "sales_order_status",
+        "shipment_status",
+        "strike_type",
+        "item_kind",
+        "grade_scale",
+        "valuation_basis",
+        "authenticity",
+        "sales_venue_kind",
+        # `sales_writes.record_sale_lines` resolves every fee line's kind through
+        # `require_code`, which filters on `is_active`: retiring `commission`
+        # would make every sale charging one fail with 422 "Retired fee",
+        # naming a code the dialog itself had just offered.
+        "sales_fee_kind",
+    }
+)
+_CODE_KEYED_VALUES = frozenset(
+    {
+        ("vendor_kind", "unknown"),
+        ("storage_form", "single"),
+        ("currency", "USD"),
+        ("country", "US"),
+        ("note_type", "frn"),
+        # `auctions` finds every consigned location's kind by this code, and
+        # a seed load never brings back a merged code: merging it away would
+        # fail every consignment for good.
+        ("storage_location_kind", "consigned"),
+        # `photo_names` turns a filename's sequence number into one of these
+        # three codes and `photo_import` resolves each through `code_to_id`,
+        # which refuses a retired value. Retiring one would fail every
+        # import of a photograph named for it -- the other image roles are
+        # descriptive and may be retired freely.
+        ("image_role", "obverse"),
+        ("image_role", "reverse"),
+        ("image_role", "unassigned"),
+    }
+)
+
+
+def retirable(table: str, code: str) -> bool:
+    """Whether a value may be retired; see _CODE_KEYED_TABLES.
+
+    Asked by the reference endpoints before a value is retired, and by
+    `reference_merge.plan` before one is merged away -- a merge deletes the
+    value, which breaks a lookup by its code just as retiring it would.
+    """
+    return table not in _CODE_KEYED_TABLES and (table, code) not in _CODE_KEYED_VALUES
+
+
+def extendable(table: str) -> bool:
+    """Whether a value may be added to a vocabulary; see _CODE_KEYED_TABLES.
+
+    The application acts on each value of those by its code, so one it has
+    never heard of would be a status no screen moves an item out of, or a
+    kind no form has fields for.
+    """
+    return table not in _CODE_KEYED_TABLES
+
+
+def code_to_id(
+    db: Session,
+    model: type[ReferenceMixin],
+    code: str | None,
+    field: str,
+    *,
+    keep: int | None = None,
+) -> int | None:
+    """Resolve a classifier code, or None when the caller supplied none.
+
+    `None` means only "no code was supplied". A code that does not resolve
+    raises 422 rather than returning None, so a caller must not read None as
+    "not found". A retired code is refused too, unless it is the value the
+    row already holds (`keep`, the row's current id for this field).
+    """
+    if code is None or code == "":
+        return None
+    found = db.execute(
+        select(model.id, model.is_active).where(model.code == code)
+    ).one_or_none()
+    if found is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"Unknown {field}: {code!r}",
+        )
+    if not found.is_active and found.id != keep:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"Retired {field}: {code!r} can no longer be chosen",
+        )
+    return int(found.id)
+
+
+def require_code(
+    db: Session,
+    model: type[ReferenceMixin],
+    code: str,
+    field: str,
+    *,
+    keep: int | None = None,
+) -> int:
+    """Same, for a classifier the schema cannot do without."""
+    resolved = code_to_id(db, model, code, field, keep=keep)
+    if resolved is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"{field} is required",
+        )
+    return resolved
+
+
+def id_to_code(row: object | None) -> str | None:
+    """The code of a related reference row, for building a response."""
+    return getattr(row, "code", None) if row is not None else None
+
+
+def code_of(db: Session, model: type[ReferenceMixin], row_id: int | None) -> str | None:
+    """The code a classifier's foreign key resolves to, or None when unset.
+
+    Looked up by id rather than through an ORM relationship, because not
+    every classifier column has one -- `inventory_item.series_id` is set and
+    read as a plain column with no `InventoryItem.series` relationship
+    declared -- and one lookup path that works for all of them is simpler
+    than two.
+    """
+    if row_id is None:
+        return None
+    row = db.get(model, row_id)
+    return row.code if row is not None else None

@@ -1,0 +1,403 @@
+"""The purchase-source clean-up pass (`app.vendor_cleanup`)."""
+
+from __future__ import annotations
+
+import pytest
+from app.models import PurchaseOrder, SalesVenue, SalesVenueKind, Vendor, VendorKind
+from app.vendor_cleanup import CleanupError, run
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
+
+# Setup is committed, not flushed. Under the `db` fixture a commit releases a
+# savepoint, so the rollback `run` does on a dry run or a refusal discards
+# only what `run` did -- not the vendors the test created.
+
+
+def _vendor(db: Session, name: str) -> Vendor:
+    """A vendor of this name, committed."""
+    vendor = Vendor(name=name)
+    db.add(vendor)
+    db.commit()
+    return vendor
+
+
+def _order(db: Session, vendor: Vendor, number: str | None) -> PurchaseOrder:
+    """A purchase from the vendor with this order number, committed."""
+    order = PurchaseOrder(vendor_id=vendor.id, order_number=number)
+    db.add(order)
+    db.commit()
+    return order
+
+
+def _platform(db: Session, code: str, vendor: Vendor) -> SalesVenue:
+    """A marketplace sales platform linked to the vendor, committed."""
+    kind_id = db.scalar(
+        select(SalesVenueKind.id).where(SalesVenueKind.code == "marketplace")
+    )
+    venue = SalesVenue(
+        code=code, name=code.title(), sales_venue_kind_id=kind_id, vendor_id=vendor.id
+    )
+    db.add(venue)
+    db.commit()
+    return venue
+
+
+def test_a_dry_run_reports_and_writes_nothing(db: Session) -> None:
+    typo = _vendor(db, "builionhounds.com")
+    real = _vendor(db, "bullionhound.com")
+    order = _order(db, typo, "A1")
+
+    report = run(db, merges=[(typo.id, real.id)], kinds=[], deletes=[], commit=False)
+
+    assert report.merged == [("builionhounds.com", "bullionhound.com", 1)]
+    db.expire_all()
+    assert db.get_one(PurchaseOrder, order.id).vendor_id == typo.id
+    assert db.get(Vendor, typo.id) is not None
+
+
+def test_a_merge_moves_orders_and_removes_the_duplicate(db: Session) -> None:
+    typo = _vendor(db, "hibid.co")
+    real = _vendor(db, "hibid.com")
+    moved = _order(db, typo, None)
+    kept = _order(db, real, "X9")
+
+    run(db, merges=[(typo.id, real.id)], kinds=[], deletes=[], commit=True)
+
+    db.expire_all()
+    assert db.get_one(PurchaseOrder, moved.id).vendor_id == real.id
+    assert db.get_one(PurchaseOrder, kept.id).vendor_id == real.id
+    assert db.get(Vendor, typo.id) is None
+
+
+def test_a_merge_that_would_duplicate_an_order_number_is_refused(db: Session) -> None:
+    left = _vendor(db, "a.example")
+    right = _vendor(db, "b.example")
+    _order(db, left, "SAME")
+    _order(db, right, "SAME")
+
+    with pytest.raises(CleanupError, match="SAME"):
+        run(db, merges=[(left.id, right.id)], kinds=[], deletes=[], commit=True)
+
+
+def test_delete_refuses_a_vendor_with_orders(db: Session) -> None:
+    used = _vendor(db, "used.example")
+    _order(db, used, "1")
+
+    with pytest.raises(CleanupError, match=r"used\.example"):
+        run(db, merges=[], kinds=[], deletes=[used.id], commit=True)
+
+
+def test_delete_removes_an_unused_vendor(db: Session) -> None:
+    typo = _vendor(db, "usming.gov")
+
+    report = run(db, merges=[], kinds=[], deletes=[typo.id], commit=True)
+
+    assert report.deleted == ["usming.gov"]
+    db.expire_all()
+    assert db.get(Vendor, typo.id) is None
+
+
+def test_delete_refuses_a_vendor_a_platform_sells_through(db: Session) -> None:
+    """The clean-up refuses, naming the platform, rather than the database.
+
+    `sales_venue.vendor_id` is ON DELETE RESTRICT, so without the check the
+    DELETE reaches PostgreSQL and comes back as a raw IntegrityError -- an
+    operator traceback where a REFUSED line belongs.
+    """
+    linked = _vendor(db, "ebay.example")
+    _platform(db, "ebay", linked)
+
+    with pytest.raises(CleanupError, match="ebay"):
+        run(db, merges=[], kinds=[], deletes=[linked.id], commit=True)
+
+    db.expire_all()
+    assert db.get(Vendor, linked.id) is not None
+
+
+def test_merge_refuses_a_vendor_a_platform_sells_through(db: Session) -> None:
+    """A merge deletes its source, so a linked source is refused the same way."""
+    linked = _vendor(db, "whatnot.example")
+    target = _vendor(db, "whatnot.com")
+    _platform(db, "whatnot", linked)
+    moved = _order(db, linked, "W1")
+
+    with pytest.raises(CleanupError, match="whatnot"):
+        run(db, merges=[(linked.id, target.id)], kinds=[], deletes=[], commit=True)
+
+    db.expire_all()
+    assert db.get(Vendor, linked.id) is not None
+    assert db.get_one(PurchaseOrder, moved.id).vendor_id == linked.id
+
+
+def test_a_platform_linked_elsewhere_does_not_block_a_merge(db: Session) -> None:
+    """Only the vendor being removed is checked; another's platform is no bar."""
+    typo = _vendor(db, "hibid.co")
+    real = _vendor(db, "hibid.com")
+    _platform(db, "hibid", real)
+    moved = _order(db, typo, "H1")
+
+    run(db, merges=[(typo.id, real.id)], kinds=[], deletes=[], commit=True)
+
+    db.expire_all()
+    assert db.get(Vendor, typo.id) is None
+    assert db.get_one(PurchaseOrder, moved.id).vendor_id == real.id
+
+
+def test_kind_is_set_by_code(db: Session) -> None:
+    vendor = _vendor(db, "whatnot.example")
+
+    run(db, merges=[], kinds=[(vendor.id, "marketplace")], deletes=[], commit=True)
+
+    db.expire_all()
+    marketplace = db.scalars(
+        select(VendorKind).where(VendorKind.code == "marketplace")
+    ).one()
+    assert db.get_one(Vendor, vendor.id).vendor_kind_id == marketplace.id
+
+
+def test_an_unknown_kind_is_an_error(db: Session) -> None:
+    vendor = _vendor(db, "x.example")
+
+    with pytest.raises(CleanupError, match="nonsense"):
+        run(db, merges=[], kinds=[(vendor.id, "nonsense")], deletes=[], commit=True)
+
+
+def test_an_unknown_vendor_id_is_an_error(db: Session) -> None:
+    with pytest.raises(CleanupError, match="999999"):
+        run(db, merges=[], kinds=[(999999, "dealer")], deletes=[], commit=False)
+
+
+def test_refusal_writes_nothing(db: Session) -> None:
+    """A later refusal in the same call rolls back an earlier write in it.
+
+    No merges are involved here: a merge clash is raised before any kind is
+    set, so a test built on a merge clash proves nothing about rollback. Two
+    kind assignments do: the first (a real code) succeeds and is flushed, the
+    second (an unknown code) then raises, and the assertion is that the
+    first's write did not survive.
+    """
+    other = _vendor(db, "e.example")
+    other2 = _vendor(db, "f.example")
+
+    with pytest.raises(CleanupError, match="nonsense"):
+        run(
+            db,
+            merges=[],
+            kinds=[(other.id, "dealer"), (other2.id, "nonsense")],
+            deletes=[],
+            commit=True,
+        )
+
+    db.expire_all()
+    assert db.get_one(Vendor, other.id).vendor_kind_id is None
+
+
+def test_a_vendor_can_be_renamed(db: Session) -> None:
+    """The survivor of a merge often needs the spelling neither row had."""
+    vendor = _vendor(db, "builionhounds.com")
+
+    report = run(
+        db,
+        merges=[],
+        kinds=[],
+        deletes=[],
+        renames=[(vendor.id, "bullionhounds.com")],
+        commit=True,
+    )
+
+    assert report.renamed == [("builionhounds.com", "bullionhounds.com")]
+    db.expire_all()
+    assert db.get_one(Vendor, vendor.id).name == "bullionhounds.com"
+
+
+def test_a_rename_carries_the_host_and_url_with_it(db: Session) -> None:
+    """A misspelt source misspells its host too, so both are rewritten.
+
+    `ampex.com` is really apmex.com: the row's host and URL repeat the typo,
+    and a rename that left them would keep naming a site that does not exist.
+    """
+    vendor = Vendor(name="ampex.com", host="www.ampex.com", url="https://www.ampex.com")
+    db.add(vendor)
+    db.commit()
+
+    run(
+        db,
+        merges=[],
+        kinds=[],
+        deletes=[],
+        renames=[(vendor.id, "apmex.com")],
+        commit=True,
+    )
+
+    db.expire_all()
+    renamed = db.get_one(Vendor, vendor.id)
+    assert renamed.name == "apmex.com"
+    assert renamed.host == "www.apmex.com"
+    assert renamed.url == "https://www.apmex.com"
+
+
+def test_a_rename_carries_a_link_typed_in_capitals(db: Session) -> None:
+    """The host is kept in lower case; the link keeps the case it was typed in."""
+    vendor = Vendor(
+        name="ampex.com", host="www.ampex.com", url="https://www.Ampex.com/coins"
+    )
+    db.add(vendor)
+    db.commit()
+
+    run(
+        db,
+        merges=[],
+        kinds=[],
+        deletes=[],
+        renames=[(vendor.id, "apmex.com")],
+        commit=True,
+    )
+
+    db.expire_all()
+    renamed = db.get_one(Vendor, vendor.id)
+    assert renamed.host == "www.apmex.com"
+    assert renamed.url == "https://www.apmex.com/coins"
+
+
+def test_a_rename_leaves_an_unrelated_host_and_url_alone(db: Session) -> None:
+    """Only text that repeated the old name is rewritten."""
+    vendor = Vendor(
+        name="the-coin-shop",
+        host="shop.example.com",
+        url="https://shop.example.com/store",
+    )
+    db.add(vendor)
+    db.commit()
+
+    run(
+        db,
+        merges=[],
+        kinds=[],
+        deletes=[],
+        renames=[(vendor.id, "coin-shop")],
+        commit=True,
+    )
+
+    db.expire_all()
+    renamed = db.get_one(Vendor, vendor.id)
+    assert renamed.name == "coin-shop"
+    assert renamed.host == "shop.example.com"
+    assert renamed.url == "https://shop.example.com/store"
+
+
+@pytest.mark.parametrize(
+    ("old_name", "new_name"),
+    [
+        # A name that is a fragment of every address, not a site's own.
+        (".", "unknown.example"),
+        ("ex", "exchange"),
+        # The site's name, but what replaces it is no host name.
+        ("shop.example.com", "The Coin Shop"),
+    ],
+)
+def test_a_rename_rewrites_an_address_only_as_one_host_name_for_another(
+    db: Session, old_name: str, new_name: str
+) -> None:
+    """The address follows the name only when both are the site's host name.
+
+    Replacing a fragment wherever it occurs, or putting words where a host
+    belongs, would leave an address that names no site.
+    """
+    vendor = Vendor(
+        name=old_name,
+        host="shop.example.com",
+        url="https://shop.example.com/store",
+    )
+    db.add(vendor)
+    db.commit()
+
+    run(
+        db,
+        merges=[],
+        kinds=[],
+        deletes=[],
+        renames=[(vendor.id, new_name)],
+        commit=True,
+    )
+
+    db.expire_all()
+    renamed = db.get_one(Vendor, vendor.id)
+    assert renamed.name == new_name
+    assert renamed.host == "shop.example.com"
+    assert renamed.url == "https://shop.example.com/store"
+
+
+def test_a_rename_to_nothing_is_refused(db: Session) -> None:
+    """A vendor is found by its name, so it always has one."""
+    vendor = _vendor(db, "named.example")
+
+    for nothing in ("", "   "):
+        with pytest.raises(CleanupError, match="name"):
+            run(
+                db,
+                merges=[],
+                kinds=[],
+                deletes=[],
+                renames=[(vendor.id, nothing)],
+                commit=True,
+            )
+
+    db.expire_all()
+    assert db.get_one(Vendor, vendor.id).name == "named.example"
+
+
+def test_a_rename_to_an_existing_name_is_refused(db: Session) -> None:
+    """Refused before `uq_vendor_name` is reached, so the refusal names both."""
+    vendor = _vendor(db, "one.example")
+    _vendor(db, "Two.Example")
+
+    with pytest.raises(CleanupError, match=r"Two\.Example"):
+        run(
+            db,
+            merges=[],
+            kinds=[],
+            deletes=[],
+            renames=[(vendor.id, "two.example")],
+            commit=True,
+        )
+
+    db.expire_all()
+    assert db.get_one(Vendor, vendor.id).name == "one.example"
+
+
+@pytest.mark.parametrize("autoflush", [True, False])
+def test_a_rename_happens_after_a_merge(db: Session, autoflush: bool) -> None:
+    """The merged-away row's name is free to reuse in the same call.
+
+    Run both ways: production's session does not autoflush, so the merged
+    row's deletion must reach the database before the name is looked up
+    and before the rename is written.
+    """
+    typo = _vendor(db, "bullionhound.com")
+    keep = _vendor(db, "builionhounds.com")
+    _order(db, typo, "B1")
+
+    db.autoflush = autoflush
+    try:
+        run(
+            db,
+            merges=[(typo.id, keep.id)],
+            kinds=[],
+            deletes=[],
+            renames=[(keep.id, "bullionhound.com")],
+            commit=True,
+        )
+    finally:
+        db.autoflush = True
+
+    db.expire_all()
+    assert db.get(Vendor, typo.id) is None
+    assert db.get_one(Vendor, keep.id).name == "bullionhound.com"
+    assert _order_count_for(db, keep.id) == 1
+
+
+def _order_count_for(db: Session, vendor_id: int) -> int:
+    """Orders attached to a vendor, read straight from the database."""
+    return db.execute(
+        select(func.count()).where(PurchaseOrder.vendor_id == vendor_id)
+    ).scalar_one()

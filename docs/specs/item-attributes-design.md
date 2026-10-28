@@ -1,0 +1,307 @@
+# Item attributes, classifier aliases and the grade vocabulary
+
+How an item is described decides whether it can be found and what it sells
+for: a star note, a First Strike or a CAC sticker carries a premium, and a
+buyer searches in the words collectors and grading services use. Three
+related pieces make that description precise without making staff learn the
+catalog's codes:
+
+1. **Aliases for every classifier.** "Legal Tender" is a United States Note,
+   "Ultra Cameo" is UCAM, "No God" is No Motto, "Walker" is a Walking Liberty
+   Half. Search and every picker recognize them.
+2. **Many attributes per item, coins as well as notes.** A coin can be First
+   Strike *and* CAC-approved; a note a star note *and* a fancy serial *and*
+   No Motto.
+3. **A grade vocabulary aligned with PCGS, NGC, PMG and CAC.**
+
+Staff meet these in the management console: aliases on the Vocabularies page
+(`/management/vocabularies`) and in every picker's Find box, attributes and
+grades in the item editor, and all three in the
+inventory search.
+
+**Standard terms are the labels; the owner's words are aliases.** UCAM, not
+Ultra Cameo; No Motto, not No God; United States Note, not Legal Tender.
+
+## 1. Aliases
+
+Two tables hold them: `series_alias` for design series (keyed by the
+series itself, in its own shape) and `reference_alias` (table, row,
+alias) for every other vocabulary. Both carry `is_active` and a `source`.
+`app/aliases.py` hides the split from its callers:
+
+- **`resolve`** names the row a word means: an exact code, then a code or
+  label ignoring case and extra spaces, then an active alias. An alias shared
+  by two rows resolves to neither -- a guess between them would be silent.
+- **Sharing is allowed.** "Cartwheel" is any large silver dollar; "National
+  Currency" is on two note classes. Search finds both; `resolve`, which
+  cannot choose, names neither.
+- **`add_alias`** refuses empty or over-long text, a name that is already any
+  value's label or code (`resolve` would never reach it), and an alias the row
+  already has. A retired alias added again is brought back.
+- **`remove_alias`** deletes an alias an administrator added (`manual`) and
+  retires a shipped one (`is_active` false). Seed loads count a retired row as
+  present, so a removal survives the next load.
+- **`ids_named`** is the search lookup. Text of three letters or more matches
+  part of a label, code or alias; shorter text must match one whole, so `s`
+  does not name the strike aliased `MS`.
+
+Where aliases are read:
+
+| Where | Behavior |
+|---|---|
+| **Search** | Each inventory view names the vocabularies it searches by name (`Named` in `inventory_search`): series, strike type, grade designation and attribute in both; mint for coins; note class for currency. A value on a detail or link table is matched with `i.id IN (subquery)`, which PostgreSQL hashes once. |
+| **Pickers** | `ReferenceSelect` shows a Find box on a vocabulary of more than ten values (`FIND_FROM`), matching label, code or alias and showing the alias that matched; Enter picks the first. |
+| **Console** | The Vocabularies page lists each value's aliases, adds and removes them, shows a retired shipped alias struck through with a Restore, and marks a shared one. |
+
+API: every reference value carries `aliases`; with `include_inactive`, the
+retired values come too, and each value its `retired_aliases`. `POST
+/api/reference/{table}/{code}/aliases` adds one (409 with the reason when
+`add_alias` refuses) and `DELETE /api/reference/{table}/{code}/aliases?alias=`
+removes one (404 for a name that is not a current alias); both are managers
+only and return the value. Merging a value into another
+(`vocabulary-and-errors-design.md`) makes its names the survivor's aliases.
+
+## 2. Item attributes
+
+`item_attribute` (code, label, sort order, `applies_to` coin / currency / any,
+`attribute_group`) and the link table `item_attribute_link` (item, attribute,
+`source`, `derived_by`, `noted_by_id`, `noted_at`, `removed_at`). The
+vocabulary is seeded from `backend/data/reference/attribute.json`:
+
+| Group | Attributes | For |
+|---|---|---|
+| `serial` | Star, Fancy Serial, Consecutive, Low / High Serial, Solid, Radar, Repeater, Binary, Trinary, Birthday, Ladder, Double Quad | notes |
+| `variety` | Error, Web Press, Specimen, Proof; No Motto, Motto, Mule (any); Wide / Narrow, Type 1 / Type 2, R / S Experimental; Gift | mostly notes |
+| `release` | First Strike (PCGS), Early Releases / First Releases (NGC), First Day of Issue, First Delivery (CACG) | coins |
+| `release` | First Print (PCGS Banknote) | notes |
+| `verification` | CAC (green sticker), CAC Gold | coins |
+| `qualifier` | Details, Genuine, Star (NGC/PMG eye appeal -- not a star note) | any |
+| `qualifier` | NET (PMG) | notes |
+
+Aliases: Godless and No God (No Motto), Early Release, First Release, FDI,
+First Day of Delivery, CAC Green, Gold CAC.
+
+Each attribute keeps the service's own term. The release pedigrees are kept
+apart rather than merged into one "early release", because each service
+defines its own window.
+
+Three rules add links, each recorded `derived` with its rule in `derived_by`:
+
+- **Serial patterns** (`app.serial_patterns`, `serial_pattern`): star, radar,
+  repeater, binary, solid, ladder, low serial and the rest are properties of
+  the serial, so a batch pass derives them (`python -m app.serial_patterns`,
+  `--commit` to write). Patterns need a full eight-digit serial; a shorter one
+  is reported as incomplete. Consecutive is never derived: it describes a run
+  of notes, which no single serial shows. The pass also takes back a link it
+  added, still in force, that the serial no longer earns (a serial corrected
+  since). It runs only by hand, never on a save.
+- **Attributes from facts** (`attribute_rule`), below.
+- **Gift** (`no_cost`), below.
+
+**Removal is recorded for every link** (`app.item_attributes`), not only
+derived ones: deleting a link a person added would let the serial pass add it
+straight back. Setting a removed attribute again clears the mark and makes the
+link the person's (`manual`, no `derived_by`), so no rule takes it back as its
+own. Every reader -- the item detail, search, the `attribute=`
+filter, the star check -- skips a removed link, and every pass that adds links
+skips an item holding *any* link for that attribute, removed ones included.
+
+API: the item detail lists `attributes` (code, label, group, source,
+derived_by). `POST /api/inventory` and `PATCH /api/inventory/{id}` take
+`attributes` as the whole set, checked against the item's kind after any kind
+change in the same request; an unknown code or one of the other kind is a 422
+naming it. A change moves the item's version, so a stale form is a 409. Bulk
+edit refuses `attributes`. Search matches attribute names and aliases and
+filters on `attribute=<code>`; the Coins and Currency filter panels have an
+**Attribute** picker for it, listing the attributes the matching items carry
+with a count of items each (the `attribute` facet).
+
+Console: `AttributesField`, in the item editor, shows
+chips (marked *read*, with the rule in the tooltip, when a rule made them)
+and a picker of the attributes that fit the item's kind. Changing an item
+across note and coin drops the attributes that no longer fit
+(`kindChange.js`).
+
+### Attributes from facts: No Motto
+
+"In God We Trust" first appeared on paper money on some Series 1935G $1
+Silver Certificates (BEP FAQ). So for a $1 Silver Certificate:
+
+| Series | No Motto |
+|---|---|
+| 1928 through 1935F | always -- derived, no evidence needed |
+| 1935G | by serial: before D 48960001 J, always; from it on, never; a star note or unreadable serial needs evidence |
+| every other series (before 1928, 1935H, 1957 on) | never |
+
+`app/attribute_rules.py` holds the rule as data (attribute, class, face value,
+the series that always have it, the series that need evidence; every other
+series of that class never does), and the serial from which a series that
+needs evidence no longer has it: 1935G was printed without the motto through
+the B-J and C-J blocks and D-J below D 48960001 J, and with it from there. `app.classifier_defaults` applies it
+alongside the note's class, using the class it has just decided, so an edit
+that changes a note's series or class updates No Motto at once, and a class
+taken back takes the rule's link with it. The rule adds a derived link
+(`derived_by` `attribute_rule`) only where the note has no link for the
+attribute at all, and takes back only its own. A 1935G without the attribute
+is reported as *needs evidence*; a later note with it as *disagrees*.
+"Godless" is used only for this $1 run, which is where collectors use the word.
+
+### Attributes from facts: Mule
+
+A mule is printed from a face plate and a back plate made for different
+series. Where that shows in what is printed on the note, `app/mule_rules.py`
+reads it from the class, face value, series and back plate number; its
+docstring holds the tables and their sources (Huntoon's articles in *Paper
+Money*, built on the BEP's plate records, and the collector references that
+corroborate them).
+
+- **Micro and macro plate numbers, 1938 to 1953.** The series says whether a
+  face is micro or macro; the back plate number, against the last micro back
+  of its face value, says the same of the back. One size on each side is a
+  mule, in the series where such mules exist ($1 Silver Certificates 1935 and
+  1935A; $2 United States Notes 1928C and 1928D; $5 in three classes; $10,
+  $20, $50 and $100). $20 back 204 counts as macro; $1 back 470, of
+  neither size, needs evidence.
+- **$1 Federal Reserve Notes 1963, 1977A and 1981A.** A back from another
+  series' run of numbers: 447 and below in 1963, 3 to 6 in 1977A, a listed
+  set in 1981A.
+
+Every other series says nothing: from 1981 the BEP restarted back plate
+numbers within a series, and from 1996 with every series, so a number alone
+no longer says whose run a back belongs to. The 1981 four-digit backs and
+1985 back 129 are reported as mules by single, hobbyist sources and are not
+in the rule; nor are the $500 and higher values.
+
+`app.classifier_defaults` applies it with the other rules: a mule gets the
+Mule attribute as a derived link (`derived_by` `attribute_rule`), which a
+changed back plate or series takes back and which, removed, stays removed.
+A note marked Mule by hand whose back the rule says is no mule's is reported
+as *disagrees* ("1935A with back plate 3367 is never Mule"); back 470 as
+*needs evidence*. A note whose attached Friedberg number is a mule's
+(`9907-Em`) and confirmed is a mule whatever its plates say: the number was
+read off the note or its holder. A proposed number does not count, and
+attaching or clearing a number runs the rules again at once. The note's
+detail carries the plates' verdict as `mule_by_plates`
+(true, false, or null where no rule speaks), so the Friedberg lookup offers
+only mules' numbers, or none of them.
+
+The Fr. number box -- in the item editor, in Receiving, and in the lookup
+once Look up is pressed -- says whether the note is a mule as it is
+entered, from facts typed and not yet saved: `GET /api/friedberg/mule`
+runs the same rules on them and answers `mule`, `not_mule`, `undecided`
+(back 470), `needs_back_plate` (a covered series, no back plate number in
+digits) or `no_rule`. The line puts a mule's number first (typed in the
+box, else attached), then the Mule attribute already on the note, then the
+plates. A mule's number meeting plates that are no mule's, or plates that
+make a mule meeting a number without its `m`, is said as a warning and left
+to the owner: one of the two was misread. Confirming a mule's number says
+it marks the note a Mule -- at once in Receiving, on Save in the editor.
+
+### Attributes from facts: Gift
+
+A banknote whose item cost is $0 is a gift. `app/gift_rule.py` applies that
+when a note is saved in the item editor (`PATCH /api/inventory/{id}`), after
+the save's other writes; no batch pass and no bulk edit runs it. Making the
+row (`POST /api/inventory`) does not either: a new item is made before its
+cost is typed and opens in the editor, whose first save decides. Coins are
+left alone.
+
+| The note, as the save leaves it | What the save does |
+|---|---|
+| Costs $0, has no Gift link at all | adds Gift, derived (`derived_by` `no_cost`) |
+| Costs $0, a person removed Gift | nothing: it stays removed |
+| Has a cost, or is no longer a note, and holds the rule's own Gift | takes it back |
+| Has a cost, holds a Gift a person set | nothing |
+
+Two things follow a link the rule adds or takes back:
+
+- **The description** is written again (`suggested_description`) when the one
+  held is empty or is exactly the one generated before the change. A
+  description a person wrote is kept as it is.
+- The change log records `attributes`, `description` and `source_title`
+  where they moved, though the edit sent none of them, and the item's
+  version moves.
+
+**The title.** A note at $0 that holds Gift, however it came by it, has the
+word taken out of its title on every such save -- "Gift $1 Bill Green Seal"
+becomes "$1 Bill Green Seal" -- since the attribute now says it. Only the
+whole word goes ("Gifted" stays), with the dashes and commas that set it
+apart, and a title that is nothing but the word is left.
+
+The editor's **Suggest** describes the note as Save would leave it, so a note
+at $0 that Save would give Gift is suggested with it.
+
+## 3. The grade vocabulary
+
+**A grade is a strike type plus a Sheldon number, optionally with a plus.**
+MS65 is business strike + 65; SP68 is specimen + 68; PR69+ is proof + 69+.
+
+- **`strike_type`**: Business Strike (aliases MS, Mint State, Business), Proof
+  (PR, PF), Specimen (SP), Reverse Proof, Enhanced Reverse Proof, Special Mint
+  Set -- each with the prefix and suffix it is displayed with.
+- **`grade`** rows are numbers; `grade.is_plus` marks a plus, and the
+  generated `grade.grade_rank` is the number plus a half for a plus, so **a
+  plus ranks above its number**: 64+ sorts and filters between 64 and 65.
+  Plus is allowed wherever it occurs, including where no service would give
+  one (69+).
+- **Adjectival grades take a fixed number** (`grades.ADJECTIVAL`), the
+  bottom of the standard range for all but AU and PROOF: UNC and BU are
+  MS60, Choice MS63, Gem MS65; PROOF and Choice Proof PR63, Gem Proof PR65;
+  AU 55, XF 40, VF 20, F 12, VG 8, G 4. UNC and BU climb with pluses (BU+ is 63, BU++ 65);
+  AU+ is 55+. Note adjectivals take the bottom of the note scale's range
+  (`grades.NOTE_ADJECTIVAL`: Gem Unc N65 ... AU N50 ... G N4).
+  Only CIRC and UNGRADED stay unnumbered. The rating as written stays in
+  `rating`.
+- **Paper money** labels match PMG; N1-N3 cover PCGS Banknote's Poor, Fair
+  and About Good. EPQ and PPQ are designations.
+
+`app/grades.py` holds the rules: `split` takes a compound grade apart (for
+any API client sending `MS65`), `display` composes it, mirrored
+by the database's `grade_display()` used by the views and search. The API
+returns `grade` (the code, `65`), `strike_type` and `grade_display` (`MS65`); a
+strike type the client names wins over one a compound grade implies. The item
+editor offers a strike type for anything but a note.
+
+**Equivalences are aliases, not rows**: Ultra Cameo and UC are UCAM; DPL is
+DMPL. UCAM and DCAM are separate rows, not aliases of one another: each is
+one grading service's designation, and the holder names one or the other.
+PF, EF and PO need no rows: grades are numbers and `app.grades` reads those
+prefixes.
+
+**Designations** (one per item): DCAM, UCAM, CAM, RD, RB, BN, FS, 5FS, 6FS,
+FB, FT, FBL, FH, PL, DMPL, EPQ, PPQ. FT is NGC's Full Torch (PCGS calls it FB); 5FS and
+6FS are NGC's Jefferson nickel steps.
+
+**CAC is not a grading service.** A CAC sticker verifies another service's
+grade and is the `cac` attribute; CACG, which grades, is a grading service.
+First Delivery (First Day of Delivery) is a CACG-only label; "CAC" alone is
+the green sticker.
+
+### Searching a grade
+
+`grades.search_term` reads the grade filter as a range:
+
+- A number is exact: `55` is 55, not 55+; `55%` is both; `55+` is 55+ only.
+- A prefix names the strike: `PR65` is a proof, `MS65` anything shown as MS
+  (business, SMS, or no strike recorded).
+- The ladder words are steps: `BU` is 60-62, `BU+` 63-64, `BU++` 65-66, `BU%`
+  all three. `Choice Proof` and `Gem Proof` are the 63-64 and 65-66 steps
+  on proofs alone.
+- Any other word is its whole range -- `AU` is 50 to 58+ -- and a plus after
+  it narrows to the plus grades.
+- `grade_min` takes the bottom of its term and `grade_max` the top, so
+  `grade_max=64` stops below 64+ and `64%` includes it.
+- A term that is not a grade (`MS55`, `BU+++`) is refused, not matched against
+  nothing.
+
+## Sources
+
+PCGS: https://www.pcgs.com/resources/pdf/PCGSGradingStandards.pdf,
+https://www.pcgs.com/lingo/ALL, https://www.pcgs.com/firststrike,
+https://www.pcgs.com/banknote/grades. NGC:
+https://www.ngccoin.com/coin-grading/grading-scale/,
+https://www.ngccoin.com/coin-grading/designations/. PMG:
+https://www.pmgnotes.com/paper-money-grading/grading-scale/. CAC:
+https://www.cacgrading.com/stickering,
+https://www.cacgrading.com/grading-standards. BEP FAQ on the motto:
+https://www.bep.gov/currency/faqs.

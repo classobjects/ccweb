@@ -1,0 +1,521 @@
+import { afterEach, describe, expect, it, vi } from 'vitest'
+
+import {
+  ApiError,
+  api,
+  clearTokens,
+  loadTokens,
+  onSignedOut,
+  saveTokens,
+  send,
+  signOut,
+  withQuery,
+} from './api'
+
+describe("the shop's api object", () => {
+  // Everything here ships to every anonymous visitor of the shop. Listing
+  // every order and changing an order's status are console tools, and belong
+  // in management/api.js, which the bundle-isolation check keeps out of the shop.
+  it('carries no order administration', () => {
+    expect(api.setOrderStatus).toBeUndefined()
+    expect(api.listOrders).toBeUndefined()
+    expect(api.listMyOrders).toBeTypeOf('function')
+  })
+
+  it('holds exactly the calls the shop and shared components make', () => {
+    // Written out, not derived: a call added here ships to every visitor,
+    // so adding one means editing this list and deciding that it should.
+    // `addReferenceValue` is the one staff call, because the shared
+    // reference picker makes it.
+    expect(Object.keys(api).sort()).toEqual([
+      'addReferenceValue',
+      'createOrder',
+      'getCatalogItem',
+      'getReference',
+      'getShop',
+      'listCatalog',
+      'listMyOrders',
+      'login',
+      'logout',
+      'me',
+      'register',
+    ])
+  })
+
+  it("asks for the caller's own orders, which for an admin is not every order", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      status: 200,
+      ok: true,
+      text: () => Promise.resolve('[]'),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    try {
+      await api.listMyOrders()
+      expect(fetchMock.mock.calls[0][0]).toMatch(/\/api\/orders\?mine=true$/)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+})
+
+afterEach(() => {
+  localStorage.clear()
+  vi.restoreAllMocks()
+})
+
+describe('token storage', () => {
+  it('round-trips a token pair', () => {
+    saveTokens({ access_token: 'a', refresh_token: 'r' })
+    expect(loadTokens()).toEqual({ access_token: 'a', refresh_token: 'r' })
+  })
+
+  it('returns null when nothing is stored', () => {
+    expect(loadTokens()).toBeNull()
+  })
+
+  it('clears the stored pair', () => {
+    saveTokens({ access_token: 'a', refresh_token: 'r' })
+    clearTokens()
+    expect(loadTokens()).toBeNull()
+  })
+
+  it('returns null rather than throwing when the stored value is corrupt', () => {
+    // Hand-edited or half-written storage must not take the whole app down on
+    // the first render.
+    localStorage.setItem('ccwebdb.tokens', '{not json')
+    expect(loadTokens()).toBeNull()
+  })
+
+  it('stays usable when storage itself throws', () => {
+    // Private browsing and blocked-site-data both make setItem throw. The app
+    // should carry on signed in for the tab rather than crash.
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('storage disabled')
+    })
+    expect(() => saveTokens({ access_token: 'a' })).not.toThrow()
+  })
+
+  it('signs out by dropping the tokens and telling every listener', () => {
+    saveTokens({ access_token: 'a', refresh_token: 'r' })
+    const heard = vi.fn()
+    const stop = onSignedOut(heard)
+    try {
+      signOut()
+    } finally {
+      stop()
+    }
+    expect(loadTokens()).toBeNull()
+    expect(heard).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('logout', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('posts to the logout endpoint with the session it ends', async () => {
+    saveTokens({ access_token: 'a', refresh_token: 'r' })
+    const fetchMock = vi.fn().mockResolvedValue({ status: 204, ok: true })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(api.logout()).resolves.toBeNull()
+
+    const [path, init] = fetchMock.mock.calls[0]
+    expect(path).toBe('/api/auth/logout')
+    expect(init.method).toBe('POST')
+    expect(init.headers.Authorization).toBe('Bearer a')
+  })
+})
+
+describe('getReference', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  function answer() {
+    const fetchMock = vi.fn().mockResolvedValue({
+      status: 200,
+      ok: true,
+      text: () => Promise.resolve('{"values":[]}'),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    return fetchMock
+  }
+
+  it('asks for the active values only, with the session when there is one', async () => {
+    // Most vocabularies are served to staff only, so the token goes along.
+    saveTokens({ access_token: 'a', refresh_token: 'r' })
+    const fetchMock = answer()
+
+    await api.getReference('series')
+
+    const [path, init] = fetchMock.mock.calls[0]
+    expect(path).toBe('/api/reference/series')
+    expect(init.headers.Authorization).toBe('Bearer a')
+  })
+
+  it('asks for retired values too only when told to', async () => {
+    const fetchMock = answer()
+    await api.getReference('series', { includeInactive: true })
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      '/api/reference/series?include_inactive=true',
+    )
+  })
+})
+
+describe('send withTotal', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  /** A 200 with `rows` as its body and `headers` as its headers. */
+  function answer(rows, headers = {}) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        status: 200,
+        ok: true,
+        headers: new Headers(headers),
+        text: () => Promise.resolve(JSON.stringify(rows)),
+      }),
+    )
+  }
+
+  it('answers the rows with the count the header reports', async () => {
+    answer([{ id: 1 }], { 'X-Total-Count': '250' })
+    await expect(send('/api/sales', { withTotal: true })).resolves.toEqual({
+      rows: [{ id: 1 }],
+      total: 250,
+    })
+  })
+
+  it.each([
+    ['absent', {}],
+    ['not a number', { 'X-Total-Count': 'many' }],
+    ['blank', { 'X-Total-Count': '' }],
+  ])('has a null total when the header is %s', async (_case, headers) => {
+    answer([{ id: 1 }], headers)
+    await expect(send('/api/sales', { withTotal: true })).resolves.toEqual({
+      rows: [{ id: 1 }],
+      total: null,
+    })
+  })
+
+  it('answers the body alone without it', async () => {
+    answer([{ id: 1 }], { 'X-Total-Count': '250' })
+    await expect(send('/api/sales')).resolves.toEqual([{ id: 1 }])
+  })
+})
+
+describe('send', () => {
+  function mockFetch(body = {}) {
+    const fetchMock = vi.fn().mockResolvedValue({
+      status: 200,
+      ok: true,
+      text: () => Promise.resolve(JSON.stringify(body)),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    return fetchMock
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('hands a FormData body to fetch untouched, with no Content-Type header', async () => {
+    // The multipart trap: the browser must set Content-Type itself, boundary
+    // included. A handler that JSON-stringified this or set the header by
+    // hand would produce a request the server cannot parse -- so this checks
+    // both halves, not just that the call happened.
+    const fetchMock = mockFetch()
+    const form = new FormData()
+    form.append('file', new File(['x'], 'obverse.jpg', { type: 'image/jpeg' }))
+
+    await send('/api/images', { method: 'POST', body: form, auth: false })
+
+    const [, init] = fetchMock.mock.calls[0]
+    expect(init.body).toBe(form)
+    expect(init.headers['Content-Type']).toBeUndefined()
+  })
+
+  it('still JSON-encodes a plain object body and sets Content-Type', async () => {
+    // Guards the FormData branch from swallowing the existing JSON path.
+    const fetchMock = mockFetch()
+    await send('/api/orders', { method: 'POST', body: { items: [1] }, auth: false })
+
+    const [, init] = fetchMock.mock.calls[0]
+    expect(init.body).toBe(JSON.stringify({ items: [1] }))
+    expect(init.headers['Content-Type']).toBe('application/json')
+  })
+
+  // The 409 from POST /api/offers carries a per-item list -- {detail, refused:
+  // [{item_code, reason}]} -- and the offer dialog has to name every refused
+  // item with its reason. `readDetail` flattens the body to one string, so
+  // without the parsed body on the error every item_code and reason is thrown
+  // away before any caller sees it.
+  it('hands the whole parsed body of a refusal to the caller', async () => {
+    const body = {
+      detail: '2 item(s) cannot be offered',
+      refused: [
+        { item_code: 'CC-000001', reason: 'is not received (it is ordered)' },
+        {
+          item_code: 'CC-000002',
+          reason: 'is active on eBay, listing #14: end it first',
+        },
+      ],
+    }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        status: 409,
+        ok: false,
+        text: () => Promise.resolve(JSON.stringify(body)),
+      }),
+    )
+
+    const err = await send('/api/offers', {
+      method: 'POST',
+      body: { venue: 'ebay' },
+      auth: false,
+    }).catch((caught) => caught)
+
+    expect(err).toBeInstanceOf(ApiError)
+    expect(err.status).toBe(409)
+    // The message is still the flattened detail; the body rides beside it.
+    expect(err.message).toBe('2 item(s) cannot be offered')
+    expect(err.body).toEqual(body)
+  })
+
+  it('reports an error body that is not JSON as an ApiError, not a SyntaxError', async () => {
+    // A proxy in front of the API answers a 502 with an HTML page. Parsed as
+    // JSON it throws a SyntaxError, and the caller sees "Unexpected token '<'"
+    // with no status to act on.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        status: 502,
+        ok: false,
+        statusText: 'Bad Gateway',
+        text: () => Promise.resolve('<html>proxy error</html>'),
+      }),
+    )
+
+    const err = await send('/api/catalog', { auth: false }).catch((caught) => caught)
+
+    expect(err).toBeInstanceOf(ApiError)
+    expect(err.status).toBe(502)
+    expect(err.message).toBe('Bad Gateway')
+    expect(err.body).toBeNull()
+  })
+
+  it('refuses a successful response whose body is not JSON', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        status: 200,
+        ok: true,
+        statusText: 'OK',
+        text: () => Promise.resolve('<html>index</html>'),
+      }),
+    )
+
+    const err = await send('/api/catalog', { auth: false }).catch((caught) => caught)
+
+    expect(err).toBeInstanceOf(ApiError)
+    expect(err.status).toBe(200)
+  })
+
+  /** A fetch that refuses everything, the refresh included, with a 401. */
+  function refuseAll() {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        status: 401,
+        ok: false,
+        text: () => Promise.resolve('{"detail":"Could not validate credentials"}'),
+      }),
+    )
+  }
+
+  it('keeps the session when a sign-in attempt is refused', async () => {
+    // A wrong password is a 401 too, but it says nothing about the tokens
+    // already held: mistyping on a sign-in form must not sign anyone out.
+    saveTokens({ access_token: 'a', refresh_token: 'r' })
+    refuseAll()
+
+    await api.login('buyer@example.com', 'wrong').catch(() => {})
+
+    expect(loadTokens()).toEqual({ access_token: 'a', refresh_token: 'r' })
+  })
+
+  it('drops the session, and says so, when the server no longer accepts it', async () => {
+    saveTokens({ access_token: 'a', refresh_token: 'r' })
+    refuseAll()
+    const heard = vi.fn()
+    const stop = onSignedOut(heard)
+
+    const err = await send('/api/orders?mine=true').catch((caught) => caught)
+
+    expect(err.status).toBe(401)
+    expect(loadTokens()).toBeNull()
+    expect(heard).toHaveBeenCalledTimes(1)
+    stop()
+  })
+
+  it('tells nobody who has stopped listening, or about a refused sign-in', async () => {
+    saveTokens({ access_token: 'a', refresh_token: 'r' })
+    refuseAll()
+    const heard = vi.fn()
+    const stopped = vi.fn()
+    const stop = onSignedOut(heard)
+    onSignedOut(stopped)()
+
+    await api.login('buyer@example.com', 'wrong').catch(() => {})
+    expect(heard).not.toHaveBeenCalled()
+
+    await send('/api/orders?mine=true').catch(() => {})
+    expect(heard).toHaveBeenCalledTimes(1)
+    expect(stopped).not.toHaveBeenCalled()
+    stop()
+  })
+
+  it('keeps the session when the refresh fails for a reason of its own', async () => {
+    // A refresh answered 502 by a restarting server says nothing about the
+    // refresh token: the session is kept and the failure is reported.
+    saveTokens({ access_token: 'old', refresh_token: 'r' })
+    const heard = vi.fn()
+    const stop = onSignedOut(heard)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((path) =>
+        Promise.resolve(
+          path === '/api/auth/refresh'
+            ? {
+                status: 502,
+                ok: false,
+                statusText: 'Bad Gateway',
+                text: () => Promise.resolve('<html>proxy error</html>'),
+              }
+            : {
+                status: 401,
+                ok: false,
+                text: () => Promise.resolve('{"detail":"expired"}'),
+              },
+        ),
+      ),
+    )
+
+    const err = await send('/api/orders?mine=true').catch((caught) => caught)
+
+    expect(err).toBeInstanceOf(ApiError)
+    expect(err.status).toBe(502)
+    expect(loadTokens()).toEqual({ access_token: 'old', refresh_token: 'r' })
+    expect(heard).not.toHaveBeenCalled()
+    stop()
+  })
+
+  it('ends the session when the refresh token itself is refused', async () => {
+    saveTokens({ access_token: 'old', refresh_token: 'r' })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((path) =>
+        Promise.resolve(
+          path === '/api/auth/refresh'
+            ? { status: 403, ok: false, text: () => Promise.resolve('{}') }
+            : {
+                status: 401,
+                ok: false,
+                text: () => Promise.resolve('{"detail":"expired"}'),
+              },
+        ),
+      ),
+    )
+
+    const err = await send('/api/orders?mine=true').catch((caught) => caught)
+
+    expect(err.status).toBe(401)
+    expect(loadTokens()).toBeNull()
+  })
+
+  it('refreshes once for requests that are refused together', async () => {
+    // A page that loads three things at once on an expired access token gets
+    // three 401s. Each refreshing on its own is three exchanges for one
+    // expiry, each overwriting the pair the one before it stored.
+    saveTokens({ access_token: 'old', refresh_token: 'r' })
+    const fetchMock = vi.fn((path, init) => {
+      if (path === '/api/auth/refresh') {
+        return Promise.resolve({
+          status: 200,
+          ok: true,
+          json: () => Promise.resolve({ access_token: 'new', refresh_token: 'r2' }),
+        })
+      }
+      const fresh = init.headers.Authorization === 'Bearer new'
+      return Promise.resolve({
+        status: fresh ? 200 : 401,
+        ok: fresh,
+        text: () => Promise.resolve(fresh ? '{}' : '{"detail":"expired"}'),
+      })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await Promise.all([send('/api/a'), send('/api/b'), send('/api/c')])
+
+    const refreshes = fetchMock.mock.calls.filter(
+      ([path]) => path === '/api/auth/refresh',
+    )
+    expect(refreshes).toHaveLength(1)
+    expect(loadTokens()).toEqual({ access_token: 'new', refresh_token: 'r2' })
+  })
+})
+
+describe('withQuery', () => {
+  it('leaves a path alone when there is nothing to ask', () => {
+    expect(withQuery('/api/catalog')).toBe('/api/catalog')
+    expect(withQuery('/api/catalog', { q: '', kind: null, grade: undefined })).toBe(
+      '/api/catalog',
+    )
+  })
+
+  it('appends what is given, encoded', () => {
+    expect(withQuery('/api/catalog', { q: 'Morgan & Peace', limit: 12 })).toBe(
+      '/api/catalog?q=Morgan+%26+Peace&limit=12',
+    )
+  })
+
+  it('keeps false and zero unless asked to drop false', () => {
+    expect(withQuery('/p', { in_stock: false, offset: 0 })).toBe(
+      '/p?in_stock=false&offset=0',
+    )
+    expect(withQuery('/p', { in_stock: false, offset: 0 }, { dropFalse: true })).toBe(
+      '/p?offset=0',
+    )
+  })
+
+  it('repeats a key for each value of an array', () => {
+    expect(withQuery('/api/offers/titles', { item_ids: [3, 5] })).toBe(
+      '/api/offers/titles?item_ids=3&item_ids=5',
+    )
+  })
+})
+
+describe('ApiError', () => {
+  it('uses a string detail as the message', () => {
+    const err = new ApiError(404, 'Order not found')
+    expect(err.message).toBe('Order not found')
+    expect(err.status).toBe(404)
+    expect(err.detail).toBe('Order not found')
+  })
+
+  it('falls back to a generic message when the detail is structured', () => {
+    // FastAPI's validation errors arrive as a list, which would render as
+    // "[object Object]" if used directly as the message.
+    const detail = [{ loc: ['body', 'email'], msg: 'field required' }]
+    const err = new ApiError(422, detail)
+    expect(err.message).toBe('Request failed')
+    expect(err.detail).toEqual(detail)
+  })
+
+  it('is an Error, so existing catch blocks keep working', () => {
+    expect(new ApiError(500, 'boom')).toBeInstanceOf(Error)
+  })
+
+  it('has no body when none was parsed, so a reader can tell there was none', () => {
+    expect(new ApiError(500, 'boom').body).toBeNull()
+  })
+})

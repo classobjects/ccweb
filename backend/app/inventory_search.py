@@ -1,0 +1,1262 @@
+"""Searching the coin and currency inventories.
+
+Coins and currency are searched separately because the columns that matter
+differ: a coin has a mint mark and a variety, a banknote has a series letter, a
+seal color and its own printed serial. One implementation, two
+specifications.
+
+**Why this queries base tables rather than the inventory views.** The obvious
+implementation reads `coin_inventory`, which is what those views are for. It is
+also many times slower, because the view joins every classifier table and
+every query pays for all of them -- a `count(*)` that needs no join at all, a
+facet that needs one. Against the base tables each query takes only the
+joins it actually needs, and the gap widens with the collection.
+
+Copying classifier labels onto every item would also make searching fast,
+at the price of a second copy of every label that can drift from the first.
+It is not needed: the cost is not the normalization but asking a
+many-way join for one column.
+
+Nothing in the application reads the views (`app.models.views`); they remain
+the schema's statement of what each inventory contains.
+
+**No user input reaches the SQL as text.** Column expressions come from the
+specification's own allowlists; every value is a bound parameter.
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass, field
+from datetime import date, datetime
+from decimal import Decimal
+from typing import Any
+
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+
+from . import aliases, grades
+from .issues import COIN_ISSUES, CURRENCY_ISSUES, Issue
+from .models import (
+    GradeDesignation,
+    ItemAttribute,
+    Mint,
+    NoteType,
+    ReferenceMixin,
+    Series,
+    StrikeType,
+)
+
+__all__ = [
+    "COIN_VIEW",
+    "CURRENCY_VIEW",
+    "MISSING_FIELDS",
+    "SPECIAL_PARAMS",
+    "VIEWS",
+    "MissingField",
+    "UnknownIssue",
+    "UnknownMissingField",
+    "ViewSpec",
+    "count_facets",
+    "count_issues",
+    "names_matching",
+    "plain",
+    "search",
+    "view_path",
+]
+
+
+@dataclass(frozen=True)
+class Col:
+    """A column: the SQL that produces it, and the joins it needs.
+
+    Joins are a tuple of individual clauses rather than one string, so that a
+    clause needed by two different columns is emitted once. Concatenating them
+    makes deduplication compare whole strings, and PostgreSQL rejects the same
+    alias twice.
+
+    `order` is what the column is sorted by where that is not what it shows:
+    a grade reads MS65 and is ordered by its rank, a denomination reads
+    "$10 Bill" and is ordered by its face value. It may use only the
+    column's own joins.
+    """
+
+    sql: str
+    join: tuple[str, ...] = ()
+    order: str | None = None
+
+    @property
+    def sort_sql(self) -> str:
+        """The SQL a sort on this column orders by."""
+        return self.order or self.sql
+
+
+@dataclass(frozen=True)
+class Filt:
+    """A query parameter: the SQL it constrains, how, and the joins it needs."""
+
+    sql: str
+    op: str = "eq"
+    join: tuple[str, ...] = ()
+    #: The column is an integer. A query string is always text, so the value
+    #: is read as a number before it is bound, and one that is not a number
+    #: is refused by name rather than handed to the database to reject.
+    integer: bool = False
+    #: The column is a date, sent as YYYY-MM-DD, read the same way and for
+    #: the same reason.
+    day: bool = False
+
+
+@dataclass(frozen=True)
+class Facet:
+    """How one facet is counted, and against which column.
+
+    A facet counts an indexed id column, then resolves those ids to codes in a
+    second, tiny query.
+
+    Grouping by `grade_id` uses the foreign key index directly. Grouping by
+    `grade.code` would force the join first, which is most of the cost.
+
+    `alias` and `join` let a facet live on a detail table rather than on the
+    item -- a coin's mint is on `coin_detail`, a note's district on
+    `currency_detail`. `label_column` must name the column the matching
+    *filter* compares against, or the facet offers values the filter rejects:
+    mint filters on `mint.mark`, not `mint.code`.
+
+    `table=None` means the column already holds the value and needs no lookup,
+    which is how a plain integer like `series_year` is faceted.
+
+    `filter` names the filter that narrows by this facet where the two are
+    called differently (`item_kind` is counted, `kind` is filtered); the
+    facet is counted without that filter, so its picker goes on offering the
+    other values.
+    """
+
+    id_column: str
+    table: str | None = None
+    join: tuple[str, ...] = ()
+    alias: str = "i"
+    label_column: str = "code"
+    filter: str | None = None
+
+
+@dataclass(frozen=True)
+class Named:
+    """A vocabulary the free-text search also finds items by.
+
+    An item whose description never says "Mercury" or "Legal Tender" still
+    matches when its series or note class is called that, formally or by
+    an alias (app.aliases). `match` is true for an item holding one of the
+    ids bound to `{p}`; a subquery, where the value is on a detail or link
+    table, so a match never multiplies rows.
+    """
+
+    key: str
+    model: type[ReferenceMixin]
+    match: str
+
+
+def _held_in(table: str, column: str, where: str = "") -> str:
+    """Items with a matching row in a detail or link table.
+
+    IN, not a correlated EXISTS: PostgreSQL evaluates the subquery once, as a
+    hashed set, where EXISTS looks up every item in turn, which is many
+    times slower over the whole collection.
+    """
+    return (
+        f"i.id IN (SELECT inventory_item_id FROM {table} "
+        f"WHERE {column} = ANY(:{{p}}){where})"
+    )
+
+
+#: An item's attributes, less those a person removed.
+_ATTRIBUTE_HELD = _held_in(
+    "item_attribute_link", "item_attribute_id", " AND removed_at IS NULL"
+)
+
+
+_NAMED_SHARED = (
+    Named("series", Series, "i.series_id = ANY(:{p})"),
+    Named("strike_type", StrikeType, "i.strike_type_id = ANY(:{p})"),
+    Named("grade_designation", GradeDesignation, "i.grade_designation_id = ANY(:{p})"),
+    Named("attribute", ItemAttribute, _ATTRIBUTE_HELD),
+)
+
+
+@dataclass(frozen=True)
+class ViewSpec:
+    """One searchable inventory: its columns, filters, sorts and facets."""
+
+    name: str
+    #: Everything reads from the item table, never from the inventory views.
+    base: str = "inventory_item i"
+    where: tuple[str, ...] = ()
+    columns: dict[str, Col] = field(default_factory=dict)
+    filters: dict[str, Filt] = field(default_factory=dict)
+    search_columns: tuple[str, ...] = ()
+    #: Vocabularies whose names and aliases the free-text search matches.
+    named: tuple[Named, ...] = ()
+    sortable: tuple[str, ...] = ()
+    facets: dict[str, Facet] = field(default_factory=dict)
+    default_sort: str = "item_code"
+    issues: dict[str, Issue] = field(default_factory=dict)
+
+    def joins_for(self, groups: list[tuple[str, ...]]) -> str:
+        """Only the joins the current query needs, each emitted once."""
+        seen: list[str] = []
+        for group in groups:
+            for clause in group:
+                if clause not in seen:
+                    seen.append(clause)
+        return " ".join(seen)
+
+
+class UnknownIssue(KeyError):
+    """An `issue=` value the view does not define.
+
+    Distinct from a plain KeyError so the router can name the available
+    checks rather than the available filters.
+    """
+
+
+class UnknownMissingField(KeyError):
+    """A `missing=` value that is not one of `MISSING_FIELDS`.
+
+    Distinct from a plain KeyError for the same reason `UnknownIssue` is: the
+    router names the available fields rather than the available filters.
+    """
+
+
+#: How the search treats soft-deleted rows. Not a `Filt`, because it is a
+#: choice between three predicates rather than a value to compare against.
+#: `"no"`, the default, with each view's `i.split_at IS NULL`, is the
+#: live-row rule `app.live.live_item()` states for the reports; the two are
+#: pinned as equivalent by `tests/test_live.py`.
+DELETED_MODES: dict[str, str] = {
+    "no": "i.deleted_at IS NULL",
+    "only": "i.deleted_at IS NOT NULL",
+    "any": "TRUE",
+}
+
+
+# --- joins, named once -----------------------------------------------------
+_J_GRADE = "LEFT JOIN grade g ON g.id = i.grade_id"
+_J_GRADE_SCALE = "LEFT JOIN grade_scale gsc ON gsc.id = g.grade_scale_id"
+_J_STRIKE = "LEFT JOIN strike_type stk ON stk.id = i.strike_type_id"
+_J_GRADE_DES = "LEFT JOIN grade_designation gd ON gd.id = i.grade_designation_id"
+_J_SERVICE = "LEFT JOIN grading_service gs ON gs.id = i.grading_service_id"
+_J_KIND = "JOIN item_kind k ON k.id = i.item_kind_id"
+_J_COUNTRY = "LEFT JOIN country c ON c.id = i.country_id"
+_J_DENOM = "LEFT JOIN denomination d ON d.id = i.denomination_id"
+_J_STATUS = "JOIN item_status st ON st.id = i.status_id"
+_J_DISP = "JOIN disposition disp ON disp.id = i.disposition_id"
+_J_STORAGE = "JOIN storage_form stf ON stf.id = i.storage_form_id"
+_J_AUTH = "JOIN authenticity a ON a.id = i.authenticity_id"
+_J_METAL = "LEFT JOIN metal mt ON mt.id = i.metal_id"
+_J_SERIES = "LEFT JOIN series ser ON ser.id = i.series_id"
+_J_BULLION = "LEFT JOIN bullion_form bf ON bf.id = i.bullion_form_id"
+_J_SET = "LEFT JOIN set_form sf ON sf.id = i.set_form_id"
+_J_COIN_DETAIL = "LEFT JOIN coin_detail cd ON cd.inventory_item_id = i.id"
+_J_MINT = "LEFT JOIN mint m ON m.id = cd.mint_id"
+_J_CUR_DETAIL = "LEFT JOIN currency_detail cud ON cud.inventory_item_id = i.id"
+_J_NOTE_TYPE = "LEFT JOIN note_type nt ON nt.id = cud.note_type_id"
+_J_SEAL = "LEFT JOIN seal_color sc ON sc.id = cud.seal_color_id"
+_J_DISTRICT = "LEFT JOIN fed_district fd ON fd.id = cud.fed_district_id"
+_J_FRIEDBERG = "LEFT JOIN friedberg_number fr ON fr.id = cud.friedberg_id"
+_J_PURCHASE_ORDER = "LEFT JOIN purchase_order po ON po.id = i.purchase_order_id"
+_J_VENDOR = "LEFT JOIN vendor v ON v.id = po.vendor_id"
+
+# Column references used by more than one view spec. Same idea as the _J_*
+# join clauses above: name it once so a rename is a single edit. Only the
+# bare references are named -- composite predicates such as
+# "k.code = 'currency'" are distinct strings and stay inline.
+_C_ITEM_CODE = "i.item_code"
+_C_SOURCE_TITLE = "i.source_title"
+_C_DESCRIPTION = "i.description"
+#: The owner's rating, as written. Often the only descriptive text an item
+#: has: many an item's title is its denomination and its description a lot
+#: number, while the rating reads "Morgan Silver Dollar AU-55". A
+#: "funnyback" note may carry that word only here, so a search that skipped
+#: the rating could not find it.
+_C_RATING = "i.rating"
+_C_YEAR_START = "i.year_start"
+_C_SERIES_YEAR = "cud.series_year"
+_C_GRADE_VALUE = "g.numeric_value"
+_C_GRADE_RANK = "g.grade_rank"
+#: MS65, PR69+ -- composed the same way the inventory views compose it.
+_C_GRADE_DISPLAY = (
+    "grade_display(stk.prefix, stk.suffix, g.numeric_value, g.is_plus, "
+    "g.label, gsc.code = 'sheldon')"
+)
+_C_KIND_CODE = "k.code"
+
+# An item may carry several errors (miscut and overprint on the same bill are
+# both normal), so the codes are aggregated by a correlated subquery rather
+# than reached with a join. A join would multiply the item's row once per
+# matching error -- corrupting every other column in the same SELECT, not
+# just this one -- and would still need a second aggregation step to avoid
+# it. `errors` is empty for the overwhelming majority of items, which is what
+# array_agg over zero rows already returns: NULL.
+_C_ERROR_TYPES = (
+    "(SELECT array_agg(iet.code ORDER BY iet.code) FROM item_error ie "
+    "JOIN error_type iet ON iet.id = ie.error_type_id "
+    "WHERE ie.inventory_item_id = i.id)"
+)
+
+
+_SHARED_COLUMNS: dict[str, Col] = {
+    "id": Col("i.id"),
+    "item_code": Col(_C_ITEM_CODE),
+    "source_title": Col(_C_SOURCE_TITLE),
+    # `source_title` often holds only a denomination -- "0.25", "Mint Set", "5" --
+    # not a name. What a person recognizes the item
+    # by lives in `description`, which is why it is returned as well and is
+    # what the browse screens show.
+    "description": Col(_C_DESCRIPTION),
+    "year_start": Col(_C_YEAR_START),
+    "year_end": Col("i.year_end"),
+    "piece_count": Col("i.piece_count"),
+    "item_cost": Col("i.item_cost"),
+    "shipping_cost": Col("i.shipping_cost"),
+    "sales_tax": Col("i.sales_tax"),
+    "total_cost": Col("i.total_cost"),
+    "numismatic_value": Col("i.numismatic_value"),
+    "local_catalog_number": Col("i.local_catalog_number"),
+    "parent_item_id": Col("i.parent_item_id"),
+    "created_at": Col("i.created_at"),
+    # As collectors write it: MS65 is a business strike graded 65. The
+    # parts are `strike_type` and `grade_code`.
+    # Ordered by rank, as is the label below: as text, AU58 would sort before
+    # G4 and "Choice Uncirculated 64" before "Fine 12".
+    "grade": Col(
+        _C_GRADE_DISPLAY, (_J_GRADE, _J_GRADE_SCALE, _J_STRIKE), _C_GRADE_RANK
+    ),
+    "grade_code": Col("g.code", (_J_GRADE,)),
+    "strike_type": Col("stk.code", (_J_STRIKE,)),
+    # What is read, rather than what is filtered on: a note's grade code is
+    # `N64` and its label "Choice Uncirculated 64".
+    "grade_label": Col("g.label", (_J_GRADE,), _C_GRADE_RANK),
+    "grade_value": Col(_C_GRADE_VALUE, (_J_GRADE,)),
+    "grade_rank": Col(_C_GRADE_RANK, (_J_GRADE,)),
+    "grade_designation": Col("gd.code", (_J_GRADE_DES,)),
+    "grading_service": Col("gs.code", (_J_SERVICE,)),
+    "country": Col("c.code", (_J_COUNTRY,)),
+    "denomination": Col("d.code", (_J_DENOM,)),
+    # Ordered by face value: as text, "$10 Bill" sorts before "$2 Bill".
+    "denomination_label": Col("d.label", (_J_DENOM,), "d.face_value"),
+    "status": Col("st.code", (_J_STATUS,)),
+    "disposition": Col("disp.code", (_J_DISP,)),
+    "storage_form": Col("stf.code", (_J_STORAGE,)),
+    "authenticity": Col("a.code", (_J_AUTH,)),
+    # No join: see the note on _C_ERROR_TYPES.
+    "error_types": Col(_C_ERROR_TYPES),
+    "series": Col("ser.code", (_J_SERIES,)),
+    "series_label": Col("ser.label", (_J_SERIES,)),
+    # The purchase the item arrived on, so a row can open that order on the
+    # Purchases page. LEFT joins: an item may be on no recorded order.
+    "purchase_order_id": Col("i.purchase_order_id"),
+    "order_number": Col("po.order_number", (_J_PURCHASE_ORDER,)),
+    "vendor": Col("v.name", (_J_PURCHASE_ORDER, _J_VENDOR)),
+    "ordered_on": Col("po.ordered_on", (_J_PURCHASE_ORDER,)),
+}
+
+_SHARED_FILTERS: dict[str, Filt] = {
+    "item_code": Filt(_C_ITEM_CODE, "ilike"),
+    # The seller's listing id -- eBay's item number (app.ebay_orders).
+    "sellers_item_id": Filt("i.sellers_item_id", "ilike"),
+    # Partial and case-insensitive, like item code: Receiving finds a parcel
+    # by an order number typed in part, read off a packing slip.
+    "order_number": Filt("po.order_number", "ilike", (_J_PURCHASE_ORDER,)),
+    # Exact: a link naming one order. Its number is neither unique across
+    # vendors nor always recorded, so a number match cannot stand in for it.
+    "purchase_order_id": Filt("i.purchase_order_id", integer=True),
+    # Orders placed on this day or later: how Receiving narrows to what is
+    # due when no order number is to hand. An order with no date is not one.
+    "ordered_since": Filt("po.ordered_on", "gte", (_J_PURCHASE_ORDER,), day=True),
+    "country": Filt("c.code", join=(_J_COUNTRY,)),
+    # Not here: `grade`, `grade_min` and `grade_max` are search terms
+    # (55%, BU+), read by `_grade_clause`.
+    "strike_type": Filt("stk.code", join=(_J_STRIKE,)),
+    "grading_service": Filt("gs.code", join=(_J_SERVICE,)),
+    "status": Filt("st.code", join=(_J_STATUS,)),
+    "disposition": Filt("disp.code", join=(_J_DISP,)),
+    "denomination": Filt("d.code", join=(_J_DENOM,)),
+    # Not here: "error_type" is handled by `_error_type_clause`, an EXISTS
+    # subquery rather than a join, for the same reason as `_C_ERROR_TYPES`.
+    "series": Filt("ser.code", join=(_J_SERIES,)),
+    "year_min": Filt(_C_YEAR_START, "gte", integer=True),
+    "year_max": Filt(_C_YEAR_START, "lte", integer=True),
+}
+
+_SHARED_SORT = (
+    "item_code",
+    "source_title",
+    "year_start",
+    "item_cost",
+    "total_cost",
+    "grade_value",
+    "grade_rank",
+    "created_at",
+    # The rest of what the tables show: every header there is one to sort by.
+    "denomination_label",
+    "series_label",
+    "grade",
+    "grade_label",
+    "order_number",
+    "status",
+)
+
+_SHARED_FACETS: dict[str, Facet] = {
+    "denomination": Facet("denomination_id", "denomination"),
+    "series": Facet("series_id", "series"),
+    "grade": Facet("grade_id", "grade"),
+    "strike_type": Facet("strike_type_id", "strike_type"),
+    "country": Facet("country_id", "country"),
+    "status": Facet("status_id", "item_status"),
+    "disposition": Facet("disposition_id", "disposition"),
+    # Held on link tables, an item carrying several of each. The join lists
+    # an item once per error or attribute, which is what is counted: a value
+    # is on an item at most once, so each count is still a count of items.
+    "error_type": Facet(
+        "error_type_id",
+        "error_type",
+        ("JOIN item_error fie ON fie.inventory_item_id = i.id",),
+        "fie",
+    ),
+    "attribute": Facet(
+        "item_attribute_id",
+        "item_attribute",
+        (
+            "JOIN item_attribute_link fal ON fal.inventory_item_id = i.id "
+            "AND fal.removed_at IS NULL",
+        ),
+        "fal",
+    ),
+}
+
+
+COIN_VIEW = ViewSpec(
+    name="coins",
+    where=(
+        "i.split_at IS NULL",
+        # Everything that is not currency, deliberately including the kinds
+        # `unknown` and `other`: an item nobody has classified yet is
+        # precisely the item someone needs to find, and `issue=kind_unknown`
+        # exists to find it. A narrower list here reads as "no misclassified
+        # items" while the check behind it never runs at all, and leaves
+        # `unknown` and `other` items in neither search view.
+        "k.code <> 'currency'",
+    ),
+    columns={
+        **_SHARED_COLUMNS,
+        "item_kind": Col(_C_KIND_CODE, (_J_KIND,)),
+        "bullion_form": Col("bf.code", (_J_BULLION,)),
+        "set_form": Col("sf.code", (_J_SET,)),
+        "mint": Col("m.label", (_J_COIN_DETAIL, _J_MINT)),
+        "mint_mark": Col("m.mark", (_J_COIN_DETAIL, _J_MINT)),
+        "variety": Col("cd.variety", (_J_COIN_DETAIL,)),
+        # A bullion item's own; no other kind holds one.
+        "serial_number": Col("cd.serial_number", (_J_COIN_DETAIL,)),
+        "metal": Col("mt.code", (_J_METAL,)),
+        "fineness": Col("i.fineness"),
+        "gross_weight_ozt": Col("i.gross_weight_ozt"),
+        "fine_weight_ozt": Col("i.fine_weight_ozt"),
+        "weight_note": Col("i.weight_note"),
+    },
+    filters={
+        **_SHARED_FILTERS,
+        "kind": Filt(_C_KIND_CODE, join=(_J_KIND,)),
+        "metal": Filt("mt.code", join=(_J_METAL,)),
+        "mint": Filt("m.mark", join=(_J_COIN_DETAIL, _J_MINT)),
+        "bullion_form": Filt("bf.code", join=(_J_BULLION,)),
+        "set_form": Filt("sf.code", join=(_J_SET,)),
+        "serial_number": Filt("cd.serial_number", "ilike", (_J_COIN_DETAIL,)),
+    },
+    search_columns=(_C_SOURCE_TITLE, _C_DESCRIPTION, _C_RATING, _C_ITEM_CODE),
+    named=(
+        *_NAMED_SHARED,
+        Named("mint", Mint, _held_in("coin_detail", "mint_id")),
+    ),
+    sortable=(
+        *_SHARED_SORT,
+        "fine_weight_ozt",
+        "mint_mark",
+        "item_kind",
+        "metal",
+        "piece_count",
+        "serial_number",
+    ),
+    facets={
+        **_SHARED_FACETS,
+        "item_kind": Facet("item_kind_id", "item_kind", filter="kind"),
+        "metal": Facet("metal_id", "metal"),
+        "bullion_form": Facet("bullion_form_id", "bullion_form"),
+        # Resolves to `mark` because the matching filter compares against
+        # `m.mark`. Offering `mint.code` here would list values the filter
+        # then finds no item by.
+        "mint_mark": Facet(
+            "mint_id", "mint", (_J_COIN_DETAIL,), "cd", "mark", filter="mint"
+        ),
+    },
+    issues=COIN_ISSUES,
+)
+
+
+CURRENCY_VIEW = ViewSpec(
+    name="currency",
+    where=("i.split_at IS NULL", "k.code = 'currency'"),
+    columns={
+        **_SHARED_COLUMNS,
+        "item_kind": Col(_C_KIND_CODE, (_J_KIND,)),
+        "note_type": Col("nt.code", (_J_CUR_DETAIL, _J_NOTE_TYPE)),
+        "series_year": Col(_C_SERIES_YEAR, (_J_CUR_DETAIL,)),
+        "series_letter": Col("cud.series_letter", (_J_CUR_DETAIL,)),
+        "face_plate_number": Col("cud.face_plate_number", (_J_CUR_DETAIL,)),
+        "back_plate_number": Col("cud.back_plate_number", (_J_CUR_DETAIL,)),
+        "printing_facility": Col("cud.printing_facility", (_J_CUR_DETAIL,)),
+        # How a collector writes the series -- 1935A, not 1935 and A apart.
+        # Generated, so it cannot disagree with the two columns above.
+        "series_designation": Col("cud.series_designation", (_J_CUR_DETAIL,)),
+        "seal_color": Col("sc.code", (_J_CUR_DETAIL, _J_SEAL)),
+        "fed_district_letter": Col("fd.letter", (_J_CUR_DETAIL, _J_DISTRICT)),
+        "fed_district_city": Col("fd.city", (_J_CUR_DETAIL, _J_DISTRICT)),
+        "serial_number": Col("cud.serial_number", (_J_CUR_DETAIL,)),
+        # Ordered by the number it opens with, then as written: as text,
+        # 1500 would sort before 16.
+        "friedberg_number": Col(
+            "fr.fr_number",
+            (_J_CUR_DETAIL, _J_FRIEDBERG),
+            "lpad(substring(fr.fr_number from '^[0-9]+'), 8, '0') || fr.fr_number",
+        ),
+        "friedberg_status": Col("cud.friedberg_status", (_J_CUR_DETAIL,)),
+    },
+    filters={
+        **_SHARED_FILTERS,
+        "note_type": Filt("nt.code", join=(_J_CUR_DETAIL, _J_NOTE_TYPE)),
+        "seal_color": Filt("sc.code", join=(_J_CUR_DETAIL, _J_SEAL)),
+        "fed_district": Filt("fd.letter", join=(_J_CUR_DETAIL, _J_DISTRICT)),
+        "series_year": Filt(_C_SERIES_YEAR, join=(_J_CUR_DETAIL,), integer=True),
+        "series_letter": Filt("cud.series_letter", join=(_J_CUR_DETAIL,)),
+        "printing_facility": Filt("cud.printing_facility", join=(_J_CUR_DETAIL,)),
+        "face_plate_number": Filt("cud.face_plate_number", "ilike", (_J_CUR_DETAIL,)),
+        "back_plate_number": Filt("cud.back_plate_number", "ilike", (_J_CUR_DETAIL,)),
+        "series_designation": Filt("cud.series_designation", join=(_J_CUR_DETAIL,)),
+        "friedberg_status": Filt("cud.friedberg_status", join=(_J_CUR_DETAIL,)),
+        "serial_number": Filt("cud.serial_number", "ilike", (_J_CUR_DETAIL,)),
+        # A note's year is its series year; it holds no other, so Year
+        # from / to read that.
+        "year_min": Filt(_C_SERIES_YEAR, "gte", (_J_CUR_DETAIL,), integer=True),
+        "year_max": Filt(_C_SERIES_YEAR, "lte", (_J_CUR_DETAIL,), integer=True),
+    },
+    search_columns=(_C_SOURCE_TITLE, _C_DESCRIPTION, _C_RATING, _C_ITEM_CODE),
+    named=(
+        *_NAMED_SHARED,
+        Named("note_type", NoteType, _held_in("currency_detail", "note_type_id")),
+    ),
+    sortable=(
+        *_SHARED_SORT,
+        "series_year",
+        "series_designation",
+        "seal_color",
+        "fed_district_letter",
+        "serial_number",
+        "friedberg_number",
+    ),
+    facets={
+        **_SHARED_FACETS,
+        "note_type": Facet("note_type_id", "note_type", (_J_CUR_DETAIL,), "cud"),
+        "seal_color": Facet("seal_color_id", "seal_color", (_J_CUR_DETAIL,), "cud"),
+        "fed_district_letter": Facet(
+            "fed_district_id",
+            "fed_district",
+            (_J_CUR_DETAIL,),
+            "cud",
+            "letter",
+            filter="fed_district",
+        ),
+        # No reference table: the column already holds the value the filter
+        # compares against.
+        "series_year": Facet("series_year", None, (_J_CUR_DETAIL,), "cud"),
+    },
+    issues=CURRENCY_ISSUES,
+)
+
+VIEWS: dict[str, ViewSpec] = {v.name: v for v in (COIN_VIEW, CURRENCY_VIEW)}
+
+
+def view_path(kind_code: str) -> str:
+    """The console path of the inventory view that holds items of `kind_code`.
+
+    Currency has its own view; every other kind is searched in the coins
+    view (`COIN_VIEW.where`), so a report's drill to a kind's items reads
+    this rather than restating the split.
+    """
+    spec = CURRENCY_VIEW if kind_code == "currency" else COIN_VIEW
+    return f"/inventory/{spec.name}"
+
+
+@dataclass(frozen=True)
+class MissingField:
+    """One `missing=<field>` check: the SQL that finds it empty, and its kinds.
+
+    `kinds` names the item kinds this field applies to; `None` means every
+    kind. This is the one table both the `missing=` filter (below) and
+    `app.reports.data_quality.dq_completeness` read for kind applicability,
+    so the two can never disagree about what "does not apply" means -- a
+    check whose predicate a kind fails is never "missing" for it, only "not
+    applicable", in the search and in the report alike.
+    """
+
+    sql: str
+    join: tuple[str, ...] = ()
+    kinds: frozenset[str] | None = None
+
+    def applies_to(self, kind_code: str) -> bool:
+        """Whether this field applies to items of `kind_code` at all."""
+        return self.kinds is None or kind_code in self.kinds
+
+
+#: Every item kind, mirroring `backend/data/reference/classification.json`'s
+#: `item_kind` list. A literal duplicate rather than a read of that table --
+#: same choice `app.issues` makes for its own kind codes -- so this module's
+#: dependency on that data stays one-way.
+_ALL_KINDS = frozenset(
+    {"coin", "currency", "bullion", "set", "medal", "token", "other", "unknown"}
+)
+
+#: `no_grade` and `no_denomination` (app.issues.SHARED_ISSUES) apply only to
+#: a coin or a banknote; the completeness report and this filter borrow that
+#: same restriction for the two fields those checks cover.
+_CLASSIFIED_KINDS = frozenset({"coin", "currency"})
+
+#: The ten fields `dq_completeness` reports on and this filter finds empty --
+#: column keys are exactly the `missing=` values, which is also the contract
+#: `dq_completeness` documents for its own percent columns.
+MISSING_FIELDS: dict[str, MissingField] = {
+    # A note's year is its series year; every other kind
+    # keeps its own year_start. The CASE, not two separate checks, is what
+    # keeps "kind determines which column" a single expression rather than
+    # two that could drift apart. A piece with no date at all is not
+    # missing one.
+    "year": MissingField(
+        "(CASE WHEN k.code = 'currency' THEN cud.series_year IS NULL "
+        "ELSE i.year_start IS NULL AND NOT i.no_date END)",
+        join=(_J_CUR_DETAIL,),
+    ),
+    "denomination": MissingField("i.denomination_id IS NULL", kinds=_CLASSIFIED_KINDS),
+    "grade": MissingField("i.grade_id IS NULL", kinds=_CLASSIFIED_KINDS),
+    "country": MissingField("i.country_id IS NULL"),
+    # Optional for a note: its year is the series year,
+    # so the design series adds nothing a note must have.
+    "series": MissingField("i.series_id IS NULL", kinds=_ALL_KINDS - {"currency"}),
+    # Not applicable to currency (`dq_completeness`,
+    # docs/specs/reporting-design.md), nor to a set, which is often of mixed
+    # metals; every other kind, bullion included, is a single metal object.
+    "metal": MissingField("i.metal_id IS NULL", kinds=_ALL_KINDS - {"currency", "set"}),
+    "photo": MissingField(
+        "NOT EXISTS (SELECT 1 FROM item_image ii WHERE ii.inventory_item_id = i.id)"
+    ),
+    "storage_location": MissingField("i.storage_location_id IS NULL"),
+    "listing_link": MissingField("coalesce(i.listing_url, '') = ''"),
+    "sellers_item_id": MissingField("coalesce(i.sellers_item_id, '') = ''"),
+}
+
+
+def _missing_clause(
+    params: dict[str, Any], bound: dict[str, Any], joins: list[tuple[str, ...]]
+) -> str | None:
+    """The `missing=<field>` filter: FALSE for a kind the field does not fit.
+
+    A field outside `MISSING_FIELDS[key].kinds` -- metal on a note, grade or
+    denomination on bullion -- is never counted "missing" for that kind, so
+    the predicate is FALSE rather than matching every row of it, which would
+    read as "all of these are missing" when the true answer is "the question
+    does not apply here". The same table decides both this and the
+    completeness report's blank cells.
+    """
+    key = params.pop("missing", None)
+    if not key:
+        return None
+    field = MISSING_FIELDS.get(key)
+    if field is None:
+        raise UnknownMissingField(key)
+    joins.append(field.join)
+    if field.kinds is None:
+        return f"({field.sql})"
+    bound["p_missing_kinds"] = list(field.kinds)
+    return f"(({field.sql}) AND k.code = ANY(:p_missing_kinds))"
+
+
+def names_matching(
+    db: Session, spec: ViewSpec, query: str | None
+) -> list[tuple[Named, list[int]]]:
+    """The rows of each named vocabulary whose name or alias the search contains.
+
+    One read per vocabulary, so a request that runs `search`, `count_facets`
+    and `count_issues` for one query asks this once and passes the answer
+    to each as `names`.
+
+    This is what makes aliases do anything in search. The formal name and the
+    colloquial one are often disjoint in practice -- a seller writes
+    "Mercury" and never "Winged Liberty Head" -- so matching description text
+    alone finds whichever name the seller happened to use and misses the
+    other entirely.
+    """
+    if not query or not query.strip():
+        return []
+    found = [(named, aliases.ids_named(db, named.model, query)) for named in spec.named]
+    return [(named, ids) for named, ids in found if ids]
+
+
+def _names(
+    db: Session,
+    spec: ViewSpec,
+    query: str | None,
+    names: list[tuple[Named, list[int]]] | None,
+) -> list[tuple[Named, list[int]]]:
+    """`names` as given, or `names_matching` read now when the caller had none."""
+    return names_matching(db, spec, query) if names is None else names
+
+
+#: How a filter's `op` becomes SQL. Comparing a column to a value differs only
+#: in the operator, so the shapes live here rather than in a branch each.
+_FILTER_TEMPLATES = {
+    "ilike": "{sql} ILIKE :{placeholder}",
+    "gte": "{sql} >= :{placeholder}",
+    "lte": "{sql} <= :{placeholder}",
+}
+_FILTER_DEFAULT = "{sql} = :{placeholder}"
+
+#: What joins the clauses of a WHERE, and the parts of one clause.
+_AND = " AND "
+
+
+def _deleted_clause(params: dict[str, Any]) -> str:
+    """The soft-delete predicate, consumed from `params` in place.
+
+    Handled here rather than in spec.filters because it selects between three
+    predicates rather than comparing a column to a value. Excluded by default,
+    so a deleted row does not reappear because someone forgot.
+    """
+    mode = params.pop("deleted", None) or "no"
+    if mode not in DELETED_MODES:
+        raise ValueError(
+            f"unknown deleted mode {mode!r}; expected one of {sorted(DELETED_MODES)}."
+        )
+    return DELETED_MODES[mode]
+
+
+def _lot_clause(params: dict[str, Any], bound: dict[str, Any]) -> str | None:
+    """Everything split from one lot, named by the lot's item code.
+
+    The code is what is printed on the flip and what a person has in front of
+    them, rather than a database id they would have to look up.
+    """
+    lot_code = params.pop("lot", None)
+    if not lot_code:
+        return None
+    bound["p_lot"] = lot_code
+    return "i.parent_item_id = (SELECT id FROM inventory_item WHERE item_code = :p_lot)"
+
+
+def _error_type_clause(params: dict[str, Any], bound: dict[str, Any]) -> str | None:
+    """Items carrying at least one error of the named type.
+
+    An EXISTS subquery, not a join or the generic `Filt` machinery: an item
+    may carry more than one error, and a join would return that item once per
+    matching row, corrupting both the count and the page it belongs to.
+    "Has this error" and "has any error" are different questions -- this
+    answers only the first, and an item with two errors is still returned
+    exactly once.
+    """
+    code = params.pop("error_type", None)
+    if not code:
+        return None
+    bound["p_error_type"] = code
+    return (
+        "EXISTS (SELECT 1 FROM item_error ie "
+        "JOIN error_type et ON et.id = ie.error_type_id "
+        "WHERE ie.inventory_item_id = i.id AND et.code = :p_error_type)"
+    )
+
+
+def _attribute_clause(params: dict[str, Any], bound: dict[str, Any]) -> str | None:
+    """Items carrying the named attribute, and not removed from them.
+
+    A subquery for the same reason as `_error_type_clause`: an item carries
+    many attributes, and a join would list it once per match.
+    """
+    code = params.pop("attribute", None)
+    if not code:
+        return None
+    bound["p_attribute"] = code
+    return (
+        "i.id IN (SELECT l.inventory_item_id FROM item_attribute_link l "
+        "JOIN item_attribute ia ON ia.id = l.item_attribute_id "
+        "WHERE ia.code = :p_attribute AND l.removed_at IS NULL)"
+    )
+
+
+def _item_codes_clause(params: dict[str, Any], bound: dict[str, Any]) -> str | None:
+    """Exactly the items named: `item_codes=CC-000001,CC-000002`.
+
+    How a report opens the items of one of its rows as a list. Whole codes,
+    unlike `item_code`, which matches part of one. Case and the space round
+    a code are not part of it.
+    """
+    listed = params.pop("item_codes", None)
+    if not listed:
+        return None
+    bound["p_item_codes"] = [
+        code.strip().upper() for code in str(listed).split(",") if code.strip()
+    ]
+    return "i.item_code = ANY(:p_item_codes)"
+
+
+#: The grade parameters, read as search terms rather than codes.
+GRADE_PARAMS = ("grade", "grade_min", "grade_max")
+
+#: Parameters every view takes beside its filter table, each read by its own
+#: clause in `_conditions`. Named here so a refusal of an unknown filter can
+#: list them with the rest.
+SPECIAL_PARAMS: tuple[str, ...] = (
+    "deleted",
+    "lot",
+    "issue",
+    "missing",
+    "error_type",
+    "attribute",
+    "item_codes",
+    *GRADE_PARAMS,
+)
+
+
+def _grade_term(key: str, value: str) -> grades.GradeTerm:
+    """The grade a search parameter names, or a ValueError saying what is read."""
+    term = grades.search_term(value)
+    if term is None:
+        raise ValueError(
+            f"{key}={value!r} is not a grade. Try 55, 55+, 55%, MS65, PR69+, "
+            "BU, BU+, BU++ or BU%."
+        )
+    return term
+
+
+def _grade_term_parts(
+    term: grades.GradeTerm, bound: dict[str, Any], joins: list[tuple[str, ...]]
+) -> list[str]:
+    """The conditions one `grade` search term asks for, each to be ANDed.
+
+    Whichever of its parts the term states: a grade with no number by its
+    code, a range of grade rank, plus grades or plain ones, and the strike
+    prefix the item shows -- none at all, or a named one. Their values go
+    into `bound`, and the strike join into `joins` where the prefix is read.
+    """
+    parts: list[str] = []
+    if term.code is not None:
+        bound["p_grade_code"] = term.code
+        parts.append("g.code = :p_grade_code")
+    if term.low is not None:
+        bound["p_grade_low"] = term.low
+        bound["p_grade_high"] = term.high
+        parts.append("g.grade_rank BETWEEN :p_grade_low AND :p_grade_high")
+    if term.plus is not None:
+        parts.append("g.is_plus" if term.plus else "NOT g.is_plus")
+    if term.prefix is None:
+        joins.append((_J_STRIKE,))
+        parts.append("stk.prefix IS NULL")
+    elif term.prefix != grades.ANY_PREFIX:
+        joins.append((_J_STRIKE,))
+        bound["p_grade_prefix"] = term.prefix
+        parts.append("stk.prefix = :p_grade_prefix")
+    return parts
+
+
+def _grade_clause(
+    params: dict[str, Any], bound: dict[str, Any], joins: list[tuple[str, ...]]
+) -> str | None:
+    """The grade filters, as ranges of grade rank.
+
+    `grade` is a search term: 55 is exactly 55, 55+ exactly 55+, 55% both,
+    BU the owner's 60-62, BU% the whole ladder (`app.grades.search_term`).
+    `grade_min` takes the bottom of its term and `grade_max` the top, so
+    `grade_max=64` stops below 64+ and `grade_max=64%` includes it.
+    """
+    given = {key: params.pop(key, None) for key in GRADE_PARAMS}
+    parts: list[str] = []
+    if given["grade"]:
+        term = _grade_term("grade", given["grade"])
+        parts.extend(_grade_term_parts(term, bound, joins))
+    if given["grade_min"]:
+        low = _grade_term("grade_min", given["grade_min"]).low
+        if low is not None:
+            bound["p_grade_min"] = low
+            parts.append("g.grade_rank >= :p_grade_min")
+    if given["grade_max"]:
+        high = _grade_term("grade_max", given["grade_max"]).high
+        if high is not None:
+            bound["p_grade_max"] = high
+            parts.append("g.grade_rank <= :p_grade_max")
+    if not parts:
+        return None
+    joins.append((_J_GRADE,))
+    return "(" + _AND.join(parts) + ")"
+
+
+def _issue_clause(
+    spec: ViewSpec, params: dict[str, Any], joins: list[tuple[str, ...]]
+) -> str | None:
+    """One of the view's named data-quality checks."""
+    issue_key = params.pop("issue", None)
+    if not issue_key:
+        return None
+    issue = spec.issues.get(issue_key)
+    if issue is None:
+        raise UnknownIssue(issue_key)
+    joins.append(issue.join)
+    # Parenthesised: a predicate containing OR would otherwise bind loosely
+    # against the other clauses and match far too much.
+    return f"({issue.sql})"
+
+
+def _contains(value: object) -> str:
+    """An ILIKE pattern matching `value` anywhere, its backslashes literal.
+
+    `%` and `_` keep their meaning as wildcards. A backslash is ILIKE's
+    escape character, so left alone it would escape the next character, or
+    at the end of the term make the pattern match nothing.
+    """
+    return "%" + str(value).replace("\\", "\\\\") + "%"
+
+
+def _value_clause(key: str, value: object, f: Filt, bound: dict[str, Any]) -> str:
+    """One column-to-value comparison from the view's filter table.
+
+    Raises ValueError, naming the parameter, for text sent to an integer or
+    a date filter that is not one.
+    """
+    placeholder = f"p_{key}"
+    template = _FILTER_TEMPLATES.get(f.op, _FILTER_DEFAULT)
+    if f.integer:
+        try:
+            value = int(str(value).strip())
+        except ValueError:
+            raise ValueError(f"{key}={value!r} is not a whole number.") from None
+    if f.day:
+        try:
+            value = date.fromisoformat(str(value).strip())
+        except ValueError:
+            raise ValueError(f"{key}={value!r} is not a date, YYYY-MM-DD.") from None
+    bound[placeholder] = _contains(value) if f.op == "ilike" else value
+    return template.format(sql=f.sql, placeholder=placeholder)
+
+
+#: The fewest letters and digits a query needs before it is also matched
+#: against order numbers stripped of their separators: fewer, and a short
+#: number would find a slice of nearly every order.
+_BARE_ORDER_MIN = 6
+
+
+def _query_clause(
+    spec: ViewSpec,
+    query: str,
+    names: list[tuple[Named, list[int]]],
+    bound: dict[str, Any],
+) -> str:
+    """The free-text search, across the view's own columns and its names."""
+    parts = [f"coalesce({c}, '') ILIKE :p_q" for c in spec.search_columns]
+    # The purchase's order number -- an eBay order pasted into the box finds
+    # what was bought on it. A subquery rather than a join, so the search
+    # adds no join the filters and facets would then carry.
+    parts.append(
+        "EXISTS (SELECT 1 FROM purchase_order po_q WHERE po_q.id = i.purchase_order_id"
+        " AND po_q.order_number ILIKE :p_q)"
+    )
+    # The same number typed without its dashes, or with spaces for them: both
+    # sides reduced to letters and digits. Only for a query that could be
+    # one -- a digit, and enough characters -- so a word never reaches it.
+    bare = re.sub(r"[^0-9A-Za-z]", "", query)
+    if len(bare) >= _BARE_ORDER_MIN and any(c.isdigit() for c in bare):
+        parts.append(
+            "EXISTS (SELECT 1 FROM purchase_order po_b"
+            " WHERE po_b.id = i.purchase_order_id"
+            " AND regexp_replace(po_b.order_number, '[^0-9A-Za-z]', '', 'g')"
+            " ILIKE :p_q_bare)"
+        )
+        bound["p_q_bare"] = _contains(bare)
+    for named, ids in names:
+        placeholder = f"p_named_{named.key}"
+        parts.append(named.match.format(p=placeholder))
+        bound[placeholder] = list(ids)
+    bound["p_q"] = _contains(query)
+    return "(" + " OR ".join(parts) + ")"
+
+
+def _conditions(
+    spec: ViewSpec,
+    params: dict[str, Any],
+    query: str | None,
+    names: list[tuple[Named, list[int]]] | None = None,
+) -> tuple[list[str], list[tuple[str, ...]], dict[str, Any]]:
+    """The WHERE clauses, joins and bound values a search's parameters ask for.
+
+    Raises KeyError for a filter the view does not have, rather than ignore
+    it and return the whole collection.
+    """
+    clauses = list(spec.where)
+    joins: list[tuple[str, ...]] = [(_J_KIND,)]  # every spec filters on kind
+    bound: dict[str, Any] = {}
+
+    params = dict(params)
+    clauses.append(_deleted_clause(params))
+    for clause in (
+        _lot_clause(params, bound),
+        _issue_clause(spec, params, joins),
+        _missing_clause(params, bound, joins),
+        _error_type_clause(params, bound),
+        _attribute_clause(params, bound),
+        _item_codes_clause(params, bound),
+        _grade_clause(params, bound, joins),
+    ):
+        if clause is not None:
+            clauses.append(clause)
+
+    for key, value in params.items():
+        if value in (None, ""):
+            continue
+        f = spec.filters.get(key)
+        if f is None:
+            # Ignoring an unknown filter silently returns the whole collection
+            # and looks like a successful search.
+            raise KeyError(key)
+        joins.append(f.join)
+        clauses.append(_value_clause(key, value, f, bound))
+
+    if query:
+        clauses.append(_query_clause(spec, query, names or [], bound))
+
+    return clauses, joins, bound
+
+
+def plain(value: object) -> object:
+    """JSON-safe without letting money or weight become a float.
+
+    FastAPI's encoder turns a Decimal inside a plain dict into a float, which
+    is the one thing the rest of this schema is careful never to do.
+    """
+    if isinstance(value, Decimal):
+        return str(value)
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    return value
+
+
+def search(
+    db: Session,
+    spec: ViewSpec,
+    *,
+    params: dict[str, Any],
+    query: str | None = None,
+    sort: str | None = None,
+    descending: bool = False,
+    limit: int = 50,
+    offset: int = 0,
+    names: list[tuple[Named, list[int]]] | None = None,
+) -> tuple[list[dict[str, Any]], int]:
+    """One page of rows, and how many matched in total.
+
+    `names` is `names_matching(db, spec, query)`, read here when not given.
+    """
+    sort_key = sort or spec.default_sort
+    if sort_key not in spec.sortable:
+        raise ValueError(f"cannot sort by {sort_key!r}")
+
+    clauses, joins, bound = _conditions(
+        spec, params, query, _names(db, spec, query, names)
+    )
+    where = " WHERE " + _AND.join(clauses)
+
+    # The count needs no display joins at all -- only whatever the filters
+    # reach for.
+    total = db.execute(
+        text(f"SELECT count(*) FROM {spec.base} {spec.joins_for(joins)}{where}"),
+        bound,
+    ).scalar_one()
+
+    select_parts = [f"{col.sql} AS {name}" for name, col in spec.columns.items()]
+    display_joins = spec.joins_for([c.join for c in spec.columns.values()])
+    sort_sql = spec.columns[sort_key].sort_sql
+    direction = "DESC" if descending else "ASC"
+
+    # Two steps, because one is many times slower.
+    #
+    # Selecting every display column and *then* applying LIMIT makes
+    # PostgreSQL join every display table across every matching row before
+    # discarding all but one page. Picking the page's ids first -- which needs
+    # only the joins the filters and the sort actually use -- and joining the
+    # display tables onto those few rows is what keeps a page cheap.
+    #
+    # NULLS LAST so unrecorded values sort to the end rather than filling the
+    # first page of every ascending search. The ordering is repeated on the
+    # outer query: a join does not preserve the inner ordering.
+    filter_joins = spec.joins_for([*joins, spec.columns[sort_key].join])
+    rows = (
+        db.execute(
+            text(
+                f"SELECT {', '.join(select_parts)} FROM ("
+                f"  SELECT i.id, {sort_sql} AS sort_key, i.item_code"
+                f"  FROM {spec.base} {filter_joins}{where}"
+                f"  ORDER BY {sort_sql} {direction} NULLS LAST, i.item_code"
+                f"  LIMIT :p_limit OFFSET :p_offset"
+                f") picked "
+                f"JOIN {spec.base} ON i.id = picked.id {display_joins} "
+                f"ORDER BY picked.sort_key {direction} NULLS LAST, picked.item_code"
+            ),
+            {**bound, "p_limit": limit, "p_offset": offset},
+        )
+        .mappings()
+        .all()
+    )
+
+    return [{k: plain(v) for k, v in row.items()} for row in rows], total
+
+
+def count_facets(
+    db: Session,
+    spec: ViewSpec,
+    *,
+    params: dict[str, Any],
+    query: str | None = None,
+    names: list[tuple[Named, list[int]]] | None = None,
+) -> dict[str, list[dict[str, Any]]]:
+    """How many rows each classifier value would match.
+
+    A panel over thousands of items is close to useless without this: the
+    vocabulary defines fifty-odd grades and a real collection uses a dozen, so
+    offering all of them buries the ones present. Counted against the current
+    filters, so the numbers describe what narrowing further would do. Every
+    value present is returned, most common first; the vocabulary bounds how
+    many there can be, and a cut-off would hide a value that is there.
+
+    **A facet is counted without its own filter.** With Status set to
+    Received, the status counts are still those of every status under the
+    other filters -- what choosing each one instead would give. Counted with
+    its own filter, a picker offers only the value already chosen, and the
+    way from Received to Returned is to clear it first and look again.
+
+    Grouped by foreign key id, which uses the existing indexes, then resolved
+    to codes in one small lookup per table. Grouping by the code instead would
+    force every join first.
+
+    `names` is `names_matching(db, spec, query)`, read here when not given.
+    """
+    matched = _names(db, spec, query, names)
+    shared = _conditions(spec, params, query, matched)
+
+    results: dict[str, list[dict[str, Any]]] = {}
+    for name, facet in spec.facets.items():
+        own = facet.filter or name
+        if params.get(own) in (None, ""):
+            clauses, joins, bound = shared
+        else:
+            others = {key: value for key, value in params.items() if key != own}
+            clauses, joins, bound = _conditions(spec, others, query, matched)
+        where = " WHERE " + _AND.join(clauses)
+        facet_joins = list(joins)
+        if facet.join:
+            facet_joins.append(facet.join)
+        column = f"{facet.alias}.{facet.id_column}"
+
+        counts = db.execute(
+            text(
+                f"SELECT {column} AS fid, count(*) AS n "
+                f"FROM {spec.base} {spec.joins_for(facet_joins)}{where} "
+                f"AND {column} IS NOT NULL "
+                f"GROUP BY {column} ORDER BY n DESC"
+            ),
+            bound,
+        ).all()
+
+        if not counts:
+            results[name] = []
+            continue
+
+        if facet.table is None:
+            # The column is the value -- there is nothing to resolve.
+            results[name] = [{"value": row.fid, "count": row.n} for row in counts]
+            continue
+
+        ids = [row.fid for row in counts]
+        # A textual query returns untyped rows, so the pair is taken by
+        # position rather than by asking dict() to infer it.
+        # The value is what the filter compares; the label is what a person
+        # reads -- "Cent" for `usd_coin_0_01`. `to_jsonb(t) ->> 'label'` reads
+        # the label where the table has one and yields NULL where it does not,
+        # so one query serves every facet table without knowing its columns.
+        resolved: dict[int, tuple[object, str | None]] = {
+            row[0]: (row[1], row[2])
+            for row in db.execute(
+                text(
+                    f"SELECT t.id, t.{facet.label_column}, to_jsonb(t) ->> 'label' "
+                    f"FROM {facet.table} t WHERE t.id = ANY(:ids)"
+                ),
+                {"ids": ids},
+            ).all()
+        }
+        results[name] = [
+            {
+                "value": resolved[row.fid][0],
+                "label": resolved[row.fid][1],
+                "count": row.n,
+            }
+            for row in counts
+            if row.fid in resolved and resolved[row.fid][0] is not None
+        ]
+
+    return results
+
+
+def count_issues(
+    db: Session,
+    spec: ViewSpec,
+    *,
+    params: dict[str, Any],
+    query: str | None = None,
+    names: list[tuple[Named, list[int]]] | None = None,
+) -> dict[str, int]:
+    """How many rows in the current result set hit each named check.
+
+    One query with a FILTER per check rather than one query per check: there
+    are a dozen checks and they all read the same rows.
+
+    `issue` itself is dropped from the filters first. Counting within the
+    selected check would collapse every other count to zero or to a subset,
+    and the panel would stop being a way to see what work is left.
+
+    `names` is `names_matching(db, spec, query)`, read here when not given.
+    """
+    params = {k: v for k, v in params.items() if k != "issue"}
+    clauses, joins, bound = _conditions(
+        spec, params, query, _names(db, spec, query, names)
+    )
+    # All checks are counted at once, so every check's joins must be present.
+    joins = list(joins) + [issue.join for issue in spec.issues.values()]
+
+    selected = ", ".join(
+        f"count(*) FILTER (WHERE {issue.sql}) AS {name}"
+        for name, issue in spec.issues.items()
+    )
+    row = (
+        db.execute(
+            text(
+                f"SELECT {selected} FROM {spec.base} {spec.joins_for(joins)} "
+                f"WHERE {_AND.join(clauses)}"
+            ),
+            bound,
+        )
+        .mappings()
+        .one()
+    )
+    # Zero-count checks are omitted: a panel listing a dozen checks that all
+    # say 0 hides the two that do not.
+    return {name: row[name] for name in spec.issues if row[name]}

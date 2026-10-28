@@ -1,0 +1,125 @@
+"""The transaction boundary the writing routers share.
+
+An endpoint that writes through `committing` commits once, at the end, and a
+failure anywhere in the block rolls the whole request back, so a refusal
+leaves nothing half-written
+and the session clean for whatever uses it next. In production
+`database.get_db` closes the session after the request anyway; the `client`
+fixture in `tests/conftest.py` shares one session across every request in a
+test, so there the rollback is what keeps the next request's reads sound.
+
+A `StaleDataError` -- a version column that moved between this request's
+read and its UPDATE -- is the caller's 409 with the caller's own wording.
+Every other exception is re-raised unchanged after the rollback, so a caller
+that maps a domain refusal to a status does it around the block, and the
+status is never decided here.
+
+`commit_unique` is the other commit several routers share: a row whose
+duplicate a unique index refuses, read as a 409 in the caller's wording.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Iterator
+from contextlib import contextmanager
+
+from fastapi import HTTPException, status
+from sqlalchemy import Delete
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+from sqlalchemy.orm.exc import StaleDataError
+
+#: PostgreSQL's SQLSTATE for a unique index refusing a duplicate.
+_UNIQUE_VIOLATION = "23505"
+#: A foreign key's refusal: `RESTRICT` reports its own code, `NO ACTION`
+#: the general one.
+_STILL_REFERENCED = frozenset({"23001", "23503"})
+
+
+@contextmanager
+def committing(
+    db: Session, stale_detail: str, *, gone_detail: str | None = None
+) -> Iterator[None]:
+    """Run the block's writes and commit them, or roll everything back.
+
+    `StaleDataError` from the block or the commit becomes a 409 with
+    `stale_detail`. With `gone_detail`, a foreign key refusing a row whose
+    referent was deleted since the handler read it is a 409 with that
+    wording too: the handler found it, and another request removed it
+    before this one wrote. Any other exception is rolled back and re-raised
+    as is.
+    """
+    try:
+        yield
+        db.commit()
+    except StaleDataError as stale:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=stale_detail
+        ) from stale
+    except IntegrityError as exc:
+        db.rollback()
+        if (
+            gone_detail is None
+            or getattr(exc.orig, "sqlstate", None) not in _STILL_REFERENCED
+        ):
+            raise
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=gone_detail
+        ) from exc
+    except Exception:
+        db.rollback()
+        raise
+
+
+def commit(db: Session, stale_detail: str) -> None:
+    """Commit what the caller has already written, as `committing` would."""
+    with committing(db, stale_detail):
+        # Nothing to run: the caller's writes are already in the session,
+        # and leaving the block is what commits them.
+        pass
+
+
+def delete_unused(db: Session, statement: Delete, in_use_detail: str) -> None:
+    """Delete a row its handler found unused, and commit; one used since is a 409.
+
+    The handler counts what refers to the row before it deletes, and a
+    request naming the row can commit after that count: the foreign key
+    then refuses the delete at the database, and it should read as the
+    409 the count gives rather than an unhandled 500. A `DELETE` statement,
+    which the database decides, never `Session.delete`: on a row with a
+    one-to-many relationship that loads the children and sets their key
+    to NULL first -- silently, where the column allows it.
+    """
+    try:
+        db.execute(statement)
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        if getattr(exc.orig, "sqlstate", None) not in _STILL_REFERENCED:
+            raise
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=in_use_detail
+        ) from exc
+
+
+def commit_unique(db: Session, taken_detail: str) -> None:
+    """Commit a row a unique index guards; a refusal is a 409 with `taken_detail`.
+
+    A handler checks for a duplicate before it writes, and two requests at
+    once both pass that check. The index stops the second at the database,
+    and it should read as the same 409 the check gives rather than an
+    unhandled 500.
+    """
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        # Only a unique index's refusal is a duplicate. A foreign key that
+        # names nothing, a null or a failed check is an integrity error too,
+        # and "already exists" would be the wrong thing to say about it.
+        if getattr(exc.orig, "sqlstate", None) != _UNIQUE_VIOLATION:
+            raise
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=taken_detail
+        ) from exc

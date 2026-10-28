@@ -1,0 +1,1200 @@
+"""Fill classifiers that follow from an item's recorded facts.
+
+docs/specs/classifier-defaults-design.md. For a banknote, the denomination and
+series decide the class, and with it the seal and the signatures; a Federal
+Reserve Note's serial names its issuing Bank. For a coin, its denomination
+or design series, country and year decide its composition -- the series
+alone where the design was struck in one (`app.composition`) -- and for
+anything but a note a gross weight and a fineness decide the fine weight. A
+person enters the facts; this fills the rest.
+
+The rules, per field:
+
+- A field is written only when the facts allow exactly one value.
+- An empty field is filled. A field holding a derived default
+  (`item_field_source`) is refreshed if the facts now say otherwise. Any
+  other value is a person's, or came with the data, and is never touched --
+  but it does narrow the facts: a note recorded with a red seal is not the
+  blue-seal issue of its series.
+- A recorded value the facts rule out is reported, not changed.
+- A derived value the facts no longer support is retracted: cleared, with
+  its record. The machine may take back its own guess; nobody else's.
+- A field a person emptied (`held`) stays empty.
+
+Attributes that follow from a note's facts -- No Motto on a $1 Silver
+Certificate of Series 1928-1935F (`app.attribute_rules`) -- are added the
+same way: only where the note has no link for it at all, a removed one
+included; taken back only where this pass added it.
+
+    python -m app.classifier_defaults            report, touching nothing
+    python -m app.classifier_defaults --commit   write the defaults
+"""
+
+from __future__ import annotations
+
+import argparse
+import re
+import sys
+from collections import Counter
+from collections.abc import Collection, Sequence
+from dataclasses import dataclass, field
+from decimal import Decimal
+from typing import Any
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from . import aliases, attribute_rules
+from .composition import (
+    Run,
+    composition_of,
+    composition_of_series,
+    load_compositions,
+    series_runs,
+)
+from .database import SessionLocal
+from .field_sources import (
+    COMPOSITION,
+    HELD,
+    NOTE_ISSUE,
+    SERIAL_DISTRICT,
+    WEIGHT,
+    WEIGHT_RULES,
+    forget,
+    record_derived,
+    sources_by_item,
+)
+from .models import (
+    Composition,
+    CurrencyDetail,
+    Denomination,
+    FedDistrict,
+    FriedbergNumber,
+    InventoryItem,
+    ItemAttribute,
+    ItemAttributeLink,
+    ItemKind,
+    Metal,
+    NoteIssue,
+    NoteType,
+    ProvenanceSource,
+    SealColor,
+    StrikeType,
+)
+from .mule_rules import mule_verdict
+from .serial_patterns import WELL_FORMED
+from .series_classify import refresh_series
+
+#: The attribute `app.mule_rules` decides.
+MULE = "mule"
+
+#: The note columns an issue decides, in the order they are reported.
+NOTE_COLUMNS: tuple[str, ...] = (
+    "note_type_id",
+    "seal_color_id",
+    "signature_combination_id",
+)
+
+#: The item columns a composition decides.
+COMPOSITION_COLUMNS: tuple[str, ...] = (
+    "composition_id",
+    "metal_id",
+    "fineness",
+    "gross_weight_ozt",
+    "fine_weight_ozt",
+)
+
+#: From Series 1996, $5 and higher carry two leading serial letters: the
+#: series, then the Bank (BEP, bep.gov/currency/serial-numbers).
+TWO_LETTER_FROM_YEAR = 1996
+TWO_LETTER_FROM_FACE = Decimal("5")
+
+#: A Federal Reserve Bank's letter, A (Boston) through L (San Francisco).
+BANK_LETTERS = frozenset("ABCDEFGHIJKL")
+
+#: The rule of a Change that clears a derived value the facts dropped.
+RETRACT = "retract"
+
+#: A note's columns the pass fills, the Bank included.
+NOTE_FILLED: tuple[str, ...] = (*NOTE_COLUMNS, "fed_district_id")
+
+#: One issue, as the facts table records it.
+IssueKey = tuple[int, int, str | None]
+
+
+@dataclass(frozen=True)
+class Issue:
+    """What one small-size issue was: class, seal, signatures, serial letter."""
+
+    note_type_id: int
+    seal_color_id: int
+    signature_combination_id: int | None
+    serial_prefix: str | None
+
+
+@dataclass(frozen=True)
+class Case:
+    """One item a person should look at, and why."""
+
+    item_code: str
+    reason: str
+    detail: str
+
+
+@dataclass(frozen=True)
+class Change:
+    """One default to write, or to retract: row, column, value, rule.
+
+    A retraction has `value` None and `rule` RETRACT.
+    """
+
+    item_id: int
+    on_note: bool
+    column: str
+    value: object
+    rule: str
+
+
+@dataclass(frozen=True)
+class LinkChange:
+    """An attribute link a rule adds (`add`) or takes back."""
+
+    item_id: int
+    attribute_id: int
+    add: bool
+
+
+@dataclass(frozen=True)
+class Link:
+    """An existing link, as far as the rules care."""
+
+    active: bool
+    derived_by: str | None
+
+
+@dataclass
+class Report:
+    """What the pass found and would write."""
+
+    changes: list[Change] = field(default_factory=list)
+    counts: Counter = field(default_factory=Counter)
+    review: list[Case] = field(default_factory=list)
+    links: list[LinkChange] = field(default_factory=list)
+
+    def by_column(self, *, retracted: bool = False) -> Counter:
+        """Writes (or retractions) per column: `note_type_id` 907."""
+        return Counter(
+            change.column
+            for change in self.changes
+            if (change.rule == RETRACT) == retracted
+        )
+
+
+def load_issues(db: Session) -> dict[IssueKey, list[Issue]]:
+    """Every seeded issue, by denomination, series year and letter."""
+    issues: dict[IssueKey, list[Issue]] = {}
+    for row in db.execute(select(NoteIssue)).scalars():
+        issues.setdefault(
+            (row.denomination_id, row.series_year, row.series_letter), []
+        ).append(
+            Issue(
+                row.note_type_id,
+                row.seal_color_id,
+                row.signature_combination_id,
+                row.serial_prefix,
+            )
+        )
+    return issues
+
+
+def decide(
+    current: dict[str, Any],
+    derived: set[str],
+    options: dict[str, set[object]],
+    held: frozenset[str] = frozenset(),
+) -> tuple[dict[str, object], list[str]]:
+    """What to write, given what is recorded and what the facts allow.
+
+    `options` is, per column, every value the facts allow. Returns the columns
+    to write and the derived columns whose value the facts no longer support.
+    A held column is a person's choice to leave it empty, and is skipped.
+    """
+    writes: dict[str, object] = {}
+    stale: list[str] = []
+    for column, allowed in options.items():
+        value = current.get(column)
+        mine = column in derived
+        if column in held or (value is not None and not mine):
+            continue  # a person's value, or the data's: never touched
+        only = next(iter(allowed)) if len(allowed) == 1 else None
+        if only is not None:
+            if only != value:
+                writes[column] = only
+        elif mine and value is not None and value not in allowed - {None}:
+            stale.append(column)
+    return writes, stale
+
+
+def _retract(
+    out: Outcome, current: dict[str, Any], derived: set[str], columns: tuple[str, ...]
+) -> None:
+    """Take back derived values the facts no longer decide."""
+    for column in columns:
+        if column in derived and current.get(column) is not None:
+            out.retracts.append(column)
+
+
+def _note_options(
+    issues: list[Issue], current: dict[str, Any], derived: set[str]
+) -> tuple[list[Issue], list[str]]:
+    """The issues this note can be, and the recorded columns that rule all out.
+
+    A value a person recorded narrows the issues; a derived one does not,
+    since it is only what this pass concluded last time.
+    """
+    fixed = {
+        column: current[column]
+        for column in NOTE_COLUMNS
+        if current.get(column) is not None and column not in derived
+    }
+    matches = [
+        issue
+        for issue in issues
+        if all(getattr(issue, column) == value for column, value in fixed.items())
+    ]
+    if matches or not issues:
+        return matches, []
+    contradicted = [
+        column
+        for column, value in fixed.items()
+        if all(getattr(issue, column) != value for issue in issues)
+    ]
+    return [], contradicted or sorted(fixed)
+
+
+def district_letter(serial: str | None, face: Decimal, year: int) -> tuple[str, str]:
+    """The Bank letter a Federal Reserve Note's serial names, and its series letter.
+
+    Returns ("", "") when the serial is missing or not the shape its era
+    uses; a star in place of a prefix letter hides the Bank.
+    """
+    text = (serial or "").replace(" ", "").upper()
+    if not WELL_FORMED.match(text):
+        return "", ""
+    prefix = text[: len(text) - 9]
+    two = year >= TWO_LETTER_FROM_YEAR and face >= TWO_LETTER_FROM_FACE
+    if len(prefix) != (2 if two else 1) or "*" in prefix:
+        return "", ""
+    return prefix[-1], (prefix[0] if two else "")
+
+
+def _items(
+    db: Session, item_ids: Collection[int] | None = None
+) -> Sequence[tuple[Any, ...]]:
+    """Every item that is not a split lot, or the given ones, with its facts.
+
+    The facts are the ones defaults come from. Soft-deleted items are
+    included.
+    """
+    query = (
+        select(
+            InventoryItem,
+            ItemKind.code,
+            Denomination.face_value,
+            CurrencyDetail,
+        )
+        .join(ItemKind, ItemKind.id == InventoryItem.item_kind_id)
+        .join(
+            Denomination,
+            Denomination.id == InventoryItem.denomination_id,
+            isouter=True,
+        )
+        .join(
+            CurrencyDetail,
+            CurrencyDetail.inventory_item_id == InventoryItem.id,
+            isouter=True,
+        )
+        .where(InventoryItem.split_at.is_(None))
+        .order_by(InventoryItem.item_code)
+    )
+    if item_ids is not None:
+        query = query.where(InventoryItem.id.in_(list(item_ids)))
+    return db.execute(query).tuples().all()
+
+
+@dataclass
+class Facts:
+    """The published facts, loaded once per run.
+
+    `load_facts` fills only the halves a run needs: a run over coins alone
+    leaves the note facts empty, and one over notes alone the compositions.
+    """
+
+    issues: dict[IssueKey, list[Issue]] = field(default_factory=dict)
+    compositions: list[Composition] = field(default_factory=list)
+    #: Each coin design's own runs of years, by series id.
+    series_runs: dict[int, tuple[Run, ...]] = field(default_factory=dict)
+    #: The business strike's id: any other strike recorded on a coin with no
+    #: set is a proof or the like, which a set's own composition may cover.
+    business_strike_id: int | None = None
+    #: A plated or layered metal's base, by id: what a composition reads it as.
+    base_metals: dict[int, int] = field(default_factory=dict)
+    #: A seal shade's color, by id: what the issue facts read it as.
+    base_seals: dict[int, int] = field(default_factory=dict)
+    note_type_labels: dict[int, str] = field(default_factory=dict)
+    note_type_codes: dict[int, str] = field(default_factory=dict)
+    #: The attributes the rules name, by code.
+    rule_attributes: dict[str, tuple[int, str]] = field(default_factory=dict)
+    #: Patterns naming each class, from its label and aliases.
+    class_names: list[tuple[int, re.Pattern[str]]] = field(default_factory=list)
+    frn_id: int | None = None
+    districts: dict[str, int] = field(default_factory=dict)
+    first_issue_year: int = 9999
+    #: The catalog rows whose number is a mule's (`9907-Em`).
+    mule_numbers: frozenset[int] = frozenset()
+
+
+@dataclass(frozen=True)
+class NoteFacts:
+    """What a note records that its defaults are decided from."""
+
+    denomination_id: int | None
+    face: Decimal | None
+    series_year: int | None
+    series_letter: str | None
+    serial_number: str | None
+    #: The rating, in the owner's words: the only text read as evidence of a
+    #: class. Descriptions are too often a lot's.
+    rating: str | None
+    #: Recorded values of NOTE_COLUMNS and `fed_district_id`.
+    current: dict[str, Any]
+    #: The back plate number: with the series, it says whether a note is a
+    #: mule (`app.mule_rules`).
+    back_plate: str | None = None
+    #: The Friedberg number attached, and whether it is confirmed: a mule's,
+    #: read off the note or its holder, makes the note one.
+    friedberg_id: int | None = None
+    friedberg_confirmed: bool = False
+
+
+@dataclass
+class Outcome:
+    """What the facts say about one item."""
+
+    writes: list[tuple[str, object, str]] = field(default_factory=list)
+    #: Derived columns to clear: the facts no longer support them.
+    retracts: list[str] = field(default_factory=list)
+    cases: list[tuple[str, str]] = field(default_factory=list)
+    count: str = ""
+
+
+def load_facts(db: Session, *, notes: bool = True, coins: bool = True) -> Facts:
+    """Everything the defaults are decided from, for notes, coins or both.
+
+    Read fresh on every call -- the facts are seed data an administrator can
+    edit, so nothing is kept between requests. `notes=False` skips the
+    issues, classes, attributes and districts; `coins=False` the
+    compositions and the designs' runs. `classify` asks only for the kinds
+    among its items, so saving one coin reads no note facts at all.
+    """
+    facts = Facts()
+    if coins:
+        facts.compositions = load_compositions(db)
+        facts.series_runs = series_runs(db)
+        facts.business_strike_id = db.execute(
+            select(StrikeType.id).where(StrikeType.code == "business")
+        ).scalar_one_or_none()
+        facts.base_metals = {
+            metal_id: base_id
+            for metal_id, base_id in db.execute(
+                select(Metal.id, Metal.base_metal_id)
+            ).tuples()
+            if base_id is not None
+        }
+    if not notes:
+        return facts
+    facts.issues = load_issues(db)
+    facts.base_seals = {
+        seal_id: base_id
+        for seal_id, base_id in db.execute(
+            select(SealColor.id, SealColor.base_seal_color_id)
+        ).tuples()
+        if base_id is not None
+    }
+    facts.first_issue_year = min((key[1] for key in facts.issues), default=9999)
+    for type_id, code, label in db.execute(
+        select(NoteType.id, NoteType.code, NoteType.label)
+    ).tuples():
+        facts.note_type_codes[type_id] = code
+        facts.note_type_labels[type_id] = label
+        if code == "frn":
+            facts.frn_id = type_id
+    names: dict[int, list[str]] = {
+        type_id: [label] for type_id, label in facts.note_type_labels.items()
+    }
+    for row_id, row_aliases in aliases.aliases_by_row(db, NoteType).items():
+        names.setdefault(row_id, []).extend(row_aliases)
+    facts.class_names = [
+        (type_id, aliases.word_pattern(name))
+        for type_id, words in names.items()
+        for name in words
+    ]
+    facts.rule_attributes = {
+        code: (row_id, label)
+        for row_id, code, label in db.execute(
+            select(ItemAttribute.id, ItemAttribute.code, ItemAttribute.label).where(
+                ItemAttribute.code.in_(
+                    [*(r.attribute for r in attribute_rules.RULES), MULE]
+                )
+            )
+        ).tuples()
+    }
+    facts.districts = dict(
+        db.execute(select(FedDistrict.letter, FedDistrict.id)).tuples().all()
+    )
+    facts.mule_numbers = frozenset(
+        db.scalars(select(FriedbergNumber.id).where(FriedbergNumber.is_mule))
+    )
+    return facts
+
+
+def note_outcome(
+    facts: Facts,
+    note: NoteFacts,
+    derived: set[str],
+    held: frozenset[str] = frozenset(),
+) -> Outcome:
+    """Note type, seal and signatures from the issue; the Bank from the serial."""
+    out = Outcome()
+    current = note.current
+    if note.denomination_id is None or note.series_year is None:
+        out.count = "note: no denomination or series year"
+        _retract(out, current, derived, NOTE_FILLED)
+        return out
+    letter = (note.series_letter or "").strip().upper() or None
+    series = f"{note.series_year}{letter or ''}"
+    known = facts.issues.get((note.denomination_id, note.series_year, letter), [])
+    if not known:
+        out.count = "note: series not in the facts"
+        # Only a face value the facts cover has a series they could be
+        # missing: a Goldback has no issue to look up at all.
+        covered = any(key[0] == note.denomination_id for key in facts.issues)
+        if covered and note.series_year >= facts.first_issue_year:
+            out.cases.append(("unknown issue", series))
+        _retract(out, current, derived, NOTE_FILLED)
+        return out
+
+    # A recorded shade is matched as its color: a light green seal is green.
+    seal = current.get("seal_color_id")
+    if seal is not None and "seal_color_id" not in derived:
+        current = {**current, "seal_color_id": facts.base_seals.get(seal, seal)}
+    matches, contradicted = _note_options(known, current, derived)
+    if contradicted:
+        out.count = "note: recorded value the facts rule out"
+        names = ", ".join(c.removesuffix("_id") for c in contradicted)
+        out.cases.append(("disagrees", f"{series}: {names}"))
+        _retract(out, current, derived, NOTE_FILLED)
+        return out
+
+    matches = _named_by_rating(facts, matches, note.rating)
+    options = {
+        column: {getattr(issue, column) for issue in matches} for column in NOTE_COLUMNS
+    }
+    writes, stale = decide(current, derived, options, held)
+    out.writes += [(column, value, NOTE_ISSUE) for column, value in writes.items()]
+    out.retracts += stale
+    note_type = writes.get(
+        "note_type_id",
+        None if "note_type_id" in stale else current.get("note_type_id"),
+    )
+    if note_type is None:
+        _retract(out, current, derived, ("fed_district_id",))
+        _class_left_open(out, facts, series, options["note_type_id"], held)
+        return out
+    out.count = "note: class known"
+
+    if note_type != facts.frn_id or note.face is None:
+        _retract(out, current, derived, ("fed_district_id",))
+        return out
+    bank, series_letter = district_letter(
+        note.serial_number, note.face, note.series_year
+    )
+    if not bank:
+        _retract(out, current, derived, ("fed_district_id",))
+        return out
+    _prefix_case(out, note.serial_number, series, series_letter, matches)
+    _bank_outcome(out, facts, note, bank, derived, held)
+    return out
+
+
+def _named_by_rating(
+    facts: Facts, matches: list[Issue], rating: str | None
+) -> list[Issue]:
+    """The issues left once the rating has had its say.
+
+    Several classes, and the rating names exactly one of them: that one's
+    issues. Otherwise `matches` as given.
+    """
+    classes = {issue.note_type_id for issue in matches}
+    if len(classes) <= 1 or not rating:
+        return matches
+    named = {
+        type_id
+        for type_id, pattern in facts.class_names
+        if type_id in classes and pattern.search(rating)
+    }
+    if len(named) != 1:
+        return matches
+    return [issue for issue in matches if issue.note_type_id in named]
+
+
+def _class_left_open(
+    out: Outcome,
+    facts: Facts,
+    series: str,
+    classes: set[int],
+    held: frozenset[str],
+) -> None:
+    """Count, and report where a person must decide, a note left with no class.
+
+    `classes` are the note types its issues allow.
+    """
+    if "note_type_id" in held:
+        # Empty by a person's choice: there is nothing for one to decide.
+        out.count = "note: class left empty"
+        return
+    out.count = "note: class undecided (seal would decide)"
+    labels = sorted(facts.note_type_labels[t] for t in classes)
+    out.cases.append(("ambiguous", f"{series}: {' / '.join(labels)}"))
+
+
+def _prefix_case(
+    out: Outcome,
+    serial_number: str | None,
+    series: str,
+    series_letter: str,
+    matches: list[Issue],
+) -> None:
+    """Report a serial whose series letter is not the one its issue starts with."""
+    prefixes = {issue.serial_prefix for issue in matches} - {None}
+    if series_letter and len(prefixes) == 1 and series_letter not in prefixes:
+        out.cases.append(
+            (
+                "serial prefix",
+                f"{serial_number} is not Series {series} "
+                f"(which starts {next(iter(prefixes))})",
+            )
+        )
+
+
+def _bank_outcome(
+    out: Outcome,
+    facts: Facts,
+    note: NoteFacts,
+    bank: str,
+    derived: set[str],
+    held: frozenset[str],
+) -> None:
+    """Add to `out` the Reserve Bank the serial's letter `bank` names.
+
+    A letter that is no Bank's is reported and a derived district taken
+    back; a recorded district the serial contradicts is reported, not changed.
+    """
+    current = note.current
+    district = facts.districts.get(bank) if bank in BANK_LETTERS else None
+    if district is None:
+        out.cases.append(("serial prefix", f"{note.serial_number}: no Bank {bank}"))
+        _retract(out, current, derived, ("fed_district_id",))
+        return
+    recorded = current.get("fed_district_id")
+    writes, _ = decide(
+        {"fed_district_id": recorded},
+        derived,
+        {"fed_district_id": {district}},
+        held,
+    )
+    out.writes += [(c, v, SERIAL_DISTRICT) for c, v in writes.items()]
+    if recorded not in (None, district) and "fed_district_id" not in derived:
+        out.cases.append(("disagrees", f"district, serial says {bank}"))
+
+
+def coin_outcome(
+    facts: Facts,
+    item: InventoryItem,
+    derived: set[str],
+    held: frozenset[str] = frozenset(),
+    retractable: set[str] | None = None,
+    *,
+    coin: bool = True,
+) -> Outcome:
+    """Composition, metal, fineness and weights from the coin's facts.
+
+    Its denomination or design series, country and year. A range of years
+    has a composition only when one covers all of it: a 1999-2008 quarter
+    set is clad throughout, a 1909-2022 cent lot is not. A coin with no year
+    has its design's, where the design was struck in one composition.
+
+    `coin` is whether the item is recorded as a coin. Anything else -- a
+    round, a medal, a set -- with no denomination of its own is read only
+    by a bullion design (`_composition`).
+
+    `derived` columns may be overwritten by a composition's facts;
+    `retractable` (every derived column unless given) are the ones cleared
+    when no composition applies. A weight guessed for a bar or round is the
+    first and not the second: it has no composition to lose.
+    """
+    out = Outcome()
+    current = {column: getattr(item, column) for column in COMPOSITION_COLUMNS}
+    retractable = derived if retractable is None else retractable
+    # A metal the facts filled is their own guess, not a person's word. A
+    # plated metal is read as its base: gold-plated silver is a silver coin.
+    recorded_metal = None if "metal_id" in derived else item.metal_id
+    if recorded_metal is not None:
+        recorded_metal = facts.base_metals.get(recorded_metal, recorded_metal)
+    compared = {**current, "metal_id": recorded_metal or current["metal_id"]}
+    found = _composition(facts, item, coin=coin, recorded_metal=recorded_metal)
+    if found is None:
+        _retract(out, current, retractable, COMPOSITION_COLUMNS)
+        return out
+    options: dict[str, set[object]] = {
+        column: {getattr(found, column if column != "composition_id" else "id")}
+        for column in COMPOSITION_COLUMNS
+    }
+    differs = [
+        column.removesuffix("_id")
+        for column, allowed in options.items()
+        if column not in derived
+        and compared[column] is not None
+        and None not in allowed
+        and compared[column] not in allowed
+        and not _agrees_to_four_places(column, compared[column], allowed)
+    ]
+    if differs:
+        out.cases.append(
+            ("disagrees", f"composition says otherwise: {', '.join(differs)}")
+        )
+    if "metal" in differs:
+        # A recorded metal the composition rules out says the piece is not
+        # the coin its denomination, series and year make it out to be -- a
+        # gold dollar filed under a silver design, a foreign coin under a
+        # US face value. Nothing is filled from a row that is not its own.
+        _retract(out, current, retractable, COMPOSITION_COLUMNS)
+        out.count = "coin: composition contradicted by its metal"
+        return out
+    writes, stale = decide(current, derived, options, held)
+    out.writes += [(column, value, COMPOSITION) for column, value in writes.items()]
+    out.retracts += stale
+    out.count = "coin: composition known"
+    return out
+
+
+def _composition(
+    facts: Facts,
+    item: InventoryItem,
+    *,
+    coin: bool,
+    recorded_metal: int | None = None,
+) -> Composition | None:
+    """The composition the item's recorded facts decide, or None.
+
+    A round or a medal often carries a coin's design as its series -- a
+    Walking Liberty round -- and is not that coin. So an item that is not a
+    coin and has no denomination is decided only by a design with no face
+    value of its own, which is a bullion design: the Silver Eagle.
+
+    A coin recorded in a set is read with the set's own rows (a Silver
+    Proof Set's dime is silver). A proof with no set recorded, where such
+    rows reach its years, could be clad or silver: `recorded_metal`, the
+    metal a person recorded on it, chooses, and with none it has none.
+    """
+    if item.country_id is None:
+        return None
+    set_unknown = (
+        item.set_form_id is None
+        and item.strike_type_id is not None
+        and item.strike_type_id != facts.business_strike_id
+    )
+    runs = facts.series_runs.get(item.series_id, ()) if item.series_id else ()
+    faces = {face for face, _, _ in runs if face is not None}
+    if item.denomination_id is None and not coin and (not runs or faces):
+        return None
+    if item.year_start is not None:
+        # A design struck at one face value says what a coin with none is.
+        return composition_of(
+            facts.compositions,
+            denomination_id=item.denomination_id
+            or (faces.pop() if len(faces) == 1 else None),
+            series_id=item.series_id,
+            country_id=item.country_id,
+            first=item.year_start,
+            last=item.year_end if item.year_end is not None else item.year_start,
+            set_form_id=item.set_form_id,
+            set_unknown=set_unknown,
+            metal_id=recorded_metal,
+        )
+    if item.series_id is None:
+        return None
+    return composition_of_series(
+        facts.compositions,
+        runs,
+        denomination_id=item.denomination_id,
+        series_id=item.series_id,
+        country_id=item.country_id,
+        set_form_id=item.set_form_id,
+        set_unknown=set_unknown,
+        metal_id=recorded_metal,
+    )
+
+
+#: Fine weight is stored to six places, as the column is.
+_SIX_PLACES = Decimal("0.000001")
+
+#: The places a weight is commonly published to, and the step at that place.
+_FOUR_PLACES = Decimal("0.0001")
+
+
+def _agrees_to_four_places(column: str, recorded: object, allowed: set[object]) -> bool:
+    """Whether a recorded weight is the composition's, written to four places.
+
+    A coin's weight is published to four places (a 40% silver dollar's
+    0.7906 oz), and a person copies it rounded or cut short (0.7905); either
+    is the composition's 0.790585. A weight written to more places than four
+    is taken as measured, and must match.
+    """
+    if not column.endswith("_ozt") or not isinstance(recorded, Decimal):
+        return False
+    if recorded != recorded.quantize(_FOUR_PLACES):
+        return False
+    return any(
+        isinstance(figure, Decimal) and abs(recorded - figure) < _FOUR_PLACES
+        for figure in allowed
+    )
+
+
+def fine_weight(gross: Decimal, fineness: Decimal) -> Decimal:
+    """The metal in a piece: its gross weight times its fineness."""
+    return (gross * fineness).quantize(_SIX_PLACES)
+
+
+def _weight_now(
+    item: InventoryItem, out: Outcome, written: dict[str, object], column: str
+) -> Decimal | None:
+    """A weight column's value as `out` leaves it: written, retracted or the item's.
+
+    `written` is `out.writes` by column.
+    """
+    if column in written:
+        value = written[column]
+        return value if isinstance(value, Decimal) else None
+    if column in out.retracts:
+        return None
+    current: Decimal | None = getattr(item, column)
+    return current
+
+
+def weight_outcome(item: InventoryItem, out: Outcome, recorded: dict[str, str]) -> None:
+    """Add to `out` the fine weight that gross weight and fineness decide.
+
+    Worked from the values as `out` leaves them, so a composition's own fine
+    weight stands. An empty fine weight is filled; one this rule filled is
+    kept in step with its two inputs and cleared when either is gone. A fine
+    weight a person typed, or emptied, is left alone.
+    """
+    written = {column: value for column, value, _ in out.writes}
+    if "fine_weight_ozt" in written:
+        return
+
+    rule = recorded.get("fine_weight_ozt")
+    if rule == HELD:
+        return
+    gross, fineness, current = (
+        _weight_now(item, out, written, "gross_weight_ozt"),
+        _weight_now(item, out, written, "fineness"),
+        _weight_now(item, out, written, "fine_weight_ozt"),
+    )
+    if gross is None or fineness is None:
+        if rule == WEIGHT and current is not None:
+            out.retracts.append("fine_weight_ozt")
+        return
+    target = fine_weight(gross, fineness)
+    if current is None or (rule == WEIGHT and current != target):
+        out.writes.append(("fine_weight_ozt", target, WEIGHT))
+
+
+def _note_facts(
+    item: InventoryItem, detail: CurrencyDetail, face: Decimal | None
+) -> NoteFacts:
+    """The recorded facts of a banknote that its classifiers are filled from."""
+    return NoteFacts(
+        denomination_id=item.denomination_id,
+        face=face,
+        series_year=detail.series_year,
+        series_letter=detail.series_letter,
+        serial_number=detail.serial_number,
+        rating=item.rating,
+        current={column: getattr(detail, column) for column in NOTE_FILLED},
+        back_plate=detail.back_plate_number,
+        friedberg_id=detail.friedberg_id,
+        friedberg_confirmed=detail.friedberg_status == "confirmed",
+    )
+
+
+def _links(
+    db: Session, facts: Facts, item_ids: Collection[int] | None
+) -> dict[tuple[int, int], Link]:
+    """The links of the attributes the rules name, removed ones included."""
+    ids = [row_id for row_id, _ in facts.rule_attributes.values()]
+    query = select(
+        ItemAttributeLink.inventory_item_id,
+        ItemAttributeLink.item_attribute_id,
+        ItemAttributeLink.removed_at,
+        ItemAttributeLink.derived_by,
+    ).where(ItemAttributeLink.item_attribute_id.in_(ids))
+    if item_ids is not None:
+        query = query.where(ItemAttributeLink.inventory_item_id.in_(list(item_ids)))
+    return {
+        (item_id, attribute_id): Link(removed_at is None, derived_by)
+        for item_id, attribute_id, removed_at, derived_by in db.execute(query).tuples()
+    }
+
+
+def attribute_outcome(
+    facts: Facts,
+    item_id: int,
+    note: NoteFacts,
+    note_type_id: int | None,
+    links: dict[tuple[int, int], Link],
+) -> tuple[list[LinkChange], list[tuple[str, str]], list[str]]:
+    """The links the rules add or take back, the cases, and the counts."""
+    changes: list[LinkChange] = []
+    cases: list[tuple[str, str]] = []
+    counts: list[str] = []
+    note_type = facts.note_type_codes.get(note_type_id) if note_type_id else None
+    series = f"{note.series_year}{(note.series_letter or '').strip().upper()}"
+    for rule in attribute_rules.RULES:
+        found = facts.rule_attributes.get(rule.attribute)
+        if found is None:
+            continue
+        attribute_id, label = found
+        verdict = attribute_rules.verdict(
+            rule,
+            note_type,
+            note.face,
+            note.series_year,
+            note.series_letter,
+            note.serial_number,
+        )
+        link = links.get((item_id, attribute_id))
+        add = _link_change(verdict, link)
+        if add is not None:
+            changes.append(LinkChange(item_id, attribute_id, add=add))
+            counts.append(
+                f"attribute: {rule.attribute} {'added' if add else 'taken back'}"
+            )
+            continue
+        case = _link_case(verdict, link, series, label)
+        if case is not None:
+            cases.append(case)
+    _mule_outcome(facts, item_id, note, note_type, links, (changes, cases, counts))
+    return changes, cases, counts
+
+
+def _mule_outcome(
+    facts: Facts,
+    item_id: int,
+    note: NoteFacts,
+    note_type: str | None,
+    links: dict[tuple[int, int], Link],
+    out: tuple[list[LinkChange], list[tuple[str, str]], list[str]],
+) -> None:
+    """The Mule attribute, as the series and back plate say (`app.mule_rules`).
+
+    A confirmed Friedberg number that is a mule's says so first: it was read
+    off the note or its holder. Added and taken back as the other rules'
+    links are; a back plate the rule says is no mule's, on a note marked
+    one, is said as such.
+    """
+    found = facts.rule_attributes.get(MULE)
+    if found is None:
+        return
+    changes, cases, counts = out
+    attribute_id, label = found
+    verdict = mule_verdict(
+        note_type, note.face, note.series_year, note.series_letter, note.back_plate
+    )
+    if note.friedberg_confirmed and note.friedberg_id in facts.mule_numbers:
+        verdict = attribute_rules.ALWAYS
+    link = links.get((item_id, attribute_id))
+    add = _link_change(verdict, link)
+    if add is not None:
+        changes.append(LinkChange(item_id, attribute_id, add=add))
+        counts.append(f"attribute: {MULE} {'added' if add else 'taken back'}")
+        return
+    series = f"{note.series_year}{(note.series_letter or '').strip().upper()}"
+    shown = f"{series} with back plate {(note.back_plate or '').strip()}"
+    case = _link_case(verdict, link, series, label)
+    if case is not None and case[0] == "disagrees":
+        case = ("disagrees", f"{shown} is never {label}")
+    if case is not None:
+        cases.append(case)
+
+
+def _link_change(verdict: str | None, link: Link | None) -> bool | None:
+    """Whether a rule adds its link (True), takes it back (False) or neither.
+
+    Added where the facts always carry the attribute and the note has no
+    link for it at all, a removed one included. Taken back where they do not
+    always carry it and the link in force is the rule's own.
+    """
+    if verdict == attribute_rules.ALWAYS:
+        return True if link is None else None
+    if link is None or not link.active:
+        return None
+    return False if link.derived_by == attribute_rules.RULE else None
+
+
+def _link_case(
+    verdict: str | None, link: Link | None, series: str, label: str
+) -> tuple[str, str] | None:
+    """The case for a person where a rule changes nothing, or None.
+
+    A series that may or may not carry the attribute, on a note without it,
+    needs evidence; one that never does, on a note with it, disagrees.
+    """
+    active = link is not None and link.active
+    if verdict == attribute_rules.EVIDENCE and not active:
+        return "needs evidence", f"{series}: {label}?"
+    if verdict == attribute_rules.NEVER and active:
+        return "disagrees", f"{series} is never {label}"
+    return None
+
+
+def _add_attributes(
+    report: Report,
+    facts: Facts,
+    item: InventoryItem,
+    note: NoteFacts,
+    outcome: Outcome,
+    links: dict[tuple[int, int], Link],
+) -> None:
+    """Add to `report` what the attribute rules say of a note.
+
+    Judged by the class `outcome` leaves it with: the one just written, none
+    if it was taken back, else the one recorded.
+    """
+    written = {column: value for column, value, _ in outcome.writes}
+    note_type_id = written.get(
+        "note_type_id",
+        None if "note_type_id" in outcome.retracts else note.current["note_type_id"],
+    )
+    changes, cases, counts = attribute_outcome(
+        facts,
+        item.id,
+        note,
+        note_type_id if isinstance(note_type_id, int) else None,
+        links,
+    )
+    report.links += changes
+    report.counts.update(counts)
+    report.review += [Case(item.item_code, r, d) for r, d in cases]
+
+
+def classify(db: Session, item_ids: Collection[int] | None = None) -> Report:
+    """Decide the defaults of every item, or of the given ones, writing nothing."""
+    rows = _items(db, item_ids)
+    kinds = {kind for _, kind, _, _ in rows}
+    has_notes = "currency" in kinds
+    facts = load_facts(db, notes=has_notes, coins=bool(kinds - {"currency"}))
+    sources = sources_by_item(db, item_ids)
+    links = _links(db, facts, item_ids) if has_notes else {}
+    report = Report()
+    for item, kind, face, detail in rows:
+        recorded = sources.get(item.id, {})
+        mine = {f for f, rule in recorded.items() if rule != HELD}
+        held = frozenset(f for f, rule in recorded.items() if rule == HELD)
+        if kind == "currency":
+            if detail is None:
+                report.counts["note: no currency detail"] += 1
+                continue
+            note = _note_facts(item, detail, face)
+            outcome = note_outcome(facts, note, mine, held)
+            on_note = True
+            _add_attributes(report, facts, item, note, outcome, links)
+        else:
+            guessed = {f for f, rule in recorded.items() if rule in WEIGHT_RULES}
+            outcome = coin_outcome(
+                facts, item, mine, held, mine - guessed, coin=kind == "coin"
+            )
+            weight_outcome(item, outcome, recorded)
+            on_note = False
+        if outcome.count:
+            report.counts[outcome.count] += 1
+        report.changes += [
+            Change(item.id, on_note, column, value, rule)
+            for column, value, rule in outcome.writes
+        ]
+        # A column one rule gives up and another fills in the same outcome
+        # keeps the new value: a retraction applied after it would clear it.
+        refilled = {column for column, _, _ in outcome.writes}
+        retracts = [c for c in dict.fromkeys(outcome.retracts) if c not in refilled]
+        report.changes += [
+            Change(item.id, on_note, column, None, RETRACT) for column in retracts
+        ]
+        report.review += [
+            Case(item.item_code, "retracted", column.removesuffix("_id"))
+            for column in retracts
+        ]
+        report.review += [
+            Case(item.item_code, reason, detail) for reason, detail in outcome.cases
+        ]
+    # A deleted item keeps its defaults current, but is no one's to review:
+    # it cannot be found in the console to be put right.
+    deleted = {item.item_code for item, _, _, _ in rows if item.deleted_at is not None}
+    report.review = [case for case in report.review if case.item_code not in deleted]
+    return report
+
+
+def apply(db: Session, report: Report, *, commit: bool = True) -> None:
+    """Write the report's changes and record each field as derived.
+
+    **Commits by default.** The `run` functions of the passes take a
+    keyword-only `commit` with no default, and the other passes' `apply`
+    never commits; this one commits unless told otherwise, because the CLI
+    entry point is the usual caller. `refresh_items` -- run inside a request
+    handler on every item create and edit -- passes `commit=False` so it
+    does not commit someone else's transaction, and any other in-request
+    caller must do the same.
+    """
+    by_item: dict[int, list[Change]] = {}
+    for change in report.changes:
+        by_item.setdefault(change.item_id, []).append(change)
+    for item_id, changes in by_item.items():
+        _apply_changes(db, item_id, changes)
+    for link in report.links:
+        _apply_link(db, link)
+    if commit:
+        db.commit()
+
+
+def _apply_changes(db: Session, item_id: int, changes: list[Change]) -> None:
+    """Write one item's changes and bring its field records in step with them.
+
+    An item that is gone is passed over.
+    """
+    item = db.get(InventoryItem, item_id)
+    if item is None:
+        return
+    for change in changes:
+        target = item.currency_detail if change.on_note else item
+        setattr(target, change.column, change.value)
+    forget(db, [item_id], [c.column for c in changes if c.rule == RETRACT])
+    for rule in {c.rule for c in changes} - {RETRACT}:
+        record_derived(db, item_id, [c.column for c in changes if c.rule == rule], rule)
+
+
+def _apply_link(db: Session, link: LinkChange) -> None:
+    """Add the attribute link a rule gives a note, or delete the one it takes back."""
+    if link.add:
+        db.add(
+            ItemAttributeLink(
+                inventory_item_id=link.item_id,
+                item_attribute_id=link.attribute_id,
+                source=ProvenanceSource.derived,
+                derived_by=attribute_rules.RULE,
+            )
+        )
+        return
+    row = db.get(ItemAttributeLink, (link.item_id, link.attribute_id))
+    if row is not None:
+        db.delete(row)
+
+
+def refresh_items(db: Session, item_ids: Collection[int]) -> None:
+    """Bring items' defaults up to date with their facts, without committing.
+
+    Called when an item is created or edited, so a note entered today has its
+    class now rather than at the next batch run, and a corrected series year
+    corrects the class that was derived from it.
+    """
+    if not item_ids:
+        return
+    db.flush()
+    apply(db, classify(db, item_ids), commit=False)
+    # The design series follows from the same facts, and a coin's composition
+    # from its series: an item whose series changed is decided again.
+    changed = refresh_series(db, item_ids)
+    if changed:
+        apply(db, classify(db, changed), commit=False)
+
+
+def suggest(db: Session, note: NoteFacts) -> dict[str, int]:
+    """The defaults a note with these facts would get, for the entry form.
+
+    `note.current` holds only what the person has chosen, so their choices
+    narrow the suggestion exactly as a recorded value does.
+    """
+    outcome = note_outcome(load_facts(db, coins=False), note, set())
+    return {
+        column: value for column, value, _ in outcome.writes if isinstance(value, int)
+    }
+
+
+def run(db: Session, *, commit: bool) -> Report:
+    """Classify, and write only when asked."""
+    report = classify(db)
+    if commit and (report.changes or report.links):
+        apply(db, report)
+        report.counts["written"] = len(report.changes) + len(report.links)
+    return report
+
+
+def _print(report: Report, *, commit: bool) -> None:
+    """The counts the owner reviews before anything is written."""
+    for key, n in sorted(report.counts.items()):
+        print(f"  {key:<45} {n:>6}")
+    headings = (
+        (False, "written", "would write"),
+        (True, "retracted", "would retract"),
+    )
+    for retracted, done, planned in headings:
+        columns = report.by_column(retracted=retracted)
+        if not columns:
+            continue
+        print(f"\n{done if commit else planned}, by field:")
+        for column, n in columns.most_common():
+            print(f"  {column.removesuffix('_id'):<30} {n:>6}")
+
+    reasons = Counter(case.reason for case in report.review)
+    for reason, total in reasons.most_common():
+        cases = [c for c in report.review if c.reason == reason]
+        print(f"\n{reason} ({total}):")
+        groups = Counter(c.detail for c in cases)
+        for detail, n in groups.most_common(12):
+            codes = [c.item_code for c in cases if c.detail == detail]
+            sample = ", ".join(codes[:4]) + (" ..." if len(codes) > 4 else "")
+            print(f"  {detail[:60]:<60} {n:>4}  {sample}")
+    if not commit:
+        print("\n(dry run -- nothing written; pass --commit)")
+
+
+def main(argv: list[str] | None = None, *, db: Session | None = None) -> int:
+    """Report or apply the defaults.
+
+    `db` is the session to work in; run as a module, the application's own
+    `SessionLocal` is opened. A caller that already has a session -- the
+    tests, which must never let this open the live database -- passes it.
+    """
+    parser = argparse.ArgumentParser(prog="classifier_defaults", description=__doc__)
+    parser.add_argument("--commit", action="store_true", help="write the defaults")
+    args = parser.parse_args(argv)
+    if db is None:
+        with SessionLocal() as own:
+            report = run(own, commit=args.commit)
+    else:
+        report = run(db, commit=args.commit)
+    _print(report, commit=args.commit)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

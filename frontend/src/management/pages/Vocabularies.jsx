@@ -1,0 +1,686 @@
+import { useContext, useEffect, useMemo, useRef, useState } from 'react'
+
+import { api } from '../api'
+import { ReferenceContext } from '../../shared/reference-context'
+import { findEntries } from '../../shared/reference-match'
+import HelpScope from '../HelpScope'
+import VocabularyAddForm from './VocabularyAddForm'
+import VocabularyDetailsForm from './VocabularyDetailsForm'
+
+/**
+ * The classifier vocabularies: their values' names, and other names for them.
+ *
+ * What a vocabulary records about a value beyond its label -- which items a
+ * series is offered for, a mint's mark -- is changed with Edit details...
+ *
+ * A value can be added, with whatever is the vocabulary's own -- a
+ * denomination's currency, face value and side -- except to a vocabulary the
+ * application acts on value by value (a status, a kind), where one it has
+ * never heard of would do nothing.
+ *
+ * A value can be renamed -- the label is what people read; the code, which
+ * saved searches and the data use, never changes -- and retired, which takes
+ * it out of the pickers while every record that uses it stays as it is. A
+ * value the application looks up by its code (a status, a strike, "single")
+ * can be renamed but not retired. A renamed value keeps its wording through
+ * later seed loads.
+ *
+ * Merge into... replaces a value with another for good: every item holding it
+ * moves to the value kept, its names become that value's aliases, and it is
+ * removed. The page shows what would move before it asks.
+ *
+ * The standard term stays the label -- UCAM, United States Note -- and what
+ * people actually write becomes an alias: Ultra Cameo, Legal Tender. Search and the
+ * pickers recognize an alias the moment it is added.
+ *
+ * Removing a shipped alias retires it, so the next seed load does not bring
+ * it back; it stays listed, struck through, and can be restored. One added
+ * here is simply deleted. Two values may share an alias ("Cartwheel" is any
+ * large silver dollar): search finds both, and a shared alias is marked.
+ */
+
+//: Opened first: the vocabulary whose aliases matter most for search.
+const FIRST_TABLE = 'series'
+
+/** How many values in the table carry each alias, by lower-cased alias. */
+function aliasCounts(values) {
+  const counts = new Map()
+  for (const value of values) {
+    for (const alias of value.aliases) {
+      const key = alias.toLowerCase()
+      counts.set(key, (counts.get(key) ?? 0) + 1)
+    }
+  }
+  return counts
+}
+
+/**
+ * The old names a merge cannot keep, each with the server's reason, as a
+ * sentence in `tense` ("will no longer" before, "no longer" after); ''
+ * when every name is kept.
+ */
+function namesLost(result, tense) {
+  const lost = result.names_not_kept ?? []
+  return lost.length ? ` These names ${tense} find it -- ${lost.join('; ')}.` : ''
+}
+
+/**
+ * What merging `value` into `target` would do, in a sentence, from the
+ * preview `result`: the items that move, those that already hold the target
+ * and so only lose this value, the names that become its aliases, and the
+ * names that cannot.
+ */
+function describe(result, value, target) {
+  const items = `${result.items} item${result.items === 1 ? '' : 's'}`
+  const dropped = result.dropped
+    ? ` (${result.dropped} already had ${target.label} and keep that instead)`
+    : ''
+  const names = result.aliases.length
+    ? ` ${result.aliases.join(', ')} will find ${target.label}.`
+    : ''
+  return (
+    `Moves ${items} to ${target.label}${dropped}, then removes ` +
+    `${value.label}.${names}${namesLost(result, 'will no longer')} ` +
+    'This cannot be undone.'
+  )
+}
+
+/**
+ * The panel that merges `value` into another of the table's `active`
+ * values.
+ *
+ * Choosing a target asks the server what the merge would move, writing
+ * nothing, and Merge is offered only once that answer is on screen; items
+ * for sale among them are named, and confirming acknowledges them.
+ * `onMerged` gets the result of the merge itself; a refusal is shown here
+ * and the panel stays open.
+ */
+function MergePanel({ table, value, active, onMerged, onCancel }) {
+  // Worked out here, for the one row being merged, rather than for every
+  // row of the table on every render.
+  const others = active.filter((v) => v.code !== value.code)
+  const [into, setInto] = useState('')
+  const [preview, setPreview] = useState(null)
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  // The choice a preview answers; a slower answer for an earlier one is dropped.
+  const latest = useRef('')
+  const target = others.find((o) => o.code === into)
+
+  async function choose(code) {
+    latest.current = code
+    setInto(code)
+    setPreview(null)
+    setError('')
+    if (!code) return
+    try {
+      const result = await api.mergeReferenceValue(table, value.code, code, true)
+      if (latest.current === code) setPreview(result)
+    } catch (err) {
+      if (latest.current === code) setError(err.message)
+    }
+  }
+
+  async function merge() {
+    setBusy(true)
+    try {
+      onMerged(
+        await api.mergeReferenceValue(table, value.code, into, false, {
+          // The preview above named them; confirming is the acknowledgement.
+          acknowledgeForSale: (preview?.for_sale_count ?? 0) > 0,
+        }),
+      )
+    } catch (err) {
+      setError(err.message)
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="merge-panel">
+      <label data-help="vocabulary_merge">
+        Merge into{/* */}
+        <select
+          value={into}
+          aria-label={`Merge ${value.label} into`}
+          onChange={(e) => choose(e.target.value)}
+        >
+          <option value="">--</option>
+          {others.map((other) => (
+            <option key={other.code} value={other.code}>
+              {other.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      {preview && target && <p>{describe(preview, value, target)}</p>}
+      {preview?.for_sale_count > 0 && (
+        <p className="for-sale" role="alert">
+          <strong>
+            {preview.for_sale_count} of them{' '}
+            {preview.for_sale_count === 1 ? 'is' : 'are'} for sale
+          </strong>
+          : {preview.for_sale.join(', ')}
+          {preview.for_sale_count > preview.for_sale.length && ', and others'}. Merging
+          changes what a buyer is looking at.
+        </p>
+      )}
+      {error && <p className="error">{error}</p>}
+      <div className="row">
+        <button type="button" disabled={!preview || busy} onClick={merge}>
+          {busy ? 'Merging...' : 'Merge'}
+        </button>
+        <button type="button" className="link" onClick={onCancel}>
+          Cancel
+        </button>
+        {/* Why Merge is held back, said beside it. */}
+        {!preview && !error && (
+          <span className="muted">
+            {into
+              ? 'Working out what would move...'
+              : 'Choose the value to merge into, to see what would move.'}
+          </span>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * One value's row: its label with the actions on it, its position when the
+ * table is `sequenced`, its code, and its aliases.
+ *
+ * `fields` are the vocabulary's own columns, and Edit details... is offered
+ * only when it has some. `active` are the values a merge may go into, and
+ * `shared(alias)` says whether another value has that alias too. Each
+ * action is saved as it is taken: `onChanged` gets the value as the server
+ * now holds it, `onMerged` the result of a merge. A refusal is shown in the
+ * row.
+ */
+function ValueRow({
+  table,
+  value,
+  fields,
+  active,
+  shared,
+  sequenced,
+  onChanged,
+  onMerged,
+}) {
+  const [detailing, setDetailing] = useState(false)
+  const [draft, setDraft] = useState('')
+  // The position being typed, as text; the value's own until it is edited.
+  const [order, setOrder] = useState(String(value.sort_order))
+  // The label being typed, or null when not renaming.
+  const [label, setLabel] = useState(null)
+  const [merging, setMerging] = useState(false)
+  const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  async function run(call) {
+    setSaving(true)
+    try {
+      onChanged(await call())
+      setError('')
+      return true
+    } catch (err) {
+      setError(err.message)
+      return false
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function add(alias) {
+    if (await run(() => api.addReferenceAlias(table, value.code, alias))) setDraft('')
+  }
+
+  // The label always travels: the endpoint renames and retires in one call.
+  const update = (changes) =>
+    run(() =>
+      api.renameReferenceValue(table, value.code, { label: value.label, ...changes }),
+    )
+
+  async function rename() {
+    if (await update({ label })) setLabel(null)
+  }
+
+  return (
+    <tr className={value.is_active ? undefined : 'muted'}>
+      <td>
+        {label === null ? (
+          <>
+            {value.label}
+            {value.is_active ? '' : ' (retired)'}
+            <div className="value-actions">
+              <button
+                type="button"
+                className="link"
+                aria-label={`Rename ${value.label}`}
+                data-help="vocabulary_rename"
+                onClick={() => setLabel(value.label)}
+              >
+                Rename
+              </button>
+              {value.is_active ? (
+                <button
+                  type="button"
+                  className="link"
+                  aria-label={`Retire ${value.label}`}
+                  data-help="vocabulary_retire"
+                  disabled={saving}
+                  title="Stop offering it; records that use it keep it"
+                  onClick={() => {
+                    // Kept live: pressing it says why, as the server would.
+                    if (value.retirable === false) {
+                      setError(
+                        `${value.label} cannot be retired: the application looks ` +
+                          'it up by its code. It can still be renamed.',
+                      )
+                      return
+                    }
+                    update({ is_active: false })
+                  }}
+                >
+                  Retire
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="link"
+                  aria-label={`Restore ${value.label}`}
+                  data-help="vocabulary_restore"
+                  disabled={saving}
+                  onClick={() => update({ is_active: true })}
+                >
+                  Restore
+                </button>
+              )}
+              <button
+                type="button"
+                className="link"
+                aria-label={`Merge ${value.label} into another value`}
+                data-help="vocabulary_merge"
+                disabled={saving}
+                title="Move its items to another value, then remove it"
+                onClick={() => {
+                  if (value.retirable === false) {
+                    setError(
+                      `${value.label} cannot be merged away: the application ` +
+                        'looks it up by its code.',
+                    )
+                    return
+                  }
+                  setMerging(true)
+                }}
+              >
+                Merge into...
+              </button>
+              {fields.length > 0 && (
+                <button
+                  type="button"
+                  className="link"
+                  aria-label={`Edit details of ${value.label}`}
+                  data-help="vocabulary_details"
+                  disabled={saving}
+                  onClick={() => setDetailing(true)}
+                >
+                  Edit details...
+                </button>
+              )}
+            </div>
+            {detailing && (
+              <VocabularyDetailsForm
+                table={table}
+                value={value}
+                fields={fields}
+                onSaved={(updated) => {
+                  setDetailing(false)
+                  onChanged(updated)
+                }}
+                onCancel={() => setDetailing(false)}
+              />
+            )}
+            {merging && (
+              <MergePanel
+                table={table}
+                value={value}
+                active={active}
+                onMerged={onMerged}
+                onCancel={() => setMerging(false)}
+              />
+            )}
+          </>
+        ) : (
+          <form
+            className="alias-add"
+            data-help="vocabulary_rename"
+            onSubmit={(e) => {
+              e.preventDefault()
+              if (label.trim()) rename()
+            }}
+          >
+            <input
+              value={label}
+              aria-label={`New name for ${value.label}`}
+              maxLength={255}
+              autoFocus
+              onChange={(e) => setLabel(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') setLabel(null)
+              }}
+            />
+            <button type="submit" disabled={saving || !label.trim()}>
+              Save
+            </button>
+            <button type="button" className="link" onClick={() => setLabel(null)}>
+              Cancel
+            </button>
+          </form>
+        )}
+      </td>
+      {sequenced && (
+        <td>
+          <form
+            className="alias-add"
+            data-help="vocabulary_position"
+            onSubmit={(e) => {
+              e.preventDefault()
+              update({ sort_order: Number(order) })
+            }}
+          >
+            {/* Text with a digits pattern, not type=number: a number input
+                steps on the mouse wheel, which reorders a vocabulary by
+                scrolling the page. */}
+            <input
+              className="order-input"
+              inputMode="numeric"
+              pattern="[0-9]+"
+              aria-label={`Position of ${value.label}`}
+              value={order}
+              onChange={(e) => setOrder(e.target.value)}
+            />
+            <button
+              type="submit"
+              disabled={
+                saving || !/^\d+$/.test(order) || Number(order) === value.sort_order
+              }
+            >
+              Move
+            </button>
+          </form>
+        </td>
+      )}
+      <td>
+        <code>{value.code}</code>
+      </td>
+      <td>
+        <div className="alias-list" data-help="vocabulary_alias">
+          {value.aliases.map((alias) => {
+            const isShared = shared(alias)
+            return (
+              <span
+                key={alias}
+                className={
+                  isShared ? 'chip alias-chip alias-shared' : 'chip alias-chip'
+                }
+                title={isShared ? 'Another value has this alias too' : undefined}
+              >
+                {alias}
+                {isShared && <span className="muted"> (shared)</span>}
+                <button
+                  type="button"
+                  aria-label={`Remove ${alias} from ${value.label}`}
+                  disabled={saving}
+                  onClick={() =>
+                    run(() => api.removeReferenceAlias(table, value.code, alias))
+                  }
+                >
+                  ×
+                </button>
+              </span>
+            )
+          })}
+          {value.retired_aliases.map((alias) => (
+            <button
+              key={alias}
+              type="button"
+              className="chip alias-retired"
+              title="Removed; click to restore"
+              aria-label={`Restore ${alias} to ${value.label}`}
+              disabled={saving}
+              onClick={() => add(alias)}
+            >
+              {alias}
+            </button>
+          ))}
+          <form
+            className="alias-add"
+            onSubmit={(e) => {
+              e.preventDefault()
+              if (draft.trim()) add(draft)
+            }}
+          >
+            <input
+              value={draft}
+              placeholder="another name"
+              aria-label={`New alias for ${value.label}`}
+              maxLength={64}
+              onChange={(e) => setDraft(e.target.value)}
+            />
+            <button type="submit" disabled={saving || !draft.trim()}>
+              Add
+            </button>
+          </form>
+        </div>
+        {error && <p className="error">{error}</p>}
+      </td>
+    </tr>
+  )
+}
+
+/**
+ * The Vocabularies page: a picker for the vocabulary, a box that narrows
+ * its values by label, code or alias, the form that adds a value where
+ * adding is allowed, and a row per value.
+ *
+ * A changed value is replaced in place; a merge or an addition reads the
+ * table again. Each also tells the shared reference data that its copy of
+ * the vocabulary is stale, so pickers elsewhere fetch it afresh.
+ */
+export default function Vocabularies() {
+  const context = useContext(ReferenceContext)
+  const [tables, setTables] = useState([])
+  const [table, setTable] = useState(FIRST_TABLE)
+  // Tagged with their table, so a switch shows "Loading..." rather than the
+  // last table's values until the new ones arrive.
+  const [loaded, setLoaded] = useState({ table: null, values: null, error: '' })
+  const [find, setFind] = useState('')
+  const [tablesError, setTablesError] = useState('')
+  const [reloads, setReloads] = useState(0)
+  const [notice, setNotice] = useState('')
+  const [adding, setAdding] = useState(false)
+  const values = loaded.table === table ? loaded.values : null
+  const sequenced = loaded.table === table && loaded.sequenced
+  const addable = loaded.table === table && loaded.addable
+  const error = tablesError || (loaded.table === table ? loaded.error : '')
+
+  useEffect(() => {
+    api
+      .listReferenceTables()
+      .then(setTables)
+      .catch((err) => setTablesError(err.message))
+  }, [])
+
+  useEffect(() => {
+    let current = true
+    api
+      .getReference(table, { includeInactive: true })
+      .then((body) => {
+        if (current)
+          setLoaded({
+            table,
+            values: body.values,
+            sequenced: Boolean(body.sequenced),
+            fields: body.fields ?? [],
+            addable: body.addable !== false,
+            error: '',
+          })
+      })
+      .catch((err) => {
+        if (current) setLoaded({ table, values: null, error: err.message })
+      })
+    return () => {
+      current = false
+    }
+  }, [table, reloads])
+
+  const counts = useMemo(() => aliasCounts(values ?? []), [values])
+
+  function changed(updated) {
+    setLoaded((l) => {
+      const next = l.values.map((v) => (v.code === updated.code ? updated : v))
+      // A moved value goes where it now sorts, the way the server orders a
+      // sequenced table: by position, then code.
+      if (l.sequenced) {
+        next.sort((a, b) => a.sort_order - b.sort_order || a.code.localeCompare(b.code))
+      }
+      return { ...l, values: next }
+    })
+    // Pickers elsewhere hold this vocabulary; their copy is now stale.
+    context?.invalidate(table)
+  }
+
+  function merged(result) {
+    setNotice(
+      `Merged ${result.code} into ${result.into}: ${result.items} ` +
+        `item${result.items === 1 ? '' : 's'} moved.${namesLost(result, 'no longer')}`,
+    )
+    setReloads((n) => n + 1)
+    context?.invalidate(table)
+  }
+
+  function added(value) {
+    setAdding(false)
+    setNotice(`Added ${value.label} (${value.code}).`)
+    // Fetched again rather than slotted in: the server knows where it sorts.
+    setReloads((n) => n + 1)
+    context?.invalidate(table)
+  }
+
+  const shown = useMemo(
+    () => (values ? findEntries(values, find).map(({ entry }) => entry) : []),
+    [values, find],
+  )
+  const active = useMemo(() => (values ?? []).filter((v) => v.is_active), [values])
+
+  return (
+    <HelpScope>
+      <section>
+        <h1>Vocabularies</h1>
+        <p className="muted">
+          Add a value, rename one, retire one that should no longer be offered, and give
+          values other names. Renaming changes only the label: the code, which records
+          and saved searches hold, stays as it is. Search and the pickers both recognize
+          an alias, and a shared alias finds every value that has it. Retiring leaves
+          every record that uses the value as it is.
+        </p>
+        {error && <p className="error">{error}</p>}
+        {notice && <p className="notice">{notice}</p>}
+        <div className="filter-grid">
+          <label data-help="vocabulary_table">
+            Vocabulary{/* */}
+            <select
+              value={table}
+              onChange={(e) => {
+                setTable(e.target.value)
+                setNotice('')
+                setAdding(false)
+              }}
+            >
+              {/* By name: the server lists them in the order they depend on
+                  one another, which no one reading the list can predict. */}
+              {(tables.length ? [...tables].sort() : [table]).map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label data-help="vocabulary_find">
+            Find{/* */}
+            <input
+              type="search"
+              value={find}
+              placeholder="label, code or alias"
+              onChange={(e) => setFind(e.target.value)}
+            />
+          </label>
+        </div>
+        {values !== null && adding && (
+          <VocabularyAddForm
+            table={table}
+            fields={loaded.fields}
+            sequenced={sequenced}
+            onAdded={added}
+            onCancel={() => setAdding(false)}
+          />
+        )}
+        {values !== null && !adding && addable && (
+          <p>
+            <button
+              type="button"
+              data-help="vocabulary_add"
+              onClick={() => setAdding(true)}
+            >
+              Add a value...
+            </button>
+          </p>
+        )}
+        {values !== null && !adding && !addable && (
+          <p className="muted">
+            Nothing can be added to {table}: the application acts on each of its values
+            by code. A value can still be renamed.
+          </p>
+        )}
+        {values === null ? (
+          !error && <p className="muted">Loading...</p>
+        ) : (
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Label</th>
+                {sequenced && <th>Position</th>}
+                <th>Code</th>
+                <th>Aliases</th>
+              </tr>
+            </thead>
+            <tbody>
+              {shown.map((value) => (
+                <ValueRow
+                  // The position is part of the key so the Position field starts
+                  // again from the stored value whenever that changes -- a move,
+                  // a reload -- rather than keeping what was last typed.
+                  key={`${value.code}:${value.sort_order}`}
+                  table={table}
+                  value={value}
+                  fields={loaded.fields ?? []}
+                  active={active}
+                  shared={(alias) => (counts.get(alias.toLowerCase()) ?? 0) > 1}
+                  sequenced={sequenced}
+                  onChanged={changed}
+                  onMerged={merged}
+                />
+              ))}
+            </tbody>
+          </table>
+        )}
+        {values !== null && find && shown.length === 0 && (
+          <p className="muted">
+            Nothing in {table} matches {find}.
+          </p>
+        )}
+      </section>
+    </HelpScope>
+  )
+}

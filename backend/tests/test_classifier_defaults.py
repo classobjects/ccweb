@@ -1,0 +1,1649 @@
+"""Classifier defaults from known facts (docs/specs/classifier-defaults-design.md).
+
+The issue facts are built by each test rather than taken from the seed file,
+so the rules are tested on their own and not on the state of the data.
+"""
+
+from __future__ import annotations
+
+import json
+from datetime import UTC, datetime
+from decimal import Decimal
+from pathlib import Path
+
+import pytest
+from app.classifier_defaults import classify, district_letter, run
+from app.composition import Run, _original
+from app.field_sources import derived_fields, record_derived
+from app.models import (
+    Composition,
+    Currency,
+    CurrencyDetail,
+    Denomination,
+    DenominationKind,
+    FedDistrict,
+    InventoryItem,
+    Metal,
+    NoteIssue,
+    NoteType,
+    ReferenceAlias,
+    ReferenceMixin,
+    SealColor,
+    Series,
+    SetForm,
+    SignatureCombination,
+    StrikeType,
+)
+from app.seeding import SeedError, seed_all
+from fastapi.testclient import TestClient
+from sqlalchemy import delete, select
+from sqlalchemy.orm import Session
+
+from tests.builders import (
+    ItemFactory,
+    add_note_issue,
+    build_purchase_order,
+    code_id,
+    patch_current,
+    review_cases,
+)
+
+
+@pytest.fixture(autouse=True)
+def _no_seeded_issues(db: Session) -> None:
+    """Start from no issue facts; each test adds the ones it is about.
+
+    Inside the test's transaction, so the seeded rows return afterwards.
+    """
+    db.execute(delete(NoteIssue))
+    db.flush()
+
+
+def _code(db: Session, model: type[ReferenceMixin], row_id: int | None) -> str | None:
+    """The code of the vocabulary row with this id; None for no id."""
+    if row_id is None:
+        return None
+    return db.get_one(model, row_id).code
+
+
+def _note(
+    db: Session,
+    make_item: ItemFactory,
+    denomination: str,
+    year: int,
+    *,
+    letter: str | None = None,
+    serial: str | None = None,
+    **detail: object,
+) -> InventoryItem:
+    """A banknote with these recorded facts, its title saying nothing more."""
+    item = make_item(
+        kind="currency",
+        title="Plain note",
+        denomination_id=code_id(db, Denomination, denomination),
+        year_start=year,
+    )
+    db.add(
+        CurrencyDetail(
+            inventory_item_id=item.id,
+            series_year=year,
+            series_letter=letter,
+            serial_number=serial,
+            **detail,
+        )
+    )
+    db.commit()
+    return item
+
+
+def _detail(db: Session, item: InventoryItem) -> CurrencyDetail:
+    """The note's currency detail as the database now holds it."""
+    db.refresh(item)
+    detail = item.currency_detail
+    assert detail is not None
+    db.refresh(detail)
+    return detail
+
+
+# -- notes: class, seal, signatures ------------------------------------------
+
+
+def test_a_single_issue_fills_class_seal_and_signatures(
+    db: Session, make_item: ItemFactory
+) -> None:
+    add_note_issue(
+        db,
+        "usd_note_1",
+        1957,
+        "silver_certificate",
+        "blue",
+        signatures="priest_anderson",
+    )
+    note = _note(db, make_item, "usd_note_1", 1957)
+
+    run(db, commit=True)
+
+    detail = _detail(db, note)
+    assert _code(db, NoteType, detail.note_type_id) == "silver_certificate"
+    assert _code(db, SealColor, detail.seal_color_id) == "blue"
+    assert _code(db, SignatureCombination, detail.signature_combination_id) == (
+        "priest_anderson"
+    )
+    assert derived_fields(db, note.id) == {
+        "note_type_id": "note_issue",
+        "seal_color_id": "note_issue",
+        "signature_combination_id": "note_issue",
+    }
+
+
+def test_a_dry_run_writes_nothing_and_a_rerun_changes_nothing(
+    db: Session, make_item: ItemFactory
+) -> None:
+    add_note_issue(db, "usd_note_1", 1957, "silver_certificate", "blue")
+    note = _note(db, make_item, "usd_note_1", 1957)
+
+    report = run(db, commit=False)
+    assert report.changes
+    assert _detail(db, note).note_type_id is None
+
+    run(db, commit=True)
+    assert [c for c in classify(db).changes if c.item_id == note.id] == []
+
+
+def test_the_letter_is_part_of_the_series(db: Session, make_item: ItemFactory) -> None:
+    add_note_issue(db, "usd_note_1", 1957, "silver_certificate", "blue", letter="B")
+    plain = _note(db, make_item, "usd_note_1", 1957)
+
+    run(db, commit=True)
+
+    assert _detail(db, plain).note_type_id is None
+    assert ("unknown issue", "1957") in review_cases(db, plain)
+
+
+def test_a_face_value_the_facts_do_not_cover_has_no_unknown_issue(
+    db: Session, make_item: ItemFactory
+) -> None:
+    """A Goldback's series is no US issue the facts could be missing."""
+    add_note_issue(db, "usd_note_1", 1957, "silver_certificate", "blue")
+    currency = Currency(code="gb_test", label="Goldback")
+    db.add(currency)
+    db.flush()
+    quarter = Denomination(
+        code="gb_test_0_25",
+        label="¼ Goldback",
+        currency_id=currency.id,
+        face_value=Decimal("0.25"),
+        kind=DenominationKind.note,
+    )
+    db.add(quarter)
+    db.commit()
+    goldback = _note(db, make_item, "gb_test_0_25", 2026)
+    dollar = _note(db, make_item, "usd_note_1", 2026)
+
+    assert review_cases(db, goldback) == []
+    assert ("unknown issue", "2026") in review_cases(db, dollar)
+
+
+def test_two_classes_in_one_series_are_left_for_a_person(
+    db: Session, make_item: ItemFactory
+) -> None:
+    add_note_issue(db, "usd_note_1", 1928, "us_note", "red")
+    add_note_issue(db, "usd_note_1", 1928, "silver_certificate", "blue")
+    unknown = _note(db, make_item, "usd_note_1", 1928)
+
+    run(db, commit=True)
+
+    assert _detail(db, unknown).note_type_id is None
+    reason, detail = review_cases(db, unknown)[0]
+    assert reason == "ambiguous"
+    assert "Silver Certificate" in detail and "United States Note" in detail
+
+
+def test_a_deleted_note_is_not_left_for_a_person(
+    db: Session, make_item: ItemFactory
+) -> None:
+    """It cannot be found in the console, so it is no one's to put right."""
+    add_note_issue(db, "usd_note_1", 1928, "us_note", "red")
+    add_note_issue(db, "usd_note_1", 1928, "silver_certificate", "blue")
+    kept = _note(db, make_item, "usd_note_1", 1928)
+    gone = _note(db, make_item, "usd_note_1", 1928)
+    gone.deleted_at = datetime.now(UTC)
+    db.commit()
+
+    assert review_cases(db, kept)
+    assert review_cases(db, gone) == []
+
+
+def test_a_recorded_seal_decides_the_class_and_is_kept(
+    db: Session, make_item: ItemFactory
+) -> None:
+    add_note_issue(db, "usd_note_1", 1928, "us_note", "red")
+    add_note_issue(db, "usd_note_1", 1928, "silver_certificate", "blue")
+    red = _note(
+        db, make_item, "usd_note_1", 1928, seal_color_id=code_id(db, SealColor, "red")
+    )
+
+    run(db, commit=True)
+
+    detail = _detail(db, red)
+    assert _code(db, NoteType, detail.note_type_id) == "us_note"
+    assert _code(db, SealColor, detail.seal_color_id) == "red"
+    # The seal was the data's, so it is not recorded as derived.
+    assert set(derived_fields(db, red.id)) == {"note_type_id"}
+
+
+def test_a_seal_shade_is_matched_as_its_color_and_kept(
+    db: Session, make_item: ItemFactory
+) -> None:
+    """A light green seal is a green one: the class follows, the shade stays."""
+    add_note_issue(db, "usd_note_10", 1934, "frn", "green", letter="C")
+    add_note_issue(db, "usd_note_10", 1934, "silver_certificate", "blue", letter="C")
+    light = SealColor(
+        code="light_green",
+        label="Light Green Seal",
+        base_seal_color_id=code_id(db, SealColor, "green"),
+    )
+    db.add(light)
+    db.flush()
+    note = _note(db, make_item, "usd_note_10", 1934, letter="C", seal_color_id=light.id)
+
+    assert not [c for c in review_cases(db, note) if c[0] == "disagrees"]
+    run(db, commit=True)
+
+    detail = _detail(db, note)
+    assert detail.seal_color_id == light.id
+    assert _code(db, NoteType, detail.note_type_id) == "frn"
+
+
+def test_a_persons_value_is_never_replaced_and_a_contradiction_is_reported(
+    db: Session, make_item: ItemFactory
+) -> None:
+    add_note_issue(db, "usd_note_1", 1957, "silver_certificate", "blue")
+    wrong = _note(
+        db, make_item, "usd_note_1", 1957, note_type_id=code_id(db, NoteType, "frn")
+    )
+
+    run(db, commit=True)
+
+    detail = _detail(db, wrong)
+    assert _code(db, NoteType, detail.note_type_id) == "frn"
+    assert detail.seal_color_id is None
+    assert ("disagrees", "1957: note_type") in review_cases(db, wrong)
+
+
+def test_a_derived_value_is_refreshed_when_the_facts_change(
+    db: Session, make_item: ItemFactory
+) -> None:
+    add_note_issue(db, "usd_note_1", 1957, "silver_certificate", "blue")
+    note = _note(
+        db, make_item, "usd_note_1", 1957, note_type_id=code_id(db, NoteType, "us_note")
+    )
+    record_derived(db, note.id, ["note_type_id"], "note_issue")
+    db.commit()
+
+    run(db, commit=True)
+
+    assert _code(db, NoteType, _detail(db, note).note_type_id) == "silver_certificate"
+
+
+# -- notes: the Federal Reserve Bank from the serial -------------------------
+
+
+@pytest.mark.parametrize(
+    ("serial", "face", "year", "expected"),
+    [
+        ("B12345678A", "1", 1969, ("B", "")),
+        ("L12345678*", "1", 2009, ("L", "")),
+        ("EB12345678A", "20", 2004, ("B", "E")),
+        ("B12345678A", "20", 2004, ("", "")),  # a 2004 $20 has two letters
+        ("*12345678A", "1", 1969, ("", "")),  # a star hides the Bank
+        ("not a serial", "1", 1969, ("", "")),
+    ],
+)
+def test_the_serial_names_the_bank(
+    serial: str, face: str, year: int, expected: tuple[str, str]
+) -> None:
+    assert district_letter(serial, Decimal(face), year) == expected
+
+
+def test_a_federal_reserve_note_gets_its_district(
+    db: Session, make_item: ItemFactory
+) -> None:
+    add_note_issue(db, "usd_note_1", 1969, "frn", "green")
+    add_note_issue(db, "usd_note_1", 1957, "silver_certificate", "blue")
+    frn = _note(db, make_item, "usd_note_1", 1969, serial="B12345678A")
+    certificate = _note(db, make_item, "usd_note_1", 1957, serial="B12345678A")
+
+    run(db, commit=True)
+
+    new_york = db.execute(
+        select(FedDistrict.id).where(FedDistrict.letter == "B")
+    ).scalar_one()
+    assert _detail(db, frn).fed_district_id == new_york
+    assert derived_fields(db, frn.id)["fed_district_id"] == "serial_district"
+    # A Silver Certificate's prefix letter says nothing about a district.
+    assert _detail(db, certificate).fed_district_id is None
+
+
+def test_a_serial_from_another_series_is_reported(
+    db: Session, make_item: ItemFactory
+) -> None:
+    add_note_issue(db, "usd_note_20", 2004, "frn", "green", prefix="E")
+    right = _note(db, make_item, "usd_note_20", 2004, serial="EB12345678A")
+    wrong = _note(db, make_item, "usd_note_20", 2004, serial="CB12345678A")
+
+    assert not [c for c in review_cases(db, right) if c[0] == "serial prefix"]
+    assert any(reason == "serial prefix" for reason, _ in review_cases(db, wrong))
+
+
+# -- coins: composition ------------------------------------------------------
+
+
+def _dime(
+    db: Session, make_item: ItemFactory, year: int, **extra: object
+) -> InventoryItem:
+    """A dime of this year, its title saying nothing of metal or weight."""
+    return make_item(
+        title="Plain dime",
+        denomination_id=code_id(db, Denomination, "usd_coin_0_10"),
+        year_start=year,
+        **extra,
+    )
+
+
+def test_a_coin_gets_its_composition(db: Session, make_item: ItemFactory) -> None:
+    dime = _dime(db, make_item, 1964)
+
+    run(db, commit=True)
+
+    db.refresh(dime)
+    composition = db.get(Composition, dime.composition_id)
+    assert composition is not None
+    assert composition.fineness == Decimal("0.9000")
+    assert dime.fineness == Decimal("0.9000")
+    assert derived_fields(db, dime.id)["fineness"] == "composition"
+
+
+def test_a_stated_value_is_kept(db: Session, make_item: ItemFactory) -> None:
+    dime = _dime(db, make_item, 1964, fineness=Decimal("0.5000"))
+
+    run(db, commit=True)
+
+    db.refresh(dime)
+    assert dime.fineness == Decimal("0.5000")
+    assert "fineness" not in derived_fields(db, dime.id)
+    assert dime.composition_id is not None
+
+
+# -- the API -----------------------------------------------------------------
+
+
+def test_editing_a_derived_field_makes_it_the_persons(
+    client: TestClient,
+    admin_headers: dict[str, str],
+    db: Session,
+    make_item: ItemFactory,
+) -> None:
+    add_note_issue(db, "usd_note_1", 1957, "silver_certificate", "blue")
+    note = _note(db, make_item, "usd_note_1", 1957)
+    run(db, commit=True)
+
+    body = client.get(f"/api/inventory/{note.id}", headers=admin_headers).json()
+    assert body["note_type"] == "silver_certificate"
+    assert body["derived"]["note_type_id"] == "note_issue"
+
+    response = patch_current(
+        client,
+        f"/api/inventory/{note.id}",
+        json={"note_type": "us_note", "serial_number": "A00000001A"},
+        headers=admin_headers,
+    )
+    assert response.status_code == 200, response.text
+
+    body = client.get(f"/api/inventory/{note.id}", headers=admin_headers).json()
+    assert body["note_type"] == "us_note"
+    assert body["serial_number"] == "A00000001A"
+    # The person's class stands. The facts know no such note, so the seal
+    # derived from the class they replaced is withdrawn, not left behind.
+    assert body["seal_color"] is None
+    assert body["derived"] == {}
+    # And the pass leaves it alone from now on.
+    run(db, commit=True)
+    assert _code(db, NoteType, _detail(db, note).note_type_id) == "us_note"
+
+
+def test_a_note_field_on_a_coin_is_refused_by_name(
+    client: TestClient,
+    admin_headers: dict[str, str],
+    db: Session,
+    make_item: ItemFactory,
+) -> None:
+    coin = _dime(db, make_item, 1964)
+
+    response = patch_current(
+        client,
+        f"/api/inventory/{coin.id}",
+        json={"seal_color": "blue"},
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 422
+    assert "seal_color" in response.text
+
+
+def test_a_bulk_edit_makes_the_fields_the_persons(
+    client: TestClient,
+    admin_headers: dict[str, str],
+    db: Session,
+    make_item: ItemFactory,
+) -> None:
+    dime = _dime(db, make_item, 1964)
+    run(db, commit=True)
+    assert "metal_id" in derived_fields(db, dime.id)
+
+    response = client.post(
+        "/api/inventory/bulk",
+        json={"ids": [dime.id], "changes": {"metal": "silver"}},
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 200, response.text
+    assert "metal_id" not in derived_fields(db, dime.id)
+    assert "fineness" in derived_fields(db, dime.id)
+
+
+def test_a_new_items_suggestions_are_recorded_as_derived(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    add_note_issue(db, "usd_note_1", 1957, "silver_certificate", "blue")
+    order = build_purchase_order(
+        db, vendor_name="Suggestion seller", order_number="SUG-1"
+    )
+
+    response = client.post(
+        "/api/inventory",
+        json={
+            "purchase_order_id": order.id,
+            "item_kind": "currency",
+            "source_title": "1957 $1",
+            "denomination": "usd_note_1",
+            "series_year": 1957,
+            "note_type": "silver_certificate",
+            "seal_color": "blue",
+            "suggested": ["note_type", "seal_color", "signature_combination"],
+        },
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 201, response.text
+    body = response.json()
+    # Only suggestions that were actually filled are recorded.
+    assert body["derived"] == {
+        "note_type_id": "suggestion",
+        "seal_color_id": "suggestion",
+    }
+
+
+def test_an_unknown_suggested_field_is_refused(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    order = build_purchase_order(
+        db, vendor_name="Suggestion seller 2", order_number="SUG-2"
+    )
+
+    response = client.post(
+        "/api/inventory",
+        json={
+            "purchase_order_id": order.id,
+            "item_kind": "coin",
+            "source_title": "x",
+            "suggested": ["grade"],
+        },
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 422
+    assert "grade" in response.text
+
+
+# -- seeding -----------------------------------------------------------------
+
+
+def _seed_file(tmp_path: Path, payload: dict) -> Path:
+    """A directory holding the payload as `facts.json`, for the loader to read."""
+    (tmp_path / "facts.json").write_text(json.dumps(payload), encoding="utf-8")
+    return tmp_path
+
+
+def _issue_row(**overrides: object) -> dict:
+    """A seed row for a note issue: the 1957 $1 Silver Certificate, overridden."""
+    row = {
+        "denomination": "usd_note_1",
+        "series_year": 1957,
+        "series_letter": None,
+        "note_type": "silver_certificate",
+        "seal_color": "blue",
+        "signatures": "priest_anderson",
+    }
+    row.update(overrides)
+    return row
+
+
+def test_note_issues_follow_the_file(db: Session, tmp_path: Path) -> None:
+    first = _seed_file(
+        tmp_path, {"note_issue": [_issue_row(), _issue_row(series_letter="A")]}
+    )
+    seed_all(db, first, only=["note_issue"])
+    assert db.query(NoteIssue).count() == 2
+
+    second = _seed_file(
+        tmp_path, {"note_issue": [_issue_row(signatures="smith_dillon")]}
+    )
+    stats = seed_all(db, second, only=["note_issue"])
+
+    assert stats["note_issue"] == {"removed": 1, "updated": 1}
+    (only,) = db.execute(select(NoteIssue)).scalars()
+    assert (
+        _code(db, SignatureCombination, only.signature_combination_id) == "smith_dillon"
+    )
+
+
+def test_an_issue_naming_an_unknown_code_is_refused(
+    db: Session, tmp_path: Path
+) -> None:
+    bad = _seed_file(tmp_path, {"note_issue": [_issue_row(note_type="legal_tender")]})
+
+    with pytest.raises(SeedError, match="legal_tender"):
+        seed_all(db, bad, only=["note_issue"])
+    db.rollback()
+
+
+def test_aliases_name_rows_of_any_classifier(db: Session, tmp_path: Path) -> None:
+    folder = _seed_file(
+        tmp_path,
+        {
+            "reference_alias": [
+                {"table": "note_type", "code": "us_note", "alias": "Greenback"}
+            ]
+        },
+    )
+
+    seed_all(db, folder, only=["reference_alias"])
+    again = seed_all(db, folder, only=["reference_alias"])
+
+    assert again["reference_alias"] == {"unchanged": 1}
+    alias = db.execute(
+        select(ReferenceAlias).where(ReferenceAlias.alias == "Greenback")
+    ).scalar_one()
+    assert (alias.table_name, alias.row_id) == (
+        "note_type",
+        code_id(db, NoteType, "us_note"),
+    )
+
+
+def test_the_seeded_note_types_use_bep_names(db: Session) -> None:
+    codes = set(db.execute(select(NoteType.code)).scalars())
+    assert {"national_bank_note", "demand_note", "treasury_note", "us_note"} <= codes
+    assert not {"legal_tender", "national_currency"} & codes
+    legal = db.execute(
+        select(ReferenceAlias.row_id).where(
+            ReferenceAlias.table_name == "note_type",
+            ReferenceAlias.alias == "Legal Tender Note",
+        )
+    ).scalar_one()
+    assert legal == code_id(db, NoteType, "us_note")
+
+
+# -- the rating as evidence, and defaults applied as items change ------------
+
+
+def test_the_rating_can_name_the_class(db: Session, make_item: ItemFactory) -> None:
+    add_note_issue(db, "usd_note_1", 1928, "us_note", "red")
+    add_note_issue(db, "usd_note_1", 1928, "silver_certificate", "blue")
+    note = _note(db, make_item, "usd_note_1", 1928)
+    note.rating = "VF Legal Tender funnyback"
+    db.commit()
+
+    run(db, commit=True)
+
+    detail = _detail(db, note)
+    assert _code(db, NoteType, detail.note_type_id) == "us_note"
+    assert _code(db, SealColor, detail.seal_color_id) == "red"
+
+
+def test_editing_the_series_refreshes_what_followed_from_it(
+    client: TestClient,
+    admin_headers: dict[str, str],
+    db: Session,
+    make_item: ItemFactory,
+) -> None:
+    add_note_issue(db, "usd_note_1", 1957, "silver_certificate", "blue")
+    add_note_issue(db, "usd_note_1", 1969, "frn", "green")
+    note = _note(db, make_item, "usd_note_1", 1957, serial="B12345678A")
+    run(db, commit=True)
+
+    response = patch_current(
+        client,
+        f"/api/inventory/{note.id}",
+        json={"series_year": 1969},
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 200, response.text
+    body = client.get(f"/api/inventory/{note.id}", headers=admin_headers).json()
+    assert (body["note_type"], body["seal_color"], body["fed_district"]) == (
+        "frn",
+        "green",
+        "B",
+    )
+
+
+def test_a_new_coin_gets_its_composition_at_once(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    order = build_purchase_order(db, vendor_name="Coin seller", order_number="COIN-1")
+
+    response = client.post(
+        "/api/inventory",
+        json={
+            "purchase_order_id": order.id,
+            "item_kind": "coin",
+            "source_title": "1964 dime",
+            "denomination": "usd_coin_0_10",
+            "country": "US",
+            "year_start": 1964,
+        },
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["metal"] == "silver"
+    assert body["derived"]["metal_id"] == "composition"
+
+
+def test_the_form_is_told_what_a_note_would_be(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    add_note_issue(db, "usd_note_1", 1928, "us_note", "red", signatures="woods_woodin")
+    add_note_issue(
+        db, "usd_note_1", 1928, "silver_certificate", "blue", signatures="tate_mellon"
+    )
+    add_note_issue(db, "usd_note_1", 1969, "frn", "green")
+
+    def ask(**params: object) -> dict:
+        """What the note-defaults route answers for these facts."""
+        response = client.get(
+            "/api/defaults/note", params=params, headers=admin_headers
+        )
+        assert response.status_code == 200, response.text
+        return response.json()
+
+    open_series = ask(denomination="usd_note_1", series_year=1928)
+    assert open_series["note_type"] is None
+    chosen_seal = ask(denomination="usd_note_1", series_year=1928, seal_color="red")
+    assert chosen_seal == {
+        "note_type": "us_note",
+        "seal_color": None,  # the person's own choice is not suggested back
+        "signature_combination": "woods_woodin",
+        "fed_district": None,
+        "series": "funnyback",  # every 1928 $1 is one
+        "warning": None,  # Series 1928 is on record for $1
+    }
+    frn = ask(denomination="usd_note_1", series_year=1969, serial_number="L12345678A")
+    assert (frn["note_type"], frn["fed_district"]) == ("frn", "L")
+
+
+def test_the_form_is_told_a_coins_metal(
+    client: TestClient, admin_headers: dict[str, str]
+) -> None:
+    response = client.get(
+        "/api/defaults/coin",
+        params={"denomination": "usd_coin_0_10", "country": "US", "year": 1964},
+        headers=admin_headers,
+    )
+
+    assert response.json() == {"metal": "silver", "series": "roosevelt_dime"}
+
+
+def test_suggestions_are_staff_only(client: TestClient) -> None:
+    response = client.get("/api/defaults/coin", params={"year": 1964})
+
+    assert response.status_code == 401
+
+
+def test_search_finds_a_note_by_its_class_nickname(
+    db: Session, make_item: ItemFactory
+) -> None:
+    # The note's own text says nothing about its class; the recorded class,
+    # reached through the "Legal Tender" alias, is what matches.
+    from app.inventory_search import CURRENCY_VIEW, search
+
+    note = _note(
+        db, make_item, "usd_note_1", 1928, note_type_id=code_id(db, NoteType, "us_note")
+    )
+
+    rows, _ = search(db, CURRENCY_VIEW, params={}, query="legal tender")
+
+    assert note.item_code in {row["item_code"] for row in rows}
+
+
+# -- retracting what the facts no longer support ------------------------------
+
+
+def test_a_series_the_facts_do_not_cover_takes_back_the_defaults(
+    client: TestClient,
+    admin_headers: dict[str, str],
+    db: Session,
+    make_item: ItemFactory,
+) -> None:
+    add_note_issue(
+        db,
+        "usd_note_1",
+        1957,
+        "silver_certificate",
+        "blue",
+        signatures="priest_anderson",
+    )
+    note = _note(db, make_item, "usd_note_1", 1957)
+    run(db, commit=True)
+
+    # Corrected to a large-size year: nothing in the facts says what it is.
+    response = patch_current(
+        client,
+        f"/api/inventory/{note.id}",
+        json={"series_year": 1917},
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 200, response.text
+    body = client.get(f"/api/inventory/{note.id}", headers=admin_headers).json()
+    assert (body["note_type"], body["seal_color"], body["signature_combination"]) == (
+        None,
+        None,
+        None,
+    )
+    assert body["derived"] == {}
+
+
+def test_a_derived_district_goes_when_the_class_changes(
+    client: TestClient,
+    admin_headers: dict[str, str],
+    db: Session,
+    make_item: ItemFactory,
+) -> None:
+    add_note_issue(db, "usd_note_1", 1969, "frn", "green")
+    add_note_issue(db, "usd_note_1", 1957, "silver_certificate", "blue")
+    note = _note(db, make_item, "usd_note_1", 1969, serial="B12345678A")
+    run(db, commit=True)
+    assert _detail(db, note).fed_district_id is not None
+
+    patch_current(
+        client,
+        f"/api/inventory/{note.id}",
+        json={"series_year": 1957},
+        headers=admin_headers,
+    )
+
+    detail = _detail(db, note)
+    assert _code(db, NoteType, detail.note_type_id) == "silver_certificate"
+    assert detail.fed_district_id is None
+    assert "fed_district_id" not in derived_fields(db, note.id)
+
+
+def test_a_signature_the_issue_does_not_have_is_taken_back(
+    db: Session, make_item: ItemFactory
+) -> None:
+    # Series 1929 bank notes were signed by bank officers: the facts say no pair.
+    add_note_issue(db, "usd_note_10", 1929, "frbn", "brown")
+    note = _note(
+        db,
+        make_item,
+        "usd_note_10",
+        1929,
+        signature_combination_id=code_id(db, SignatureCombination, "julian_morgenthau"),
+    )
+    record_derived(db, note.id, ["signature_combination_id"], "note_issue")
+    db.commit()
+
+    run(db, commit=True)
+
+    assert _detail(db, note).signature_combination_id is None
+
+
+def test_a_year_range_takes_back_a_derived_composition(
+    client: TestClient,
+    admin_headers: dict[str, str],
+    db: Session,
+    make_item: ItemFactory,
+) -> None:
+    dime = _dime(db, make_item, 1964)
+    run(db, commit=True)
+    assert dime.composition_id is not None
+
+    patch_current(
+        client,
+        f"/api/inventory/{dime.id}",
+        json={"year_start": 1960, "year_end": 1970},
+        headers=admin_headers,
+    )
+
+    db.refresh(dime)
+    assert dime.composition_id is None
+    assert dime.fineness is None
+    assert derived_fields(db, dime.id) == {}
+
+
+def test_a_range_one_composition_covers_keeps_it(
+    db: Session, make_item: ItemFactory
+) -> None:
+    # A 1999-2008 quarter set is clad throughout.
+    quarters = make_item(
+        title="State quarter set",
+        denomination_id=code_id(db, Denomination, "usd_coin_0_25"),
+        year_start=1999,
+        year_end=2008,
+    )
+
+    run(db, commit=True)
+
+    db.refresh(quarters)
+    composition = db.get(Composition, quarters.composition_id)
+    assert composition is not None
+    assert composition.year_from <= 1999
+    assert composition.year_to is None or composition.year_to >= 2008
+
+
+def test_a_stated_value_the_composition_contradicts_is_reported(
+    db: Session, make_item: ItemFactory
+) -> None:
+    dime = _dime(db, make_item, 1964, fineness=Decimal("0.5000"))
+
+    assert ("disagrees", "composition says otherwise: fineness") in review_cases(
+        db, dime
+    )
+
+
+@pytest.mark.parametrize(
+    ("gross", "fine"),
+    [
+        (Decimal("0.0804"), Decimal("0.0723")),  # rounded
+        (Decimal("0.0803"), Decimal("0.0723")),  # cut short
+    ],
+)
+def test_a_weight_written_to_four_places_agrees(
+    db: Session, make_item: ItemFactory, gross: Decimal, fine: Decimal
+) -> None:
+    """A dime's 0.080376 oz copied to four places is still its weight."""
+    dime = _dime(db, make_item, 1964, gross_weight_ozt=gross, fine_weight_ozt=fine)
+
+    assert not [case for case in review_cases(db, dime) if case[0] == "disagrees"]
+
+
+@pytest.mark.parametrize(
+    ("gross", "differs"),
+    [
+        (Decimal("0.0802"), "gross_weight_ozt"),  # a step past four places
+        (Decimal("0.080370"), "gross_weight_ozt"),  # six places, measured
+    ],
+)
+def test_a_weight_off_by_more_than_rounding_disagrees(
+    db: Session, make_item: ItemFactory, gross: Decimal, differs: str
+) -> None:
+    dime = _dime(db, make_item, 1964, gross_weight_ozt=gross)
+
+    assert ("disagrees", f"composition says otherwise: {differs}") in review_cases(
+        db, dime
+    )
+
+
+def test_a_plated_metal_is_read_as_its_base(
+    db: Session, make_item: ItemFactory
+) -> None:
+    """Gold-plated silver is a silver coin: its weights, and no disagreement."""
+    plated = Metal(
+        code="gold_plated_silver",
+        label="Gold Plated Silver",
+        base_metal_id=code_id(db, Metal, "silver"),
+    )
+    db.add(plated)
+    db.flush()
+    dime = _dime(db, make_item, 1964, metal_id=plated.id)
+
+    assert not [c for c in review_cases(db, dime) if c[0] == "disagrees"]
+    run(db, commit=True)
+
+    db.refresh(dime)
+    assert dime.metal_id == plated.id
+    assert dime.fine_weight_ozt == Decimal("0.072340")
+
+
+def test_a_recorded_metal_the_composition_rules_out_fills_nothing(
+    db: Session, make_item: ItemFactory
+) -> None:
+    """A gold piece filed as a silver dollar is not given a silver dollar's weight."""
+    piece = make_item(
+        title="Plain coin",
+        denomination_id=code_id(db, Denomination, "usd_coin_1_00"),
+        year_start=1880,
+        metal_id=code_id(db, Metal, "gold"),
+    )
+
+    run(db, commit=True)
+
+    db.refresh(piece)
+    assert piece.composition_id is None
+    assert piece.fine_weight_ozt is None
+    assert _code(db, Metal, piece.metal_id) == "gold"
+    assert ("disagrees", "composition says otherwise: metal") in review_cases(db, piece)
+
+
+# -- a person emptying a field -----------------------------------------------
+
+
+def test_an_emptied_field_stays_empty(
+    client: TestClient,
+    admin_headers: dict[str, str],
+    db: Session,
+    make_item: ItemFactory,
+) -> None:
+    add_note_issue(db, "usd_note_1", 1957, "silver_certificate", "blue")
+    note = _note(db, make_item, "usd_note_1", 1957)
+    run(db, commit=True)
+
+    response = patch_current(
+        client,
+        f"/api/inventory/{note.id}",
+        json={"note_type": None},
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 200, response.text
+    body = client.get(f"/api/inventory/{note.id}", headers=admin_headers).json()
+    assert body["note_type"] is None
+    assert "note_type_id" not in body["derived"]
+    # Not refilled by a batch run either...
+    run(db, commit=True)
+    assert _detail(db, note).note_type_id is None
+
+    # ...until the person sets it again, which makes it theirs.
+    patch_current(
+        client,
+        f"/api/inventory/{note.id}",
+        json={"note_type": "frn"},
+        headers=admin_headers,
+    )
+    assert _code(db, NoteType, _detail(db, note).note_type_id) == "frn"
+    assert "note_type_id" not in derived_fields(db, note.id)
+
+
+def test_emptying_a_field_no_pass_fills_holds_nothing(
+    client: TestClient,
+    admin_headers: dict[str, str],
+    db: Session,
+    make_item: ItemFactory,
+) -> None:
+    from app.field_sources import sources_by_item
+
+    dime = _dime(db, make_item, 1964)
+
+    response = patch_current(
+        client, f"/api/inventory/{dime.id}", json={"grade": None}, headers=admin_headers
+    )
+
+    assert response.status_code == 200, response.text
+    assert "grade_id" not in sources_by_item(db, [dime.id]).get(dime.id, {})
+
+
+def test_holding_fields_on_many_items_is_one_upsert_that_tolerates_repeats(
+    db: Session, make_item: ItemFactory
+) -> None:
+    """`hold` writes every item's rows at once; a repeated id or name is harmless.
+
+    PostgreSQL refuses an `ON CONFLICT DO UPDATE` that touches one row twice
+    in a statement, so the repeats below would fail without de-duplication.
+    """
+    from app.field_sources import HELD, hold, sources_by_item
+
+    first, second = make_item(), make_item()
+    record_derived(db, first.id, ["fineness"], "composition")
+
+    hold(db, [first.id, second.id, first.id], ["fineness", "metal_id", "fineness"])
+
+    held = {"fineness": HELD, "metal_id": HELD}
+    assert sources_by_item(db, [first.id, second.id]) == {
+        first.id: held,
+        second.id: held,
+    }
+
+
+def test_an_emptied_series_stays_empty(
+    client: TestClient,
+    admin_headers: dict[str, str],
+    db: Session,
+    make_item: ItemFactory,
+) -> None:
+    """Emptying the design series is the person's choice, not a gap to refill."""
+    from app.field_sources import sources_by_item
+    from app.series_classify import run as classify_series
+    from app.series_match import run as match_series
+
+    dime = _dime(db, make_item, 1942)
+    dime.description = "Mercury dime"
+    db.commit()
+    classify_series(db, commit=True)
+    db.refresh(dime)
+    assert dime.series_id is not None
+
+    response = patch_current(
+        client,
+        f"/api/inventory/{dime.id}",
+        json={"series": None},
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 200, response.text
+    body = client.get(f"/api/inventory/{dime.id}", headers=admin_headers).json()
+    assert body["series"] is None
+    assert sources_by_item(db, [dime.id])[dime.id]["series_id"] == "held"
+    # Not refilled by another save, nor by either batch pass.
+    patch_current(
+        client,
+        f"/api/inventory/{dime.id}",
+        json={"variety": "FB"},
+        headers=admin_headers,
+    )
+    classify_series(db, commit=True)
+    match_series(db, commit=True)
+    db.refresh(dime)
+    assert dime.series_id is None
+
+
+def test_an_emptied_class_is_not_reported_as_undecided(
+    client: TestClient,
+    admin_headers: dict[str, str],
+    db: Session,
+    make_item: ItemFactory,
+) -> None:
+    """One class is possible and a person left it empty: nothing to decide."""
+    add_note_issue(db, "usd_note_1", 1957, "silver_certificate", "blue")
+    note = _note(db, make_item, "usd_note_1", 1957)
+    run(db, commit=True)
+    response = patch_current(
+        client,
+        f"/api/inventory/{note.id}",
+        json={"note_type": None},
+        headers=admin_headers,
+    )
+    assert response.status_code == 200, response.text
+
+    assert [reason for reason, _ in review_cases(db, note)] == []
+    assert _detail(db, note).note_type_id is None
+
+
+# -- coins: years struck in two compositions ----------------------------------
+
+
+@pytest.mark.parametrize(
+    ("denomination", "year"),
+    [
+        # Copper-nickel clad for circulation, 40% silver for collectors.
+        ("usd_coin_1_00", 1971),
+        ("usd_coin_1_00", 1976),
+        # The ordinary alloy for most of the year, the wartime one after.
+        ("usd_coin_0_05", 1942),
+        # Bronze, then copper-plated zinc from partway through the year.
+        ("usd_coin_0_01", 1982),
+    ],
+)
+def test_a_year_struck_in_two_compositions_gets_no_default(
+    db: Session, make_item: ItemFactory, denomination: str, year: int
+) -> None:
+    coin = make_item(
+        title="Plain coin",
+        denomination_id=code_id(db, Denomination, denomination),
+        year_start=year,
+    )
+
+    run(db, commit=True)
+
+    db.refresh(coin)
+    assert coin.composition_id is None
+    assert coin.fine_weight_ozt is None
+    assert "composition" not in derived_fields(db, coin.id).values()
+
+
+@pytest.mark.parametrize(("year", "metal"), [(1981, "copper"), (1983, "zinc")])
+def test_the_cents_either_side_of_1982_keep_their_alloy(
+    db: Session, make_item: ItemFactory, year: int, metal: str
+) -> None:
+    cent = make_item(
+        title="Plain coin",
+        denomination_id=code_id(db, Denomination, "usd_coin_0_01"),
+        year_start=year,
+    )
+
+    run(db, commit=True)
+
+    db.refresh(cent)
+    assert _code(db, Metal, cent.metal_id) == metal
+
+
+def test_a_wartime_five_cent_piece_of_a_single_alloy_year_is_silver(
+    db: Session, make_item: ItemFactory
+) -> None:
+    coin = make_item(
+        title="Plain coin",
+        denomination_id=code_id(db, Denomination, "usd_coin_0_05"),
+        year_start=1943,
+    )
+
+    run(db, commit=True)
+
+    db.refresh(coin)
+    assert coin.fineness == Decimal("0.3500")
+    assert derived_fields(db, coin.id)["fineness"] == "composition"
+
+
+# -- coins: a fine weight both taken back and worked out ----------------------
+
+
+def test_a_fine_weight_the_composition_loses_is_worked_out_in_the_same_save(
+    client: TestClient,
+    admin_headers: dict[str, str],
+    db: Session,
+    make_item: ItemFactory,
+) -> None:
+    """Gross weight and fineness are the person's, so a fine weight follows.
+
+    The composition's fine weight goes with the composition; what replaces
+    it is the two typed values multiplied, in that save and not the next.
+    """
+    dime = _dime(
+        db,
+        make_item,
+        1964,
+        gross_weight_ozt=Decimal("0.080376"),
+        fineness=Decimal("0.9000"),
+    )
+    run(db, commit=True)
+    db.refresh(dime)
+    assert derived_fields(db, dime.id)["fine_weight_ozt"] == "composition"
+
+    response = patch_current(
+        client,
+        f"/api/inventory/{dime.id}",
+        json={"year_start": 1960, "year_end": 1970},
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 200, response.text
+    db.refresh(dime)
+    assert dime.composition_id is None
+    assert dime.fine_weight_ozt == Decimal("0.072338")
+    assert derived_fields(db, dime.id) == {"fine_weight_ozt": "weight"}
+
+
+# -- coins: composition from the design series --------------------------------
+
+
+def _of_series(
+    db: Session,
+    make_item: ItemFactory,
+    series: str,
+    *,
+    denomination: str | None = None,
+    **facts: object,
+) -> InventoryItem:
+    """A coin of this design, its title saying nothing of metal or weight.
+
+    With no year unless one is given: the factory's own default is 1881.
+    """
+    facts.setdefault("year_start", None)
+    return make_item(
+        title="Plain coin",
+        series_id=code_id(db, Series, series),
+        denomination_id=(
+            code_id(db, Denomination, denomination) if denomination else None
+        ),
+        **facts,
+    )
+
+
+@pytest.mark.parametrize(
+    ("runs", "kept"),
+    [
+        # The restrike after a gap is not the design's own issue.
+        (
+            [(None, 1878, 1904), (None, 1921, 1921), (None, 2021, None)],
+            [(None, 1878, 1904), (None, 1921, 1921)],
+        ),
+        # The gap is measured from the latest end so far, not the last run read.
+        (
+            [(None, 1878, 1904), (None, 1880, 1885), (None, 1940, 1950)],
+            [(None, 1878, 1904), (None, 1880, 1885), (None, 1940, 1950)],
+        ),
+        # Runs still struck at several face values are all the design's own.
+        ([(5, 1986, None), (10, 1986, None)], [(5, 1986, None), (10, 1986, None)]),
+    ],
+)
+def test_a_designs_own_runs_end_at_the_first_restrike_gap(
+    runs: list[Run], kept: list[Run]
+) -> None:
+    assert list(_original(runs)) == kept
+
+
+def test_a_coin_with_no_year_gets_the_composition_of_its_design(
+    db: Session, make_item: ItemFactory
+) -> None:
+    """The Morgan was struck in one alloy until 1921; its restrike is not read."""
+    morgan = _of_series(db, make_item, "morgan_dollar", denomination="usd_coin_1_00")
+
+    run(db, commit=True)
+
+    db.refresh(morgan)
+    assert morgan.fineness == Decimal("0.9000")
+    assert morgan.fine_weight_ozt == Decimal("0.773440")
+    assert derived_fields(db, morgan.id)["fine_weight_ozt"] == "composition"
+
+
+def test_a_design_names_its_own_denomination_for_a_coin_with_neither(
+    db: Session, make_item: ItemFactory
+) -> None:
+    half = _of_series(db, make_item, "franklin_half")
+
+    run(db, commit=True)
+
+    db.refresh(half)
+    assert half.fine_weight_ozt == Decimal("0.361690")
+
+
+@pytest.mark.parametrize(
+    "series",
+    [
+        # Silver through 1964, clad after.
+        "roosevelt_dime",
+        "washington_quarter",
+        # 90% silver, 40% silver, then clad.
+        "kennedy_half",
+        # Copper-nickel through 1863, bronze after.
+        "indian_head_cent",
+        # Clad for circulation and 40% silver for collectors: no row at all.
+        "eisenhower_dollar",
+    ],
+)
+def test_a_design_struck_in_several_compositions_decides_nothing_without_a_year(
+    db: Session, make_item: ItemFactory, series: str
+) -> None:
+    coin = _of_series(db, make_item, series)
+
+    run(db, commit=True)
+
+    db.refresh(coin)
+    assert coin.composition_id is None
+    assert coin.fine_weight_ozt is None
+
+
+def test_a_year_decides_where_the_design_alone_does_not(
+    db: Session, make_item: ItemFactory
+) -> None:
+    dime = _of_series(db, make_item, "roosevelt_dime", year_start=1970)
+
+    run(db, commit=True)
+
+    db.refresh(dime)
+    assert _code(db, Metal, dime.metal_id) == "clad"
+
+
+def test_a_row_for_the_design_outranks_the_denominations(
+    db: Session, make_item: ItemFactory
+) -> None:
+    """Three dollar coins the denomination and year cannot tell apart."""
+    restrike = _of_series(
+        db, make_item, "morgan_dollar", denomination="usd_coin_1_00", year_start=2021
+    )
+    brass = _of_series(
+        db, make_item, "sacagawea_dollar", denomination="usd_coin_1_00", year_start=2021
+    )
+    gold = _of_series(
+        db, make_item, "gold_dollar", denomination="usd_coin_1_00", year_start=1880
+    )
+    # No design recorded: the common one of that denomination and year.
+    plain = make_item(
+        title="Plain coin",
+        denomination_id=code_id(db, Denomination, "usd_coin_1_00"),
+        year_start=1880,
+    )
+
+    run(db, commit=True)
+
+    for coin in (restrike, brass, gold, plain):
+        db.refresh(coin)
+    assert restrike.fineness == Decimal("0.9990")
+    assert _code(db, Metal, brass.metal_id) == "manganese_brass"
+    assert _code(db, Metal, gold.metal_id) == "gold"
+    assert gold.fine_weight_ozt == Decimal("0.048375")
+    assert plain.fine_weight_ozt == Decimal("0.773440")
+
+
+@pytest.mark.parametrize(
+    ("series", "year"),
+    [
+        ("liberty_head_gold_dollar", 1853),
+        ("small_head_princess_gold_dollar", 1855),
+        ("large_head_princess_gold_dollar", 1856),
+    ],
+)
+def test_each_gold_dollar_type_is_gold(
+    db: Session, make_item: ItemFactory, series: str, year: int
+) -> None:
+    """A gold dollar of a known type, in years the Seated dollar shares, is gold."""
+    coin = _of_series(
+        db, make_item, series, denomination="usd_coin_1_00", year_start=year
+    )
+
+    run(db, commit=True)
+
+    db.refresh(coin)
+    assert _code(db, Metal, coin.metal_id) == "gold"
+    assert coin.gross_weight_ozt == Decimal("0.053750")
+    assert coin.fine_weight_ozt == Decimal("0.048375")
+
+
+def test_a_bullion_design_with_one_size_needs_no_denomination(
+    db: Session, make_item: ItemFactory
+) -> None:
+    dated = _of_series(db, make_item, "american_silver_eagle", year_start=2019)
+    undated = _of_series(db, make_item, "american_silver_eagle")
+
+    run(db, commit=True)
+
+    for eagle in (dated, undated):
+        db.refresh(eagle)
+        assert eagle.fine_weight_ozt == Decimal("1.000000")
+        assert eagle.fineness == Decimal("0.9990")
+
+
+@pytest.mark.parametrize("year", [None, 1945, 2016])
+def test_a_round_with_a_coins_design_is_not_that_coin(
+    db: Session, make_item: ItemFactory, year: int | None
+) -> None:
+    """A Walking Liberty round is not a half dollar, whatever year it bears."""
+    piece = _of_series(
+        db, make_item, "walking_liberty_half", kind="bullion", year_start=year
+    )
+
+    run(db, commit=True)
+
+    db.refresh(piece)
+    assert piece.composition_id is None
+    assert piece.fine_weight_ozt is None
+
+
+def test_a_bullion_design_decides_an_item_recorded_as_bullion(
+    db: Session, make_item: ItemFactory
+) -> None:
+    eagle = _of_series(db, make_item, "american_silver_eagle", kind="bullion")
+
+    run(db, commit=True)
+
+    db.refresh(eagle)
+    assert eagle.fine_weight_ozt == Decimal("1.000000")
+
+
+def test_a_bullion_design_of_several_sizes_goes_by_its_face_value(
+    db: Session, make_item: ItemFactory
+) -> None:
+    tenth = _of_series(
+        db, make_item, "american_gold_eagle", denomination="usd_coin_5_00"
+    )
+    ounce = _of_series(
+        db,
+        make_item,
+        "american_gold_eagle",
+        denomination="usd_coin_50_00",
+        year_start=1999,
+    )
+    unsized = _of_series(db, make_item, "american_gold_eagle", year_start=1999)
+
+    run(db, commit=True)
+
+    for eagle in (tenth, ounce, unsized):
+        db.refresh(eagle)
+    assert tenth.fine_weight_ozt == Decimal("0.100000")
+    assert ounce.fine_weight_ozt == Decimal("1.000000")
+    # Any of four sizes: none is chosen.
+    assert unsized.composition_id is None
+
+
+def test_a_series_assigned_on_save_gives_the_composition_in_the_same_save(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    """The series is decided after the defaults, which are then decided again.
+
+    A five-cent piece of 1860 has no composition of its denomination's: the
+    half dime's row is its design's. Only the Seated Liberty half dime was
+    struck at that face value that year, so the save assigns the design.
+    """
+    order = build_purchase_order(db, vendor_name="Coin seller", order_number="COIN-2")
+
+    response = client.post(
+        "/api/inventory",
+        json={
+            "purchase_order_id": order.id,
+            "item_kind": "coin",
+            "source_title": "Plain coin",
+            "denomination": "usd_coin_0_05",
+            "country": "US",
+            "year_start": 1860,
+        },
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["series"] == "seated_liberty_half_dime"
+    assert body["metal"] == "silver"
+    assert body["fine_weight_ozt"] == "0.036000"
+    assert body["derived"]["fine_weight_ozt"] == "composition"
+
+
+# -- coins: a set's own composition --------------------------------------------
+
+
+def _set_coin(
+    db: Session,
+    make_item: ItemFactory,
+    denomination: str,
+    year: int,
+    *,
+    set_form: str | None,
+    strike: str | None = "proof",
+    year_end: int | None = None,
+) -> InventoryItem:
+    """A coin of this face value and year, in the set named, struck as named."""
+    return make_item(
+        title="Plain coin",
+        denomination_id=code_id(db, Denomination, denomination),
+        year_start=year,
+        year_end=year_end,
+        set_form_id=code_id(db, SetForm, set_form) if set_form else None,
+        strike_type_id=code_id(db, StrikeType, strike) if strike else None,
+    )
+
+
+@pytest.mark.parametrize(
+    ("denomination", "year", "fineness", "fine_weight"),
+    [
+        ("usd_coin_0_10", 1992, "0.9000", "0.072340"),
+        ("usd_coin_0_10", 2018, "0.9000", "0.072340"),
+        ("usd_coin_0_10", 2019, "0.9990", "0.081485"),
+        ("usd_coin_0_25", 2005, "0.9000", "0.180840"),
+        ("usd_coin_0_25", 2024, "0.9990", "0.203728"),
+        ("usd_coin_0_50", 1999, "0.9000", "0.361690"),
+        ("usd_coin_0_50", 2020, "0.9990", "0.407424"),
+        # The Bicentennial silver set: 40% silver clad.
+        ("usd_coin_0_25", 1976, "0.4000", "0.073900"),
+        ("usd_coin_0_50", 1976, "0.4000", "0.147900"),
+        ("usd_coin_1_00", 1976, "0.4000", "0.316200"),
+    ],
+)
+def test_a_silver_proof_sets_coin_is_silver(
+    db: Session,
+    make_item: ItemFactory,
+    denomination: str,
+    year: int,
+    fineness: str,
+    fine_weight: str,
+) -> None:
+    coin = _set_coin(db, make_item, denomination, year, set_form="silver_proof_set")
+
+    run(db, commit=True)
+
+    db.refresh(coin)
+    assert _code(db, Metal, coin.metal_id) == "silver"
+    assert coin.fineness == Decimal(fineness)
+    assert coin.fine_weight_ozt == Decimal(fine_weight)
+    assert derived_fields(db, coin.id)["fine_weight_ozt"] == "composition"
+
+
+def test_a_proof_sets_coin_is_clad(db: Session, make_item: ItemFactory) -> None:
+    """Only the Silver Proof Set's own coins are silver: the ordinary set's are clad."""
+    coin = _set_coin(db, make_item, "usd_coin_0_10", 1999, set_form="proof_set")
+
+    run(db, commit=True)
+
+    db.refresh(coin)
+    assert _code(db, Metal, coin.metal_id) == "clad"
+
+
+@pytest.mark.parametrize("strike", ["business", None])
+def test_a_coin_struck_for_circulation_is_clad(
+    db: Session, make_item: ItemFactory, strike: str | None
+) -> None:
+    """A business strike, or a coin whose strike is not recorded, is read as one."""
+    coin = _set_coin(db, make_item, "usd_coin_0_25", 1999, set_form=None, strike=strike)
+
+    run(db, commit=True)
+
+    db.refresh(coin)
+    assert _code(db, Metal, coin.metal_id) == "clad"
+
+
+@pytest.mark.parametrize(
+    ("denomination", "year"),
+    [("usd_coin_0_10", 1999), ("usd_coin_0_50", 2021), ("usd_coin_0_25", 1976)],
+)
+def test_a_proof_with_no_set_recorded_gets_no_composition(
+    db: Session, make_item: ItemFactory, denomination: str, year: int
+) -> None:
+    """Struck in clad and in silver for the two sets alike, it could be either."""
+    coin = _set_coin(db, make_item, denomination, year, set_form=None)
+
+    run(db, commit=True)
+
+    db.refresh(coin)
+    assert coin.composition_id is None
+    assert coin.metal_id is None
+    assert coin.fine_weight_ozt is None
+
+
+@pytest.mark.parametrize(
+    ("metal", "fineness"),
+    [("clad", Decimal("0.0001")), ("silver", Decimal("0.9000"))],
+)
+def test_a_loose_proofs_recorded_metal_chooses_its_composition(
+    db: Session, make_item: ItemFactory, metal: str, fineness: Decimal
+) -> None:
+    """A person's clad or silver says which set the proof came from."""
+    coin = _set_coin(db, make_item, "usd_coin_0_10", 1999, set_form=None)
+    coin.metal_id = code_id(db, Metal, metal)
+    db.commit()
+
+    run(db, commit=True)
+
+    db.refresh(coin)
+    assert coin.composition_id is not None
+    assert _code(db, Metal, coin.metal_id) == metal
+    assert coin.fineness == fineness
+    assert derived_fields(db, coin.id)["fineness"] == "composition"
+
+
+def test_a_loose_proofs_recorded_metal_neither_row_has_chooses_nothing(
+    db: Session, make_item: ItemFactory
+) -> None:
+    coin = _set_coin(db, make_item, "usd_coin_0_10", 1999, set_form=None)
+    coin.metal_id = code_id(db, Metal, "gold")
+    db.commit()
+
+    run(db, commit=True)
+
+    db.refresh(coin)
+    assert coin.composition_id is None
+    assert _code(db, Metal, coin.metal_id) == "gold"
+
+
+def test_a_metal_the_facts_filled_does_not_choose_for_a_loose_proof(
+    db: Session, make_item: ItemFactory
+) -> None:
+    """Clad filled while the strike was unknown is a guess, not evidence."""
+    coin = _set_coin(db, make_item, "usd_coin_0_10", 1999, set_form=None, strike=None)
+    run(db, commit=True)
+    db.refresh(coin)
+    assert derived_fields(db, coin.id)["metal_id"] == "composition"
+
+    coin.strike_type_id = code_id(db, StrikeType, "proof")
+    db.commit()
+    run(db, commit=True)
+
+    db.refresh(coin)
+    assert coin.composition_id is None
+    assert coin.metal_id is None
+
+
+def test_a_proof_from_before_the_silver_sets_keeps_its_composition(
+    db: Session, make_item: ItemFactory
+) -> None:
+    """No set's row reaches 1964 or 1985, so their proofs read as every coin does."""
+    silver = _set_coin(db, make_item, "usd_coin_0_10", 1964, set_form=None)
+    clad = _set_coin(db, make_item, "usd_coin_0_10", 1985, set_form=None)
+
+    run(db, commit=True)
+
+    db.refresh(silver)
+    db.refresh(clad)
+    assert silver.fineness == Decimal("0.9000")
+    assert _code(db, Metal, clad.metal_id) == "clad"
+
+
+def test_a_silver_proof_set_run_across_both_standards_gets_none(
+    db: Session, make_item: ItemFactory
+) -> None:
+    """90% to 2018 and .999 from 2019: no one row covers 2010-2020."""
+    coins = _set_coin(
+        db, make_item, "usd_coin_0_10", 2010, set_form="silver_proof_set", year_end=2020
+    )
+
+    run(db, commit=True)
+
+    db.refresh(coins)
+    assert coins.composition_id is None
+    assert coins.metal_id is None
+
+
+def test_recording_the_set_turns_a_derived_clad_to_silver(
+    db: Session, make_item: ItemFactory
+) -> None:
+    coin = _set_coin(db, make_item, "usd_coin_0_10", 1999, set_form=None, strike=None)
+    run(db, commit=True)
+    db.refresh(coin)
+    assert _code(db, Metal, coin.metal_id) == "clad"
+
+    coin.set_form_id = code_id(db, SetForm, "silver_proof_set")
+    coin.strike_type_id = code_id(db, StrikeType, "proof")
+    db.commit()
+    run(db, commit=True)
+
+    db.refresh(coin)
+    assert _code(db, Metal, coin.metal_id) == "silver"
+    assert coin.fine_weight_ozt == Decimal("0.072340")

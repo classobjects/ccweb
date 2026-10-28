@@ -1,0 +1,1736 @@
+import { Fragment, useCallback, useEffect, useId, useRef, useState } from 'react'
+
+import { money } from '../../../shared/format'
+import { api } from '../../api'
+import { listingIdFrom } from '../../listing'
+import {
+  fieldFitsKind,
+  fitsKind,
+  gradeFitsKind,
+  isCurrencyKind,
+  sideFor,
+} from '../../../shared/kinds'
+import { ReferenceSelect } from '../../../shared/reference'
+import { useReference } from '../../../shared/reference-context'
+import { seriesYearProblem } from '../../series-years'
+import { AccessLabel } from '../../AccessLabel'
+import { accel, useSaveShortcut } from '../../shortcuts'
+import ForSaleNotice from '../ForSaleNotice'
+import ErrorsPanel from './ErrorsPanel'
+import LocationSelect from '../../LocationSelect'
+import AttributesField from './AttributesField'
+import ConflictList from './ConflictList'
+import {
+  baseFor,
+  conflictsOf,
+  fieldName,
+  fieldValue,
+  rebase,
+  shown,
+} from './fieldMerge'
+import { clearedByKind } from './kindChange'
+import FriedbergPanel from './FriedbergPanel'
+import HelpScope from '../../HelpScope'
+import HistoryPanel from './HistoryPanel'
+import NoteFields from './NoteFields'
+import SerialPair from './SerialPair'
+import OffersPanel from './OffersPanel'
+import PhotosPanel from './PhotosPanel'
+import SaleHistory from './SaleHistory'
+import SplitDialog from './SplitDialog'
+import { SaveButton } from '../../SaveButton'
+import WeightFields from '../../WeightFields'
+import { isWebAddress } from '../../web-address'
+
+/**
+ * One item, every field, with what the lot claimed beside each.
+ *
+ * Two marks can stand beside a field and they mean different things.
+ * "lot says BU" is *derived* by comparing this piece to its parent: it says
+ * what the seller claimed about the whole lot, and it recomputes so it cannot
+ * drift. "suggested" says a rule filled the value from the item's facts, and
+ * that nobody has typed over it.
+ */
+
+//: How often an open form checks for changes made elsewhere. It also checks
+//: whenever the window gets focus back, which is when it matters most.
+const CHECK_EVERY_MS = 15000
+
+//: What identifies a piece, in the order the editor asks for it, by kind.
+//: A coin is its denomination, year and mint. A bar or a round has no face
+//: value: it is its form, its metal and what it weighs, and a year or a
+//: mint where it has one. A set is the kind of set it is, of a year, from a
+//: mint. A note is its denomination and then its own fields (`note`).
+//: `year` and `weights` are the year rows and the weight fields; every
+//: other name is a classifier's. A kind not listed is asked as a coin is.
+const BULLION_FACTS = [
+  'bullion_form',
+  'metal',
+  'weights',
+  'year',
+  'mint',
+  'denomination',
+]
+const FACTS_ASKED = {
+  currency: ['denomination', 'note'],
+  coin: ['denomination', 'year', 'mint'],
+  bullion: BULLION_FACTS,
+  medal: BULLION_FACTS,
+  token: BULLION_FACTS,
+  set: ['set_form', 'year', 'mint', 'denomination'],
+}
+
+//: What a coin's facts decide, shown right after them and marked suggested
+//: until typed over: the design, the metal, and from the composition the
+//: fineness and weights. A fact the kind is asked for is not repeated here.
+const FACTS_DECIDED = ['series', 'metal', 'weights']
+
+//: What the Friedberg lookup starts from (`FriedbergLookup`'s `fromItem`).
+const FRIEDBERG_FACTS = [
+  'denomination',
+  'note_type',
+  'seal_color',
+  'series_year',
+  'series_letter',
+  'signature_combination',
+  'fed_district',
+  'printing_facility',
+  'face_plate_number',
+  'back_plate_number',
+  // Its letter names the district and its star a star note, until a Save
+  // records them.
+  'serial_number',
+]
+
+//: How long typing must pause before the form asks what the facts decide.
+const PREVIEW_DELAY_MS = 400
+
+const TEXT_FIELDS = [
+  ['Title', 'source_title', 't'],
+  ['Description', 'description', 'c'],
+]
+
+const NUMBER_FIELDS = [['Pieces', 'piece_count', 'p']]
+
+/**
+ * Whether stored years are a range rather than one year.
+ *
+ * One year is stored as start == end, and a few older items as a start with
+ * no end; both are one year. A range is for a multi-year set, or a coin dated
+ * only to an era -- rare -- so the form asks for one year unless the item
+ * already has a range. Opening a stored range as one would let a
+ * save collapse it without anyone seeing the end year.
+ */
+function isRange(start, end) {
+  return start != null && end != null && Number(start) !== Number(end)
+}
+
+/** An emptied number box clears the year rather than sending "". */
+const yearValue = (text) => (text === '' ? null : text)
+
+const MONEY_FIELDS = [
+  ['Item cost', 'item_cost', 'i'],
+  ['Shipping', 'shipping_cost', 'h'],
+]
+
+const CLASSIFIERS = [
+  // A coin's grade is a number; its strike type says whether 65 is MS65 or
+  // PR65. A note has no strike type, so the box is not shown for one.
+  ['Strike type', 'strike_type', 'strike_type', 'k'],
+  ['Grade', 'grade', 'grade', 'g'],
+  // One per grade and part of it -- PMG's "64 EPQ", a coin's "65 DCAM" --
+  // offered only for the item's kind. No letters left for these two.
+  ['Grade designation', 'grade_designation', 'grade_designation', null],
+  ['Grading service', 'grading_service', 'grading_service', null],
+  // A coin's own detail. `P` is Philadelphia; blank is not recorded.
+  ['Mint', 'mint', 'mint', null],
+  ['Denomination', 'denomination', 'denomination', 'm'],
+  // The design series, offered for the item's kind. A pass fills it from the
+  // denomination and year or from the description, so this is where a wrong
+  // answer is corrected.
+  ['Series', 'series', 'series', null],
+  // A bar or a round has no face value: its shape is recorded here.
+  ['Bullion form', 'bullion_form', 'bullion_form', null],
+  // What kind of set -- proof set, mint set, mixed sets. A coin's side only.
+  ['Set form', 'set_form', 'set_form', null],
+  ['Country', 'country', 'country', 'u'],
+  ['Metal', 'metal', 'metal', 'l'],
+  // Status is editable here because Receiving only moves an item forward:
+  // this is the way back for a parcel recorded as received in error, or
+  // against the wrong row. `PATCH /api/inventory/{id}` routes it through
+  // `set_status`, so the status-history row is written -- an item's history
+  // stays a true account of where it has been, including the correction.
+  ['Status', 'status', 'item_status', 's'],
+]
+
+//: A field's help topic where it differs from its name: `status` is
+//: Receiving's finder, which searches by status rather than setting it.
+const HELP_FOR = { status: 'item_status' }
+
+//: Where a derived value came from, as the "suggested" mark's tooltip says it.
+const DERIVED_FROM = {
+  note_issue: "Filled from the note's denomination and series",
+  serial_district: 'Filled from the serial number',
+  composition: 'Filled from the published composition for its year or design',
+  series_classify: 'Filled from the denomination and year',
+  series_match: 'Filled from the description',
+  series_backfill: 'Filled from the description or from denomination and year',
+  suggestion: 'Suggested when the item was entered',
+  rating: 'Read from the rating',
+  weight: 'Worked out as gross weight times fineness',
+  weight_text: 'A guess, read from the title, description or weight as written',
+  weight_peers: 'A guess, from what most items of this form and metal weigh',
+}
+
+/** The column a form field is stored in, as `derived` names it. */
+const columnOf = (key, isClassifier) => (isClassifier ? `${key}_id` : key)
+
+//: Vocabularies this form must not let anyone extend. `item_status` is a
+//: lifecycle the code branches on, not a descriptive list that grows with
+//: use -- see `ReferenceSelect`'s `allowAdd`.
+//: Designations and grading services are the graders' own lists, seeded
+//: with the coin/note side each belongs to; a typed-in one would have none.
+const FIXED_VOCABULARIES = new Set([
+  'item_status',
+  'strike_type',
+  'grade_designation',
+  'grading_service',
+  'mint',
+  // A denomination is a face value with a currency and a side, which an
+  // add-by-label form cannot give it: the server would refuse it.
+  'denomination',
+])
+
+/**
+ * Certificate numbers as typed: comma-separated. Split as the user types,
+ * keeping a trailing empty entry so the comma just typed stays on screen;
+ * empties are dropped when the save is sent.
+ */
+const certsFrom = (text) => text.split(',').map((part) => part.trim())
+
+/** What Save says when held photographs could not be filed. */
+function photosFailed(failed) {
+  const what =
+    failed.length === 1 ? 'A photograph was' : `${failed.length} photographs were`
+  return `${what.toLowerCase()} not added: ${failed.map((entry) => entry.error).join('; ')}. Fix or discard ${failed.length === 1 ? 'it' : 'them'} below, then Save again`
+}
+
+/**
+ * An error set compared as a set: the same types with the same notes, in any
+ * order, is no change to save.
+ */
+function errorsKey(rows) {
+  return JSON.stringify(
+    rows
+      .map((row) => [row.error_type, row.details ?? null])
+      .sort((a, b) => a[0].localeCompare(b[0])),
+  )
+}
+
+/**
+ * What Save sends for the edited fields. `base` makes the save field by
+ * field: a change made elsewhere since stops it only where it touched a
+ * field changed here (409 naming them). `version` goes too, for any caller
+ * without a base. `acknowledge` says a change to an item for sale is meant.
+ */
+function fieldsPayload(draft, item, baseItem, acknowledge) {
+  const payload = {
+    ...draft,
+    version: item.version,
+    base: baseFor(baseItem, draft),
+  }
+  if (Array.isArray(payload.cert_numbers)) {
+    payload.cert_numbers = payload.cert_numbers.filter(Boolean)
+  }
+  if (acknowledge) payload.acknowledge_for_sale = true
+  return payload
+}
+
+/**
+ * What was typed while a save was out: in the draft as it is `now`, and not
+ * in the one that was `sent`.
+ */
+const typedSinceSent = (now, sent) =>
+  Object.fromEntries(
+    Object.entries(now).filter(([key, held]) => !(key in sent) || sent[key] !== held),
+  )
+
+/** The errors as `GET /inventory/{id}/errors` answers them, as the form holds them. */
+const errorRows = (body) =>
+  (body.errors ?? []).map((e) => ({
+    error_type: e.error_type,
+    details: e.details ?? null,
+  }))
+
+/** Whether the errors as edited differ from the set last read or recorded. */
+const errorsDiffer = (edited, saved) =>
+  edited !== null && errorsKey(edited) !== errorsKey(saved)
+
+/**
+ * The fields edited here that someone else has changed since (see
+ * `fieldMerge.js`); none until the item has been read.
+ */
+const conflictsSince = (item, baseItem, draft) =>
+  item && baseItem ? conflictsOf(item, baseItem, draft) : []
+
+/** Whether anything is held for Save: a field, a photograph, a number, errors. */
+function holdsAnything({
+  hasFields,
+  pendingPhotos,
+  photoEdits,
+  pendingFriedberg,
+  errorsChanged,
+}) {
+  return (
+    hasFields ||
+    pendingPhotos.length > 0 ||
+    Object.keys(photoEdits).length > 0 ||
+    pendingFriedberg !== null ||
+    errorsChanged
+  )
+}
+
+/**
+ * What stands in the way of saving what is held, as Save says it when
+ * pressed, or '' when nothing does: a change to an item for sale not yet
+ * acknowledged (`tick`, the label of the box that does), a new photograph
+ * that does not say what it shows, an edited field that waits for a choice
+ * between two values.
+ */
+function inTheWay({ forSale, acknowledged, tick, pendingPhotos, conflicts }) {
+  if (conflicts.length > 0) {
+    return 'Choose Keep mine or Use theirs for each field changed elsewhere, then Save.'
+  }
+  if (forSale && !acknowledged) {
+    return `This item is for sale: tick "${tick}" above, then Save.`
+  }
+  // A photograph filed without saying what it shows is one nobody finds.
+  if (!pendingPhotos.every((entry) => entry.role)) {
+    return 'Say what each new photograph shows, then Save.'
+  }
+  return ''
+}
+
+/**
+ * Whether the seller's item id is an eBay item number: the listing's own
+ * address says so, and where none is recorded the vendor does.
+ */
+const boughtOnEbay = (item) =>
+  item.listing_url
+    ? /^https?:\/\/([^/]*\.)?ebay\./i.test(item.listing_url)
+    : /ebay/i.test(item.vendor ?? '')
+
+/** The seller's item id as the editor's heading shows it. */
+function sellersItemId(item) {
+  if (boughtOnEbay(item)) {
+    // The listing it was bought from, on eBay (app.ebay_orders).
+    return (
+      <a
+        href={`https://www.ebay.com/itm/${encodeURIComponent(item.sellers_item_id)}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        data-help="sellers_item_id"
+      >
+        eBay item {item.sellers_item_id}
+      </a>
+    )
+  }
+  // Another seller's id -- an auction house's lot number -- is no eBay item
+  // number: named, and reached by the listing link.
+  return (
+    <span data-help="sellers_item_id">
+      Seller&apos;s item id {item.sellers_item_id}
+    </span>
+  )
+}
+
+/**
+ * The end of a range of years as the form holds it: the one typed, else the
+ * stored end, and for an item stored with a start and no end, its start.
+ */
+const rangeEnd = (draft, item) =>
+  'year_end' in draft ? draft.year_end : (item.year_end ?? item.year_start ?? null)
+
+/** The Errors row while the item's errors have not been read. */
+function errorsNotRead(reason) {
+  return (
+    <div className="field errors-panel">
+      <span>Errors</span>
+      {reason ? (
+        <p className="error">The errors could not be read: {reason}</p>
+      ) : (
+        <p className="muted">Loading...</p>
+      )}
+      <span />
+      <span />
+    </div>
+  )
+}
+
+/**
+ * What to say of a year outside the item's design series, or ''. A coin
+ * dated outside its series' years is almost always a typo: an 1800 Morgan
+ * dollar. A note is not asked: its year is its series year.
+ */
+function seriesYearWarning(value, seriesEntries) {
+  if (isCurrencyKind(value('item_kind'))) return ''
+  return seriesYearProblem(
+    (seriesEntries ?? []).find((entry) => entry.code === value('series')),
+    value('year_start'),
+    value('year_end'),
+  )
+}
+
+/**
+ * What a kind's asked facts decide, shown after them (`FACTS_DECIDED`): none
+ * for a note, and never a fact the kind is already asked for.
+ */
+const factsDecidedFor = (kind, askedFacts) =>
+  isCurrencyKind(kind) ? [] : FACTS_DECIDED.filter((fact) => !askedFacts.includes(fact))
+
+/**
+ * The editor for item `itemId`: its fields, photographs, Friedberg number,
+ * errors, offers and history.
+ *
+ * Everything edited is held until Save, which sends only what changed and
+ * is refused while a field edited here has also been changed elsewhere, or
+ * while the item is for sale and that has not been acknowledged. `onSaved`
+ * runs when all of it was saved; `onChanged` when only part of it was, or
+ * when the item was split, so whoever opened the form reads its list again.
+ * `onClose`, when given, adds a button that leaves without saving.
+ */
+export default function ItemEditForm({ itemId, onSaved, onChanged, onClose }) {
+  const [item, setItem] = useState(null)
+  const [draft, setDraft] = useState({})
+  // Where each edited field's edit began (see `fieldMerge.js`): a change made
+  // elsewhere matters only to a field being edited here, and only this says
+  // whether it happened.
+  const [baseItem, setBaseItem] = useState(null)
+  // When the form last took in changes made elsewhere, to say so.
+  const [refreshedAt, setRefreshedAt] = useState(null)
+  const draftRef = useRef(draft)
+  const versionRef = useRef(null)
+  const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
+  // Photographs added in the Photos panel, held until Save files them with
+  // the rest of the edit. Each keeps the error its filing met, if any.
+  const [pendingPhotos, setPendingPhotos] = useState([])
+  const [photoKey, setPhotoKey] = useState(0)
+  // Changes to photographs already filed -- a role, the primary, a removal
+  // -- keyed by link id, held the same way (see PhotosPanel).
+  const [photoEdits, setPhotoEdits] = useState({})
+  // A Friedberg number confirmed, chosen or cleared in its panel, held for
+  // Save the same way.
+  const [pendingFriedberg, setPendingFriedberg] = useState(null)
+  // The item's errors as last read or recorded, and as edited here -- held
+  // for Save the same way, and recorded as a whole set. Both null until
+  // read; a read that failed leaves its reason and nothing to edit, since a
+  // set edited from nothing would replace, on Save, the one never seen.
+  const [savedErrors, setSavedErrors] = useState(null)
+  const [errors, setErrors] = useState(null)
+  const [errorsReadError, setErrorsReadError] = useState('')
+  const [ranged, setRanged] = useState(false)
+  // Ticked to change an item that is for sale; reset whenever it is loaded.
+  const [acknowledged, setAcknowledged] = useState(false)
+  // What the last change of kind emptied, so it can be named on screen and
+  // put back if the kind is changed back: key -> {had, prev, was}.
+  const [kindCleared, setKindCleared] = useState({})
+  // The item as Save would leave it with what is typed so far: the facts
+  // fill a note's class, seal and signatures, a coin's metal, the design
+  // series. Shown for every field not edited here, so what follows from
+  // a fact appears as the fact is entered and can still be typed over.
+  const [preview, setPreview] = useState(null)
+  // What the Suggest button last said: a note under the description.
+  const [suggestNote, setSuggestNote] = useState('')
+  // The Split dialog, while open; and what the last split made, to say so.
+  const [splitting, setSplitting] = useState(false)
+  const [splitNote, setSplitNote] = useState('')
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState('')
+  // Counts the saves made here. The history is read again on this as well
+  // as on the item's version: a save whose read-back failed leaves the
+  // version the form holds where it was.
+  const [saves, setSaves] = useState(0)
+  const kinds = useReference('item_kind')
+  const vocab = {
+    denomination: useReference('denomination'),
+    series: useReference('series'),
+    grade: useReference('grade'),
+    grade_designation: useReference('grade_designation'),
+    item_attribute: useReference('item_attribute'),
+  }
+  const yearId = useId()
+  const yearEndId = useId()
+
+  const forSale = (item?.sale_state ?? []).length > 0
+  // What the server ends an offer for: a status or disposition that differs
+  // from the one the item holds.
+  const endsOffer = ['status', 'disposition'].some(
+    (key) => key in draft && draft[key] !== item?.[key],
+  )
+  // Fields edited here that someone else has changed since: each waits for a
+  // choice before the form can be saved.
+  const conflicts = conflictsSince(item, baseItem, draft)
+  const hasFields = Object.keys(draft).length > 0
+  const errorsChanged = errorsDiffer(errors, savedErrors)
+  // The for-sale box's own words, which Save names when it is not ticked.
+  const tick = endsOffer ? 'Change the status and end the offer' : 'Change it anyway'
+  // Why Save, pressed now, would save nothing; '' when it would save.
+  const notYet = holdsAnything({
+    hasFields,
+    pendingPhotos,
+    photoEdits,
+    pendingFriedberg,
+    errorsChanged,
+  })
+    ? inTheWay({ forSale, acknowledged, tick, pendingPhotos, conflicts })
+    : 'Nothing to save: nothing has been changed.'
+  const canSave = !saving && notYet === ''
+  // `save` is a function declaration below, hoisted for the whole component
+  // scope, so it is safe to reference here even though it is defined later --
+  // this hook must sit above every early return.
+  useSaveShortcut(save, canSave)
+
+  /**
+   * Take `body` as the item now open -- a first load, or a save read back --
+   * with nothing edited: the draft, the kind change and the for-sale tick
+   * all start again from it.
+   */
+  const adopt = useCallback((body) => {
+    setItem(body)
+    setBaseItem(body)
+    setRanged(isRange(body.year_start, body.year_end))
+    setDraft({})
+    setPreview(null)
+    setKindCleared({})
+    setAcknowledged(false)
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    api
+      .getInventoryItem(itemId)
+      .then((body) => {
+        if (cancelled) return
+        adopt(body)
+        setError('')
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err.message)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [itemId, adopt])
+
+  useEffect(() => {
+    let cancelled = false
+    api
+      .getItemErrors(itemId)
+      .then((body) => {
+        if (cancelled) return
+        const rows = errorRows(body)
+        setSavedErrors(rows)
+        setErrors(rows)
+      })
+      .catch((err) => {
+        if (!cancelled) setErrorsReadError(err.message)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [itemId])
+
+  // The latest draft and version, for the check below, which runs on a timer.
+  useEffect(() => {
+    draftRef.current = draft
+    versionRef.current = item?.version ?? null
+  })
+
+  // Changes made elsewhere -- another person, another tab -- come in while
+  // this form is open: checked every so often and whenever the window gets
+  // focus back. A field not being edited here takes the new value at once; a
+  // field being edited keeps its base, so a change to it shows as a conflict
+  // to resolve rather than being overwritten or adopted unseen.
+  useEffect(() => {
+    let cancelled = false
+    function check() {
+      api
+        .getInventoryItem(itemId)
+        .then((fresh) => {
+          if (cancelled || versionRef.current == null) return
+          // Equal is nothing new; lower is a read that left before a save's
+          // read-back and came back after it, and would restore the older item.
+          if (fresh.version <= versionRef.current) return
+          setItem(fresh)
+          // A preview answered the item as it was: shown on, it would hide
+          // the very change being taken in.
+          setPreview(null)
+          setBaseItem((previous) => rebase(fresh, previous, draftRef.current))
+          setRefreshedAt(new Date())
+        })
+        .catch(() => {
+          // A missed check is caught by the next one, or by the save.
+        })
+    }
+    const timer = setInterval(check, CHECK_EVERY_MS)
+    window.addEventListener('focus', check)
+    return () => {
+      cancelled = true
+      clearInterval(timer)
+      window.removeEventListener('focus', check)
+    }
+  }, [itemId])
+
+  /**
+   * Read the item again after something else changed it on the server.
+   *
+   * Offering or ending an offer from the panel below changes `sale_state`,
+   * and `sale_state` is what decides whether a save has to be acknowledged.
+   * Without this, offering an item and then saving an edit is refused by the
+   * server for a reason nothing on screen can explain: the form still holds
+   * the sale state the item had before it was offered.
+   *
+   * Deliberately NOT the load effect: that one clears the draft, and an edit
+   * typed before the offer was made is the operator's work, not something to
+   * throw away. Only what the server owns is replaced.
+   */
+  function reloadItem() {
+    api
+      .getInventoryItem(itemId)
+      .then((body) => {
+        // As in the check above: an answer older than the item already held
+        // is not taken.
+        if (versionRef.current != null && body.version < versionRef.current) return
+        setItem(body)
+        // As in the check above: a preview of the item as it was is stale.
+        setPreview(null)
+        // Edited fields keep their base: a change made elsewhere to one of
+        // them shows as a conflict, never silently adopted.
+        setBaseItem((previous) => rebase(body, previous, draftRef.current))
+      })
+      .catch((err) => setError(err.message))
+  }
+
+  // Asked for a moment after the last change, by the rules Save applies
+  // (`POST /inventory/{id}/preview`, which writes nothing). A change Save
+  // would refuse has no preview: what was last shown stays until it does.
+  // Asked again when the item's version moves, since the answer is the item
+  // as it stood when asked.
+  const draftKey = JSON.stringify(draft)
+  const itemVersion = item?.version ?? null
+  useEffect(() => {
+    if (draftKey === '{}') return undefined
+    let cancelled = false
+    const timer = setTimeout(() => {
+      const changes = JSON.parse(draftKey)
+      if (Array.isArray(changes.cert_numbers)) {
+        changes.cert_numbers = changes.cert_numbers.filter(Boolean)
+      }
+      api
+        .previewItem(itemId, { changes })
+        .then((body) => {
+          if (!cancelled) setPreview(body ?? null)
+        })
+        .catch((err) => {
+          // Only a refusal of the change itself leaves the last preview up.
+          // Any other failure says nothing about the item, and a preview
+          // left standing would show values no longer asked about.
+          if (!cancelled && err?.status !== 422 && err?.status !== 409) {
+            setPreview(null)
+          }
+        })
+    }, PREVIEW_DELAY_MS)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [itemId, draftKey, itemVersion])
+
+  if (error && !item) return <p className="error">{error}</p>
+  if (!item) return <p className="muted">Loading...</p>
+
+  // The item as it will be saved, where that is known: nothing is shown
+  // from a preview once the draft it answered is gone.
+  const shownItem = hasFields && preview ? preview : item
+  // `in`, not `??`: a year cleared in the draft is null, and must not fall
+  // back to showing the stored year it is about to replace.
+  const value = (key) => (key in draft ? draft[key] : shownItem[key]) ?? ''
+  const yearWarning = seriesYearWarning(value, vocab.series)
+  const set = (key) => (e) => setDraft({ ...draft, [key]: e.target.value })
+  // A picker set back to blank, or a box emptied, clears the field: null,
+  // which the server holds empty. An empty string would clear it without
+  // saying a person emptied it, and a rule would fill it straight back.
+  const setOrClear = (key) => (e) =>
+    setDraft({ ...draft, [key]: e.target.value === '' ? null : e.target.value })
+
+  // A listing's address carries the seller's id for it -- eBay's item
+  // number, a HiBid lot -- so typing or pasting the address fills the id.
+  // Only an id the address gave is replaced or taken back: one typed by
+  // hand that the address does not carry is left alone.
+  function setListing(e) {
+    const url = e.target.value
+    const next = { ...draft, listing_url: url }
+    const held = value('sellers_item_id') || ''
+    const before = listingIdFrom(value('listing_url')) ?? ''
+    const found = listingIdFrom(url) ?? ''
+    if (held === before && found !== held) next.sellers_item_id = found
+    setDraft(next)
+  }
+
+  // A new kind empties what the item can no longer have (`kindChange.js`).
+  // The previous change's clearing is undone first, so going Coin -> Currency
+  // -> Coin ends where it began, with nothing left to save.
+  function changeKind(e) {
+    const kind = e.target.value
+    const next = { ...draft }
+    for (const [key, { had, prev }] of Object.entries(kindCleared)) {
+      if (had) next[key] = prev
+      else delete next[key]
+    }
+    if (kind === item.item_kind) delete next.item_kind
+    else next.item_kind = kind
+
+    const current = (key) => {
+      if (key in next) return next[key]
+      if (key === 'attributes') return (item.attributes ?? []).map((a) => a.code)
+      return item[key]
+    }
+    const { fields, attributes } = clearedByKind(kind, current, vocab)
+    const cleared = {}
+    for (const [key, was] of Object.entries(fields)) {
+      cleared[key] = { had: key in next, prev: next[key], was }
+      next[key] = null
+    }
+    if (attributes) {
+      cleared.attributes = {
+        had: 'attributes' in next,
+        prev: next.attributes,
+        was: attributes.dropped,
+      }
+      next.attributes = attributes.keep
+    }
+    // A note has no "no date", and shows no box to untick: one ticked here
+    // is not sent, since the server refuses it on a note. A stored one the
+    // server drops with the piece's years.
+    if (isCurrencyKind(kind) && next.no_date === true) {
+      cleared.no_date = { had: true, prev: true, was: true }
+      delete next.no_date
+    }
+    setDraft(next)
+    setKindCleared(cleared)
+  }
+
+  const kindLabel = (code) => kinds?.find((k) => k.code === code)?.label ?? code
+  const leavingNote = item.item_kind === 'currency' && value('item_kind') !== 'currency'
+
+  // One year is both ends. Sending both, rather than the start alone, is what
+  // turns an item stored with a start and no end into one year as well.
+  function setYear(e) {
+    const year = yearValue(e.target.value)
+    setDraft({ ...draft, year_start: year, year_end: year })
+  }
+
+  function toggleRange(e) {
+    setRanged(e.target.checked)
+    if (e.target.checked) return
+    // Back to one year: the end follows the start. On an item that was one
+    // year with no start edited, that is no change at all, so nothing is left
+    // in the draft to save.
+    const next = { ...draft }
+    if (!isRange(item.year_start, item.year_end) && !('year_start' in draft)) {
+      delete next.year_end
+    } else {
+      next.year_end = 'year_start' in draft ? draft.year_start : item.year_start
+    }
+    setDraft(next)
+  }
+
+  // A rate of zero means no tax was charged. Unticking goes back to the rate
+  // the item was bought at, if it had one -- ticking and unticking is then no
+  // change at all. An item recorded as untaxed has no rate of its own to go
+  // back to, so it takes the configured one.
+  const taxRate = draft.tax_rate ?? item.tax_rate
+  const untaxed = taxRate !== undefined && Number(taxRate) === 0
+  function toggleTax(e) {
+    const next = { ...draft }
+    if (e.target.checked) next.tax_rate = '0'
+    else if (Number(item.tax_rate) !== 0) delete next.tax_rate
+    else next.tax_rate = item.default_tax_rate
+    setDraft(next)
+  }
+
+  function claimed(text) {
+    // An empty cell rather than nothing: `.field` is a three-column grid, and a
+    // missing child shifts everything after it into the wrong column.
+    if (text === undefined || text === null) return <span />
+    return (
+      <span
+        className="lot-claim"
+        title={`The lot ${item.parent_item_code} claimed this`}
+      >
+        lot says {String(text)}
+      </span>
+    )
+  }
+
+  const claim = (column) => claimed(item.lot_claims?.[column])
+
+  // A value the facts filled in, until someone changes it: saving a field by
+  // hand makes it theirs, and the server drops the mark.
+  function suggested(key, column) {
+    const rule = shownItem.derived?.[column]
+    if (!rule || key in draft) return null
+    return (
+      <span className="suggested" title={DERIVED_FROM[rule] ?? rule}>
+        suggested
+      </span>
+    )
+  }
+
+  // The third grid cell: what the lot claimed, and whether the value was
+  // filled in from the facts. One element either way, so the grid holds.
+  function side(key, column) {
+    return (
+      <span>
+        {claim(key)}
+        {suggested(key, column)}
+      </span>
+    )
+  }
+
+  // The lot's years in the same shape as the one Year box: its range if it
+  // claimed one, otherwise its year.
+  function yearClaim() {
+    const start = item.lot_claims?.year_start
+    const end = item.lot_claims?.year_end
+    return claimed(isRange(start, end) ? `${start}-${end}` : (start ?? end))
+  }
+
+  // No date: the piece carries none at all (a gold bar), as distinct from a
+  // year not recorded. Ticking it clears the years in the same save; the
+  // server refuses the two together.
+  const noDate = value('no_date') === true
+  function toggleNoDate(e) {
+    if (e.target.checked) {
+      setRanged(false)
+      setDraft({ ...draft, no_date: true, year_start: null, year_end: null })
+      return
+    }
+    // Unticked: the years the tick emptied go back to the stored ones, and
+    // on a piece not stored as undated the flag leaves the draft too, so
+    // ticking and unticking is no change at all.
+    const next = { ...draft }
+    if (item.no_date) next.no_date = false
+    else delete next.no_date
+    if (next.year_start === null && next.year_end === null) {
+      delete next.year_start
+      delete next.year_end
+      setRanged(isRange(item.year_start, item.year_end))
+    }
+    setDraft(next)
+  }
+
+  // In a range the start is sent with the end the form shows. A start sent
+  // alone moves a single year's end with it, and the end on screen -- the
+  // stored one, never typed -- would be lost.
+  function setRangeStart(e) {
+    setDraft({
+      ...draft,
+      year_start: yearValue(e.target.value),
+      year_end: rangeEnd(draft, item),
+    })
+  }
+
+  const rangeToggle = (
+    <>
+      <label className="checkbox" data-help="year_range">
+        <input
+          type="checkbox"
+          checked={ranged}
+          onChange={toggleRange}
+          disabled={noDate}
+          {...accel('r')}
+        />
+        {/* */}
+        <AccessLabel text="Range of years" accessKey="r" />
+      </label>
+      <label className="checkbox" data-help="no_date">
+        <input type="checkbox" checked={noDate} onChange={toggleNoDate} />
+        {/* */}
+        No date
+      </label>
+    </>
+  )
+
+  // The suggestion reads the screen: every unsaved change, as Save would
+  // send it, and the errors the panel holds.
+  async function suggestDescription() {
+    // Not the description itself: the suggestion is what replaces it.
+    const changes = { ...draft }
+    delete changes.description
+    if (Array.isArray(changes.cert_numbers)) {
+      changes.cert_numbers = changes.cert_numbers.filter(Boolean)
+    }
+    const body = { changes }
+    if (errorsChanged) {
+      body.errors = errors.map((row) => ({
+        error_type: row.error_type,
+        details: row.details ?? null,
+      }))
+    }
+    try {
+      const { description } = await api.suggestDescriptionFromScreen(itemId, body)
+      if (!description) {
+        setSuggestNote('Nothing recorded yet to describe it from.')
+        return
+      }
+      // Into the draft only: the owner edits it, and Save keeps it. Into the
+      // draft as it is when the answer arrives, which may hold more than
+      // it did when the question was asked.
+      setDraft((current) => ({ ...current, description }))
+      setSuggestNote('Suggested from what is shown -- edit it, then Save to keep it.')
+    } catch (err) {
+      setSuggestNote(err.message)
+    }
+  }
+
+  /**
+   * File each held photograph; those that fail stay held with their reason.
+   * Returns the ones that failed.
+   */
+  async function filePhotos() {
+    const ack = forSale && acknowledged
+    const left = []
+    for (const entry of pendingPhotos) {
+      try {
+        if (entry.kind === 'file') {
+          await api.uploadImage(itemId, entry.file, {
+            imageRole: entry.role,
+            acknowledgeForSale: ack,
+          })
+        } else {
+          await api.addImageFromUrl(itemId, entry.url, {
+            imageRole: entry.role,
+            acknowledgeForSale: ack,
+          })
+        }
+      } catch (err) {
+        left.push({ ...entry, error: err.message })
+      }
+    }
+    setPendingPhotos(left)
+    if (pendingPhotos.length > 0) setPhotoKey((n) => n + 1)
+    return left
+  }
+
+  /**
+   * Apply the held changes to filed photographs; those that fail stay held
+   * with their reason. Returns the failures' reasons.
+   *
+   * Roles and a new primary go first, then moves to other items, removals
+   * last: a primary moved off a photograph that then leaves has already been
+   * given its successor, so the server's own fill-in
+   * (`fill_primary_vacancy`) never overrides it.
+   */
+  async function applyPhotoEdits() {
+    const ack = forSale && acknowledged
+    const entries = Object.entries(photoEdits)
+    const ordered = [
+      ...entries.filter(([, edit]) => !edit.remove && !edit.move_to),
+      ...entries.filter(([, edit]) => edit.move_to),
+      ...entries.filter(([, edit]) => edit.remove),
+    ]
+    const left = {}
+    for (const [id, edit] of ordered) {
+      try {
+        if (edit.remove) {
+          await api.detachImage(Number(id), { acknowledgeForSale: ack })
+        } else if (edit.move_to) {
+          await api.moveImageLink(Number(id), {
+            inventoryItemId: edit.move_to.id,
+            acknowledgeForSale: ack,
+          })
+        } else {
+          const change = { acknowledgeForSale: ack }
+          if ('image_role' in edit) change.imageRole = edit.image_role
+          if (edit.is_primary) change.isPrimary = true
+          await api.updateImageLink(Number(id), change)
+        }
+      } catch (err) {
+        left[id] = { ...edit, error: err.message }
+      }
+    }
+    setPhotoEdits(left)
+    if (entries.length > 0) setPhotoKey((n) => n + 1)
+    return Object.values(left).map((edit) => edit.error)
+  }
+
+  /** Apply a held Friedberg change; its failure is kept on it and returned. */
+  async function applyFriedberg(held) {
+    try {
+      if (held.action === 'clear') await api.clearFriedberg(itemId)
+      else
+        await api.attachFriedberg(itemId, {
+          friedberg_id: held.friedberg_id,
+          status: held.status,
+        })
+      setPendingFriedberg(null)
+      return null
+    } catch (err) {
+      setPendingFriedberg({ ...held, error: err.message })
+      return err.message
+    }
+  }
+
+  /**
+   * Clear a held Friedberg number before anything else is saved. Returns
+   * whether the save may go on: false when the clearing was refused, which
+   * is said and ends the save with nothing else written.
+   */
+  async function clearedFirst(heldFriedberg) {
+    if (heldFriedberg?.action !== 'clear') return true
+    const failed = await applyFriedberg(heldFriedberg)
+    if (!failed) return true
+    setError(`The Friedberg number was not cleared: ${failed}. Nothing else was saved.`)
+    setSaving(false)
+    return false
+  }
+
+  /**
+   * Send the edited fields, if any. Returns whether the save may go on:
+   * false when they were refused, which is said and ends the save.
+   */
+  async function fieldsSaved(heldFriedberg) {
+    if (!hasFields) return true
+    try {
+      const acknowledge = forSale && acknowledged
+      await api.updateInventoryItem(
+        itemId,
+        fieldsPayload(draft, item, baseItem, acknowledge),
+      )
+      setError('')
+      return true
+    } catch (err) {
+      setError(err.message)
+      setSaving(false)
+      // Someone changed one of these fields between the last check and this
+      // save: read the item again, and the conflicts show for a choice.
+      // And after a number was cleared before this: that much was written,
+      // so the note is read again to show it gone, and the opener is told.
+      const cleared = heldFriedberg?.action === 'clear'
+      if (err.body?.conflicts || cleared) reloadItem()
+      if (cleared) {
+        setSaves((n) => n + 1)
+        onChanged?.()
+      }
+      return false
+    }
+  }
+
+  /**
+   * Read the errors again in place of the set edited here; a failure to read
+   * is added to `problems`.
+   */
+  async function rereadErrors(problems) {
+    try {
+      const rows = errorRows(await api.getItemErrors(itemId))
+      setSavedErrors(rows)
+      setErrors(rows)
+      problems.push('the errors as now recorded are shown')
+    } catch (err) {
+      problems.push(`the errors could not be read again: ${err.message}`)
+    }
+  }
+
+  /**
+   * What follows the fields, in order: a Friedberg number attached, the
+   * errors, the changes to filed photographs, the new photographs. Each
+   * that fails stays held; returns what to say of those that did.
+   */
+  async function restSaved(heldFriedberg) {
+    const problems = []
+    if (heldFriedberg?.action === 'attach') {
+      const failed = await applyFriedberg(heldFriedberg)
+      if (failed) problems.push(`the Friedberg number was not attached: ${failed}`)
+    }
+    if (errorsChanged) {
+      try {
+        await api.setItemErrors(itemId, errors, {
+          acknowledgeForSale: forSale && acknowledged,
+          base: savedErrors,
+        })
+        setSavedErrors(errors)
+      } catch (err) {
+        problems.push(`the errors were not recorded: ${err.message}`)
+        // Changed elsewhere since they were read: every later save would be
+        // refused the same way, so the set as it now stands is shown, to
+        // work from.
+        if (err.status === 409) await rereadErrors(problems)
+      }
+    }
+    const failedEdits = await applyPhotoEdits()
+    if (failedEdits.length > 0) {
+      problems.push(`photograph changes not saved: ${failedEdits.join('; ')}`)
+    }
+    const failedPhotos = await filePhotos()
+    if (failedPhotos.length > 0) problems.push(photosFailed(failedPhotos))
+    return problems
+  }
+
+  /**
+   * Read the item back: the saved values, and the version the save made.
+   * A form that stays open after a save -- the last item of a review, or
+   * Receiving's one-item review -- would otherwise keep the old version and
+   * the spent draft, and its next save would be refused as a conflict with
+   * itself. What was typed while the save was out is kept on top of the item
+   * read back, and returned. A failure to read is added to `problems`.
+   */
+  async function readBack(problems) {
+    let typedSince = {}
+    try {
+      const saved = await api.getInventoryItem(itemId)
+      typedSince = typedSinceSent(draftRef.current, draft)
+      adopt(saved)
+      setDraft(typedSince)
+    } catch (err) {
+      problems.push(`saved, but could not read it back: ${err.message}`)
+    } finally {
+      setSaving(false)
+      setSaves((n) => n + 1)
+    }
+    return typedSince
+  }
+
+  /**
+   * Save everything held: a Friedberg number cleared first (the server
+   * refuses a note that stops being one while it has a number), then the
+   * fields, then a Friedberg number attached, then the errors, then the
+   * changes to filed photographs, then new photographs. What
+   * fails stays held with its reason; the editor closes only when all of it
+   * is saved.
+   */
+  async function save() {
+    // Save is never greyed out: pressed with something in the way, it says
+    // what, and sends nothing.
+    if (notYet) {
+      setError(notYet)
+      return
+    }
+    setSaving(true)
+    const heldFriedberg = pendingFriedberg
+    if (!(await clearedFirst(heldFriedberg))) return
+    if (!(await fieldsSaved(heldFriedberg))) return
+    const problems = await restSaved(heldFriedberg)
+    const typedSince = await readBack(problems)
+    if (problems.length > 0) {
+      setError(`Not all was saved -- ${problems.join('; ')}`)
+      // Something may have been written all the same: whoever opened the
+      // form must not take a close after this for nothing having happened.
+      onChanged?.()
+      return
+    }
+    setError('')
+    // An edit made meanwhile is still to be saved: the form stays open on
+    // it, and whoever opened the form is told only that something changed.
+    if (Object.keys(typedSince).length > 0) onChanged?.()
+    else onSaved?.()
+  }
+
+  // Deleting is for a row that should never have existed, and leaves the
+  // editor: `onSaved` closes it and has the list behind read again. A
+  // refusal -- the item has pieces, has been offered, is in a sales lot --
+  // is said beside the button, in the server's words.
+  async function deleteItem() {
+    const edits = Object.keys(draft).length > 0 ? ' Your unsaved changes are lost.' : ''
+    const asked =
+      `Delete ${item.item_code}? It leaves every list and report, as an item ` +
+      `that should never have been entered.${edits}`
+    if (!window.confirm(asked)) return
+    setDeleting(true)
+    setDeleteError('')
+    try {
+      await api.deleteInventoryItem(item.id)
+      onSaved?.()
+    } catch (err) {
+      setDeleteError(err.message)
+      setDeleting(false)
+    }
+  }
+
+  const textRow = ([label, key, letter]) => (
+    <label key={key} className="field" data-help={key}>
+      <AccessLabel text={label} accessKey={letter} />
+      <input type="text" value={value(key)} onChange={set(key)} {...accel(letter)} />
+      {claim(key)}
+    </label>
+  )
+
+  // Which of a picker's values are offered for the item's kind: a grade by
+  // its scale, a denomination, designation or series by its side, and every
+  // value of any other picker.
+  const offeredFor = (key) => {
+    if (key === 'grade') return (grade) => gradeFitsKind(grade, value('item_kind'))
+    if (key === 'denomination' || key === 'grade_designation' || key === 'series') {
+      return (entry) => fitsKind(entry, value('item_kind'))
+    }
+    return undefined
+  }
+
+  // A classifier's row, for those `wanted` that fit the item's kind.
+  const classifierRows = (wanted) =>
+    CLASSIFIERS.filter(
+      ([, key]) => wanted(key) && fieldFitsKind(key, value('item_kind')),
+    ).map(([label, key, table, letter]) => (
+      <label key={key} className="field" data-help={HELP_FOR[key] ?? key}>
+        <AccessLabel text={label} accessKey={letter} />
+        <ReferenceSelect
+          table={table}
+          value={value(key)}
+          onChange={setOrClear(key)}
+          allowAdd={!FIXED_VOCABULARIES.has(table)}
+          // A series is offered by the kind of item it is for, so one
+          // added here is marked for this item's kind. Unmarked, it
+          // is a coin's, and vanishes from a note's picker.
+          addFields={
+            key === 'series' ? { applies_to: sideFor(value('item_kind')) } : undefined
+          }
+          // Status is NOT NULL on the item, so there is no blank to pick:
+          // clearing it would be a 422 the operator cannot act on.
+          allowBlank={key !== 'status'}
+          filter={offeredFor(key)}
+          {...accel(letter)}
+        />
+        {side(key, columnOf(key, true))}
+      </label>
+    ))
+
+  // Each fact's rows, by the name the order above gives it: a classifier's
+  // own row, or one of the three blocks that are more than a picker.
+  const noteRows = (
+    <Fragment key="note">
+      {/* A note's own facts come right after its kind and denomination:
+            its series, serial and plates identify it. The draft's kind, not the
+            saved one: a coin being made a note
+            shows its note fields now, and the save creates the note's row
+            before writing them. */}
+      {value('item_kind') === 'currency' && (
+        <NoteFields
+          value={value}
+          set={setOrClear}
+          setNumber={(key) => (e) =>
+            setDraft({ ...draft, [key]: yearValue(e.target.value) })
+          }
+          setField={(key, next) => setDraft({ ...draft, [key]: next })}
+          side={side}
+        />
+      )}
+      {value('item_kind') === 'currency' && (
+        <SerialPair itemId={itemId} serial={value('serial_number')} />
+      )}
+    </Fragment>
+  )
+  // The first year box is the one year, or the start of a range: its help
+  // topic, its label, what typing in it sets and the lot's claim beside it.
+  const yearBox = ranged
+    ? {
+        help: 'year_start',
+        label: 'Year from',
+        onChange: setRangeStart,
+        claim: claim('year_start'),
+      }
+    : { help: 'year', label: 'Year', onChange: setYear, claim: yearClaim() }
+  const yearRows = (
+    <Fragment key="year">
+      {/* Divs, not labels: a <label> may not contain the range checkbox's
+          own label, so each box is named through htmlFor instead.
+
+          One row that stays mounted, with the end year added beneath it.
+          Two separate layouts would replace the checkbox itself on every
+          tick, and a keyboard user's focus would go with it.
+
+          Not on a note: its year is its series year, and the server leaves
+          the item's own years empty. */}
+      {!isCurrencyKind(value('item_kind')) && (
+        <>
+          <div className="field" data-help={yearBox.help}>
+            <label htmlFor={yearId}>
+              <AccessLabel text={yearBox.label} accessKey="y" />
+            </label>
+            <span className="year-input">
+              <input
+                id={yearId}
+                type="number"
+                disabled={noDate}
+                value={value('year_start')}
+                onChange={yearBox.onChange}
+                {...accel('y')}
+              />
+              {rangeToggle}
+            </span>
+            {yearBox.claim}
+          </div>
+          {yearWarning && <output className="notice status-line">{yearWarning}</output>}
+          {ranged && (
+            <div className="field" data-help="year_end">
+              <label htmlFor={yearEndId}>
+                <AccessLabel text="Year to" accessKey="o" />
+              </label>
+              <input
+                id={yearEndId}
+                type="number"
+                // An item stored with a start and no end opens its range at the
+                // start year -- but only until someone types here.
+                value={rangeEnd(draft, item) ?? ''}
+                onChange={(e) =>
+                  setDraft({ ...draft, year_end: yearValue(e.target.value) })
+                }
+                {...accel('o')}
+              />
+              {claim('year_end')}
+            </div>
+          )}
+        </>
+      )}
+    </Fragment>
+  )
+  const weightRows = (
+    <Fragment key="weights">
+      {fieldFitsKind('fine_weight_ozt', value('item_kind')) && (
+        <WeightFields
+          className="field"
+          get={value}
+          set={(key, next) => setDraft({ ...draft, [key]: next })}
+          renderAside={(key) => (
+            <>
+              {side(key, key)}
+              <span />
+            </>
+          )}
+        />
+      )}
+    </Fragment>
+  )
+  const factRows = (fact) =>
+    ({ note: noteRows, year: yearRows, weights: weightRows })[fact] ??
+    classifierRows((key) => key === fact)
+  const askedFacts = FACTS_ASKED[value('item_kind')] ?? FACTS_ASKED.coin
+  const decidedFacts = factsDecidedFor(value('item_kind'), askedFacts)
+  const placedFacts = new Set([...askedFacts, ...decidedFacts])
+
+  return (
+    <div className="edit-form">
+      <HelpScope>
+        <div className="row">
+          <h2>{item.item_code}</h2>
+          {item.parent_item_code && (
+            <span className="muted">split from {item.parent_item_code}</span>
+          )}
+          {item.piece_codes?.length > 0 && (
+            <span className="muted">split into {item.piece_codes.join(', ')}</span>
+          )}
+          {item.purchase_order_id && (
+            // A new tab, so the editor and the search behind it stay as they
+            // are. A plain link, not a routed one: the editor is also opened
+            // where no router is mounted. The console's pages live under
+            // /management (management/main.jsx's basename).
+            <a
+              href={`/management/purchases?order=${item.purchase_order_id}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              data-help="item_purchase"
+            >
+              {/* Named for what it opens: the order number is the purchase's,
+                  changed there, not on the item. */}
+              Purchase: {item.order_number ?? 'no order number'}
+              {item.vendor ? ` · ${item.vendor}` : ''} -- edit
+            </a>
+          )}
+          {item.sellers_item_id && sellersItemId(item)}
+          {isWebAddress(item.listing_url) && (
+            // Only a web address is offered as a link.
+            <a
+              href={item.listing_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              data-help="listing_url"
+            >
+              Listing
+            </a>
+          )}
+          {onClose && (
+            <button className="link" onClick={onClose}>
+              Close
+            </button>
+          )}
+        </div>
+
+        {error && <p className="error">{error}</p>}
+        {splitNote && <output className="muted status-line">{splitNote}</output>}
+        {item.split_at && (
+          <p className="muted">
+            This lot has been split into its pieces. It is kept for its purchase and
+            item code, but is no longer counted: edit the pieces instead.
+          </p>
+        )}
+
+        {refreshedAt && conflicts.length === 0 && (
+          <output className="muted status-line">
+            Updated with changes made elsewhere at {refreshedAt.toLocaleTimeString()}.
+          </output>
+        )}
+        {conflicts.length > 0 && (
+          <ConflictList
+            item={item}
+            draft={draft}
+            conflicts={conflicts}
+            // Keep mine: the other change has been seen, so mine is now based
+            // on it and will replace it.
+            onKeepMine={(key) => setBaseItem((base) => ({ ...base, [key]: item[key] }))}
+            onUseTheirs={(key) => {
+              setDraft(({ [key]: _dropped, ...rest }) => rest)
+              setBaseItem((base) => ({ ...base, [key]: item[key] }))
+            }}
+          />
+        )}
+        <ForSaleNotice
+          uses={item.sale_state ?? []}
+          checked={acknowledged}
+          onChange={setAcknowledged}
+          action={tick}
+        />
+        {/* A new status (or disposition) takes an offered item off sale:
+            the save ends its offer. Said before the box is ticked, not
+            discovered afterwards. */}
+        {forSale && endsOffer && (
+          <p className="error">
+            Changing its status takes it off sale: saving ends its offer, and the
+            listing will no longer be shown to buyers.
+          </p>
+        )}
+
+        {/* What is known before the piece is in hand comes first: what the
+            seller called it, the listing -- whose address carries the
+            seller's item id -- and what it cost. Then what identifies it:
+            kind, denomination, and a note's series and serial or a coin's
+            year. Those facts decide most of the rest, which is shown as
+            they are entered (`preview`) and can be typed over. */}
+        {textRow(TEXT_FIELDS[0])}
+        <label className="field" data-help="listing_url">
+          <span>Listing web address</span>
+          <input
+            type="url"
+            placeholder="https://"
+            value={value('listing_url') || ''}
+            onChange={setListing}
+          />
+          <span />
+          <span />
+        </label>
+        {/* The seller's listing id -- eBay's item number. Filled from the
+            listing's address as that is typed above (`setListing`), and for
+            older records by the passes app.ebay_orders and
+            app.listing_links; typed here where the address carries none. */}
+        <label className="field" data-help="sellers_item_id">
+          <span>Seller&apos;s item id</span>
+          <input
+            type="text"
+            value={value('sellers_item_id') || ''}
+            onChange={set('sellers_item_id')}
+          />
+          <span />
+          <span />
+        </label>
+        {MONEY_FIELDS.map(([label, key, letter]) => (
+          <label key={key} className="field" data-help={key}>
+            <AccessLabel text={label} accessKey={letter} />
+            {/* Text, not number. Money crosses the API as a string and a number
+              input would hand back a float, which is the one thing this
+              schema is careful never to do. */}
+            <input
+              type="text"
+              inputMode="decimal"
+              value={value(key)}
+              onChange={set(key)}
+              {...accel(letter)}
+            />
+            {/* No lot ever claims a cost -- a piece's cost is allocated at
+              split time, not inherited -- but `.field` is a three-column
+              grid and every other row fills this slot, so an empty one is
+              called for explicitly. */}
+            {claim(key)}
+          </label>
+        ))}
+
+        {item.tax_rate !== undefined && (
+          <div className="field">
+            Sales tax{/* */}
+            <span title="Recalculated by the database when saved">
+              {money(item.sales_tax)}
+            </span>
+            <label className="checkbox" data-help="no_sales_tax">
+              <input
+                type="checkbox"
+                checked={untaxed}
+                onChange={toggleTax}
+                {...accel('n')}
+              />
+              {/* */}
+              <AccessLabel text="No sales tax charged" accessKey="n" />
+            </label>
+            <span />
+          </div>
+        )}
+
+        {/* The kind decides which fields follow: choosing another shows its
+            fields at once, and empties the ones it cannot have. */}
+        <label className="field" data-help="item_kind">
+          <span>Kind</span>
+          <ReferenceSelect
+            table="item_kind"
+            value={value('item_kind')}
+            onChange={changeKind}
+            allowAdd={false}
+            allowBlank={false}
+          />
+          {side('item_kind', 'item_kind_id')}
+          <span />
+        </label>
+        {Object.keys(kindCleared).length > 0 && (
+          <output className="for-sale status-line">
+            As {kindLabel(value('item_kind'))} it cannot keep{' '}
+            {Object.entries(kindCleared)
+              .map(([key, { was }]) => `${fieldName(key)} (${shown(was)})`)
+              .join(', ')}
+            : saving clears them. Choose {kindLabel(item.item_kind)} again to keep them.
+          </output>
+        )}
+        {leavingNote && item.friedberg_id && pendingFriedberg?.action !== 'clear' && (
+          <p className="error">
+            It has a Friedberg number: clear it below before saving, or the save is
+            refused.
+          </p>
+        )}
+
+        {/* What identifies the piece, in the order its kind is asked for it
+            (`FACTS_ASKED`); then what those facts decide; then the rest. */}
+        {askedFacts.map(factRows)}
+        {decidedFacts.map(factRows)}
+        {classifierRows((key) => !placedFacts.has(key))}
+
+        {fieldFitsKind('variety', value('item_kind')) && (
+          <label className="field" data-help="variety">
+            <span>Variety</span>
+            <input value={value('variety')} onChange={set('variety')} />
+            {side('variety', 'variety')}
+            <span />
+          </label>
+        )}
+
+        {/* A note's serial is among its own fields above; a bullion item's
+            sits with the other numbers that identify the piece. */}
+        {value('item_kind') === 'bullion' && (
+          <label className="field" data-help="bullion_serial">
+            <span>Serial number</span>
+            <input value={value('serial_number')} onChange={set('serial_number')} />
+            {side('serial_number', 'serial_number')}
+            <span />
+          </label>
+        )}
+
+        <label className="field" data-help="cert_numbers">
+          <span>Certificate no.</span>
+          <input
+            value={(value('cert_numbers') || []).join(', ')}
+            onChange={(e) =>
+              setDraft({ ...draft, cert_numbers: certsFrom(e.target.value) })
+            }
+          />
+          {side('cert_numbers', 'cert_numbers')}
+          <span />
+        </label>
+
+        {NUMBER_FIELDS.map(([label, key, letter]) => (
+          <label key={key} className="field" data-help={key}>
+            <AccessLabel text={label} accessKey={letter} />
+            <input
+              type="number"
+              value={value(key)}
+              onChange={set(key)}
+              {...accel(letter)}
+            />
+            {claim(key)}
+          </label>
+        ))}
+
+        <AttributesField
+          item={item}
+          kind={value('item_kind')}
+          codes={draft.attributes ?? fieldValue(item, 'attributes')}
+          onChange={(codes) => setDraft({ ...draft, attributes: codes })}
+        />
+
+        {/* Held here and recorded by Save, like every other edit on this
+          form. No sale state goes to the panel: this form's own notice
+          above is the one acknowledgement, and it covers the errors too. */}
+        {errors === null ? (
+          errorsNotRead(errorsReadError)
+        ) : (
+          <ErrorsPanel
+            itemId={null}
+            kind={value('item_kind')}
+            value={errors}
+            onChange={setErrors}
+            saleState={[]}
+          />
+        )}
+
+        {/* The description last of the facts: Suggest writes it from them,
+            errors and attributes included. */}
+        {textRow(TEXT_FIELDS[1])}
+        {/* Outside the label: a button inside a label with no `for`
+            takes the label from its input. */}
+        <div className="row">
+          <button type="button" className="link" onClick={suggestDescription}>
+            Suggest description
+          </button>
+          <span className="muted">{suggestNote}</span>
+        </div>
+
+        {/* The owner's own words about the piece. Search and the passes
+            read it as evidence -- "Funny Back" here makes a note a
+            Funnyback -- so a wrong word has to be correctable here. */}
+        <label className="field" data-help="rating">
+          <span>Rating</span>
+          <input type="text" value={value('rating') || ''} onChange={set('rating')} />
+        </label>
+
+        {/* Where it is kept: a move is kept in its location history. The
+            server asks no for-sale acknowledgement for a move alone -- no
+            buyer sees it -- but this form's Save waits for the tick on any
+            change. */}
+        <label className="field" data-help="storage_location_id">
+          <span>Storage location</span>
+          <LocationSelect
+            // `value` gives '' for a location not recorded, never null.
+            value={String(value('storage_location_id'))}
+            onChange={(id) =>
+              setDraft({ ...draft, storage_location_id: id ? Number(id) : null })
+            }
+          />
+          <span />
+          <span />
+        </label>
+        {/* A photograph added here, and a new role, primary, removal or move
+          for one already filed, is held until this form's Save applies it, under
+          this form's one for-sale acknowledgement. */}
+        <PhotosPanel
+          itemId={itemId}
+          pending={pendingPhotos}
+          edits={photoEdits}
+          onEditsChange={setPhotoEdits}
+          reloadKey={photoKey}
+          onAdd={(entry) =>
+            setPendingPhotos((list) => [
+              ...list,
+              { ...entry, key: crypto.randomUUID() },
+            ])
+          }
+          onRoleChange={(key, role) =>
+            setPendingPhotos((list) =>
+              list.map((entry) =>
+                entry.key === key ? { ...entry, role, error: undefined } : entry,
+              ),
+            )
+          }
+          onDiscard={(key) =>
+            setPendingPhotos((list) => list.filter((entry) => entry.key !== key))
+          }
+        />
+
+        {/* The saved kind: a Friedberg number hangs on the note's stored row,
+            so it can be looked up only once that row exists -- and cleared
+            before the note stops being one. */}
+        {item.item_kind === 'currency' && (
+          <FriedbergPanel
+            // The note as the form shows it: the lookup narrows by its
+            // series, seal, plates and the rest, and those are typed here
+            // before they are saved.
+            item={{
+              ...item,
+              ...Object.fromEntries(FRIEDBERG_FACTS.map((key) => [key, value(key)])),
+            }}
+            pending={pendingFriedberg}
+            onHold={setPendingFriedberg}
+            onUndo={() => setPendingFriedberg(null)}
+          />
+        )}
+
+        <div className="row">
+          <SaveButton saving={saving} disabled={saving} onClick={save} />
+          {/* A lot is split as saved: the pieces copy the stored record, so
+              an edit still waiting here would not reach them. Neither a
+              split lot nor a piece of one can be split again. */}
+          {!item.split_at && !item.parent_item_id && (
+            <>
+              <button
+                type="button"
+                disabled={Object.keys(draft).length > 0}
+                onClick={() => setSplitting(true)}
+              >
+                Split into pieces...
+              </button>
+              {Object.keys(draft).length > 0 && (
+                <span className="muted">Save or undo your changes to split it.</span>
+              )}
+            </>
+          )}
+          {/* For a row that should never have existed -- one purchase entered
+              twice. Asked about first, and the server refuses what must
+              stay: a lot with pieces, an item ever offered, one in a sales
+              lot. Its reason is shown under this row. */}
+          <button
+            type="button"
+            data-help="delete_item"
+            disabled={deleting}
+            onClick={deleteItem}
+          >
+            Delete item...
+          </button>
+        </div>
+        {deleteError && <p className="error">{deleteError}</p>}
+        {splitting && (
+          <SplitDialog
+            item={item}
+            onClose={() => setSplitting(false)}
+            onSplit={(result) => {
+              setSplitting(false)
+              setSplitNote(
+                `Split into ${result.pieces.length} pieces: ` +
+                  `${result.pieces.map((piece) => piece.item_code).join(', ')}. ` +
+                  `They cost ${result.allocated_total_cost} in all; the lot cost ` +
+                  `${result.parent_total_cost}.`,
+              )
+              reloadItem()
+              // Not `onSaved`, which closes the editor over the results: what
+              // the split made is said here, while the list behind catches up.
+              onChanged?.()
+            }}
+          />
+        )}
+
+        {/* What is being asked for the item, beside what it has sold for.
+          Self-loading like the sale history below, and it writes nothing itself:
+          starting and ending an offer both go through the offers API, which
+          is the only thing allowed to set a listing's status. */}
+        <OffersPanel item={item} onChanged={reloadItem} />
+
+        <SaleHistory itemId={itemId} />
+
+        {/* Read-only; re-read whenever the item's version moves, and after
+            every save here, so a save made above appears here at once. */}
+        <HistoryPanel itemId={itemId} version={item.version} saves={saves} />
+      </HelpScope>
+    </div>
+  )
+}

@@ -1,0 +1,291 @@
+import userEvent from '@testing-library/user-event'
+import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+vi.mock('../api', () => ({
+  api: {
+    listUsers: vi.fn(),
+    createUser: vi.fn(),
+    listCustomers: vi.fn(),
+    updateUser: vi.fn(),
+    setUserPassword: vi.fn(),
+    updateCustomer: vi.fn(),
+    addCustomerAddress: vi.fn(),
+  },
+}))
+
+import { api } from '../api'
+import AdminPeople from './AdminPeople'
+import { adminAuth, renderWithProviders } from '../../test/helpers'
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  api.listUsers.mockResolvedValue([
+    {
+      id: 1,
+      email: 'staff@example.com',
+      full_name: 'Staff',
+      role: 'manager',
+      is_active: true,
+    },
+  ])
+  // `display_name`, which is what `CustomerOut` returns; a customer response
+  // carries no `full_name`.
+  api.listCustomers.mockResolvedValue([
+    { id: 5, display_name: 'Ada Lovelace', email: 'ada@example.com', addresses: [] },
+  ])
+})
+
+describe('AdminPeople', () => {
+  it('opens on the accounts tab and lists users', async () => {
+    renderWithProviders(<AdminPeople />, { auth: adminAuth() })
+    expect(await screen.findByText('staff@example.com')).toBeInTheDocument()
+  })
+
+  it('switches to customers', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<AdminPeople />, { auth: adminAuth() })
+    await screen.findByText('staff@example.com')
+
+    await user.click(screen.getByRole('button', { name: 'Customers' }))
+    expect(await screen.findByText('ada@example.com')).toBeInTheDocument()
+    // The name too, read from `display_name`.
+    expect(screen.getByText('Ada Lovelace')).toBeInTheDocument()
+  })
+
+  it('reveals the address form for one customer on request', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<AdminPeople />, { auth: adminAuth() })
+    await screen.findByText('staff@example.com')
+
+    await user.click(screen.getByRole('button', { name: 'Customers' }))
+    await user.click(await screen.findByRole('button', { name: /new address/i }))
+
+    // Every field of the address form, which is only mounted once asked for.
+    expect(await screen.findByLabelText(/address line 1/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/^line 2$/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/^city$/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/state \/ region/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/postal code/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/^country$/i)).toBeInTheDocument()
+  })
+
+  async function openNewAccount() {
+    const user = userEvent.setup()
+    renderWithProviders(<AdminPeople />, { auth: adminAuth() })
+    await screen.findByText('staff@example.com')
+    await user.click(screen.getByRole('button', { name: 'New account' }))
+    return user
+  }
+
+  it('creates an account from the New account form', async () => {
+    api.createUser.mockResolvedValue({ id: 9, email: 'colleague@example.com' })
+    const user = await openNewAccount()
+
+    await user.type(screen.getByLabelText(/^email$/i), 'colleague@example.com')
+    await user.type(screen.getByLabelText(/^name$/i), 'A Colleague')
+    await user.selectOptions(screen.getByLabelText(/^role$/i), 'manager')
+    await user.type(screen.getByLabelText(/initial password/i), 'long-enough-pw')
+    await user.click(screen.getByRole('button', { name: 'Create account' }))
+
+    expect(api.createUser).toHaveBeenCalledWith({
+      email: 'colleague@example.com',
+      full_name: 'A Colleague',
+      role: 'manager',
+      password: 'long-enough-pw',
+    })
+    expect(await screen.findByText(/colleague@example.com/)).toBeInTheDocument()
+    // The list is fetched again, so the new account appears in it.
+    expect(api.listUsers).toHaveBeenCalledTimes(2)
+    expect(screen.queryByRole('button', { name: 'Create account' })).toBeNull()
+  })
+
+  it('offers customer as the role until manager is chosen', async () => {
+    await openNewAccount()
+    expect(screen.getByLabelText(/^role$/i)).toHaveValue('customer')
+  })
+
+  it('keeps what was typed when the server refuses', async () => {
+    api.createUser.mockRejectedValue(
+      new Error('An account with that email already exists'),
+    )
+    const user = await openNewAccount()
+
+    await user.type(screen.getByLabelText(/^email$/i), 'staff@example.com')
+    await user.type(screen.getByLabelText(/initial password/i), 'long-enough-pw')
+    await user.click(screen.getByRole('button', { name: 'Create account' }))
+
+    expect(
+      await screen.findByText('An account with that email already exists'),
+    ).toBeInTheDocument()
+    // Shown in the form, not in place of the page: the table and the typed
+    // details are both still there to correct and resend.
+    expect(screen.getByLabelText(/^email$/i)).toHaveValue('staff@example.com')
+    expect(screen.getByRole('table')).toBeInTheDocument()
+  })
+
+  it('closes the form on Cancel without creating anything', async () => {
+    const user = await openNewAccount()
+    await user.type(screen.getByLabelText(/^email$/i), 'nobody@example.com')
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+
+    expect(screen.queryByLabelText(/^email$/i)).toBeNull()
+    expect(api.createUser).not.toHaveBeenCalled()
+  })
+
+  it('reports a failed load', async () => {
+    api.listUsers.mockRejectedValue(new Error('cannot reach the server'))
+    renderWithProviders(<AdminPeople />, { auth: adminAuth() })
+    expect(await screen.findByText('cannot reach the server')).toBeInTheDocument()
+  })
+
+  it('keeps the accounts table when an action is refused', async () => {
+    // The last-administrator guard answers 409, and that refusal is about a
+    // row: the rows stay, so the operator can see which account it concerns
+    // and act on the advice.
+    api.updateUser.mockRejectedValue(
+      new Error('That is the last administrator; promote another first.'),
+    )
+    const user = userEvent.setup()
+    renderWithProviders(<AdminPeople />, { auth: adminAuth() })
+
+    await user.click(await screen.findByRole('button', { name: 'Active' }))
+
+    expect(
+      await screen.findByText('That is the last administrator; promote another first.'),
+    ).toBeInTheDocument()
+    expect(screen.getByText('staff@example.com')).toBeInTheDocument()
+  })
+
+  it('keeps a customer edit on screen when saving it is refused', async () => {
+    // `draft` holds what the operator typed. It is React state, so it
+    // survives the failure -- but only if the input is still mounted, which
+    // is why the table stays on screen.
+    api.updateCustomer.mockRejectedValue(new Error('that email is already in use'))
+    const user = userEvent.setup()
+    renderWithProviders(<AdminPeople />, { auth: adminAuth() })
+
+    await user.click(await screen.findByRole('button', { name: 'Customers' }))
+    await user.click(await screen.findByRole('button', { name: 'Edit' }))
+
+    const name = screen.getByDisplayValue('Ada Lovelace')
+    await user.clear(name)
+    await user.type(name, 'Ada King')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    expect(await screen.findByText('that email is already in use')).toBeInTheDocument()
+    // The typing is still there to be corrected, not retyped.
+    expect(screen.getByDisplayValue('Ada King')).toBeInTheDocument()
+  })
+})
+
+describe('AdminPeople: a customer edit', () => {
+  /** The customers tab with the one customer's row open for editing. */
+  async function editCustomer() {
+    const user = userEvent.setup()
+    renderWithProviders(<AdminPeople />, { auth: adminAuth() })
+    await user.click(await screen.findByRole('button', { name: 'Customers' }))
+    await user.click(await screen.findByRole('button', { name: 'Edit' }))
+    return user
+  }
+
+  it('clears an email by sending null, which is what the server takes for none', async () => {
+    api.updateCustomer.mockResolvedValue({})
+    const user = await editCustomer()
+    await user.clear(screen.getByDisplayValue('ada@example.com'))
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() =>
+      expect(api.updateCustomer).toHaveBeenCalledWith(5, { email: null }),
+    )
+  })
+
+  it('refuses a blank name without asking the server', async () => {
+    const user = await editCustomer()
+    await user.clear(screen.getByDisplayValue('Ada Lovelace'))
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    expect(screen.getByText('A customer needs a name.')).toBeInTheDocument()
+    expect(api.updateCustomer).not.toHaveBeenCalled()
+  })
+
+  it('sends one save however often Ctrl+S repeats while it is out', async () => {
+    api.updateCustomer.mockReturnValue(new Promise(() => {}))
+    const user = await editCustomer()
+    await user.type(screen.getByDisplayValue('Ada Lovelace'), ' King')
+
+    fireEvent.keyDown(document, { key: 's', ctrlKey: true })
+    fireEvent.keyDown(document, { key: 's', ctrlKey: true })
+    await user.click(screen.getByRole('button', { name: 'Saving...' }))
+
+    expect(api.updateCustomer).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('AdminPeople: a new address', () => {
+  it('records one address however often Save repeats while it is out', async () => {
+    // Each request retires the address before it and adds a row, so a second
+    // one behind the first would leave a retired copy of the same address.
+    api.addCustomerAddress.mockReturnValue(new Promise(() => {}))
+    const user = userEvent.setup()
+    renderWithProviders(<AdminPeople />, { auth: adminAuth() })
+    await user.click(await screen.findByRole('button', { name: 'Customers' }))
+    await user.click(await screen.findByRole('button', { name: 'New address' }))
+
+    fireEvent.keyDown(document, { key: 's', ctrlKey: true })
+    fireEvent.keyDown(document, { key: 's', ctrlKey: true })
+    await user.click(screen.getByRole('button', { name: 'Saving...' }))
+
+    expect(api.addCustomerAddress).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('AdminPeople: Ctrl+S', () => {
+  it("saves a customer's edit", async () => {
+    api.updateCustomer.mockResolvedValue({})
+    const user = userEvent.setup()
+    renderWithProviders(<AdminPeople />, { auth: adminAuth() })
+    await user.click(await screen.findByRole('button', { name: 'Customers' }))
+    await user.click(await screen.findByRole('button', { name: 'Edit' }))
+    const name = screen.getByDisplayValue('Ada Lovelace')
+    await user.clear(name)
+    await user.type(name, 'Ada King')
+
+    fireEvent.keyDown(document, { key: 's', ctrlKey: true })
+
+    await waitFor(() =>
+      expect(api.updateCustomer).toHaveBeenCalledWith(
+        5,
+        expect.objectContaining({ display_name: 'Ada King' }),
+      ),
+    )
+  })
+
+  it('saves a new address', async () => {
+    api.addCustomerAddress.mockResolvedValue({})
+    const user = userEvent.setup()
+    renderWithProviders(<AdminPeople />, { auth: adminAuth() })
+    await user.click(await screen.findByRole('button', { name: 'Customers' }))
+    await user.click(await screen.findByRole('button', { name: 'New address' }))
+    expect(screen.getByRole('button', { name: 'Save address' })).toHaveAttribute(
+      'aria-keyshortcuts',
+      'Control+S',
+    )
+
+    fireEvent.keyDown(document, { key: 's', ctrlKey: true })
+
+    await waitFor(() => expect(api.addCustomerAddress).toHaveBeenCalledTimes(1))
+  })
+
+  it('does nothing while no edit is open', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<AdminPeople />, { auth: adminAuth() })
+    await user.click(await screen.findByRole('button', { name: 'Customers' }))
+    await screen.findByText('ada@example.com')
+
+    fireEvent.keyDown(document, { key: 's', ctrlKey: true })
+
+    expect(api.updateCustomer).not.toHaveBeenCalled()
+    expect(api.addCustomerAddress).not.toHaveBeenCalled()
+  })
+})

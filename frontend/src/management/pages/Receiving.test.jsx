@@ -1,0 +1,429 @@
+import { screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { useNavigate } from 'react-router-dom'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+vi.mock('../api', () => ({
+  api: {
+    getPurchaseOrder: vi.fn(),
+    listStorageLocations: vi.fn(),
+    receiveItems: vi.fn(),
+    //: A single line gives `ReceiptPanel` exactly one item, and with one
+    //: item it looks the kind up -- that is what decides whether the
+    //: Friedberg lookup is offered.
+    getInventoryItem: vi.fn(),
+    uploadImage: vi.fn(),
+    searchInventory: vi.fn(),
+    getItemErrors: vi.fn(),
+    setItemErrors: vi.fn(),
+    listItemImages: vi.fn(),
+  },
+}))
+
+import { api } from '../api'
+import Receiving from './Receiving'
+import { adminAuth, renderWithProviders } from '../../test/helpers'
+
+/** A button that navigates like the browser's own Back/Forward would --
+ * changing the route without going through any handler of `Receiving`'s. */
+function NavigateButton({ to }) {
+  const navigate = useNavigate()
+  return (
+    <button type="button" onClick={() => navigate(to)}>
+      go
+    </button>
+  )
+}
+
+const MORGAN = {
+  id: 412,
+  item_code: 'CC-000412',
+  description: '1881-S Morgan $1',
+  order_number: '27-1234',
+  vendor: 'eBay',
+}
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  api.listStorageLocations.mockResolvedValue([
+    { id: 3, label: 'Safe deposit box', kind: 'safe_deposit_box' },
+  ])
+  api.getInventoryItem.mockResolvedValue({ id: 412, item_kind: 'coin' })
+  api.getItemErrors.mockResolvedValue({ inventory_item_id: 412, errors: [] })
+  api.listItemImages.mockResolvedValue([])
+  api.getPurchaseOrder.mockResolvedValue({
+    id: 1,
+    order_number: '27-1234',
+    vendor: 'eBay',
+    ordered_on: '2026-08-30',
+    lines: [],
+  })
+  api.searchInventory.mockImplementation((view, params) =>
+    Promise.resolve(
+      view === 'coins' && params.status === 'ordered'
+        ? { rows: [MORGAN], total: 1 }
+        : { rows: [], total: 0 },
+    ),
+  )
+})
+
+/** Opens Receiving on order 1, as Purchases' Receive these links here. */
+function renderOnOrder(extra = null) {
+  return renderWithProviders(
+    <>
+      <Receiving />
+      {extra}
+    </>,
+    { auth: adminAuth(), route: '/receiving?order=1' },
+  )
+}
+
+const morganButton = () => screen.findByRole('button', { name: /CC-000412/ })
+
+describe('Receiving', () => {
+  it('is one search form: no "By order" or "By item" to choose between', async () => {
+    renderWithProviders(<Receiving />, { auth: adminAuth(), route: '/receiving' })
+    expect(await screen.findByLabelText(/order number/i)).toHaveValue('')
+    expect(screen.queryByRole('radio', { name: /by order/i })).toBeNull()
+    expect(screen.queryByRole('radio', { name: /by item/i })).toBeNull()
+    // Nothing is searched until asked.
+    expect(api.searchInventory).not.toHaveBeenCalled()
+  })
+
+  it('opens a linked order already searched, with its header', async () => {
+    api.getPurchaseOrder.mockResolvedValue({
+      id: 1,
+      order_number: '27-1234',
+      vendor: 'eBay',
+      ordered_on: '2026-08-30',
+      source_url: 'https://www.ebay.com/itm/1',
+      lines: [],
+    })
+    renderOnOrder()
+    await waitFor(() => expect(api.getPurchaseOrder).toHaveBeenCalledWith(1))
+
+    expect(await morganButton()).toBeInTheDocument()
+    expect(screen.getByLabelText(/order number/i)).toHaveValue('27-1234')
+    // The purchase's own number, as the Purchases table and the reports show it.
+    expect(screen.getByRole('heading', { name: /#1\b/ })).toHaveTextContent(
+      /^#1 · 27-1234 · eBay/,
+    )
+    expect(
+      api.searchInventory.mock.calls.every(([, p]) => p.purchase_order_id === 1),
+    ).toBe(true)
+    const link = screen.getByRole('link', { name: 'Vendor page' })
+    expect(link).toHaveAttribute('href', 'https://www.ebay.com/itm/1')
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer')
+  })
+
+  it('links the seller, by name, to their store', async () => {
+    api.getPurchaseOrder.mockResolvedValue({
+      id: 1,
+      order_number: '27-1234',
+      vendor: 'ebay.com',
+      ordered_on: '2026-08-30',
+      source_url: null,
+      seller: 'examplecoins',
+      seller_url: 'https://www.ebay.com/str/examplecoins',
+      lines: [],
+    })
+    renderOnOrder()
+    const link = await screen.findByRole('link', { name: 'examplecoins' })
+    expect(link).toHaveAttribute('href', 'https://www.ebay.com/str/examplecoins')
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer')
+  })
+
+  it('shows no vendor link when the order carries no source url', async () => {
+    renderOnOrder()
+    await morganButton()
+    expect(screen.queryByRole('link', { name: 'Vendor page' })).toBeNull()
+  })
+
+  it('drops a failed link’s error once the address names another order', async () => {
+    api.getPurchaseOrder.mockImplementation((id) =>
+      id === 1
+        ? Promise.reject(new Error('Purchase order not found'))
+        : Promise.resolve({
+            id: 2,
+            order_number: '27-9999',
+            vendor: 'eBay',
+            ordered_on: '2026-08-30',
+            lines: [],
+          }),
+    )
+    renderOnOrder(<NavigateButton to="/receiving?order=2" />)
+    expect(await screen.findByText('Purchase order not found')).toBeInTheDocument()
+
+    screen.getByText('go').click()
+    expect(await screen.findByRole('heading', { name: /27-9999/ })).toBeInTheDocument()
+    expect(screen.queryByText('Purchase order not found')).toBeNull()
+  })
+
+  it('drops a failed link’s error once the address names no order at all', async () => {
+    api.getPurchaseOrder.mockRejectedValue(new Error('Purchase order not found'))
+    renderOnOrder(<NavigateButton to="/receiving" />)
+    expect(await screen.findByText('Purchase order not found')).toBeInTheDocument()
+
+    screen.getByText('go').click()
+    await waitFor(() =>
+      expect(screen.queryByText('Purchase order not found')).toBeNull(),
+    )
+    // The page is usable, not held on the old order: the search form is there.
+    expect(await screen.findByRole('button', { name: /^find/i })).toBeInTheDocument()
+  })
+
+  it('follows the route to another order, as Back/Forward would', async () => {
+    renderOnOrder(<NavigateButton to="/receiving?order=43" />)
+    await waitFor(() => expect(api.getPurchaseOrder).toHaveBeenCalledWith(1))
+    screen.getByText('go').click()
+    await waitFor(() => expect(api.getPurchaseOrder).toHaveBeenCalledWith(43))
+  })
+})
+
+describe('receiving one line at a time', () => {
+  it('opens the picked line in a dialog that names it', async () => {
+    const user = userEvent.setup()
+    renderOnOrder()
+    await user.click(await morganButton())
+
+    const dialog = await screen.findByRole('dialog')
+    // Named, so a mis-click is obvious before a location is typed into it.
+    expect(dialog).toHaveAccessibleName(/CC-000412/)
+    expect(within(dialog).getByText('1881-S Morgan $1')).toBeInTheDocument()
+    expect(within(dialog).getByLabelText(/arrived/i)).toBeInTheDocument()
+  })
+
+  it('records the receipt for that one line only', async () => {
+    const user = userEvent.setup()
+    api.receiveItems.mockResolvedValue({ outcome: 'received', items: 1 })
+    renderOnOrder()
+    await user.click(await morganButton())
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: 'Receive' }))
+
+    await waitFor(() =>
+      expect(api.receiveItems).toHaveBeenCalledWith(
+        expect.objectContaining({ item_ids: [412] }),
+      ),
+    )
+  })
+
+  it('closes the dialog and searches again once the receipt lands', async () => {
+    const user = userEvent.setup()
+    api.receiveItems.mockResolvedValue({ outcome: 'received', items: 1 })
+    renderOnOrder()
+    await user.click(await morganButton())
+    const searchesBefore = api.searchInventory.mock.calls.length
+    const dialog = await screen.findByRole('dialog')
+
+    // What arrived is no longer "not yet arrived": the repeated search
+    // must not offer it again.
+    api.searchInventory.mockResolvedValue({ rows: [], total: 0 })
+    await user.click(within(dialog).getByRole('button', { name: 'Receive' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    await waitFor(() =>
+      expect(api.searchInventory.mock.calls.length).toBeGreaterThan(searchesBefore),
+    )
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /CC-000412/ })).toBeNull(),
+    )
+  })
+
+  it('closes without recording anything when Close is clicked', async () => {
+    const user = userEvent.setup()
+    renderOnOrder()
+    await user.click(await morganButton())
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: 'Close' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(api.receiveItems).not.toHaveBeenCalled()
+  })
+
+  it('keeps the dialog open and says so when a photograph fails to upload', async () => {
+    // The receipt is recorded; the photograph is not. Closing on `onDone`
+    // would report the failure to a component nobody can see.
+    const user = userEvent.setup()
+    api.receiveItems.mockResolvedValue({ outcome: 'received', items: 1 })
+    api.uploadImage.mockRejectedValue(new Error('file too large'))
+    renderOnOrder()
+    await user.click(await morganButton())
+    const dialog = await screen.findByRole('dialog')
+    await user.upload(
+      within(dialog).getByLabelText(/photo/i),
+      new File(['x'], 'obverse.jpg', { type: 'image/jpeg' }),
+    )
+    await user.click(within(dialog).getByRole('button', { name: 'Receive' }))
+
+    await waitFor(() => expect(api.uploadImage).toHaveBeenCalled())
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(await screen.findByText(/obverse\.jpg.*file too large/i)).toBeInTheDocument()
+
+    // The receipt was recorded, so closing must search again: the item is
+    // not "not yet arrived" any more.
+    const before = api.searchInventory.mock.calls.length
+    await user.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: 'Close' }),
+    )
+    await waitFor(() =>
+      expect(api.searchInventory.mock.calls.length).toBeGreaterThan(before),
+    )
+  })
+
+  it('offers the previous line’s location again on the next one', async () => {
+    // A parcel of twenty into one safe deposit box must not be twenty
+    // identical dropdown picks.
+    const user = userEvent.setup()
+    api.receiveItems.mockResolvedValue({ outcome: 'received', items: 1 })
+    renderOnOrder()
+    await user.click(await morganButton())
+    let dialog = await screen.findByRole('dialog')
+    await user.selectOptions(within(dialog).getByLabelText(/storage location/i), '3')
+    await user.click(within(dialog).getByRole('button', { name: 'Receive' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+
+    await user.click(await morganButton())
+    dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByLabelText(/storage location/i)).toHaveValue('3')
+  })
+
+  it('does not carry a note from one line to the next', async () => {
+    // A location describes the parcel; a note describes the object.
+    const user = userEvent.setup()
+    api.receiveItems.mockResolvedValue({ outcome: 'received', items: 1 })
+    renderOnOrder()
+    await user.click(await morganButton())
+    let dialog = await screen.findByRole('dialog')
+    await user.type(within(dialog).getByLabelText(/note/i), 'corner bent')
+    await user.click(within(dialog).getByRole('button', { name: 'Receive' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+
+    await user.click(await morganButton())
+    dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByLabelText(/note/i)).toHaveValue('')
+  })
+})
+
+describe('an open dialog belongs to the order it was opened from', () => {
+  it('closes when the route moves to another order, as Back/Forward would', async () => {
+    // Back/Forward goes through no handler here, and a modal does not block
+    // browser chrome: a dialog left open would submit against a search no
+    // longer on screen.
+    const user = userEvent.setup()
+    renderOnOrder(<NavigateButton to="/receiving?order=2" />)
+    await user.click(await morganButton())
+    expect(await screen.findByRole('dialog')).toBeInTheDocument()
+
+    await user.click(screen.getByText('go'))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  })
+})
+
+describe('Receive all', () => {
+  /** Order 1 with two lines still ordered, one received and one missing. */
+  function orderWithLines() {
+    const line = (id, status) => ({
+      id,
+      item_code: `CC-000${id}`,
+      source_title: `Line ${id}`,
+      description: '',
+      item_kind: 'coin',
+      item_cost: '10.00',
+      status,
+    })
+    return {
+      id: 1,
+      order_number: '27-1234',
+      vendor: 'eBay',
+      ordered_on: '2026-08-30',
+      lines: [
+        line(501, 'ordered'),
+        line(502, 'received'),
+        line(503, 'ordered'),
+        line(504, 'missing'),
+      ],
+    }
+  }
+
+  it('receives every line still ordered, and only those, in one request', async () => {
+    const user = userEvent.setup()
+    api.getPurchaseOrder.mockResolvedValue(orderWithLines())
+    api.receiveItems.mockResolvedValue({ outcome: 'received', items: 2 })
+    renderOnOrder()
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Receive all 2 still ordered' }),
+    )
+    const dialog = await screen.findByRole('dialog')
+    expect(dialog).toHaveAccessibleName(/2 items/)
+    await user.click(within(dialog).getByRole('button', { name: 'Receive' }))
+
+    await waitFor(() =>
+      expect(api.receiveItems).toHaveBeenCalledWith(
+        expect.objectContaining({ item_ids: [501, 503], outcome: 'received' }),
+      ),
+    )
+    expect(api.receiveItems).toHaveBeenCalledTimes(1)
+  })
+
+  it('reads the order again after the receipt, so the button goes', async () => {
+    const user = userEvent.setup()
+    api.getPurchaseOrder.mockResolvedValue(orderWithLines())
+    api.receiveItems.mockResolvedValue({ outcome: 'received', items: 2 })
+    renderOnOrder()
+    // Typed by the operator, so a remounted search would lose it -- the
+    // order number alone would not show that, as a remount refills it.
+    await user.click(await screen.findByRole('radio', { name: 'Coins' }))
+    await user.click(
+      await screen.findByRole('button', { name: 'Receive all 2 still ordered' }),
+    )
+    const dialog = await screen.findByRole('dialog')
+
+    const received = orderWithLines()
+    received.lines = received.lines.map((l) =>
+      l.status === 'ordered' ? { ...l, status: 'received' } : l,
+    )
+    api.getPurchaseOrder.mockResolvedValue(received)
+    await user.click(within(dialog).getByRole('button', { name: 'Receive' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /Receive all/ })).toBeNull(),
+    )
+    // The search stayed mounted through the re-read.
+    expect(screen.getByRole('radio', { name: 'Coins' })).toBeChecked()
+  })
+
+  it('is not offered from the last read while the order is being read again', async () => {
+    // Until the new read answers, the lines on hand are the ones just
+    // received: offering them would send a receipt the server refuses.
+    const user = userEvent.setup()
+    api.getPurchaseOrder.mockResolvedValue(orderWithLines())
+    api.receiveItems.mockResolvedValue({ outcome: 'received', items: 2 })
+    renderOnOrder()
+    await user.click(
+      await screen.findByRole('button', { name: 'Receive all 2 still ordered' }),
+    )
+    const dialog = await screen.findByRole('dialog')
+
+    // The read after the receipt never answers.
+    api.getPurchaseOrder.mockReturnValue(new Promise(() => {}))
+    await user.click(within(dialog).getByRole('button', { name: 'Receive' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(api.getPurchaseOrder).toHaveBeenCalledTimes(2)
+    expect(screen.queryByRole('button', { name: /Receive all/ })).toBeNull()
+    // The order's own header stays while it is read again.
+    expect(screen.getByRole('heading', { name: /27-1234/ })).toBeInTheDocument()
+  })
+
+  it('is not offered for a single line still ordered', async () => {
+    const order = orderWithLines()
+    order.lines = order.lines.filter((l) => l.id !== 503)
+    api.getPurchaseOrder.mockResolvedValue(order)
+    renderOnOrder()
+    await morganButton()
+    expect(screen.queryByRole('button', { name: /Receive all/ })).toBeNull()
+  })
+})

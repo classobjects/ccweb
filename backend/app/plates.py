@@ -1,0 +1,74 @@
+"""A banknote's plate numbers, and the printing location the face plate names.
+
+The face and back plate numbers, with where the note
+was printed, tell a Friedberg number apart -- a 2017-A $1 has one number from
+Washington, DC and another from Fort Worth -- and a mismatched face and back
+is how a mule is found (the web search's answer carries an "m" suffix then).
+
+- **Face plate**: a check letter and digits (``E82``), or digits alone on older
+  notes (``153``). A note printed in Fort Worth has ``FW`` before it
+  (``FW E82``); one printed in Washington has none.
+- **Back plate**: digits.
+- **Printing location**: ``dc`` or ``fw``. Read from the face plate when it is
+  given -- ``FW`` means Fort Worth, no prefix Washington -- so the two cannot
+  disagree; set by hand only where no face plate is recorded.
+
+Facts of the note in hand, not a catalogue's arrangement
+(`docs/reference-data.md`).
+"""
+
+from __future__ import annotations
+
+import re
+
+__all__ = [
+    "FACILITIES",
+    "back_plate",
+    "face_plate",
+    "facility_of",
+]
+
+#: The two places US currency is printed, by code, as a person reads them.
+FACILITIES: dict[str, str] = {"dc": "Washington, DC", "fw": "Fort Worth, TX"}
+
+#: `FW`, a check letter and up to five digits, the first two optional and
+#: space allowed between the parts. The space after a check letter belongs to
+#: the letter's own group, so with no letter there is one run of space to
+#: match and only one way to match it. Digits are `0` to `9` only -- another
+#: script's look like a plate number and are not -- while the space between
+#: the parts stays any script's.
+_FACE = re.compile(r"^(FW)?\s*(?:([A-Z])\s*)?([0-9]{1,5})$")
+_BACK = re.compile(r"^[0-9]{1,5}$")
+
+
+def face_plate(text: str | None) -> str | None:
+    """A face plate number as stored -- ``FW E82``, ``E82``, ``153`` -- or None.
+
+    Raises ValueError, naming the shape, for anything else.
+    """
+    if text is None or not text.strip():
+        return None
+    match = _FACE.match(text.strip().upper())
+    if match is None:
+        raise ValueError(
+            f"face plate {text!r}: a check letter and digits (E82), digits alone "
+            "(153), with FW before them for a Fort Worth note (FW E82)"
+        )
+    prefix, letter, digits = match.groups()
+    number = f"{letter or ''}{digits}"
+    return f"FW {number}" if prefix else number
+
+
+def back_plate(text: str | None) -> str | None:
+    """A back plate number as stored -- digits -- or None; ValueError otherwise."""
+    if text is None or not text.strip():
+        return None
+    value = text.strip()
+    if not _BACK.match(value):
+        raise ValueError(f"back plate {text!r}: digits only, as printed (1234)")
+    return value
+
+
+def facility_of(face: str) -> str:
+    """Where a note with this (stored) face plate number was printed."""
+    return "fw" if face.startswith("FW") else "dc"

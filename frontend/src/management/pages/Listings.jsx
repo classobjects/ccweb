@@ -1,0 +1,538 @@
+import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
+
+import { AccessLabel } from '../AccessLabel'
+import { api } from '../api'
+import EndOfferConfirm from './EndOfferConfirm'
+import ModalDialog from '../ModalDialog'
+import RecordSaleDialog from './RecordSaleDialog'
+import { accel, useSaveShortcut } from '../shortcuts'
+import { isMoney } from '../../shared/cents'
+import { FORMATS, STATUSES, UNKNOWN, labelFor, subjectOf } from './listing-labels'
+import { marginPercent } from './platform-rates'
+import { date } from '../../shared/format'
+import { useGuardedSave } from '../useGuardedSave'
+import { useSalesVenues } from '../useSalesVenues'
+import { isWebAddress } from '../web-address'
+import { orNull } from '../../shared/text'
+import { SaveButton } from '../SaveButton'
+
+/**
+ * The Listings page: every offer the business has out, and the three things
+ * that may be done to one: edit it, end it, or record its sale.
+ *
+ * This page never sets a listing's status. `app/offering_writes.py` is the
+ * only writer of status and of the claim that keeps an item offered in one
+ * place at a time, so ending an offer goes through its own endpoint -- which
+ * also resumes the store listing that was paused for it -- rather than
+ * through a field on the edit form.
+ *
+ * Money is shown exactly as it arrives: a decimal string. It is never parsed
+ * into a JavaScript number for display or comparison, because a float cannot
+ * hold cents exactly. The one calculation here, margin, is done in whole
+ * cents by `marginPercent` in `./platform-rates.js`.
+ */
+
+/**
+ * Alt+letter for each field of the edit window, as every other console edit
+ * window has (`docs/system-administration.md`). Gathered in one table so a
+ * repeat is visible rather than scattered through the markup, and checked
+ * against the rendered dialog by the test beside it.
+ *
+ * No letter is D, E or F: Chrome and Edge keep those for the address bar and
+ * menus on Windows. Save is Ctrl+S, not a letter (`SaveButton.jsx`), as in
+ * every other console edit window.
+ */
+const KEYS = {
+  price: 'r',
+  title: 't',
+  description: 'i',
+  externalId: 'n',
+}
+
+//: Listings asked for at a time. The server pages the list (`limit`,
+//: `offset`) and says how many there are in all.
+const PAGE_SIZE = 100
+
+/**
+ * The edit window for one offer: its price and its wording.
+ *
+ * Not its platform, its format or its status. Those decide where an item is
+ * claimed, and moving an offer from one platform to another is ending it and
+ * offering it again -- two writes the claim table is built around, and not
+ * something a field assignment can express.
+ */
+function ListingForm({ listing, onSaved, onLateSaved, onClose }) {
+  const [form, setForm] = useState({
+    price: listing.price,
+    title: listing.title,
+    description: listing.description,
+    external_id: listing.external_id ?? '',
+  })
+  const { error, setError, saving, send } = useGuardedSave(onSaved, onLateSaved)
+  const set = (k) => (e) => setForm({ ...form, [k]: e.target.value })
+
+  // `save` is a function declaration below, hoisted for the whole component
+  // scope. Disabled while a save is in flight, so holding Ctrl+S cannot fire
+  // a second request behind the first.
+  useSaveShortcut(save, !saving)
+
+  async function save() {
+    const price = String(form.price).trim()
+    if (!isMoney(price)) {
+      // Said here rather than left to the API, whose refusal for a blank
+      // price is a schema complaint about a Decimal -- true, and no help to
+      // someone who cleared the field.
+      setError('Price must be an amount like 189.00.')
+      return
+    }
+    await send(async () => {
+      const saved = await api.updateListing(listing.id, {
+        price,
+        title: form.title.trim(),
+        // Sent as typed, including empty. `description` is NOT NULL on the
+        // row and the API refuses an explicit null for it; an empty string is
+        // how the wording is cleared.
+        description: form.description,
+        external_id: orNull(form.external_id),
+        // The version the form loaded, as a number: `ListingUpdate.version`
+        // is an `int` and Pydantic v2 does not coerce "3".
+        version: listing.version,
+      })
+      return saved
+    })
+  }
+
+  // `subjectOf`, not `item_code`: a lot listing has none.
+  const label = `Edit ${subjectOf(listing)} on ${listing.venue_name}`
+
+  return (
+    <ModalDialog label={label} onClose={onClose}>
+      <h2>{label}</h2>
+      {error && <p className="error">{error}</p>}
+      <div className="filter-grid">
+        <label>
+          <AccessLabel text="Price" accessKey={KEYS.price} />
+          {/* Text, not number: money crosses the API as a decimal string and
+              a number input hands back a float. */}
+          <input
+            inputMode="decimal"
+            value={form.price}
+            onChange={set('price')}
+            {...accel(KEYS.price)}
+          />
+        </label>
+        <label>
+          <AccessLabel text="Title" accessKey={KEYS.title} />
+          <input value={form.title} onChange={set('title')} {...accel(KEYS.title)} />
+        </label>
+        <label>
+          <AccessLabel text="Description" accessKey={KEYS.description} />
+          <textarea
+            rows={3}
+            value={form.description}
+            onChange={set('description')}
+            {...accel(KEYS.description)}
+          />
+        </label>
+        <label>
+          <AccessLabel text="Listing number" accessKey={KEYS.externalId} />
+          <input
+            value={form.external_id}
+            onChange={set('external_id')}
+            placeholder="the platform's own number"
+            {...accel(KEYS.externalId)}
+          />
+        </label>
+      </div>
+      <div className="row">
+        <SaveButton saving={saving} disabled={saving} onClick={save} />
+        <button className="link" onClick={onClose}>
+          Cancel
+        </button>
+      </div>
+    </ModalDialog>
+  )
+}
+
+/**
+ * The Listings page: what is offered, filtered, with Edit, End and Record sale
+ * per row.
+ */
+export default function Listings() {
+  const [listings, setListings] = useState(null)
+  // The platforms are only wanted for the filter dropdown and the store
+  // check, so failing to read them withholds nothing else.
+  const { venues, error: venuesError } = useSalesVenues()
+  // The latest listings load failed. Cleared by the next one that succeeds.
+  const [listingsError, setListingsError] = useState('')
+  // A load failed, which does NOT mean there is nothing to show: the
+  // platforms can fail while the listings arrive. An action's refusal is
+  // `refusal` below instead, which leaves the table where it is.
+  const error = listingsError || venuesError
+  const [refusal, setRefusal] = useState('')
+  // A one-line confirmation of what was just recorded, cleared by the next
+  // action so it cannot outlive the row it described.
+  const [notice, setNotice] = useState('')
+  const [filters, setFilters] = useState({ venue: '', format: '', status: '' })
+  // Where the page on screen starts, and how many match in all (the
+  // server's count; null until the first answer).
+  const [offset, setOffset] = useState(0)
+  const [total, setTotal] = useState(null)
+  const [open, setOpen] = useState(null)
+  // The listing End was pressed on, waiting for the question to be answered,
+  // and then the one whose request is in flight.
+  const [confirming, setConfirming] = useState(null)
+  const [ending, setEnding] = useState(null)
+  // The listing Record sale was pressed on, while that dialog is open.
+  const [selling, setSelling] = useState(null)
+  // Bumped to ask for the list again after a write that can change rows this
+  // page did not touch.
+  const [reloads, setReloads] = useState(0)
+
+  // Held here rather than in a `useRequest`, which would own the list: a
+  // save puts its row back in place without asking again.
+  useEffect(() => {
+    let cancelled = false
+    api
+      .listListingsPage({
+        venue: filters.venue,
+        format: filters.format,
+        status: filters.status,
+        limit: PAGE_SIZE,
+        offset,
+      })
+      .then(({ rows, total: count }) => {
+        if (cancelled) return
+        setListings(rows)
+        setTotal(count)
+        setListingsError('')
+      })
+      .catch((err) => !cancelled && setListingsError(err.message))
+    return () => {
+      cancelled = true
+    }
+  }, [filters, offset, reloads])
+
+  // A new filter is a new list, read from its first page.
+  const filter = (k) => (e) => {
+    setFilters({ ...filters, [k]: e.target.value })
+    setOffset(0)
+  }
+
+  // A PATCH changes that row and nothing else -- it cannot touch a status
+  // or a claim -- so the row is replaced in place rather than refetched.
+  function replaceRow(listing) {
+    setListings((current) => current.map((l) => (l.id === listing.id ? listing : l)))
+  }
+
+  function saved(listing) {
+    replaceRow(listing)
+    setOpen(null)
+    setNotice('')
+  }
+
+  async function end(listing) {
+    setEnding(listing.id)
+    setRefusal('')
+    setNotice('')
+    try {
+      await api.endListing(listing.id)
+      setConfirming(null)
+      // Reload rather than patch the one row: ending an offer resumes any
+      // store listing paused for it, so a row this page never touched has a
+      // new status, and the ended row itself may now fall outside the filter.
+      setReloads((n) => n + 1)
+    } catch (err) {
+      setRefusal(err.message)
+      // The question is answered either way: the refusal belongs on the page
+      // behind it, where the table it is about still is.
+      setConfirming(null)
+    } finally {
+      setEnding(null)
+    }
+  }
+
+  // `RecordSaleDialog` calls this once the API has already accepted the
+  // sale; there is nothing left here to refuse. Reload rather than patch the
+  // one row, for the same reason `end` does: recording a sale also ends the
+  // listing (`record_sale`), which can resume a store listing this page
+  // never touched.
+  //
+  // `sale.item_codes` is right for a LOT sale too, and is not a null: it
+  // comes from the order's item shares, and `order_writes._sync_shares`
+  // writes one share per **offered item** -- one for an item listing, one per
+  // member for a lot -- so a lot sale names every coin that went out, ordered
+  // by code. The lot's own title is not in `SaleRecordedOut` at all; the
+  // coins are what the notice can say, and are what a packing slip needs.
+  function recorded(sale) {
+    setSelling(null)
+    setNotice(
+      `Recorded ${sale.item_codes.join(', ')} sold to ${sale.buyer} for ` +
+        `${sale.net_amount} net.`,
+    )
+    setReloads((n) => n + 1)
+  }
+
+  // Only when there is nothing to show. With rows on screen a failed load
+  // is said above them instead: returning it in place of the page would
+  // unmount the table, the filters and any open confirmation, and the
+  // operator would lose their place at the moment they need it.
+  if (error && listings === null) return <p className="error">{error}</p>
+  if (listings === null) return <p className="muted">Loading...</p>
+
+  const byId = new Map(listings.map((l) => [l.id, l]))
+  // The header gives the count across every page; without it, this page's.
+  const matching = total ?? offset + listings.length
+  const first = listings.length === 0 ? 0 : offset + 1
+  const counted =
+    offset === 0 && listings.length === matching
+      ? `${matching} of ${matching}`
+      : `${first}-${offset + listings.length} of ${matching}`
+
+  /** Whether a row's platform is the web store itself.
+   *
+   * `is_own_store` from the platform list, not the code `store`. A platform
+   * this page could not match reads as false --
+   * see the Record sale guard below for why that direction.
+   */
+  function isStore(listing) {
+    return venues.find((v) => v.code === listing.venue)?.is_own_store === true
+  }
+
+  /** Why a row is paused, naming the platform when that listing is on screen. */
+  function pausedFor(listing) {
+    const id = listing.paused_by_listing_id
+    if (id === null || id === undefined) return 'paused'
+    const cause = byId.get(id)
+    // Without the platform when the listing that paused this one is not in
+    // the current result: saying less is right, inventing a platform is not.
+    return cause
+      ? `paused for listing #${id} on ${cause.venue_name}`
+      : `paused for listing #${id}`
+  }
+
+  return (
+    <section>
+      <h1>Listings</h1>
+      <p className="muted">
+        What is offered for sale. An item is offered in one place at a time; a store
+        listing set aside for an offer elsewhere resumes if that offer ends unsold.
+      </p>
+      {error && <p className="error">{error}</p>}
+      {refusal && <p className="error">{refusal}</p>}
+      {notice && <p className="notice">{notice}</p>}
+      <div className="filter-grid">
+        <label>
+          Platform{/* */}
+          <select value={filters.venue} onChange={filter('venue')}>
+            <option value="">All platforms</option>
+            {venues.map((v) => (
+              <option key={v.code} value={v.code}>
+                {v.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Format{/* */}
+          <select value={filters.format} onChange={filter('format')}>
+            <option value="">Any format</option>
+            {FORMATS.map(([value, text]) => (
+              <option key={value} value={value}>
+                {text}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Status
+          {/* Blank is the API's own default: active and paused, which is what
+              "on offer" means. `all` is the only way to see ended offers. */}
+          <select value={filters.status} onChange={filter('status')}>
+            <option value="">On offer</option>
+            {STATUSES.map(([value, text]) => (
+              <option key={value} value={value}>
+                {text}
+              </option>
+            ))}
+            <option value="all">All, including ended</option>
+          </select>
+        </label>
+      </div>
+      <div className="row">
+        <span className="muted">{counted}</span>
+        {/* Shown only where there is a page to go to, rather than greyed
+            out where there is none. The server sends listings oldest first
+            (by id), so the pages are Previous and Next, not Newer and Older. */}
+        {offset > 0 && (
+          <button
+            className="link"
+            onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
+          >
+            Previous
+          </button>
+        )}
+        {offset + listings.length < matching && (
+          <button className="link" onClick={() => setOffset(offset + PAGE_SIZE)}>
+            Next
+          </button>
+        )}
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Platform</th>
+            <th>Item or lot</th>
+            <th>Title</th>
+            <th>Format</th>
+            <th>Price</th>
+            <th>Cost</th>
+            <th>Margin</th>
+            <th>Status</th>
+            <th>Listed</th>
+            <th>Link</th>
+            <th />
+          </tr>
+        </thead>
+        <tbody>
+          {listings.map((l) => {
+            const margin = marginPercent(l.price, l.cost_basis)
+            return (
+              <tr key={l.id} className={l.status === 'active' ? '' : 'muted'}>
+                <td>{l.venue_name}</td>
+                {/* The item's code, or the lot by name and size: a lot
+                    listing has no code of its own. */}
+                <td>{subjectOf(l)}</td>
+                <td>{l.title}</td>
+                <td>{labelFor(FORMATS, l.format)}</td>
+                <td>
+                  {l.price} {l.currency}
+                </td>
+                <td>{l.cost_basis ?? UNKNOWN}</td>
+                <td>{margin === '' ? UNKNOWN : `${margin}%`}</td>
+                <td>
+                  {labelFor(STATUSES, l.status)}
+                  {l.status === 'paused' && (
+                    <span className="muted"> {pausedFor(l)}</span>
+                  )}
+                </td>
+                <td>{date(l.listed_at)}</td>
+                <td>
+                  {/* Only a web address: the URL is typed by hand, and a
+                      `javascript:` one would run in the console when
+                      clicked. */}
+                  {isWebAddress(l.external_url) && (
+                    <a href={l.external_url} target="_blank" rel="noreferrer">
+                      {l.external_id ?? 'Listing'}
+                    </a>
+                  )}
+                </td>
+                <td>
+                  {/* No Edit on a paused row: it is a store listing set aside
+                      for an offer elsewhere, and editing its price while it is
+                      out of the shop edits something nobody can see. No Edit
+                      or End on an ended one either -- it is history. */}
+                  {l.status === 'active' && (
+                    <button
+                      className="link"
+                      onClick={() => {
+                        setNotice('')
+                        setOpen(l)
+                      }}
+                    >
+                      Edit
+                    </button>
+                  )}
+                  {/* An auction's lot is ended and sold only through its
+                      auction -- the API refuses End and Record sale on it --
+                      so the row points there instead of offering either. */}
+                  {l.auction_id != null && l.status !== 'ended' && (
+                    <Link to="/auctions">Auction #{l.auction_id}</Link>
+                  )}
+                  {/* Ending is permanent: the question comes first, and it
+                      names the listing and its platform. */}
+                  {l.status !== 'ended' && l.auction_id == null && (
+                    <button
+                      className="link"
+                      disabled={ending !== null}
+                      onClick={() => {
+                        setNotice('')
+                        setConfirming(l)
+                      }}
+                    >
+                      End
+                    </button>
+                  )}
+                  {/* Only an active row: `record_sale` itself refuses a
+                      paused or ended listing with "not on offer", and a
+                      paused row is a store listing set aside for an offer
+                      elsewhere, not something that just sold there.
+
+                      And never on a store row. Recording a sale of a store
+                      listing is a second way to sell a shop item -- past the
+                      cart, past checkout, minting an "Undisclosed buyer
+                      (Web store)" when the buyer is left blank. The API refuses
+                      it too (`sales_writes._refuse_store_sale`), and an
+                      in-person sale of a shop item is an order on the
+                      customer's behalf, from the Sales page. An unmatched
+                      platform (the venue list failed to load, and the table
+                      still shows) reads as
+                      "not the store", the same way `isAuctionHouse` below
+                      reads an unmatched one as "not an auction house":
+                      guessing the other way would hide the button on every
+                      row that legitimately has one. */}
+                  {l.status === 'active' && !isStore(l) && l.auction_id == null && (
+                    <button
+                      className="link"
+                      onClick={() => {
+                        setNotice('')
+                        setSelling(l)
+                      }}
+                    >
+                      Record sale…
+                    </button>
+                  )}
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+      {listings.length === 0 && (
+        <p className="muted">Nothing is offered under those filters.</p>
+      )}
+      {open !== null && (
+        <ListingForm
+          listing={open}
+          onSaved={saved}
+          // A save that lands after Cancel still happened: the row takes the
+          // saved version, or its next edit is refused as stale.
+          onLateSaved={replaceRow}
+          onClose={() => setOpen(null)}
+        />
+      )}
+      {confirming !== null && (
+        <EndOfferConfirm
+          listing={confirming}
+          busy={ending !== null}
+          onConfirm={() => end(confirming)}
+          onCancel={() => setConfirming(null)}
+        />
+      )}
+      {selling !== null && (
+        <RecordSaleDialog
+          listing={selling}
+          // `venues` may not have loaded, or may have failed to (this page
+          // shows the listings anyway -- see the load above): an unmatched
+          // platform reads as "not an auction house" rather than guessing.
+          isAuctionHouse={
+            venues.find((v) => v.code === selling.venue)?.kind === 'auction_house'
+          }
+          onRecorded={recorded}
+          onClose={() => setSelling(null)}
+        />
+      )}
+    </section>
+  )
+}
