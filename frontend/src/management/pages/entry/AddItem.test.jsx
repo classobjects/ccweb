@@ -100,6 +100,25 @@ describe('AddItem', () => {
     expect(onChanged).toHaveBeenCalled()
   })
 
+  it('starts at a coin when the server names no kind', () => {
+    renderRow()
+    expect(screen.getByRole('combobox', { name: 'item_kind' })).toHaveValue('coin')
+  })
+
+  it('starts at the kind the server names, and sends it unless another is picked', async () => {
+    const user = userEvent.setup()
+    renderRow({ defaultKind: 'currency' })
+    expect(screen.getByRole('combobox', { name: 'item_kind' })).toHaveValue('currency')
+
+    await user.type(screen.getByRole('textbox', { name: 'Title' }), 'A note')
+    await user.click(screen.getByRole('button', { name: 'Add item' }))
+    await waitFor(() =>
+      expect(api.createInventoryItem).toHaveBeenCalledWith(
+        expect.objectContaining({ item_kind: 'currency', source_title: 'A note' }),
+      ),
+    )
+  })
+
   it('keeps the item once the editor saves it, and offers another like it', async () => {
     const user = userEvent.setup()
     renderRow({ items: ENTERED })

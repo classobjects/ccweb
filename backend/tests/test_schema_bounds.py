@@ -315,6 +315,7 @@ _PURCHASE = {
     "order_number": "A-1",
     "vendor": "A vendor",
     "ordered_on": None,
+    "default_item_kind": "coin",
     "lines": [],
 }
 

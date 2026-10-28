@@ -19,6 +19,7 @@ from sqlalchemy import and_, case, delete, func, select
 from sqlalchemy.orm import InstrumentedAttribute, Session, selectinload
 
 from .. import listing_links
+from ..config import settings
 from ..deps import AdminUser, DbSession
 from ..item_history import location_label
 from ..live import OUTSTANDING_STATUSES, live_item
@@ -384,6 +385,7 @@ def get_purchase_order(
         seller_url=order.seller.store_url if order.seller is not None else None,
         notes=order.notes,
         lot_page=listing_links.lot_page(db, order),
+        default_item_kind=settings.default_item_kind,
         lines=[
             PurchaseOrderLineOut(
                 id=item.id,

@@ -121,21 +121,23 @@ function taxOf(item) {
  * opened on the page -- from its table, or entered here, which `onEntered`
  * reports. That is the item the next is made like; with none opened, or one
  * no longer on the purchase, it is the latest. `defaults` is the purchase's
- * tax values, sent with every item entered on it; `orderUrl` the lot page
- * the server names for it (`lot_page`), sent as the item's listing, and
- * null when there is none.
+ * tax values, sent with every item entered on it; `defaultKind` the kind
+ * the form starts at (the server's `DEFAULT_ITEM_KIND`); `orderUrl` the lot
+ * page the server names for it (`lot_page`), sent as the item's listing,
+ * and null when there is none.
  */
 export default function AddItem({
   purchaseOrderId,
   orderUrl = null,
   defaults,
+  defaultKind = 'coin',
   items = [],
   likeId = null,
   onEntered,
   onChanged,
   disabledReason = '',
 }) {
-  const [kind, setKind] = useState('coin')
+  const [kind, setKind] = useState(defaultKind)
   const [title, setTitle] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)

@@ -1557,6 +1557,27 @@ describe('NewPurchase: the seller', () => {
   })
 })
 
+describe('NewPurchase: the kind a new item starts as', () => {
+  it('starts the new item at the kind the server names', async () => {
+    api.getPurchaseOrder.mockResolvedValue({
+      ...FRESH_PURCHASE,
+      id: 43,
+      default_item_kind: 'currency',
+    })
+    api.createInventoryItem.mockResolvedValue({ id: 63, item_code: 'CC-000063' })
+    const user = userEvent.setup()
+    renderWithProviders(<NewPurchase />, { route: '/?order=43' })
+    await user.type(await screen.findByRole('textbox', { name: /title/i }), 'A $1 note')
+    await user.click(screen.getByRole('button', { name: 'Add item' }))
+
+    await waitFor(() =>
+      expect(api.createInventoryItem).toHaveBeenCalledWith(
+        expect.objectContaining({ purchase_order_id: 43, item_kind: 'currency' }),
+      ),
+    )
+  })
+})
+
 describe("NewPurchase: a lot's page as the item's listing", () => {
   const LOT = 'https://hibid.com/lot/280623476/1986-2024-american-eagle'
 

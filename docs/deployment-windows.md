@@ -265,6 +265,7 @@ with its default; [system-administration.md](system-administration.md),
 | `DATABASE_URL` | the server's database, with a password that is not `devpassword`: change it first, as below |
 | `MEDIA_ROOT` | the folder the photographs were copied to, as a full path |
 | `SALES_TAX_RATE`, `SALES_TAX_INCLUDES_SHIPPING` | as on the development machine |
+| `DEFAULT_ITEM_KIND` | the kind a new item on a purchase starts as; unset, `coin`. The example: `currency` |
 | `SHOP_OPEN` | `false` until opening day: visitors who are not signed in see a coming-soon page, and the API refuses them the catalog and registration. Set it to `true` and restart the API to open the shop |
 | `CCWEB_SITE_DOMAIN` | the domain, without `https://` or `www.` (the example: `classobjects.com`) |
 | `CCWEB_TLS_CERT`, `CCWEB_TLS_KEY` | the full paths of `fullchain.pem` and the key from step 1 (the example: `C:\caddy\certs\fullchain.pem`, `C:\caddy\certs\classobjects.com.key`); both empty when Caddy is to obtain the certificate (*No certificate to buy*) |

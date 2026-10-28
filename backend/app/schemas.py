@@ -2699,6 +2699,9 @@ class PurchaseOrderDetailOut(BaseModel):
     #: its web address when that is one lot's page, else None
     #: (`listing_links.lot_page`).
     lot_page: WebLinkOut = None
+    #: The `item_kind` code a new item on this purchase starts as, before
+    #: one is picked (`DEFAULT_ITEM_KIND`).
+    default_item_kind: str
     lines: list[PurchaseOrderLineOut]
 
 

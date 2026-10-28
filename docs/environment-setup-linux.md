@@ -297,6 +297,7 @@ nano .env
 | `FIRST_ADMIN_EMAIL` | The trial administrator's sign-in; `admin@example.com` will do. |
 | `DATABASE_URL` | Leave it: it names the `ccwebdb` database and the `devpassword` of step 5. Change it only if step 5 used another password or port. |
 | `SALES_TAX_RATE`, `SALES_TAX_INCLUDES_SHIPPING` | Your sales tax on purchases, as a fraction (`0.0635` is 6.35%), and whether shipping is taxed (`true` or `false`). Unset, the rate is `0`: no tax. |
+| `DEFAULT_ITEM_KIND` | The kind a new item on a purchase starts as: `coin` unless set; `currency` if you mostly buy notes. Any item can still be given another kind. |
 | `ACCESS_TOKEN_EXPIRE_MINUTES`, `REFRESH_TOKEN_EXPIRE_DAYS` | Leave them. |
 | Everything commented out (`# CCWEB_API_PORT=8000` and the rest) | Leave it: each line shows its setting's default. Uncomment one only to change it. The backup folder's default is `~/ccwebdb-backup`. |
 

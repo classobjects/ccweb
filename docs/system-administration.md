@@ -199,6 +199,7 @@ are read by the runtime scripts, not by `config.py`; see
 | `REFRESH_TOKEN_EXPIRE_DAYS` | `14` | how long someone can stay signed in without re-entering a password |
 | `CORS_ORIGINS` | the two dev Vite URLs | must list the real origin once the frontend is served from anywhere else |
 | `API_PREFIX` | `/api` | changing it moves every endpoint |
+| `DEFAULT_ITEM_KIND` | `coin` | the kind a new item on a purchase starts as (an `item_kind` code: `currency` for a currency dealer); any item can still be given another. The purchase's detail carries it (`default_item_kind`), so a change needs only an API restart. A code that is not an active item kind stops the API at start-up, naming the kinds there are |
 
 ### Sales tax on acquisitions
 

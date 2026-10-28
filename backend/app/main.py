@@ -10,7 +10,7 @@ from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from . import auctions, media_check, sales_writes
+from . import auctions, default_kind_check, media_check, sales_writes
 from .config import settings
 from .database import get_db
 from .errors import ReferenceDataMissing
@@ -42,12 +42,16 @@ _log = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def _lifespan(started: FastAPI) -> AsyncIterator[None]:
-    """Check the photograph folder before the first request (`app.media_check`).
+    """Check the settings that name stored data before the first request.
 
-    The session comes through `get_db` as any request's does, overrides
-    included, so a test client checks the test database, never live.
+    The photograph folder (`app.media_check`) and the starting item kind
+    (`app.default_kind_check`). The session comes through `get_db` as any
+    request's does, overrides included, so a test client checks the test
+    database, never live.
     """
-    media_check.check_at_startup(started.dependency_overrides.get(get_db, get_db))
+    provide = started.dependency_overrides.get(get_db, get_db)
+    media_check.check_at_startup(provide)
+    default_kind_check.check_at_startup(provide)
     yield
 
 
