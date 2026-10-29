@@ -303,6 +303,9 @@ export const api = {
   // and Reserve Bank, or a coin's metal. See app/routers/defaults.py.
   suggestNote: (params = {}) => send(withQuery('/api/defaults/note', params)),
   suggestCoin: (params = {}) => send(withQuery('/api/defaults/coin', params)),
+  // The kind this installation mostly deals in (DEFAULT_ITEM_KIND), which
+  // the console's front page opens on.
+  defaultItemKind: () => send('/api/defaults/item-kind'),
 
   // images -- evidence a person looked at the object, attached to an item
   uploadImage: (

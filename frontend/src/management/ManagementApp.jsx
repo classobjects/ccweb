@@ -1,7 +1,10 @@
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 
 import { useAuth } from '../shared/auth-context'
+import { sideFor } from '../shared/kinds'
 import { SHOP_NAME } from '../shared/site'
+import { useRequest } from '../shared/useRequest'
+import { api } from './api'
 import ConsoleMenu from './ConsoleMenu'
 import { HelpBar, HelpProvider } from './HelpBar'
 import AdminPeople from './pages/AdminPeople'
@@ -45,6 +48,24 @@ function RequireAdmin({ children }) {
 }
 
 /**
+ * The console's front page: the inventory of the kind this installation
+ * mostly deals in (`DEFAULT_ITEM_KIND`), so a currency dealer opens on the
+ * currency list. Every kind but currency is in the coins list. If the
+ * server cannot say, the coins list, as before the setting existed.
+ */
+function ConsoleHome() {
+  const { data, error, busy } = useRequest('default-item-kind', api.defaultItemKind)
+  if (busy && !error) return <p className="muted">Loading...</p>
+  const side = error ? 'coin' : sideFor(data.item_kind)
+  return (
+    <Navigate
+      to={side === 'currency' ? '/inventory/currency' : '/inventory/coins'}
+      replace
+    />
+  )
+}
+
+/**
  * The console shell: the menu, the page, and the help band, in a column the
  * height of the window. Only the page scrolls, so every form fits between
  * the menu and the band and a field's explanation is always in sight.
@@ -73,7 +94,7 @@ function Console() {
 
         <main className="content">
           <Routes>
-            <Route path="/" element={<Navigate to="/inventory/coins" replace />} />
+            <Route path="/" element={<ConsoleHome />} />
             <Route path="/inventory/coins" element={<InventoryCoins />} />
             <Route path="/inventory/currency" element={<InventoryCurrency />} />
             <Route path="/photos" element={<Photos />} />

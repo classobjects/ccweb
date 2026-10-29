@@ -29,7 +29,13 @@ vi.mock('./pages/Receiving', () => ({ default: () => 'page:receiving' }))
 vi.mock('./pages/Reports', () => ({ default: () => 'page:reports' }))
 vi.mock('./pages/SpotPrices', () => ({ default: () => 'page:spot-prices' }))
 vi.mock('./pages/Vocabularies', () => ({ default: () => 'page:vocabularies' }))
+// The one request the console itself makes: the front page asks which
+// kind's inventory to open on.
+vi.mock('./api', () => ({
+  api: { defaultItemKind: vi.fn().mockResolvedValue({ item_kind: 'coin' }) },
+}))
 
+import { api } from './api'
 import ManagementApp from './ManagementApp'
 import { adminAuth, renderWithProviders } from '../test/helpers'
 
@@ -55,7 +61,6 @@ const MENU_PAGES = [
 
 //: Addresses kept so links and bookmarks to them still land.
 const ALIASES = [
-  ['/', 'page:coins'],
   ['/purchases/new', 'page:purchases'],
   ['/orders', 'page:sales'],
 ]
@@ -64,6 +69,25 @@ describe('console routes', () => {
   it.each([...MENU_PAGES, ...ALIASES])('%s mounts %s', (route, page) => {
     renderWithProviders(<ManagementApp />, { auth: adminAuth(), route })
     expect(within(screen.getByRole('main')).getByText(page)).toBeInTheDocument()
+  })
+
+  // Every kind but currency is in the coins list.
+  it.each([
+    ['coin', 'page:coins'],
+    ['currency', 'page:currency'],
+    ['bullion', 'page:coins'],
+  ])('/ opens on the inventory of DEFAULT_ITEM_KIND %s', async (kind, page) => {
+    api.defaultItemKind.mockResolvedValueOnce({ item_kind: kind })
+    renderWithProviders(<ManagementApp />, { auth: adminAuth(), route: '/' })
+    expect(await within(screen.getByRole('main')).findByText(page)).toBeInTheDocument()
+  })
+
+  it('/ opens on the coins list when the server cannot say', async () => {
+    api.defaultItemKind.mockRejectedValueOnce(new Error('Request failed'))
+    renderWithProviders(<ManagementApp />, { auth: adminAuth(), route: '/' })
+    expect(
+      await within(screen.getByRole('main')).findByText('page:coins'),
+    ).toBeInTheDocument()
   })
 
   it('lists here every page the menu links to', async () => {

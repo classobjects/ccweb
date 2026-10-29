@@ -1478,6 +1478,14 @@ class CoinSuggestionOut(BaseModel):
     series: str | None = None
 
 
+class ItemKindDefaultOut(BaseModel):
+    """The kind this installation mostly deals in (`DEFAULT_ITEM_KIND`)."""
+
+    #: An active `item_kind` code: the kind a purchase's new item starts as,
+    #: and the inventory the console opens on.
+    item_kind: str
+
+
 #: The four outcomes a receipt can record. `received` is the common one;
 #: the rest close out a line that will not arrive. Without them there is no
 #: way to finish an order except to leave it permanently outstanding.

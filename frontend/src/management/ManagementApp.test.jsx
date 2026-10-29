@@ -81,8 +81,8 @@ describe('management console shell', () => {
   })
 
   // '/nowhere' renders the console chrome and its "Page not found", without
-  // mounting any page. Rendering at '/' would redirect to /inventory/coins,
-  // mount InventoryCoins, and call the API; every existing page test vi.mocks
+  // mounting any page. Rendering at '/' would ask the API which inventory to
+  // open on, mount it, and call the API again; every existing page test vi.mocks
   // the api module, and a factory mock here would have to list every export
   // the inventory page touches and would break the moment it touched one
   // more. What the menu holds and how it opens is ConsoleMenu's own test.
