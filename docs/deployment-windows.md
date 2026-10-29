@@ -455,6 +455,11 @@ classobjects.com {
 		-Server
 	}
 
+	@hashed path /assets/*
+	header @hashed Cache-Control "public, max-age=31536000, immutable"
+	@checked not path /assets/* /api/*
+	header @checked Cache-Control no-cache
+
 	handle /api/* {
 		reverse_proxy 127.0.0.1:8000
 	}
@@ -504,6 +509,16 @@ script and badge. A script injected into a page could not send what it read
 anywhere but this site. The policy names DigiCert because the seal is the
 one thing the shop loads from elsewhere; a site using another authority's
 seal names that one instead.
+
+The two `Cache-Control` rules make a deploy reach every browser at once. A
+file under `/assets/` is named for a hash of its content, so a browser
+keeps it for a year without asking; a new build brings new names. Every
+other file -- `management.html` and `index.html` above all, which name the
+build's assets -- is `no-cache`: the browser keeps it but asks the server
+before each use, and is answered `304 Not Modified` when it has not
+changed. Without them a browser guesses from the file's age, and after a
+deploy can go on running the previous build for hours, even with the
+site's cookies and storage cleared.
 
 Given its own certificate, Caddy asks no one else for one; it still answers
 port 80 by sending visitors to `https://`. The two `tls` lines must name the
