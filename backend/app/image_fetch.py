@@ -1,3 +1,6 @@
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 """Fetch a photograph from a web address, for filing against an item.
 
 The console pastes an address -- an eBay listing's picture, a HiBid lot's --

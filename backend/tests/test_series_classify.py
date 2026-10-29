@@ -1,3 +1,6 @@
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 """Classifying items into design series from denomination, year and letter.
 
 Each test builds its own items on top of the seeded vocabulary, so the ranges

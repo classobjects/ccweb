@@ -1,3 +1,6 @@
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 """What a coin is made of, from its denomination or design series, country and year.
 
 A public fact, not an observation: a dime struck in 1963 is 90% silver

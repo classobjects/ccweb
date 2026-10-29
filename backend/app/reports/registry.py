@@ -1,3 +1,6 @@
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 """The report registry: one entry per report, keyed by id.
 
 As `app/issues.py` holds its checks, this holds `REPORTS` -- adding a report

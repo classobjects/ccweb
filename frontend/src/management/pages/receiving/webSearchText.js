@@ -1,3 +1,6 @@
+// (c) Copyright 2026 Nathaniel Mills
+// Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+// SPDX-License-Identifier: Apache-2.0
 // Its own module, apart from FriedbergLookup.jsx: a component module that
 // also exports a plain function defeats Fast Refresh.
 

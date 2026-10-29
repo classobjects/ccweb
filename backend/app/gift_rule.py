@@ -1,3 +1,6 @@
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 """Gift: the attribute of a banknote that cost nothing.
 
 docs/specs/item-attributes-design.md, section 2, "Attributes from facts: Gift".

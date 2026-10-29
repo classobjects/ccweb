@@ -1,3 +1,6 @@
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 """Which fields of an item hold a derived default, and which are a person's.
 
 The rule (docs/specs/classifier-defaults-design.md, *Per-field provenance*):

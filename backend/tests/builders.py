@@ -1,3 +1,6 @@
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 """Plain helpers that build test data, shared by more than one test module.
 
 A module of functions, not fixtures: a test imports what it calls, and

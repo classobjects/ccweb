@@ -1,3 +1,6 @@
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 """Account administration: who can sign in, and with what rights.
 
 Distinct from `customers`, which is who you ship to. A person may have both, an

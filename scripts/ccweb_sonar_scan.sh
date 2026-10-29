@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 # ---------------------------------------------------------------------------
 #  ccweb_sonar_scan.sh - run both test suites with coverage, then publish an
 #  analysis to the self-hosted SonarQube.

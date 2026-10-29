@@ -1,3 +1,6 @@
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 """The shapes every report is built from: a column, a result, and a report.
 
 A report group module (`data_quality.py`, `collection.py`, ...) builds these

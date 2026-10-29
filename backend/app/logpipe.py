@@ -1,3 +1,6 @@
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 r"""Write a process's output to log files of bounded size and number.
 
 The development runtime (scripts\ccweb_startup.cmd, ccweb_pgstart.cmd) pipes

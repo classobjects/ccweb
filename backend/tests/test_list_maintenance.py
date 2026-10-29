@@ -1,3 +1,6 @@
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 """Correcting and pruning the owner-kept lists (`list-maintenance-design.md`).
 
 Friedberg numbers used here are synthetic -- the 9900s, past any real

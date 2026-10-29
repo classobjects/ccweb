@@ -1,3 +1,6 @@
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 """The seeded coinage compositions (data/reference/composition.json).
 
 Spot checks of spans that are easy to get wrong: a size struck in one year

@@ -1,3 +1,6 @@
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 """Move the seller's words into the title, and describe the item from its record.
 
 Most items came in with the face value as their title -- "1", "0.5",

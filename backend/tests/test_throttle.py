@@ -1,3 +1,6 @@
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 """Attempt limits on sign-in and registration (`app.throttle`).
 
 Through the routes, not the counter alone: what matters is that a guesser

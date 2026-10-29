@@ -1,3 +1,6 @@
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 """A piece with no date at all, as distinct from a year not recorded.
 
 A gold bar carries no year; an empty year says only "not recorded", which

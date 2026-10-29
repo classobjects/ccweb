@@ -1,3 +1,6 @@
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 """Friedberg numbers: a star note and a mule are types of their own.
 
 A mule differs from its plain type only by its plates, and a star note only

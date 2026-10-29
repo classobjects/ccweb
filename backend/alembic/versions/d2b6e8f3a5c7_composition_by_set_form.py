@@ -1,3 +1,6 @@
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 """Compositions: a row may describe only the coins of one set.
 
 A dime of 1965 or later was read as copper-nickel clad, whatever it was:

@@ -1,3 +1,6 @@
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 """What counts as "a purchase" -- shared by `pr_spend`, `pr_sources` and `mn_tax`.
 
 A purchase counts only when it carries at least one live item

@@ -1,3 +1,6 @@
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 """The public title an offer starts from (`app.offer_titles`).
 
 `source_title` is the seller's wording from the purchase -- often "1" or

@@ -1,3 +1,6 @@
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 """Local time: TIME_ZONE's, or the host's own zone when it names none.
 
 Every stored moment is UTC. Local time belongs only where a moment becomes a

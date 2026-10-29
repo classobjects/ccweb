@@ -1,3 +1,6 @@
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 """Drop the item's full-text and `attributes` indexes: nothing queries them.
 
 The inventory search matches text with `ILIKE`, which a `to_tsvector` index

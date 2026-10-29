@@ -1,3 +1,6 @@
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 """Friedberg numbers in capitals, all but a mule's `m`.
 
 `app.fr_format.normalize_fr` now keeps the letter after the digits in

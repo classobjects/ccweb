@@ -1,3 +1,6 @@
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 """Recording a sale: the money, the buyer, and which items it covered.
 
 This module owns the one fact nothing else writes, `sales_order_fee`, and the

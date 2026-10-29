@@ -1,3 +1,6 @@
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 """Contention around revising an order: a stale read must not go unnoticed.
 
 Real, committing sessions rather than ``TestClient``: a client call serializes

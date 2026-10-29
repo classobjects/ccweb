@@ -1,3 +1,6 @@
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 """Floors on the money columns that had none, and `paused_by` only when paused.
 
 A share's fee, an auction lot's reserve and hammer price, and an item's

@@ -1,3 +1,6 @@
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 """Item-level operations, on what you own rather than on what is for sale.
 
 Separate from `/catalog`, which is listing-centric. An item exists before it is

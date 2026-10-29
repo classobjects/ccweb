@@ -1,3 +1,6 @@
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 """The form of a Friedberg number: cleaned, then checked (`app.fr_format`).
 
 The numbers here are forms only, chosen from no catalog: nothing in this file

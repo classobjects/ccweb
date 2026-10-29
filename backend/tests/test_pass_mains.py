@@ -1,3 +1,6 @@
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 """Each pass's command line, run through `main` in the test's own session.
 
 Every `main` here is given `db=`: left to itself it opens the application's

@@ -1,3 +1,6 @@
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 """Order numbers and listing ids for eBay purchases, from eBay's purchase history.
 
 An eBay purchase recorded without an order number cannot be found or

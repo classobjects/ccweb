@@ -1,3 +1,6 @@
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 """The report catalog: every report registered, reachable from one import.
 
 `REPORTS` and `register` live in `app.reports.registry`; this module's own
