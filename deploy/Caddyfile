@@ -29,6 +29,14 @@
 # or an SVG it embeds as an <object>). The
 # application's own pages set no inline style; 'unsafe-inline' in style-src
 # is for the seal script, whose markup is DigiCert's.
+#
+# Caching: a file under /assets/ is named for a hash of its content, so a
+# browser may keep it a year unasked; a new build is new names. Every other
+# file -- management.html and index.html above all, which name the build's
+# assets -- is `no-cache`: kept, but checked with the server (a 304 when
+# unchanged) before each use. Without a rule a browser guesses a freshness
+# from Last-Modified and goes on running the previous build for hours after
+# a deploy. The API's answers are left to the API.
 {$CCWEB_SITE_DOMAIN} {
 	{$CCWEB_TLS_DIRECTIVE}
 	encode gzip
@@ -41,6 +49,11 @@
 		Content-Security-Policy "default-src 'self'; script-src 'self' https://seal.digicert.com; img-src 'self' data: https://seal.digicert.com https://*.digicert.com; style-src 'self' 'unsafe-inline'; object-src https://seal.digicert.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 		-Server
 	}
+
+	@hashed path /assets/*
+	header @hashed Cache-Control "public, max-age=31536000, immutable"
+	@checked not path /assets/* /api/*
+	header @checked Cache-Control no-cache
 
 	handle /api/* {
 		reverse_proxy {$CCWEB_API_HOST}:{$CCWEB_API_PORT}
