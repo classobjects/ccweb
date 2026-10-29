@@ -1,3 +1,6 @@
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 """What a title that is only a face value looks like.
 
 Its own module because two that cannot import each other both read it:

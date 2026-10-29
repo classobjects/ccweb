@@ -1,3 +1,6 @@
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 """Customer records: who you ship to, and where.
 
 Distinct from `users`, which is who can sign in. A sale recorded on an outside

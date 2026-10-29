@@ -1,3 +1,6 @@
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 """Data quality: what is missing or wrong in the record.
 
 Eight reports. `dq_issues` counts every named check from `app.issues` across

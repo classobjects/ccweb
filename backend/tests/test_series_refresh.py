@@ -1,3 +1,6 @@
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 """The design series kept up to date on every save (`series_classify.refresh_series`).
 
 Through the API, as a person's save reaches it: a single edit, a bulk edit,

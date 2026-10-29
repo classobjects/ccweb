@@ -1,3 +1,6 @@
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 """What a lock's re-read must not hide, and the rows each writer must hold.
 
 `offering_writes.lock_for_sale` re-reads every row it locks, so after it the

@@ -1,3 +1,6 @@
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 """Offering items for sale: the HTTP face of `offering_writes`.
 
 Admin only, and deliberately so: an offer row carries what the item cost, and

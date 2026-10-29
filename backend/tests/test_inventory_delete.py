@@ -1,3 +1,6 @@
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 """Deleting a row that should never have existed.
 
 Guarded, because the two ways it goes wrong are both silent: deleting a lot

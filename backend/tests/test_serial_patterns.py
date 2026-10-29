@@ -1,3 +1,6 @@
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 """Fancy-serial designations derived from the serial number.
 
 These are what a PMG or PCGS submission asks the sender to declare, and they

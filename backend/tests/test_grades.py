@@ -1,3 +1,6 @@
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 """Grades as a strike type and a number (docs/specs/item-attributes-design.md).
 
 ``PR69+`` is a proof graded 69+, ``MS65`` a business strike graded 65, and an

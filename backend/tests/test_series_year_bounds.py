@@ -1,3 +1,6 @@
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 """A note's series year is bounded the same way wherever it is sent.
 
 Creating an item, correcting one and cataloguing a Friedberg

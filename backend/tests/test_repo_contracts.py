@@ -1,3 +1,6 @@
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 """Agreements between files that no single module's tests can see.
 
 Each is a place two files must say the same thing -- a key the code reads
@@ -814,3 +817,53 @@ def test_settings_reference_has_a_row_for_every_setting_and_no_other() -> None:
     assert sorted(read - set(rows)) == [], "read by the code, no row in settings.md"
     assert sorted(set(rows) - read) == [], "a row in settings.md, read by nothing"
     assert len(rows) == len(set(rows)), "a setting with two rows in settings.md"
+
+
+#: The copyright and licence lines every source file opens with, after its
+#: comment marker (docs/code-quality.md).
+_HEADER = (
+    "(c) Copyright 2026 Nathaniel Mills",
+    "Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0",
+    "SPDX-License-Identifier: Apache-2.0",
+)
+
+#: The files that carry it: source, scripts and configuration that take a
+#: comment. JSON takes none; docs and images are covered by LICENSE and NOTICE.
+_HEADED = (
+    "*.py",
+    "*.mako",
+    "*.js",
+    "*.jsx",
+    "*.mjs",
+    "*.css",
+    "*.html",
+    "*.sh",
+    "*.cmd",
+    "*.sql",
+    "*.toml",
+    "*.ini",
+    "*.properties",
+    "*.service",
+    "*.timer",
+    "deploy/Caddyfile",
+    ".env.example",
+)
+
+
+def test_every_source_file_opens_with_the_copyright_header() -> None:
+    """The three lines, in order, within the file's first six lines.
+
+    Six, because a `#!`, `# shellcheck shell=`, `@echo off` or doctype line
+    stays first and the CSS and HTML forms open a block comment.
+    """
+    unheaded = []
+    for pattern in _HEADED:
+        for path in _tracked(pattern):
+            opening = path.read_text(encoding="utf-8").splitlines()[:6]
+            found = [
+                next((at for at, line in enumerate(opening) if text in line), -1)
+                for text in _HEADER
+            ]
+            if -1 in found or found != sorted(found):
+                unheaded.append(path.relative_to(REPO_ROOT).as_posix())
+    assert unheaded == [], "no copyright header (docs/code-quality.md)"

@@ -1,3 +1,6 @@
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 """Purchasing and receiving: what has been bought and has not yet arrived.
 
 Six reports. `pr_outstanding`: one row per purchase order carrying at least

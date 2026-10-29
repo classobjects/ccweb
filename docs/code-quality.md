@@ -88,6 +88,30 @@ from the suite-wide invariants in `backend/tests/conftest.py`.
 
 ---
 
+## Every source file opens with the copyright header
+
+Three lines, in the file's own comment syntax:
+
+```python
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
+```
+
+`//` in JavaScript, `rem` in cmd, `--` in SQL, one `/* ... */` block in CSS
+and one `<!-- ... -->` block in HTML. The header is the file's first lines,
+except that a line which must come first stays first: `#!`, `# shellcheck
+shell=`, `@echo off` (or every `rem` line is echoed) and `<!doctype html>`.
+In Python it sits above the module docstring, which is still the docstring:
+a comment is not a statement.
+
+It is on Python, JavaScript, CSS, HTML, shell, cmd and SQL files, the
+Alembic template (so a new migration starts with it), the TOML, INI,
+properties and systemd files, `deploy/Caddyfile` and `.env.example`. Not on
+JSON, which takes no comment, nor on documents and images, which `LICENSE`
+and `NOTICE` cover. `test_repo_contracts.py` refuses a file in that list
+without it.
+
 ## Nothing is ignored to spare the codebase work
 
 The ruff rule set is broad: pycodestyle (`E`, `W`), pyflakes (`F`), import

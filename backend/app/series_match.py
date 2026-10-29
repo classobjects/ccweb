@@ -1,3 +1,6 @@
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 """Assign a design series to items from what their description already says.
 
 Much of a collection names its series in free text -- "1883-O AU/UNC MORGAN

@@ -1,3 +1,6 @@
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 """Storing a photograph: cleanse, put the bytes, record the row.
 
 Kept out of `routers.images` because a CLI pass importing a router is

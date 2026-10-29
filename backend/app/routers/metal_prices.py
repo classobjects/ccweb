@@ -1,3 +1,6 @@
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 """Spot prices: what a troy ounce of each metal is quoted at.
 
 Manager only. A price is a quote in a time series (`metal_price`), never a

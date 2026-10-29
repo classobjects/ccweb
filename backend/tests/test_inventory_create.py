@@ -1,3 +1,6 @@
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 """`POST /api/inventory`: entering a coin, banknote or lot on a purchase.
 
 The console's own creation path -- see `docs/specs/entry-panels-design.md`.

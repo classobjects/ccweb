@@ -1,3 +1,6 @@
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 """Collection: notes whose serial numbers match one another.
 
 `cb_serials`: every set of two or more live notes sharing a serial number,

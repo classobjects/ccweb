@@ -1,3 +1,6 @@
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 """Image ingest, metadata removal and thumbnail delivery.
 
 The tests that matter here are the ones about metadata. A photograph of a

@@ -1,3 +1,6 @@
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 """Orders placed and revised on a customer's behalf.
 
 See docs/specs/order-on-behalf-design.md. The engine is `app.order_writes`;

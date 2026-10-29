@@ -1,3 +1,6 @@
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 """Sellers: who sold a purchase on the marketplace its vendor names.
 
 `GET/POST /api/sellers`, `PATCH /api/sellers/{id}`, and a purchase's

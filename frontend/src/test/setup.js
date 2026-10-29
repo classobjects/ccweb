@@ -1,3 +1,6 @@
+// (c) Copyright 2026 Nathaniel Mills
+// Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+// SPDX-License-Identifier: Apache-2.0
 // Adds the DOM matchers (toBeInTheDocument, toHaveValue, ...) to Vitest's
 // expect, and clears the rendered tree between tests so one test's DOM cannot
 // leak into the next.

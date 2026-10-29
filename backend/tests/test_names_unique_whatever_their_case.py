@@ -1,3 +1,6 @@
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 """A vendor, a seller and a storage location are one row whatever their case.
 
 The API asks first, with a SELECT, so two requests at once can both pass it;

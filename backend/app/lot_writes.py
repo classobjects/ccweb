@@ -1,3 +1,6 @@
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 """Assembling a sales lot: who is in it, and what cannot be.
 
 Membership changes only while a lot is `assembling`; everything about a

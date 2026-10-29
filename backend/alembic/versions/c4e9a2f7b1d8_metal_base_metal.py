@@ -1,3 +1,6 @@
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 """Metals: a plated or layered metal names the metal it is read as.
 
 A gold-plated silver coin was a metal no composition names, so the

@@ -1,3 +1,6 @@
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 """Local time is TIME_ZONE's, or the host's when it names none.
 
 A server running on UTC would otherwise put an evening's purchases on the

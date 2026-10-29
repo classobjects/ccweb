@@ -1,3 +1,6 @@
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 """Paper money is graded on its own scale, not a coin's.
 
 PMG and PCGS both grade banknotes on the same points, Poor 1 to 70, in

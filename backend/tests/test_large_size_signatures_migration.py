@@ -1,3 +1,6 @@
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 """The migration that lets a signature pair have a Register of the Treasury.
 
 Built on a throwaway database seeded at the newest revision and taken back

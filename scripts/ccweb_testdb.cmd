@@ -1,4 +1,7 @@
 @echo off
+rem (c) Copyright 2026 Nathaniel Mills
+rem Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+rem SPDX-License-Identifier: Apache-2.0
 setlocal EnableExtensions EnableDelayedExpansion
 rem ---------------------------------------------------------------------------
 rem  ccweb_testdb.cmd - a PostgreSQL cluster of this computer's own, for tests.

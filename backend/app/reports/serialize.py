@@ -1,3 +1,6 @@
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 """The report catalog's and result's JSON shape, as the HTTP API sends them.
 
 `routers/reports.py` sends both. The command line (`app.reports.__main__`)

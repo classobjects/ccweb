@@ -1,3 +1,6 @@
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 """What the facts entered so far decide, before an item is saved.
 
 `GET /api/defaults/note` and `/coin` answer the design the facts name, and

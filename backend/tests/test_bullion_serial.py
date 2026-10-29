@@ -1,3 +1,6 @@
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 """A bullion item's serial number, on its coin detail row.
 
 A bar, round or Goldback may carry a serial unique to the piece. It is the

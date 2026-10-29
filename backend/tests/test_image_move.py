@@ -1,3 +1,6 @@
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 """Moving a filed photograph to another item, and naming it for its new place.
 
 One step moves a photograph filed on the wrong item, and a name that says its

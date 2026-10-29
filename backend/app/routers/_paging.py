@@ -1,3 +1,6 @@
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 """Paging for the console's list endpoints that answer a bare JSON array.
 
 `GET /api/orders`, `GET /api/listings` and `GET /api/auctions` grow for as

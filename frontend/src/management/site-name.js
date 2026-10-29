@@ -1,3 +1,6 @@
+// (c) Copyright 2026 Nathaniel Mills
+// Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+// SPDX-License-Identifier: Apache-2.0
 //: A site ending of two parts: one of the second-level names countries
 //: register under, then a two-letter country.
 const COUNTRY_ENDING = /\.(co|com|org|net|gov|ac|edu)\.[a-z]{2}$/

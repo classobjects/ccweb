@@ -1,3 +1,6 @@
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 """GET/PUT /inventory/{item_id}/errors -- replacing an item's whole error set.
 
 An item may carry more than one mint or printing error -- miscut and

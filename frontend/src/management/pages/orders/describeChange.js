@@ -1,3 +1,6 @@
+// (c) Copyright 2026 Nathaniel Mills
+// Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+// SPDX-License-Identifier: Apache-2.0
 /** What a history row calls its listing: the title, else the listing's id. */
 const title = (row) => row.listing_title ?? `listing ${row.listing_id}`
 

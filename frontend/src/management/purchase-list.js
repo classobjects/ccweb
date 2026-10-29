@@ -1,3 +1,6 @@
+// (c) Copyright 2026 Nathaniel Mills
+// Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+// SPDX-License-Identifier: Apache-2.0
 /**
  * The list of purchases, as the console filters and orders it: the picker
  * on the Purchases page and the Order lookup page read one rule each for

@@ -1,3 +1,6 @@
+// (c) Copyright 2026 Nathaniel Mills
+// Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+// SPDX-License-Identifier: Apache-2.0
 // Money arrives from the API as a decimal string (NUMERIC in Postgres).
 // Format for display only -- never do arithmetic on the formatted value; sum
 // in cents (`shared/cents.js`) and format the result.

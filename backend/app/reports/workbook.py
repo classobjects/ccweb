@@ -1,3 +1,6 @@
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 r"""A report's result as an `.xlsx` workbook, read by both the API and the CLI.
 
 One sheet, named from the report's title (Excel's own limits: at most 31
