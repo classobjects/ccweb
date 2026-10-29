@@ -4,7 +4,8 @@ Receiving's Identify section asks here as its facts are chosen: pick a $1
 note of Series 1957 and the form is told Silver Certificate, blue seal,
 Priest / Anderson. The same rules as `app.classifier_defaults`, which fills
 the same fields on items already recorded
-(docs/specs/classifier-defaults-design.md).
+(docs/specs/classifier-defaults-design.md). And the kind an item starts as
+before any fact is chosen, which the console's front page also follows.
 
 Staff-only, like entering items.
 """
@@ -20,6 +21,7 @@ from sqlalchemy.orm import Session
 
 from ..classifier_defaults import NoteFacts, suggest
 from ..composition import composition_for
+from ..config import settings
 from ..deps import AdminUser, DbSession
 from ..models import (
     Country,
@@ -37,6 +39,7 @@ from ..schemas import (
     SERIES_YEAR_MAX,
     SERIES_YEAR_MIN,
     CoinSuggestionOut,
+    ItemKindDefaultOut,
     NoteSuggestionOut,
 )
 from ..serial_patterns import SMALL_SIZE_FROM
@@ -197,3 +200,13 @@ def suggest_coin(
     return CoinSuggestionOut(
         metal=metal, series=suggest_series(db, "coin", denomination_id, year, None)
     )
+
+
+@router.get("/item-kind")
+def default_item_kind(_admin: AdminUser) -> ItemKindDefaultOut:
+    """The kind this installation mostly deals in (`DEFAULT_ITEM_KIND`).
+
+    The console opens on that kind's inventory, so a currency dealer's
+    front page is the currency list rather than the coins.
+    """
+    return ItemKindDefaultOut(item_kind=settings.default_item_kind)

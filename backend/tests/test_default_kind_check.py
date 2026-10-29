@@ -84,3 +84,18 @@ def test_a_purchase_names_the_kind_its_new_item_starts_as(
     res = client.get(f"/api/purchase-orders/{order.id}", headers=admin_headers)
     assert res.status_code == 200, res.text
     assert res.json()["default_item_kind"] == "currency"
+
+
+def test_the_console_is_told_the_kind_its_front_page_opens_on(
+    client: TestClient,
+    admin_headers: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "default_item_kind", "currency")
+    res = client.get("/api/defaults/item-kind", headers=admin_headers)
+    assert res.status_code == 200, res.text
+    assert res.json() == {"item_kind": "currency"}
+
+
+def test_only_staff_are_told_the_kind(client: TestClient) -> None:
+    assert client.get("/api/defaults/item-kind").status_code == 401

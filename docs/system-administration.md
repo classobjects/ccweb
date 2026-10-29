@@ -450,7 +450,9 @@ Finding the right items is the start of most console work -- editing,
 offering, grouping into a lot, a bulk edit. The **Coins** and **Currency**
 screens (`/management/inventory/coins`, `/management/inventory/currency`)
 share one search panel (`GET /api/inventory/{view}/search`, `view` being
-`coins` or `currency`).
+`coins` or `currency`). The console itself (`/management`) opens on the one
+for `DEFAULT_ITEM_KIND` (`GET /api/defaults/item-kind`): Currency when it is
+`currency`, Coins for any other kind.
 
 **The search box has no field syntax.** What you type is one term, matched
 anywhere in an item's title, description, rating, item code or its purchase's
