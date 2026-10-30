@@ -5,9 +5,9 @@
 
 As `app/issues.py` holds its checks, this holds `REPORTS` -- adding a report
 is adding one `register()` call in a group module (`collection.py`,
-`serials.py`, `data_quality.py`, `money.py`, `purchasing.py`, `selling.py`),
-not touching an
-API route, a CLI command, or the console page that all read this one dict.
+`serials.py`, `id_numbers.py`, `data_quality.py`, `money.py`,
+`purchasing.py`, `selling.py`), not touching an API route, a CLI command,
+or the console page that all read this one dict.
 
 Kept apart from `app/reports/__init__.py` so a group module can import
 `register` directly (`from .registry import register`) rather than from the

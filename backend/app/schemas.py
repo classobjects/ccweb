@@ -1377,7 +1377,9 @@ class ItemCreate(BaseModel):
     authenticity: str | None = Field(default=None, max_length=64)
 
     #: Creates one `item_certification` row, graded by `grading_service`.
-    cert_number: str | None = Field(default=None, max_length=64)
+    #: Trimmed and never blank, as `InventoryItemUpdate.cert_numbers` is, so
+    #: the number stored here is the one a later edit compares against.
+    cert_number: CertNumber | None = None
 
     #: The seller's id for the listing it was bought from -- eBay's item
     #: number. Text, as the seller prints it; blank clears it.

@@ -20,7 +20,7 @@ what a `pr_received` row opens.
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import date
 from decimal import Decimal
 from typing import Any, cast
 from urllib.parse import urlencode
@@ -31,7 +31,6 @@ from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 
 from ..clock import local_today
-from ..inventory_search import view_path
 from ..live import OUTSTANDING_STATUSES, live_item
 from ..models import (
     CoinDetail,
@@ -52,10 +51,14 @@ from .base import (
     Report,
     ReportResult,
     among,
+    widened_utc_bounds,
+    years_text,
 )
+from .live_params import item_drill
 from .live_purchases import (
     ALL_VENDORS,
     LIVE_ITEM_PURCHASE_NOTE,
+    join_live_purchase_items,
     period_by_vendor,
 )
 from .receipts import receipt_day, received_transitions
@@ -331,8 +334,7 @@ def _pr_outstanding_items(db: Session, _params: OutstandingItemsParams) -> Repor
                 "total_cost": row["total_cost"],
             }
         )
-        query = urlencode({"item": row["item_code"]})
-        drills.append(f"{view_path(row['kind_code'])}?{query}")
+        drills.append(item_drill(row["kind_code"], row["item_code"]))
         total_cost += row["total_cost"]
 
     totals: dict[str, object] = {
@@ -485,17 +487,14 @@ def _pr_sources(db: Session, params: SourcesParams) -> ReportResult:
     """
     vendor_rows = (
         db.execute(
-            select(
-                Vendor.id.label("vendor_id"),
-                Vendor.name.label("vendor_name"),
-                *_SOURCES_AGGREGATES,
+            join_live_purchase_items(
+                select(
+                    Vendor.id.label("vendor_id"),
+                    Vendor.name.label("vendor_name"),
+                    *_SOURCES_AGGREGATES,
+                )
             )
-            .select_from(Vendor)
-            .join(PurchaseOrder, PurchaseOrder.vendor_id == Vendor.id)
-            .join(
-                InventoryItem,
-                and_(InventoryItem.purchase_order_id == PurchaseOrder.id, live_item()),
-            )
+            .join(Vendor, Vendor.id == PurchaseOrder.vendor_id)
             .group_by(Vendor.id, Vendor.name)
             .order_by(Vendor.name.asc())
         )
@@ -514,17 +513,14 @@ def _pr_sources(db: Session, params: SourcesParams) -> ReportResult:
 
     seller_rows = (
         db.execute(
-            select(
-                PurchaseOrder.vendor_id.label("vendor_id"),
-                Seller.name.label("seller_name"),
-                *_SOURCES_AGGREGATES,
+            join_live_purchase_items(
+                select(
+                    PurchaseOrder.vendor_id.label("vendor_id"),
+                    Seller.name.label("seller_name"),
+                    *_SOURCES_AGGREGATES,
+                )
             )
-            .select_from(PurchaseOrder)
             .join(Seller, Seller.id == PurchaseOrder.seller_id)
-            .join(
-                InventoryItem,
-                and_(InventoryItem.purchase_order_id == PurchaseOrder.id, live_item()),
-            )
             .group_by(PurchaseOrder.vendor_id, Seller.id, Seller.name)
             .order_by(Seller.name.asc())
         )
@@ -647,30 +643,25 @@ def _received_prefilter(params: DateRange) -> list[ColumnElement[bool]]:
     time zone; a row with `arrived_on` set is bounded by it exactly, since
     that column already reads as a calendar date with no zone to widen.
     """
+    lower, upper = widened_utc_bounds(params)
     conditions: list[ColumnElement[bool]] = []
     if params.date_from is not None:
-        widened = datetime.combine(
-            params.date_from - timedelta(days=1), time.min, tzinfo=UTC
-        )
         conditions.append(
             or_(
                 ItemStatusHistory.arrived_on >= params.date_from,
                 and_(
                     ItemStatusHistory.arrived_on.is_(None),
-                    ItemStatusHistory.changed_at >= widened,
+                    ItemStatusHistory.changed_at >= lower,
                 ),
             )
         )
     if params.date_to is not None:
-        widened = datetime.combine(
-            params.date_to + timedelta(days=1), time.max, tzinfo=UTC
-        )
         conditions.append(
             or_(
                 ItemStatusHistory.arrived_on <= params.date_to,
                 and_(
                     ItemStatusHistory.arrived_on.is_(None),
-                    ItemStatusHistory.changed_at <= widened,
+                    ItemStatusHistory.changed_at <= upper,
                 ),
             )
         )
@@ -771,11 +762,8 @@ def _arrivals(
     arrivals: list[tuple[date, RowMapping]] = []
     for row in db.execute(stmt).mappings().all():
         day = receipt_day(row["arrived_on"], row["changed_at"])
-        if params.date_from is not None and day < params.date_from:
-            continue
-        if params.date_to is not None and day > params.date_to:
-            continue
-        arrivals.append((day, row))
+        if params.contains(day):
+            arrivals.append((day, row))
     return arrivals
 
 
@@ -967,10 +955,7 @@ def _year_text(row: RowMapping) -> str:
         return row["series_designation"] or ""
     if row["no_date"]:
         return _NO_DATE
-    start, end = row["year_start"], row["year_end"]
-    if start is None:
-        return ""
-    return str(start) if end in (None, start) else f"{start}-{end}"
+    return years_text(row["year_start"], row["year_end"])
 
 
 def _item_identity(db: Session, item_ids: set[int]) -> dict[int, dict[str, str]]:
@@ -1097,8 +1082,7 @@ def _pr_received_items(db: Session, params: ReceivedItemsParams) -> ReportResult
                 "total_cost": piece["total_cost"],
             }
         )
-        query = urlencode({"item": piece["item_code"]})
-        drills.append(f"{view_path(piece['kind_code'])}?{query}")
+        drills.append(item_drill(piece["kind_code"], piece["item_code"]))
         total_cost += piece["total_cost"]
 
     totals: dict[str, object] = {

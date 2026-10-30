@@ -6,10 +6,13 @@
 Every Collection report and `mn_value` count live items
 narrowed by acquisition status and sales disposition. The parameters
 (`LiveParams`), the joins and filters they add (`live_where`), the pair a
-drill-down restates (`status_disposition_params`), a kind's own drill
-(`kind_query_string`) and the empty-result note (`NOTHING_MATCHES`) are
-defined here once, so the reports that share them cannot drift apart on
-what "received and held" selects or which search a row opens.
+drill-down restates (`status_disposition_params`), a search narrowed by
+them (`search_path`), a kind's own drill (`kind_query_string`) and the
+empty-result note (`NOTHING_MATCHES`) are defined here once, so the reports
+that share them cannot drift apart on what "received and held" selects or
+which search a row opens. The two drill pieces every report shares whether
+or not it takes these parameters -- the `kind=` a search names
+(`kind_param`) and one item's own drill (`item_drill`) -- sit beside them.
 """
 
 from __future__ import annotations
@@ -21,8 +24,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy import ColumnElement, FromClause
 
 from ..inventory_search import view_path
-from ..models import Disposition, ItemStatus
+from .tables import DISPOSITION as _DISP
 from .tables import ITEM as _I
+from .tables import ITEM_STATUS as _ST
 from .tables import LIVE as _LIVE
 
 __all__ = [
@@ -30,14 +34,13 @@ __all__ = [
     "DispositionParam",
     "LiveParams",
     "StatusParam",
+    "item_drill",
+    "kind_param",
     "kind_query_string",
     "live_where",
+    "search_path",
     "status_disposition_params",
 ]
-
-#: `item_status` and `disposition`, aliased as the search aliases them.
-_ST = ItemStatus.__table__.alias("st")
-_DISP = Disposition.__table__.alias("disp")
 
 #: The seeded `item_status` codes (`backend/data/reference/operations.json`),
 #: plus `all` for no filter.
@@ -103,6 +106,26 @@ def status_disposition_params(params: LiveParams) -> dict[str, str]:
     return query
 
 
+def search_path(path: str, query: dict[str, str], params: LiveParams) -> str:
+    """`path` searched by `query`, then narrowed by `params`' status/disposition.
+
+    `path` is a view's console path (`/inventory/coins`); with nothing to
+    add at all, it is returned bare rather than with an empty `?`.
+    """
+    full = {**query, **status_disposition_params(params)}
+    return f"{path}?{urlencode(full)}" if full else path
+
+
+def kind_param(kind_code: str) -> dict[str, str]:
+    """The `kind=` a kind's search names: none for currency, its own view."""
+    return {} if kind_code == "currency" else {"kind": kind_code}
+
+
+def item_drill(kind_code: str, item_code: str) -> str:
+    """One item's console path: its own kind's search, opened on it."""
+    return f"{view_path(kind_code)}?{urlencode({'item': item_code})}"
+
+
 def kind_query_string(
     kind_code: str,
     params: LiveParams,
@@ -119,13 +142,9 @@ def kind_query_string(
     denomination and "no denomination". Then `status=`/`disposition=` from
     `params`, omitted at `all`, so the drill's own count equals the row's.
     """
-    query: dict[str, str] = {}
-    if kind_code != "currency":
-        query["kind"] = kind_code
+    query = kind_param(kind_code)
     if denom_code is not None:
         query["denomination"] = denom_code
     elif missing_denom:
         query["missing"] = "denomination"
-    query.update(status_disposition_params(params))
-    path = view_path(kind_code)
-    return f"{path}?{urlencode(query)}" if query else path
+    return search_path(view_path(kind_code), query, params)

@@ -30,11 +30,12 @@ __all__ = ["catalog", "serialize_result"]
 
 
 def _wire_value(value: object) -> object:
-    """One value as the wire encodes it: `Decimal` and `date` become text."""
+    """One value as the wire encodes it: `Decimal` and `date` become text.
+
+    A `datetime` is a `date` too, so it takes the same branch, with its time.
+    """
     if isinstance(value, Decimal):
         return str(value)
-    if isinstance(value, datetime):
-        return value.isoformat()
     if isinstance(value, date):
         return value.isoformat()
     return value

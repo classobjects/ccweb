@@ -29,7 +29,6 @@ from collections import defaultdict
 from collections.abc import Collection, Sequence
 from decimal import Decimal
 from typing import cast
-from urllib.parse import urlencode
 
 from sqlalchemy import (
     ColumnElement,
@@ -47,7 +46,6 @@ from sqlalchemy.orm import Session
 from ..inventory_search import COIN_VIEW, CURRENCY_VIEW, MISSING_FIELDS
 from ..models import (
     BullionForm,
-    CurrencyDetail,
     Denomination,
     ErrorType,
     FedDistrict,
@@ -64,7 +62,7 @@ from ..models import (
     StrikeType,
 )
 from ..models.valuation import melt_value
-from .base import Column, Report, ReportResult
+from .base import Column, Report, ReportResult, years_text
 from .live_params import (
     NOTHING_MATCHES,
     DispositionParam,
@@ -72,9 +70,10 @@ from .live_params import (
     StatusParam,
     kind_query_string,
     live_where,
-    status_disposition_params,
+    search_path,
 )
 from .registry import register
+from .tables import CURRENCY_DETAIL as _CUD
 from .tables import ITEM as _I
 from .tables import KIND as _K
 
@@ -325,15 +324,6 @@ _SER = Series.__table__.alias("ser")
 _NO_SERIES = "No series"
 
 
-def _year_span(year_min: int | None, year_max: int | None) -> str:
-    """The year span as text: "1878-1904", one year, or empty."""
-    if year_min is None and year_max is None:
-        return ""
-    if year_min == year_max:
-        return str(year_min)
-    return f"{year_min}-{year_max}"
-
-
 def _designs_query_string(series_code: str | None, params: DesignsParams) -> str:
     """A series row's own coin search; `missing=series` for "No series"."""
     query: dict[str, str] = {}
@@ -341,8 +331,7 @@ def _designs_query_string(series_code: str | None, params: DesignsParams) -> str
         query["series"] = series_code
     else:
         query["missing"] = "series"
-    query.update(status_disposition_params(params))
-    return f"/inventory/coins?{urlencode(query)}"
+    return search_path("/inventory/coins", query, params)
 
 
 def _cb_designs(db: Session, params: DesignsParams) -> ReportResult:
@@ -407,7 +396,7 @@ def _cb_designs(db: Session, params: DesignsParams) -> ReportResult:
             {
                 "series": series_label,
                 "items": row["items"],
-                "year_span": _year_span(row["year_min"], row["year_max"]),
+                "year_span": years_text(row["year_min"], row["year_max"]),
                 "total_cost": row["total_cost"],
             }
         )
@@ -446,7 +435,6 @@ class NotesParams(LiveParams):
 
 
 _NT = NoteType.__table__.alias("nt")
-_CUD = CurrencyDetail.__table__.alias("cud")
 _SEAL = SealColor.__table__.alias("sc")
 _DISTRICT = FedDistrict.__table__.alias("fd")
 
@@ -491,8 +479,7 @@ def _notes_query_string(
     if note_type_code is None or series_designation is None:
         return None
     query = {"note_type": note_type_code, "series_designation": series_designation}
-    query.update(status_disposition_params(params))
-    return f"/inventory/currency?{urlencode(query)}"
+    return search_path("/inventory/currency", query, params)
 
 
 #: A `cb_notes` group: a note type's id and a series designation, either of
@@ -776,8 +763,7 @@ def _grades_drill(
         query["strike_type"] = strike_code
     if service_code is not None:
         query["grading_service"] = service_code
-    query.update(status_disposition_params(params))
-    return f"/inventory/{row['view']}?{urlencode(query)}"
+    return search_path(f"/inventory/{row['view']}", query, params)
 
 
 def _cb_grades(db: Session, params: GradesParams) -> ReportResult:
@@ -966,8 +952,7 @@ def _metal_drill(
         bucket_total = bucket_kind_metal
     if bucket_total != expected:
         return None
-    query.update(status_disposition_params(params))
-    return f"/inventory/coins?{urlencode(query)}"
+    return search_path("/inventory/coins", query, params)
 
 
 def _cb_metal(db: Session, params: MetalParams) -> ReportResult:
@@ -981,7 +966,10 @@ def _cb_metal(db: Session, params: MetalParams) -> ReportResult:
     src: FromClause = (
         _I.join(_K, _K.c.id == _I.c.item_kind_id)
         .outerjoin(_MT, _MT.c.id == _I.c.metal_id)
-        .outerjoin(_BF, _BF.c.id == _I.c.bullion_form_id)
+        # Only bullion is grouped by its form: a coin, medal or token left
+        # holding a stray `bullion_form_id` stays in its kind's one row
+        # rather than splitting into two that read the same Metal and Form.
+        .outerjoin(_BF, and_(_BF.c.id == _I.c.bullion_form_id, _K.c.code == "bullion"))
     )
     src, where = live_where(src, params)
 
@@ -1166,8 +1154,7 @@ def _mark_query_string(
 ) -> str:
     """This mark's own search, on the view it was carried on."""
     query = {key: code}
-    query.update(status_disposition_params(params))
-    return f"/inventory/{view_name}?{urlencode(query)}"
+    return search_path(f"/inventory/{view_name}", query, params)
 
 
 def _attribute_rows(db: Session, params: AttributesParams) -> list[dict[str, object]]:

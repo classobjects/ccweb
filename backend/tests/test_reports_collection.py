@@ -1436,15 +1436,14 @@ def test_metal_bullion_with_no_form_has_no_drill_the_bars_drill_matches(
     assert total == result.rows[bar_idx]["items"]
 
 
-def test_metal_drill_is_none_when_a_coin_carries_a_stray_bullion_form(
+def test_metal_a_coin_with_a_stray_bullion_form_stays_in_the_coin_row(
     db: Session,
 ) -> None:
-    """A coin's search never filters on bullion form, stray or not.
+    """Only bullion is grouped by form: a stray one does not split a coin row.
 
-    One coin here carries a `bullion_form_id` by data mistake; the search's
-    `kind=coin&metal=silver` sweeps in the other coin regardless, so the
-    bucket check must be (kind, metal), not the narrower (kind, metal,
-    form) -- which would (wrongly) see only this row and call it exact.
+    One coin here carries a `bullion_form_id` by data mistake. Grouped by it,
+    the two coins would come out as two rows both reading Silver / Coin, and
+    neither could be drilled, since `kind=coin&metal=silver` returns both.
     """
     build_bare_item(
         db,
@@ -1468,11 +1467,14 @@ def test_metal_drill_is_none_when_a_coin_carries_a_stray_bullion_form(
         for i, r in enumerate(result.rows)
         if r["metal"] == "Silver" and r["form"] == "Coin"
     ]
-    # The stray bullion form splits what is really one bucket into two SQL
-    # rows; both must still see that the search sweeps in the other one.
-    assert len(coin_silver_rows) == 2
-    for idx in coin_silver_rows:
-        assert result.drills[idx] is None
+    assert len(coin_silver_rows) == 1
+    idx = coin_silver_rows[0]
+    assert result.rows[idx]["items"] == 2
+    assert result.rows[idx]["ounces"] == Decimal("1.000000")
+    path, query = _parsed(cast(str, result.drills[idx]))
+    assert path == "/inventory/coins"
+    _, total = inventory_search(db, COIN_VIEW, params=dict(query))
+    assert total == 2
 
 
 def test_metal_excludes_deleted_and_split_items(db: Session) -> None:

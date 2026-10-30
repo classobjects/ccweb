@@ -120,6 +120,19 @@ def test_a_row_for_each_held_item_a_number_identifies(db: Session) -> None:
     )
 
 
+def test_a_lot_of_several_pieces_reads_its_whole_fine_weight(db: Session) -> None:
+    """Fine weight is recorded per piece: a lot of three 1 ozt bars holds 3 ozt."""
+    lot = _bullion(db, "PAMP-0100", piece_count=3)
+    _bullion(db, "PAMP-0101")
+
+    result = CB_ID_NUMBERS.run(db, LiveParams())
+
+    by_item = {row["item"]: row for row in result.rows}
+    assert by_item[lot.item_code]["fine_weight_ozt"] == Decimal("3")
+    assert result.totals is not None
+    assert result.totals["fine_weight_ozt"] == Decimal("4")
+
+
 def test_a_sold_piece_is_left_out_by_default(db: Session) -> None:
     sold = _bullion(db, "JM-77", disposition_id=code_id(db, Disposition, "sold"))
 

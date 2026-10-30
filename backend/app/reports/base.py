@@ -10,9 +10,9 @@ the console -- reads anything but these shapes.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Collection
+from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from typing import Any, Literal, get_args
 
@@ -72,8 +72,9 @@ class ReportResult:
 
     `totals` is a row shaped like the others, for the columns a total means
     something for; omitted (`None`) when no total applies. `notes` is
-    anything a reader must know to read the table right, such as "no spot
-    price recorded; melt value omitted".
+    anything a reader must know to read the table right, such as
+    `cb_metal`'s "Melt value leaves out metals with no recorded price:
+    Platinum."
 
     `link_column` is the key of the column whose cell carries a row's
     drill-down link -- the cell that names what the link opens, such as a
@@ -135,6 +136,46 @@ class DateRange(BaseModel):
         ):
             raise ValueError("From must not be after To")
         return self
+
+    def contains(self, day: date) -> bool:
+        """Whether `day` is in the range, inclusive; an absent bound has no limit."""
+        if self.date_from is not None and day < self.date_from:
+            return False
+        return self.date_to is None or day <= self.date_to
+
+
+def widened_utc_bounds(params: DateRange) -> tuple[datetime | None, datetime | None]:
+    """`params`' bounds as UTC instants, a day wider on each side, or `None`.
+
+    For a coarse, SQL-side narrowing of a `timestamptz` column before the
+    exact test (`local_date`, then `DateRange.contains`) runs per row in
+    Python: a moment's local calendar day can fall a day either side of
+    its UTC instant, depending on the server's own time zone, so the
+    widening never drops a row the exact test would keep.
+    """
+    lower: datetime | None = None
+    upper: datetime | None = None
+    if params.date_from is not None:
+        lower = datetime.combine(
+            params.date_from - timedelta(days=1), time.min, tzinfo=UTC
+        )
+    if params.date_to is not None:
+        upper = datetime.combine(
+            params.date_to + timedelta(days=1), time.max, tzinfo=UTC
+        )
+    return lower, upper
+
+
+def years_text(start: int | None, end: int | None) -> str:
+    """A year or span as text: `1990`, `1999-2009`, or empty with no `start`."""
+    if start is None:
+        return ""
+    return str(start) if end in (None, start) else f"{start}-{end}"
+
+
+def listed(values: Sequence[object]) -> str:
+    """The different values among `values`, as first met, blanks left out."""
+    return ", ".join(dict.fromkeys(str(value) for value in values if value))
 
 
 def is_date_field(field: FieldInfo) -> bool:
@@ -273,7 +314,10 @@ __all__ = [
     "ReportResult",
     "among",
     "is_date_field",
+    "listed",
     "local_date",
     "period_label",
     "period_start",
+    "widened_utc_bounds",
+    "years_text",
 ]
