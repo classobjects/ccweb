@@ -1,8 +1,6 @@
 // (c) Copyright 2026 Nathaniel Mills
 // Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
 // SPDX-License-Identifier: Apache-2.0
-import { useState } from 'react'
-
 import { api } from './api'
 import { siteName, withScheme } from './site-name'
 import { useInlineAdd } from './useInlineAdd'
@@ -37,24 +35,31 @@ export default function VendorField({
   'aria-keyshortcuts': ariaKeyshortcuts,
 }) {
   const addOption = useAddOption()
-  // Add stays live: a press with no name says so, rather than a dimmed
-  // button that says nothing.
-  const [askedEmpty, setAskedEmpty] = useState(false)
-  const { adding, setAdding, draft, setDraft, error, add, wrapper, ready } =
-    useInlineAdd({
-      blank: BLANK_VENDOR_DRAFT,
-      ready: (d) => Boolean(d.name.trim()),
-      create: (d) =>
-        api.createVendor({
-          name: d.name.trim(),
-          vendor_kind: d.vendor_kind || null,
-          url: withScheme(d.url),
-        }),
-      onCreated: (created) => {
-        onVendorAdded(created)
-        onChange(created.id)
-      },
-    })
+  const {
+    adding,
+    setAdding,
+    draft,
+    setDraft,
+    error,
+    submit,
+    cancel,
+    wrapper,
+    ready,
+    asked,
+  } = useInlineAdd({
+    blank: BLANK_VENDOR_DRAFT,
+    ready: (d) => Boolean(d.name.trim()),
+    create: (d) =>
+      api.createVendor({
+        name: d.name.trim(),
+        vendor_kind: d.vendor_kind || null,
+        url: withScheme(d.url),
+      }),
+    onCreated: (created) => {
+      onVendorAdded(created)
+      onChange(created.id)
+    },
+  })
 
   if (adding) {
     return (
@@ -85,19 +90,14 @@ export default function VendorField({
           onChange={(e) => setDraft({ ...draft, vendor_kind: e.target.value })}
           placeholder="vendor kind"
         />
-        <button
-          type="button"
-          onClick={() => {
-            setAskedEmpty(!ready)
-            if (ready) add()
-          }}
-        >
+        {/* Kept live: pressed with no name, it says that one is needed. */}
+        <button type="button" onClick={submit}>
           Add
         </button>
-        <button type="button" className="link" onClick={() => setAdding(false)}>
+        <button type="button" className="link" onClick={cancel}>
           Cancel
         </button>
-        {askedEmpty && !ready && (
+        {asked && !ready && (
           <span className="error">Type the vendor&apos;s name first.</span>
         )}
         {error && <span className="error">{error}</span>}
@@ -109,16 +109,11 @@ export default function VendorField({
     <select
       value={value ?? ''}
       onKeyDown={addOption.onKeyDown}
-      onChange={(e) => {
-        if (e.target.value !== ADD) {
-          onChange(e.target.value === '' ? null : Number(e.target.value))
-          return
-        }
-        // An arrow steps over Add; only choosing it opens the form.
-        const meant = addOption.steppedOver(e.target)
-        if (meant === undefined) setAdding(true)
-        else if (meant !== null) onChange(Number(meant))
-      }}
+      // An arrow steps over Add; only choosing it opens the form.
+      onChange={addOption.onSelectChange({
+        pick: (id) => onChange(id === '' ? null : Number(id)),
+        open: () => setAdding(true),
+      })}
       aria-label={label}
       accessKey={accessKey}
       aria-keyshortcuts={ariaKeyshortcuts}

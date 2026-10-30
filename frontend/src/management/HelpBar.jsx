@@ -35,24 +35,31 @@ export function HelpProvider({ children }) {
   return <HelpContext.Provider value={value}>{children}</HelpContext.Provider>
 }
 
+/**
+ * What is shown about `field` (a `FIELD_HELP` key, or null): its title and
+ * text, or the hint to click into a field. The band and a `HelpScope`
+ * without one both say it the same way.
+ */
+export function HelpText({ field }) {
+  const help = field ? FIELD_HELP[field] : null
+  if (!help)
+    return <span className="muted">Click in a field to see what it means.</span>
+  return (
+    <>
+      <strong>{help.title}</strong> {help.text}
+    </>
+  )
+}
+
 /** The band itself, rendered once by the console shell below its content. */
 export function HelpBar() {
   return (
     <HelpContext.Consumer>
-      {(band) => {
-        const help = band?.field ? FIELD_HELP[band.field] : null
-        return (
-          <footer className="help-bar" aria-live="polite" aria-label="Field help">
-            {help ? (
-              <>
-                <strong>{help.title}</strong> {help.text}
-              </>
-            ) : (
-              <span className="muted">Click in a field to see what it means.</span>
-            )}
-          </footer>
-        )
-      }}
+      {(band) => (
+        <footer className="help-bar" aria-live="polite" aria-label="Field help">
+          <HelpText field={band?.field} />
+        </footer>
+      )}
     </HelpContext.Consumer>
   )
 }

@@ -207,6 +207,56 @@ describe('LocationSelect', () => {
     expect(screen.getByText('Choose a kind first.')).toBeInTheDocument()
   })
 
+  it('says a kind is needed when Enter is pressed without one', async () => {
+    const user = userEvent.setup()
+    renderPicker()
+    await user.selectOptions(
+      await screen.findByRole('combobox', { name: /storage location/i }),
+      '__add__',
+    )
+    await user.type(screen.getByPlaceholderText('Bank or place'), 'First{Enter}')
+
+    expect(screen.getByText('Choose a kind first.')).toBeInTheDocument()
+  })
+
+  it.each([
+    ['Cancel', (user) => user.click(screen.getByRole('button', { name: 'Cancel' }))],
+    [
+      'Escape',
+      async (user) => {
+        screen.getByPlaceholderText('Bank or place').focus()
+        await user.keyboard('{Escape}')
+      },
+    ],
+  ])('opens blank again after %s, with nothing said', async (_how, close) => {
+    // A form closed with its draft, refusal and "choose a kind" kept opens
+    // next time showing a complaint about an attempt nobody is making.
+    const user = userEvent.setup()
+    api.createStorageLocation.mockRejectedValue(new Error('Refused'))
+    renderPicker()
+    const open = async () =>
+      user.selectOptions(
+        await screen.findByRole('combobox', { name: /storage location/i }),
+        '__add__',
+      )
+    await open()
+    await user.type(screen.getByPlaceholderText('Bank or place'), 'First Bank')
+    await user.click(screen.getByRole('button', { name: 'Add location' }))
+    expect(screen.getByText('Choose a kind first.')).toBeInTheDocument()
+    await user.selectOptions(screen.getByLabelText('storage_location_kind'), 'home')
+    await user.click(screen.getByRole('button', { name: 'Add location' }))
+    expect(await screen.findByText('Refused')).toBeInTheDocument()
+
+    await close(user)
+    await open()
+
+    expect(screen.getByPlaceholderText('Bank or place')).toHaveValue('')
+    expect(screen.getByLabelText('storage_location_kind')).toHaveValue('')
+    expect(screen.queryByText('Refused')).not.toBeInTheDocument()
+    await user.type(screen.getByPlaceholderText('Box or number'), '1')
+    expect(screen.queryByText('Choose a kind first.')).not.toBeInTheDocument()
+  })
+
   it('shows a refusal and keeps what was typed', async () => {
     const user = userEvent.setup()
     api.createStorageLocation.mockRejectedValue(

@@ -59,9 +59,14 @@ export function ReferenceProvider({ children, includeInactive = false }) {
   //: table -> when its values were last asked for, once they have arrived.
   const asked = useRef(new Map())
 
-  const load = useCallback(
-    async (table) => {
-      if (requested.current.has(table)) return
+  /**
+   * Ask for `table`'s values as the newest request for it. An answer to a
+   * request since superseded -- invalidated, or asked again -- is stale and
+   * dropped; the newer one wins. Values that arrive replace the table's and
+   * clear its failure; a fetch that fails calls `onFail()` instead.
+   */
+  const fetchTable = useCallback(
+    async (table, { onFail }) => {
       const token = {}
       requested.current.set(table, token)
       let values
@@ -69,19 +74,33 @@ export function ReferenceProvider({ children, includeInactive = false }) {
       try {
         values = (await api.getReference(table, { includeInactive })).values
       } catch {
-        // A missing vocabulary must not take the form down: the field falls
-        // back to a free-text input, and says the vocabulary did not load.
-        values = []
         missed = true
       }
-      // An answer to a request since invalidated is stale; the newer one wins.
-      if (requested.current.get(table) === token) {
-        asked.current.set(table, Date.now())
-        setTables((t) => ({ ...t, [table]: values }))
-        setFailed((f) => ({ ...f, [table]: missed }))
+      if (requested.current.get(table) !== token) return
+      asked.current.set(table, Date.now())
+      if (missed) {
+        onFail()
+        return
       }
+      setTables((t) => ({ ...t, [table]: values }))
+      setFailed((f) => ({ ...f, [table]: false }))
     },
     [includeInactive],
+  )
+
+  const load = useCallback(
+    async (table) => {
+      if (requested.current.has(table)) return
+      await fetchTable(table, {
+        // A missing vocabulary must not take the form down: the field falls
+        // back to a free-text input, and says the vocabulary did not load.
+        onFail: () => {
+          setTables((t) => ({ ...t, [table]: [] }))
+          setFailed((f) => ({ ...f, [table]: true }))
+        },
+      })
+    },
+    [fetchTable],
   )
 
   // A vocabulary is changed in other places than this page: another tab,
@@ -97,21 +116,12 @@ export function ReferenceProvider({ children, includeInactive = false }) {
       const at = asked.current.get(table)
       // Never loaded, still loading, or fresh enough.
       if (at === undefined || Date.now() - at < STALE_MS) return
+      // Marked now, not on arrival, so a second use meanwhile asks nothing.
       asked.current.set(table, Date.now())
-      const token = {}
-      requested.current.set(table, token)
-      let values
-      try {
-        values = (await api.getReference(table, { includeInactive })).values
-      } catch {
-        return
-      }
-      if (requested.current.get(table) === token) {
-        setTables((t) => ({ ...t, [table]: values }))
-        setFailed((f) => ({ ...f, [table]: false }))
-      }
+      // A failed refresh keeps the values held.
+      await fetchTable(table, { onFail: () => {} })
     },
-    [includeInactive],
+    [fetchTable],
   )
 
   useEffect(() => {
@@ -419,18 +429,18 @@ export function ReferenceSelect({
       <select
         value={value ?? ''}
         onKeyDown={addOption.onKeyDown}
-        onChange={(e) => {
-          setNotice('')
-          if (!allowAdd || e.target.value !== ADD) {
-            onChange(e)
-            return
-          }
-          // An arrow on its way down the list steps over Add; only choosing
-          // it opens the form.
-          const meant = addOption.steppedOver(e.target)
-          if (meant === undefined) setAdding(true)
-          else if (meant !== null) onChange({ target: { value: meant } })
-        }}
+        // An arrow on its way down the list steps over Add; only choosing it
+        // opens the form. Without `allowAdd` there is no Add to choose.
+        onChange={addOption.onSelectChange({
+          pick: (code, e) => {
+            setNotice('')
+            onChange(e ?? { target: { value: code } })
+          },
+          open: () => {
+            setNotice('')
+            setAdding(true)
+          },
+        })}
         aria-label={table}
         accessKey={accessKey}
         aria-keyshortcuts={ariaKeyshortcuts}

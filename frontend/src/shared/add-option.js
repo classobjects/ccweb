@@ -33,10 +33,11 @@ const SAME_KEYSTROKE_MS = 100
  * arrow steps over it instead; choosing it from the open list, with Enter or
  * the mouse, still opens the form.
  *
- * Put `onKeyDown` on the select. When its value becomes `ADD`, call
- * `steppedOver(select)`: `undefined` means Add was chosen, so open the form;
- * otherwise it is the value the arrow was heading for, or `null` when there
- * is none that way and the select should stay as it is.
+ * Put `onKeyDown` on the select and `onSelectChange({ pick, open })` as its
+ * `onChange`: a value chosen, or the one an arrow stepping over Add was
+ * heading for, goes to `pick(value, event)` -- `event` only when it is the
+ * select's own change -- and choosing Add itself calls `open()`. An arrow
+ * with no value beyond Add leaves the select as it is.
  */
 export function useAddOption() {
   const last = useRef(null)
@@ -46,6 +47,11 @@ export function useAddOption() {
     last.current = step ? { step, at: performance.now() } : null
   }
 
+  /**
+   * For a select whose value has just become `ADD`: `undefined` when Add was
+   * chosen; otherwise the value the arrow was heading for, or `null` when
+   * there is none that way.
+   */
   function steppedOver(select) {
     const key = last.current
     last.current = null
@@ -59,7 +65,19 @@ export function useAddOption() {
     return null
   }
 
-  return { onKeyDown, steppedOver }
+  function onSelectChange({ pick, open }) {
+    return (e) => {
+      if (e.target.value !== ADD) {
+        pick(e.target.value, e)
+        return
+      }
+      const meant = steppedOver(e.target)
+      if (meant === undefined) open()
+      else if (meant !== null) pick(meant)
+    }
+  }
+
+  return { onKeyDown, onSelectChange }
 }
 
 /**
@@ -75,20 +93,21 @@ export function isCancellingEscape(e) {
 }
 
 /**
- * The `ref` for an inline add form's wrapper: Escape inside it calls
- * `cancel` and closes nothing else.
+ * A `ref` callback that has the element it is given hear its keys (and its
+ * descendants') with `handler`.
  *
- * A listener the wrapper is given, not an `onKeyDown` written on it: the
- * wrapper is not a control, and is not made to look like one.
+ * A listener the element is given, not an `onKeyDown` written on it: an
+ * inline add form's wrapper is not a control, and is not made to look like
+ * one. The listener is put on once per element, so it reaches the latest
+ * render's `handler` -- the one that reads the state as it now stands --
+ * through a ref.
  */
-export function useEscapeCancels(cancel) {
-  const latest = useRef(cancel)
+export function useKeydownRef(handler) {
+  const latest = useRef(handler)
   useLayoutEffect(() => {
-    latest.current = cancel
+    latest.current = handler
   })
-  const hear = useCallback((e) => {
-    if (isCancellingEscape(e)) latest.current()
-  }, [])
+  const hear = useCallback((e) => latest.current(e), [])
   const heard = useRef(null)
   return useCallback(
     (element) => {
@@ -98,4 +117,14 @@ export function useEscapeCancels(cancel) {
     },
     [hear],
   )
+}
+
+/**
+ * The `ref` for an inline add form's wrapper: Escape inside it calls
+ * `cancel` and closes nothing else.
+ */
+export function useEscapeCancels(cancel) {
+  return useKeydownRef((e) => {
+    if (isCancellingEscape(e)) cancel()
+  })
 }

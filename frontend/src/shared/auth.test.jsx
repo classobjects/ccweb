@@ -9,20 +9,11 @@ vi.mock('./api', async (importOriginal) => ({
   api: { login: vi.fn(), me: vi.fn(), register: vi.fn(), logout: vi.fn() },
   loadTokens: vi.fn(),
   saveTokens: vi.fn(),
-  clearTokens: vi.fn(),
   signOut: vi.fn(),
   onSignedOut: vi.fn(() => () => {}),
 }))
 
-import {
-  ApiError,
-  api,
-  clearTokens,
-  loadTokens,
-  onSignedOut,
-  saveTokens,
-  signOut,
-} from './api'
+import { ApiError, api, loadTokens, onSignedOut, saveTokens, signOut } from './api'
 import { AuthProvider } from './auth'
 import { useAuth } from './auth-context'
 import { adminAuth, customerAuth } from '../test/helpers'
@@ -40,6 +31,9 @@ async function mount() {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  // The real `signOut` tells every `onSignedOut` listener; the provider's
+  // is the one that clears `user`, so the mock does the same.
+  signOut.mockImplementation(() => onSignedOut.mock.calls.at(-1)?.[0]())
 })
 
 describe('AuthProvider', () => {
@@ -58,13 +52,13 @@ describe('AuthProvider', () => {
     expect(auth.current.isAdmin).toBe(true)
   })
 
-  it('drops a token the server no longer accepts', async () => {
+  it('finishes loading as anonymous on a token the server no longer accepts', async () => {
     // Expiring while the tab was closed must leave the app anonymous and
-    // usable, not stuck on a token that will fail every later request.
+    // usable. Dropping the tokens is `send`'s job (api.test.js: a refused
+    // session signs out), so the provider only has to settle.
     loadTokens.mockReturnValue({ access_token: 'stale' })
     api.me.mockRejectedValue(new ApiError(401, 'Could not validate credentials'))
     const auth = await mount()
-    expect(clearTokens).toHaveBeenCalled()
     expect(auth.current.user).toBeNull()
   })
 
@@ -78,7 +72,7 @@ describe('AuthProvider', () => {
     loadTokens.mockReturnValue({ access_token: 'a', refresh_token: 'r' })
     api.me.mockRejectedValue(failure)
     await mount()
-    expect(clearTokens).not.toHaveBeenCalled()
+    expect(signOut).not.toHaveBeenCalled()
   })
 
   it('stores the tokens a login returns and then loads the profile', async () => {

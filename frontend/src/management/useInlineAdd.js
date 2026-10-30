@@ -1,9 +1,9 @@
 // (c) Copyright 2026 Nathaniel Mills
 // Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
 // SPDX-License-Identifier: Apache-2.0
-import { useCallback, useLayoutEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 
-import { isCancellingEscape } from '../shared/add-option'
+import { isCancellingEscape, useKeydownRef } from '../shared/add-option'
 
 /**
  * The small form a picker opens from its "+ Add ..." option: the vendor,
@@ -15,21 +15,27 @@ import { isCancellingEscape } from '../shared/add-option'
  * selects it. A refusal stays in `error`, with the form open and the draft
  * as typed.
  *
- * `wrapper` is the `ref` of the form's wrapper, which then hears its boxes'
- * keys with `onKeyDown`. The form sits inside a larger `<form>`: without
- * it, Enter in a box submits that outer form -- for whatever was already
- * picked -- instead of adding what is being typed. A button keeps its own
- * Enter: swallowing it would cancel Cancel's own activation and add the row
- * the user was abandoning. Escape closes this form alone: unhandled, it
- * would close the dialog the picker sits in, with everything typed there.
+ * `submit()` is the form's Add: it sends a ready draft, and for one that is
+ * not yet ready sets `asked`, for the picker to say what is missing -- the
+ * button is kept live, so a press says why rather than a dimmed button
+ * saying nothing. `cancel()` closes the form and forgets it -- draft, error
+ * and `asked` -- so the next open starts empty, however this one was closed.
  *
- * A listener the wrapper is given, not an `onKeyDown` written on it: the
- * wrapper is not a control, and is not made to look like one.
+ * `wrapper` is the `ref` of the form's wrapper, which then hears its boxes'
+ * keys. The form sits inside a larger `<form>`: without it, Enter in a box
+ * submits that outer form -- for whatever was already picked -- instead of
+ * adding what is being typed; here Enter is `submit()`. A button keeps its
+ * own Enter: swallowing it would cancel Cancel's own activation and add the
+ * row the user was abandoning. Escape is `cancel()`, for this form alone:
+ * unhandled, it would close the dialog the picker sits in, with everything
+ * typed there.
  */
 export function useInlineAdd({ blank, ready, create, onCreated }) {
   const [adding, setAdding] = useState(false)
   const [draft, setDraft] = useState(blank)
   const [error, setError] = useState('')
+  //: True once Add (the button or Enter) was asked for before the draft was ready.
+  const [asked, setAsked] = useState(false)
 
   // A ref, not state: Enter held down asks again before the next render.
   const sending = useRef(false)
@@ -42,9 +48,7 @@ export function useInlineAdd({ blank, ready, create, onCreated }) {
     try {
       const created = await create(draft)
       onCreated(created)
-      setAdding(false)
-      setDraft(blank)
-      setError('')
+      cancel()
     } catch (err) {
       setError(err.message)
     } finally {
@@ -52,34 +56,30 @@ export function useInlineAdd({ blank, ready, create, onCreated }) {
     }
   }
 
+  function submit() {
+    if (ready(draft)) add()
+    else setAsked(true)
+  }
+
+  function cancel() {
+    setAdding(false)
+    setDraft(blank)
+    setError('')
+    setAsked(false)
+  }
+
   function onKeyDown(e) {
     // Escape cancels this form, not the dialog it sits in.
     if (isCancellingEscape(e)) {
-      setAdding(false)
+      cancel()
       return
     }
     if (e.key !== 'Enter' || e.target.tagName === 'BUTTON') return
     e.preventDefault()
-    if (ready(draft)) add()
+    submit()
   }
 
-  // The wrapper hears its boxes' keys through a listener of its own, which
-  // is put on once and so must reach this render's `onKeyDown` -- the one
-  // that reads the draft as it now stands -- through a ref.
-  const latestKeyDown = useRef(onKeyDown)
-  useLayoutEffect(() => {
-    latestKeyDown.current = onKeyDown
-  })
-  const hearKey = useCallback((e) => latestKeyDown.current(e), [])
-  const heard = useRef(null)
-  const wrapper = useCallback(
-    (element) => {
-      heard.current?.removeEventListener('keydown', hearKey)
-      heard.current = element
-      element?.addEventListener('keydown', hearKey)
-    },
-    [hearKey],
-  )
+  const wrapper = useKeydownRef(onKeyDown)
 
   return {
     adding,
@@ -88,8 +88,11 @@ export function useInlineAdd({ blank, ready, create, onCreated }) {
     setDraft,
     error,
     add,
+    submit,
+    cancel,
     onKeyDown,
     wrapper,
     ready: ready(draft),
+    asked,
   }
 }

@@ -203,8 +203,12 @@ label.checkbox {
 /* Text-field styling. Checkboxes and radios are excluded: given full width,
    block display and a bordered surface box, a radio lands on a line of its
    own, drawn as a dark rectangle above its label. They take their layout
-   from label.checkbox instead. */
-input:not([type='checkbox']):not([type='radio']),
+   from label.checkbox instead.
+   The exclusion sits in :where() so it adds no weight: the rule stays a
+   plain element rule, like select and textarea beside it, and any class
+   that sizes one box (.qty, .alias-add input) overrides it without having
+   to repeat the exclusion. */
+input:where(:not([type='checkbox'], [type='radio'])),
 select,
 textarea {
   display: block;

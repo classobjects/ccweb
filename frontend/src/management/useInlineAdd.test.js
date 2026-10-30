@@ -129,6 +129,66 @@ describe('useInlineAdd', () => {
     expect(result.current.error).toBe('')
   })
 
+  describe('asked before it is ready', () => {
+    it('is said once Add is pressed with nothing to send', () => {
+      const { result, create } = mount()
+      expect(result.current.asked).toBe(false)
+      act(() => result.current.submit())
+      expect(result.current.asked).toBe(true)
+      expect(create).not.toHaveBeenCalled()
+    })
+
+    it('is said the same when Enter asks', () => {
+      const { result } = mount()
+      act(() => result.current.onKeyDown(key('Enter')))
+      expect(result.current.asked).toBe(true)
+    })
+
+    it('sends a ready draft from submit', async () => {
+      const { result, create } = mount(vi.fn().mockResolvedValue({ id: 1 }))
+      act(() => result.current.setDraft({ name: 'Apmex', url: '' }))
+      await act(async () => result.current.submit())
+      expect(create).toHaveBeenCalledTimes(1)
+      expect(result.current.asked).toBe(false)
+    })
+  })
+
+  describe('closed without adding', () => {
+    /** An open form with a draft, a refusal and a premature ask in it. */
+    async function used() {
+      const mounted = mount(vi.fn().mockRejectedValue(new Error('taken')))
+      const { result } = mounted
+      act(() => {
+        result.current.setAdding(true)
+        result.current.submit()
+      })
+      act(() => result.current.setDraft({ name: 'Apmex', url: 'x' }))
+      await act(() => result.current.add())
+      expect(result.current.error).toBe('taken')
+      expect(result.current.asked).toBe(true)
+      return mounted
+    }
+
+    it.each([
+      ['cancel()', (result) => result.current.cancel()],
+      [
+        'Escape',
+        (result) =>
+          result.current.onKeyDown({
+            ...key('Escape'),
+            stopPropagation: vi.fn(),
+          }),
+      ],
+    ])('forgets everything through %s', async (_how, close) => {
+      const { result } = await used()
+      act(() => close(result))
+      expect(result.current.adding).toBe(false)
+      expect(result.current.draft).toEqual(BLANK)
+      expect(result.current.error).toBe('')
+      expect(result.current.asked).toBe(false)
+    })
+  })
+
   describe('Enter inside the outer form', () => {
     it('adds the row instead of submitting the form around it', async () => {
       const { result, create } = mount(vi.fn().mockResolvedValue({ id: 1 }))

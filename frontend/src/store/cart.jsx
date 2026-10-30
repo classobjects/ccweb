@@ -4,8 +4,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { onSignedOut } from '../shared/api'
-import { fromCents, isMoney, toCents } from '../shared/cents'
-import { CartContext } from './cart-context'
+import { fromCents } from '../shared/cents'
+import { CartContext, lineCents } from './cart-context'
 
 // The version is in the key so a cart saved in an older shape is never read
 // as this one.
@@ -115,16 +115,15 @@ export function CartProvider({ children }) {
 
   const clear = useCallback(() => setLines([]), [])
 
-  // `total` is a decimal string, summed in whole cents: adding prices as
-  // floats shows $299.96999999999997 for three coins at $99.99. A price that
-  // is not a money amount (a corrupted saved cart) is left out rather than
-  // turning the whole total into NaN; checkout prices every line again.
+  // `total` is a decimal string, summed in whole cents (`lineCents`). A line
+  // whose price is not a money amount is left out rather than turning the
+  // whole total into NaN; checkout prices every line again.
   const { count, total } = useMemo(() => {
     let count = 0
     let cents = 0
     for (const line of lines) {
       count += line.quantity
-      if (isMoney(line.coin.price)) cents += toCents(line.coin.price) * line.quantity
+      cents += lineCents(line) ?? 0
     }
     return { count, total: fromCents(cents) }
   }, [lines])

@@ -13,7 +13,7 @@
  */
 
 //: Grams in one troy ounce, exactly (the international troy ounce).
-export const GRAMS_PER_OZT = 31.1034768
+const GRAMS_PER_OZT = 31.1034768
 
 //: The units a weight can be typed in: code, the name in the picker.
 export const WEIGHT_UNITS = [
