@@ -823,6 +823,20 @@ def test_settings_reference_has_a_row_for_every_setting_and_no_other() -> None:
     assert len(rows) == len(set(rows)), "a setting with two rows in settings.md"
 
 
+#: The reference list ccweb_status asks to tell a running API from a held port.
+_STATUS_PROBE = re.compile(r"/api/reference/(\w+)")
+
+
+def test_status_probes_a_reference_list_anyone_may_read() -> None:
+    """Signed out, any other list is a 403, and the API reads as not answering."""
+    from app.routers.reference import PUBLIC_TABLES
+
+    for name in ("ccweb_status.cmd", "ccweb_status.sh"):
+        probed = _STATUS_PROBE.findall((SCRIPTS / name).read_text(encoding="utf-8"))
+        assert probed, name
+        assert set(probed) <= PUBLIC_TABLES, name
+
+
 #: The copyright and licence lines every source file opens with, after its
 #: comment marker (docs/code-quality.md).
 _HEADER = (
