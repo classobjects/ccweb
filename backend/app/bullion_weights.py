@@ -60,7 +60,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from . import field_changes, pass_cli
-from .classifier_defaults import refresh_items
+from .classifier_defaults import FOUR_PLACES, SIX_PLACES, refresh_items
 from .database import SessionLocal
 from .field_sources import (
     HELD,
@@ -85,8 +85,6 @@ _GUESSES: frozenset[str] = frozenset({WEIGHT_TEXT, WEIGHT_PEERS})
 PEER_SHARE = Decimal("0.6")
 PEER_MINIMUM = 5
 
-_SIX = Decimal("0.000001")
-_FOUR = Decimal("0.0001")
 #: Troy ounces in each unit a weight is written in.
 _GRAM = Decimal(1) / Decimal("31.1034768")
 _UNITS: dict[str, Decimal] = {
@@ -180,10 +178,10 @@ def weight_in(text: str | None) -> Decimal | None:
     found: set[Decimal] = set()
     for match in _WEIGHT.finditer(text or ""):
         unit = next(name for name in _UNITS if match.group(name))
-        found.add((_number(match.group(1)) * _UNITS[unit]).quantize(_SIX))
+        found.add((_number(match.group(1)) * _UNITS[unit]).quantize(SIX_PLACES))
     for pattern, value in _WORDS:
         if pattern.search(text or ""):
-            found.add(value.quantize(_SIX))
+            found.add(value.quantize(SIX_PLACES))
     found = {weight for weight in found if 0 < weight <= _HEAVIEST}
     return next(iter(found)) if len(found) == 1 else None
 
@@ -208,7 +206,9 @@ def fineness_in(text: str | None) -> Decimal | None:
     for pattern, value in _NAMED_FINENESS:
         if pattern.search(source):
             found.add(value)
-    found = {value.quantize(_FOUR) for value in found if Decimal("0.3") <= value <= 1}
+    found = {
+        value.quantize(FOUR_PLACES) for value in found if Decimal("0.3") <= value <= 1
+    }
     return next(iter(found)) if len(found) == 1 else None
 
 
@@ -273,14 +273,13 @@ def _peers(
         if agreeing < PEER_MINIMUM or Decimal(agreeing) / len(items) < PEER_SHARE:
             continue
         triples = Counter(
-            (item.gross_weight_ozt, item.fineness, item.fine_weight_ozt)
+            (item.gross_weight_ozt, item.fineness, exact)
             for item in items
-            if item.fine_weight_ozt is not None
-            and item.fine_weight_ozt.quantize(Decimal("0.01")) == fine
+            if (exact := item.fine_weight_ozt) is not None
+            and exact.quantize(Decimal("0.01")) == fine
         )
         (gross, fineness, exact), _ = triples.most_common(1)[0]
-        if exact is not None:
-            peers[key] = (gross, fineness, exact, agreeing, len(items))
+        peers[key] = (gross, fineness, exact, agreeing, len(items))
     return peers
 
 
@@ -333,7 +332,7 @@ def plan(db: Session) -> Plan:
         fineness, gross = _guess_from_words(todo, item, recorded)
         key = (item.bullion_form_id, item.metal_id)
         if gross is None and item.bullion_form_id is not None and key in peers:
-            peer = peers[(item.bullion_form_id, item.metal_id)]
+            peer = peers[key]
             _guess_from_peers(todo, item, recorded, fineness, peer)
         if len(todo.guesses) == before:
             todo.no_guess.append(item.item_code)
@@ -428,6 +427,9 @@ def apply(db: Session, todo: Plan, user_id: int) -> dict[str, int]:
             )
     # Fine weight from gross weight and fineness, by the rule a save applies.
     refresh_items(db, list(by_item))
+    # `refresh_items` leaves its last writes (the defaults of an item whose
+    # series it changed) unflushed, and `db.refresh` below would discard them.
+    db.flush()
     filled = 0
     for item_id, old in before.items():
         item = db.get_one(InventoryItem, item_id)

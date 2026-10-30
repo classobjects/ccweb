@@ -96,8 +96,8 @@ class Settings(RuntimeFields):
     # The IANA zone "today" and every local date is in (America/New_York).
     # Empty: the host's own zone. Stored times are UTC either way; this
     # decides only which calendar day a moment falls on, in reports and in
-    # backup file names, so a server running on UTC can still keep its
-    # owner's days. See app/clock.py.
+    # the names of backups (workbooks and database copies), so a server
+    # running on UTC can still keep its owner's days. See app/clock.py.
     time_zone: str = ""
 
     # Where database dumps, workbook exports and media copies go when a

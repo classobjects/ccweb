@@ -4,7 +4,8 @@
 """One item's history, read from the three logs that record it.
 
 `item_field_change` (field edits: the item editor, the bulk edit, the errors
-endpoint and the passes that log under a person),
+endpoint, a note's Friedberg number attached or taken off, and the passes
+that log under a person),
 `item_status_history` (every acquisition-status move, receiving included)
 and `location_history` (every physical move) each answer part of "what
 happened to this item". `timeline` merges them into one list, newest first,

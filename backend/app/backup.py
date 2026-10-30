@@ -50,7 +50,6 @@ import argparse
 import re
 import sys
 from collections.abc import Iterator, Sequence
-from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import (
@@ -70,6 +69,7 @@ from sqlalchemy import (
 from sqlalchemy.engine import Connection, Dialect, Engine, make_url
 from sqlalchemy.orm import Session
 
+from .clock import local_now
 from .config import settings
 from .grades import GRADE_DISPLAY_SQL
 from .models import Base
@@ -87,6 +87,7 @@ __all__ = [
     "compare",
     "copy_rows",
     "create_database",
+    "database_url",
     "generated_columns",
     "main",
     "resync_item_codes",
@@ -159,14 +160,25 @@ def all_tables(source: Engine) -> list[Table]:
 
 
 def timestamped_name(prefix: str = "ccwebdb_bak") -> str:
-    """A backup name that sorts chronologically."""
-    return f"{prefix}_{datetime.now(UTC):%Y%m%d_%H%M%S}"
+    """A backup name that sorts chronologically, stamped in local time."""
+    return f"{prefix}_{local_now():%Y%m%d_%H%M%S}"
+
+
+def database_url(url: str, name: str) -> str:
+    """The address of the database called `name` on `url`'s server.
+
+    The password is kept: `str()` of a URL masks it as ***, giving an
+    address that looks right and cannot authenticate -- the same trap
+    conftest.py documents for the test database.
+    """
+    return make_url(url).set(database=name).render_as_string(hide_password=False)
 
 
 def admin_engine(url_str: str) -> Engine:
     """An autocommit engine on `postgres`: CREATE DATABASE runs in no transaction."""
-    url = make_url(url_str).set(database="postgres")
-    return create_engine(url, isolation_level="AUTOCOMMIT")
+    return create_engine(
+        database_url(url_str, "postgres"), isolation_level="AUTOCOMMIT"
+    )
 
 
 def check_database_name(name: str) -> str:
@@ -197,7 +209,7 @@ def create_database(source_url: str, name: str) -> str:
         # above and quoted by the dialect's own preparer.
         quoted = conn.dialect.identifier_preparer.quote_identifier(name)
         conn.execute(text(f"CREATE DATABASE {quoted}"))
-    return make_url(source_url).set(database=name).render_as_string(hide_password=False)
+    return database_url(source_url, name)
 
 
 def copy_rows(
@@ -252,6 +264,8 @@ def _copy_table(read: Connection, write: Session, table: Table) -> int:
                 _JSON_PARAMETER + c.name, type_=type(c.type)(none_as_null=True)
             )
             for c in jsons
+            # Always true; it tells the type checker `c.type` takes
+            # `none_as_null`.
             if isinstance(c.type, JSON)
         }
     )
@@ -276,7 +290,7 @@ def _copy_table(read: Connection, write: Session, table: Table) -> int:
 def _own_links(table: Table, keys: list[Column[Any]]) -> list[str]:
     """The columns that point at the table's own rows, by name, in order.
 
-    None for a table without a key: there is no saying which row to fill in
+    Empty for a table without a key: there is no saying which row to fill in
     later.
     """
     if not keys:
@@ -364,11 +378,13 @@ def resync_sequence(
     # The table name is interpolated because an identifier cannot be a bind
     # parameter. It comes from SQLAlchemy's own metadata, never from input,
     # and is quoted by the dialect's preparer so a reserved or mixed-case
-    # name survives.
+    # name survives. An empty table leaves the sequence uncalled, so its first
+    # row is given 1, not 2.
     quoted = dialect.identifier_preparer.quote(name)
     executor.execute(
         text(
-            "SELECT setval(:s, coalesce((SELECT max(id) FROM " + quoted + "), 1), true)"
+            "SELECT setval(:s, coalesce(highest, 1), highest IS NOT NULL) "
+            "FROM (SELECT max(id) FROM " + quoted + ") AS ids (highest)"
         ),
         {"s": sequence},
     )
@@ -525,14 +541,7 @@ def _verify(name: str) -> int:
     this compares: a copy with the right number of rows and a wrong value in
     one of them is not found here.
     """
-    # render_as_string(False) keeps the password. `str(url)` masks it as
-    # ***, producing a URL that looks right and cannot authenticate --
-    # the same trap conftest.py documents for the test database.
-    url = (
-        make_url(settings.database_url)
-        .set(database=name)
-        .render_as_string(hide_password=False)
-    )
+    url = database_url(settings.database_url, name)
     differences = [
         row
         for row in compare(create_engine(settings.database_url), create_engine(url))

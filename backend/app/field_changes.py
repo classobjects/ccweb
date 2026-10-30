@@ -4,7 +4,8 @@
 """Who changed which field of an item, and when: the `item_field_change` log.
 
 The sole writer of `item_field_change`. The item edit, bulk edit, the
-errors endpoint, delete (`deleted_at`), detach (`parent_item_id`), a split
+errors endpoint, delete (`deleted_at`), detach (`parent_item_id`), a note's
+Friedberg number attached or taken off (`routers.friedberg`), a split
 (`split_at` on the lot, `app.splitting`), a vocabulary merge
 (`app.reference_merge`) and the passes run under a named person
 (`app.ebay_orders`, `app.listing_links`, `app.bullion_weights`,

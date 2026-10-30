@@ -1794,7 +1794,8 @@ failed backup.
 
 From `backend` (`cd /d %USERPROFILE%\dev\ccweb\backend`):
 
-Copy to a new `ccwebdb_bak_` database named for the time:
+Copy to a new `ccwebdb_bak_` database named for the local time (`TIME_ZONE`'s,
+as a workbook's name is):
 
 ```console
 cd /d %USERPROFILE%\dev\ccweb\backend

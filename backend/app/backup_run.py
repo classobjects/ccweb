@@ -59,10 +59,10 @@ from pathlib import Path
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import Engine, create_engine, func, select, text
-from sqlalchemy.engine import Connection, make_url
+from sqlalchemy.engine import Connection
 from sqlalchemy.orm import Session
 
-from . import media_backup, workbook_backup
+from . import backup, media_backup, workbook_backup
 from .clock import local_now
 from .config import REPO_ROOT, settings
 from .models import Image, ImageDerivative
@@ -101,11 +101,6 @@ class BackupRun:
         return not self.problems
 
 
-def _scratch_url(live_url: str, name: str) -> str:
-    """The address of a database called `name` on live's own server."""
-    return make_url(live_url).set(database=name).render_as_string(hide_password=False)
-
-
 def prove_workbook(live: Engine, workbook: Path, *, stamp: str) -> list[str]:
     """Load `workbook` into a new database and compare it with live.
 
@@ -114,13 +109,13 @@ def prove_workbook(live: Engine, workbook: Path, *, stamp: str) -> list[str]:
     migrations, as a real restore is, and dropped afterwards either way.
     """
     name = f"ccwebdb_proof_{stamp}"
-    url = _scratch_url(live.url.render_as_string(hide_password=False), name)
+    url = backup.database_url(live.url.render_as_string(hide_password=False), name)
     # CREATE and DROP DATABASE cannot run inside a transaction.
-    server = create_engine(_scratch_url(url, "postgres"), isolation_level="AUTOCOMMIT")
+    server = backup.admin_engine(url)
     problems: list[str] = []
     try:
         with server.connect() as conn:
-            conn.execute(text(f'CREATE DATABASE "{name}"'))
+            conn.execute(text(f"CREATE DATABASE {_quoted(conn, name)}"))
         try:
             backend = REPO_ROOT / "backend"
             config = Config(str(backend / "alembic.ini"))
@@ -171,7 +166,16 @@ def _drop_scratch(conn: Connection, name: str) -> None:
         ),
         {"name": name},
     )
-    conn.execute(text(f'DROP DATABASE IF EXISTS "{name}"'))
+    conn.execute(text(f"DROP DATABASE IF EXISTS {_quoted(conn, name)}"))
+
+
+def _quoted(conn: Connection, name: str) -> str:
+    """`name` as an identifier, quoted by the dialect's own preparer.
+
+    An identifier cannot be a bind parameter, so the name is written into
+    the statement; it is made here from a time stamp, never from input.
+    """
+    return conn.dialect.identifier_preparer.quote_identifier(name)
 
 
 def run(

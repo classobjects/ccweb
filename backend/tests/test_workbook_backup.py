@@ -613,6 +613,51 @@ def test_an_app_backup_copy_issues_item_codes_past_every_one_it_holds(
     assert _new_item_code(target_url) == NEXT_CODE
 
 
+def _new_item_id(url: str) -> int:
+    """The id the database at `url` gives the next item it is handed."""
+    engine = create_engine(url)
+    try:
+        with engine.begin() as conn:
+            return int(
+                conn.execute(
+                    text(
+                        "INSERT INTO inventory_item (note) VALUES ('new') RETURNING id"
+                    )
+                ).scalar_one()
+            )
+    finally:
+        engine.dispose()
+
+
+def test_an_empty_table_restored_from_a_workbook_issues_id_one_first(
+    codes: tuple[Engine, str], tmp_path: Path
+) -> None:
+    source, target_url = codes
+    with source.begin() as conn:
+        conn.execute(text("DELETE FROM inventory_item"))
+    path = tmp_path / "empty.xlsx"
+    wb.export_workbook(source, path)
+    wb.import_workbook(path, target_url)
+
+    assert _new_item_id(target_url) == 1
+
+
+def test_an_empty_table_copied_by_app_backup_issues_id_one_first(
+    codes: tuple[Engine, str],
+) -> None:
+    source, target_url = codes
+    with source.begin() as conn:
+        conn.execute(text("DELETE FROM inventory_item"))
+    target = create_engine(target_url)
+    try:
+        tables = [wb.reflect(source).tables["inventory_item"]]
+        assert dict(backup.copy_rows(source, target, tables)) == {"inventory_item": 0}
+    finally:
+        target.dispose()
+
+    assert _new_item_id(target_url) == 1
+
+
 def test_an_app_backup_copy_reads_every_table_in_one_snapshot(
     codes: tuple[Engine, str],
 ) -> None:

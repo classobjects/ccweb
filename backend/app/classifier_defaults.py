@@ -475,7 +475,7 @@ def note_outcome(
         _retract(out, current, derived, NOTE_FILLED)
         return out
     letter = (note.series_letter or "").strip().upper() or None
-    series = f"{note.series_year}{letter or ''}"
+    series = _series(note)
     known = facts.issues.get((note.denomination_id, note.series_year, letter), [])
     if not known:
         out.count = "note: series not in the facts"
@@ -749,11 +749,12 @@ def _composition(
     )
 
 
-#: Fine weight is stored to six places, as the column is.
-_SIX_PLACES = Decimal("0.000001")
+#: Weights are stored to six places, as the columns are.
+SIX_PLACES = Decimal("0.000001")
 
-#: The places a weight is commonly published to, and the step at that place.
-_FOUR_PLACES = Decimal("0.0001")
+#: The places a weight is commonly published to, and the step at that place;
+#: also the places a fineness is stored to.
+FOUR_PLACES = Decimal("0.0001")
 
 
 def _agrees_to_four_places(column: str, recorded: object, allowed: set[object]) -> bool:
@@ -766,17 +767,17 @@ def _agrees_to_four_places(column: str, recorded: object, allowed: set[object]) 
     """
     if not column.endswith("_ozt") or not isinstance(recorded, Decimal):
         return False
-    if recorded != recorded.quantize(_FOUR_PLACES):
+    if recorded != recorded.quantize(FOUR_PLACES):
         return False
     return any(
-        isinstance(figure, Decimal) and abs(recorded - figure) < _FOUR_PLACES
+        isinstance(figure, Decimal) and abs(recorded - figure) < FOUR_PLACES
         for figure in allowed
     )
 
 
 def fine_weight(gross: Decimal, fineness: Decimal) -> Decimal:
     """The metal in a piece: its gross weight times its fineness."""
-    return (gross * fineness).quantize(_SIX_PLACES)
+    return (gross * fineness).quantize(SIX_PLACES)
 
 
 def _weight_now(
@@ -861,6 +862,11 @@ def _links(
     }
 
 
+def _series(note: NoteFacts) -> str:
+    """The note's series as a person writes it: year and letter, `1934A`."""
+    return f"{note.series_year}{(note.series_letter or '').strip().upper()}"
+
+
 def attribute_outcome(
     facts: Facts,
     item_id: int,
@@ -873,7 +879,7 @@ def attribute_outcome(
     cases: list[tuple[str, str]] = []
     counts: list[str] = []
     note_type = facts.note_type_codes.get(note_type_id) if note_type_id else None
-    series = f"{note.series_year}{(note.series_letter or '').strip().upper()}"
+    series = _series(note)
     for rule in attribute_rules.RULES:
         found = facts.rule_attributes.get(rule.attribute)
         if found is None:
@@ -898,7 +904,9 @@ def attribute_outcome(
         case = _link_case(verdict, link, series, label)
         if case is not None:
             cases.append(case)
-    _mule_outcome(facts, item_id, note, note_type, links, (changes, cases, counts))
+    _mule_outcome(
+        facts, item_id, note, note_type, series, links, (changes, cases, counts)
+    )
     return changes, cases, counts
 
 
@@ -907,10 +915,13 @@ def _mule_outcome(
     item_id: int,
     note: NoteFacts,
     note_type: str | None,
+    series: str,
     links: dict[tuple[int, int], Link],
     out: tuple[list[LinkChange], list[tuple[str, str]], list[str]],
 ) -> None:
     """The Mule attribute, as the series and back plate say (`app.mule_rules`).
+
+    `series` is the note's, as `attribute_outcome` wrote it for its cases.
 
     A confirmed Friedberg number that is a mule's says so first: it was read
     off the note or its holder. Added and taken back as the other rules'
@@ -933,7 +944,6 @@ def _mule_outcome(
         changes.append(LinkChange(item_id, attribute_id, add=add))
         counts.append(f"attribute: {MULE} {'added' if add else 'taken back'}")
         return
-    series = f"{note.series_year}{(note.series_letter or '').strip().upper()}"
     shown = f"{series} with back plate {(note.back_plate or '').strip()}"
     case = _link_case(verdict, link, series, label)
     if case is not None and case[0] == "disagrees":

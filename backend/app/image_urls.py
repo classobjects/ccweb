@@ -36,6 +36,11 @@ _NGC_THUMBNAIL = re.compile(r"^TN_", re.IGNORECASE)
 _NGC_SCALED = re.compile(r"@\d+X\d+(?=\.\w+$)", re.IGNORECASE)
 
 
+def _is_ebay_image_host(host: str) -> bool:
+    """Whether `host`, lower-cased, is eBay's picture host or one under it."""
+    return host == "ebayimg.com" or host.endswith(".ebayimg.com")
+
+
 def _ebay(name: str) -> str:
     """An eBay picture file's name at full size; any other name unchanged."""
     match = _EBAY_FILE.match(name)
@@ -64,7 +69,7 @@ def named_edge(url: str) -> int | None:
     except ValueError:
         return None
     host = (parts.hostname or "").lower()
-    if not (host == "ebayimg.com" or host.endswith(".ebayimg.com")):
+    if not _is_ebay_image_host(host):
         return None
     match = _EBAY_FILE.match(parts.path.rpartition("/")[2])
     return int(match.group(1)) if match else None
@@ -87,7 +92,7 @@ def full_size(url: str) -> str:
     if parts.scheme not in ("http", "https") or not host:
         return url
     directory, slash, name = parts.path.rpartition("/")
-    if host == "ebayimg.com" or host.endswith(".ebayimg.com"):
+    if _is_ebay_image_host(host):
         renamed = _ebay(name)
     elif host == _NGC_HOST:
         renamed = _ngc(name)
