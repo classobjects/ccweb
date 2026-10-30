@@ -126,6 +126,11 @@ if defined BOK (
 )
 
 rem --- 3. Frontend ----------------------------------------------------------
+rem  Vite on its port on a development machine. A server runs no Vite:
+rem  Caddy serves the build, so with no Vite and a site domain set the
+rem  console page is asked of this machine's own Caddy (--connect-to, so
+rem  the certificate is still checked against the domain). No answer
+rem  there either, and the line is the development one, stopped.
 :frontend
 if not defined SETOK (
     echo   Frontend     UNKNOWN - !WHY!
@@ -134,10 +139,15 @@ if not defined SETOK (
 )
 call :portpid %FPORT% FPID
 set "FOK="
+set "FBUILD="
 if defined FPID (
     curl -s -f -o nul --max-time 5 "http://%CCWEB_FRONTEND_HOST%:%FPORT%/management" && set "FOK=1"
+) else if defined CCWEB_SITE_DOMAIN (
+    curl -s -f -o nul --max-time 5 --connect-to %CCWEB_SITE_DOMAIN%::127.0.0.1: "https://%CCWEB_SITE_DOMAIN%/management" && set "FBUILD=1"
 )
-if defined FOK (
+if defined FBUILD (
+    echo   Frontend     https://%CCWEB_SITE_DOMAIN%   RUNNING   the build, served by Caddy
+) else if defined FOK (
     echo   Frontend     %CCWEB_FRONTEND_HOST%:%FPORT%   RUNNING   pid !FPID!
 ) else (
     if defined FPID (

@@ -684,10 +684,13 @@ def test_the_windows_start_up_task_runs_the_repository_script() -> None:
 #: setting: cmd's one-second sleep pings the loopback; a backend bound to
 #: every address is asked for on the loopback; pgAdmin runs with no sign-in
 #: and SonarQube holds the source, so both listen on the loopback by design
-#: -- an address .env could move would expose them.
+#: -- an address .env could move would expose them. ccweb_status asks a
+#: server's frontend of this machine's own Caddy (`--connect-to` the
+#: loopback): an address .env names could be another machine's.
 _LOOPBACK_ALLOWED = re.compile(
     r"ping -n \d+ 127\.0\.0\.1"
     r"|0\.0\.0\.0.*127\.0\.0\.1"
+    r"|--connect-to \S*::127\.0\.0\.1:"
 )
 _LOOPBACK_BY_DESIGN = {"ccweb_pgadmin", "ccweb_sonar_scan", "ccweb_sonar_start"}
 
@@ -835,6 +838,16 @@ def test_status_probes_a_reference_list_anyone_may_read() -> None:
         probed = _STATUS_PROBE.findall((SCRIPTS / name).read_text(encoding="utf-8"))
         assert probed, name
         assert set(probed) <= PUBLIC_TABLES, name
+
+
+def test_status_reads_a_servers_frontend_through_its_own_caddy() -> None:
+    """With no Vite, both twins ask local Caddy for the console, and say so alike."""
+    for name in ("ccweb_status.cmd", "ccweb_status.sh"):
+        script = (SCRIPTS / name).read_text(encoding="utf-8")
+        assert "--connect-to " in script, name
+        assert "::127.0.0.1:" in script, name
+        assert "/management" in script, name
+        assert "RUNNING   the build, served by Caddy" in script, name
 
 
 #: The copyright and licence lines every source file opens with, after its
