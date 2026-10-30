@@ -17,7 +17,9 @@ import ItemEditForm from './ItemEditForm'
  *
  * A deleted item is the one exception: it no longer exists to be reviewed,
  * so it leaves the queue -- the item after it takes its place -- and is not
- * counted as saved. Deleting the last one left ends the review (`onClose`).
+ * counted as saved. Deleting the last one left ends the review. However the
+ * review ends, `onClose` is told the ids deleted in it, so a caller holding
+ * one of them does not go on to read or receive an item that is gone.
  *
  * Previous and Next open another item's form: an edit not yet saved on the
  * one being left is not carried over.
@@ -33,7 +35,7 @@ export default function ReviewPane({ ids, onClose }) {
 
   function removed() {
     if (queue.length === 1) {
-      onClose?.()
+      onClose?.([...deleted, itemId])
       return
     }
     setDeleted((d) => [...d, itemId])
@@ -55,7 +57,7 @@ export default function ReviewPane({ ids, onClose }) {
         <button disabled={at + 1 >= queue.length} onClick={() => setAt(at + 1)}>
           Next
         </button>
-        <button className="link" onClick={onClose}>
+        <button className="link" onClick={() => onClose?.(deleted)}>
           Leave review
         </button>
       </div>

@@ -445,8 +445,14 @@ export default function ReceiptPanel({ itemIds, onDone, initial = {} }) {
         {reviewIds !== null && (
           <ReviewPane
             ids={reviewIds}
-            onClose={() => {
+            onClose={(deleted = []) => {
               setReviewIds(null)
+              // An item deleted in the review cannot be read or received:
+              // hand back to the page, which closes this and searches again.
+              if (itemIds.some((id) => deleted.includes(id))) {
+                onDone?.()
+                return
+              }
               // Whatever the editor saved is the item's now: Identify reads it.
               selected.reload()
             }}
