@@ -216,6 +216,13 @@ means the API is up *and* talking to PostgreSQL; the frontend is asked for
 `/management`. A port held with no answer is reported as **LISTENING but not
 answering**, never rounded up to RUNNING.
 
+A server runs no Vite: Caddy serves the build. So when nothing holds the
+frontend's port and `CCWEB_SITE_DOMAIN` is set, `/management` is asked of
+this machine's own Caddy instead (curl's `--connect-to`, which still checks
+the certificate against the domain), and an answer reads **RUNNING   the
+build, served by Caddy**. With no answer there either, the frontend reads
+stopped, as on a development machine with Vite not started.
+
 SonarQube (`CCWEB_SONAR_PORT`, default 9000) is listed but never counted as
 down: it is inspected on demand, not part of the runtime.
 

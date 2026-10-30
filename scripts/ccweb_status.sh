@@ -104,7 +104,19 @@ if [ -z "$SETOK" ]; then
     DOWN="$DOWN backend frontend"
 else
     check_server "Backend      " "$CCWEB_API_HOST" "$CCWEB_API_PORT" /api/reference/item_kind backend
-    check_server "Frontend     " "$CCWEB_FRONTEND_HOST" "$CCWEB_FRONTEND_PORT" /management frontend
+    # Vite on its port on a development machine. A server runs no Vite:
+    # Caddy serves the build, so with no Vite and a site domain set the
+    # console page is asked of this machine's own Caddy (--connect-to, so
+    # the certificate is still checked against the domain). No answer
+    # there either, and the line is the development one, stopped.
+    if [ -z "$(portpid "$CCWEB_FRONTEND_PORT")" ] && [ -n "$CCWEB_SITE_DOMAIN" ] \
+        && curl -s -f -o /dev/null --max-time 5 \
+            --connect-to "$CCWEB_SITE_DOMAIN::127.0.0.1:" \
+            "https://$CCWEB_SITE_DOMAIN/management"; then
+        echo "  Frontend     https://$CCWEB_SITE_DOMAIN   RUNNING   the build, served by Caddy"
+    else
+        check_server "Frontend     " "$CCWEB_FRONTEND_HOST" "$CCWEB_FRONTEND_PORT" /management frontend
+    fi
 fi
 
 # --- 4. SonarQube (optional) ------------------------------------------------
