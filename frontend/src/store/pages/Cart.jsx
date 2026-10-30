@@ -6,9 +6,15 @@ import { Link, useNavigate } from 'react-router-dom'
 
 import { api } from '../../shared/api'
 import { useAuth } from '../../shared/auth-context'
-import { useCart } from '../cart-context'
-import { fromCents, isMoney, toCents } from '../../shared/cents'
+import { lineCents, useCart } from '../cart-context'
+import { fromCents } from '../../shared/cents'
 import { money } from '../../shared/format'
+
+/** A line's amount, shown as the cart's total reckons it (`lineCents`). */
+function lineMoney(line) {
+  const cents = lineCents(line)
+  return cents === null ? money(null) : money(fromCents(cents), line.coin.currency)
+}
 
 /**
  * A line's quantity box.
@@ -155,11 +161,7 @@ export default function Cart() {
                   onChange={(next) => setQuantity(coin.id, next)}
                 />
               </td>
-              <td>
-                {isMoney(coin.price)
-                  ? money(fromCents(toCents(coin.price) * quantity), coin.currency)
-                  : money(null)}
-              </td>
+              <td>{lineMoney({ coin, quantity })}</td>
               <td>
                 <button className="link" onClick={() => remove(coin.id)}>
                   Remove

@@ -3,9 +3,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Thin fetch wrapper around the FastAPI backend.
 //
-// Access tokens are short lived; on a 401 we transparently refresh once using
-// the stored refresh token and replay the original request. If that fails the
-// caller is signed out.
+// Access tokens are short lived. One already past its expiry is refreshed
+// before the request goes out; one refused anyway (a 401 -- revoked rather
+// than expired) is refreshed once and the request replayed. If the refresh
+// is refused the caller is signed out.
 
 const TOKEN_KEY = 'ccwebdb.tokens'
 
@@ -97,6 +98,17 @@ function readDetail(body) {
 }
 
 /**
+ * The `ApiError` for a refused response whose body `parsed` is -- `undefined`
+ * for one that is not JSON, which is then named by its status line.
+ */
+function errorFor(res, parsed) {
+  if (parsed === undefined) {
+    return new ApiError(res.status, res.statusText || `Request failed (${res.status})`)
+  }
+  return new ApiError(res.status, readDetail(parsed), parsed)
+}
+
+/**
  * Exchange the stored refresh token for a new pair, store it and return it;
  * null when there is no refresh token or the server refuses it.
  *
@@ -114,29 +126,23 @@ async function refreshTokens() {
     body: JSON.stringify({ refresh_token: tokens.refresh_token }),
   })
   if (res.status === 401 || res.status === 403) return null
-  if (!res.ok) {
-    const parsed = parseBody(await res.text())
-    if (parsed === undefined) {
-      throw new ApiError(res.status, res.statusText || `Request failed (${res.status})`)
-    }
-    throw new ApiError(res.status, readDetail(parsed), parsed)
-  }
+  if (!res.ok) throw errorFor(res, parseBody(await res.text()))
 
   const fresh = await res.json()
   saveTokens(fresh)
   return fresh
 }
 
-//: The refresh in flight, shared by every request refused while it runs.
+//: The refresh in flight, shared by every request that needs one while it runs.
 let refreshing = null
 
 /**
- * One refresh for however many requests were refused together.
+ * One refresh for however many requests need it together.
  *
- * A page that loads several things at once on an expired access token gets a
- * 401 for each. Refreshing once per 401 would be that many exchanges for one
- * expiry, each storing a pair over the last; they all wait on the same one
- * instead. The server does not retire a refresh token when it is used, so
+ * A page that loads several things at once on an expired access token finds
+ * it expired (or gets a 401) for each. Refreshing once per request would be
+ * that many exchanges for one expiry, each storing a pair over the last; they
+ * all wait on the same one instead. The server does not retire a refresh token when it is used, so
  * this saves requests rather than guarding a single-use token.
  */
 function refreshOnce() {
@@ -213,17 +219,65 @@ function refreshedMeanwhile(sentWith) {
 /**
  * Throw the `ApiError` for a refused response, whose body `parsed` is --
  * `undefined` for one that is not JSON. `carriedSession` says the request
- * was sent with the session, which a 401 then ends.
+ * was sent with an access token, which a 401 then ends.
  */
 function refuse(res, parsed, carriedSession) {
   // Only a request that carried the session says anything about it. A
   // refused sign-in is a 401 too, and must leave a session already held
-  // alone.
+  // alone; so must a request sent with no token at all.
   if (res.status === 401 && carriedSession) signOut()
-  if (parsed === undefined) {
-    throw new ApiError(res.status, res.statusText || `Request failed (${res.status})`)
+  throw errorFor(res, parsed)
+}
+
+//: How long before its stated expiry an access token is treated as expired:
+//: the browser's clock and the server's need not agree to the second, and a
+//: token that expires on the way is refused all the same.
+const EXPIRY_SKEW_MS = 30_000
+
+/**
+ * When the access token `token` expires, in epoch milliseconds, from the
+ * `exp` claim of its JWT payload; null when it is not a JWT or states none,
+ * which leaves it to the server to judge.
+ */
+function expiresAt(token) {
+  try {
+    const payload = token.split('.')[1]
+    const base64 = payload.replace(/-/g, '+').replace(/_/g, '/')
+    const { exp } = JSON.parse(atob(base64))
+    return typeof exp === 'number' ? exp * 1000 : null
+  } catch {
+    return null
   }
-  throw new ApiError(res.status, readDetail(parsed), parsed)
+}
+
+/**
+ * The tokens to send a signed-in request with: the stored ones, or, when
+ * their access token has expired, a refreshed pair; null when there are
+ * none or the refresh is refused, which signs the caller out.
+ *
+ * Why not just wait for the 401: endpoints that serve anonymous callers
+ * too (the catalog, a listing, the reference vocabularies) read an expired
+ * token as no token at all and answer as for a stranger -- "the shop is not
+ * open yet", 410 on an ended listing, 403 on retired values -- never 401,
+ * so the refresh that a 401 triggers would never come. Asking with a token
+ * known to be dead is pointless; with none, a public endpoint answers as it
+ * does for anyone signed out, which after a refused refresh is what the
+ * caller is. A refresh that fails for a reason of its own (a 502) is thrown,
+ * and the stored tokens are kept, as on the 401 path.
+ */
+async function liveTokens() {
+  const stored = loadTokens()
+  const token = stored?.access_token
+  if (!token) return stored
+  const expiry = expiresAt(token)
+  if (expiry === null || expiry - EXPIRY_SKEW_MS > Date.now()) return stored
+
+  const fresh = await refreshOnce()
+  if (fresh) return fresh
+  // Every request waiting on the same refused refresh lands here; the first
+  // ends the session, and the rest find it already ended.
+  if (loadTokens()?.access_token === token) signOut()
+  return null
 }
 
 /**
@@ -247,24 +301,28 @@ export async function send(
 
   const withAuth = (tokens) => {
     const h = { ...headers }
-    if (auth && tokens?.access_token) {
+    if (tokens?.access_token) {
       h.Authorization = `Bearer ${tokens.access_token}`
     }
     return h
   }
 
-  const sentWith = loadTokens()
+  const sentWith = auth ? await liveTokens() : null
+  // Whether the last attempt carried an access token: only then does its
+  // 401 say anything about the session.
+  let sentToken = Boolean(sentWith?.access_token)
   let res = await fetch(path, {
     method,
     headers: withAuth(sentWith),
     body: payload,
   })
 
-  if (res.status === 401 && auth) {
+  if (res.status === 401 && sentToken) {
     // Another request may already have refreshed while this one was out;
     // its tokens are then the ones to retry with.
     const fresh = refreshedMeanwhile(sentWith) ?? (await refreshOnce())
     if (fresh) {
+      sentToken = Boolean(fresh.access_token)
       res = await fetch(path, {
         method,
         headers: withAuth(fresh),
@@ -285,7 +343,7 @@ export async function send(
   // a failed request with a status, not a SyntaxError from the parser.
   const parsed = parseBody(await res.text())
 
-  if (!res.ok) refuse(res, parsed, auth)
+  if (!res.ok) refuse(res, parsed, sentToken)
   if (parsed === undefined) {
     throw new ApiError(res.status, 'The server sent a response that is not JSON')
   }

@@ -467,6 +467,186 @@ describe('send', () => {
   })
 })
 
+describe('send on an expired access token', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  /** A JWT-shaped token whose payload says it expires `fromNow` seconds on. */
+  function tokenExpiring(fromNow, name = 'access') {
+    const exp = Math.floor(Date.now() / 1000) + fromNow
+    const payload = btoa(JSON.stringify({ sub: name, exp }))
+      .replace(/=+$/, '')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+    return `header.${payload}.signature`
+  }
+
+  /**
+   * A server whose public endpoint reads an expired token as no token, as
+   * `get_optional_user` does: 403 "shop is not open" for anyone without a
+   * live one. `refresh` is the answer to `/api/auth/refresh`.
+   */
+  function optionalAuthServer(live, refresh) {
+    const fetchMock = vi.fn((path, init) => {
+      if (path === '/api/auth/refresh') return Promise.resolve(refresh)
+      const ok = init.headers.Authorization === `Bearer ${live}`
+      return Promise.resolve({
+        status: ok ? 200 : 403,
+        ok,
+        text: () =>
+          Promise.resolve(ok ? '[]' : '{"detail":"The shop is not open yet"}'),
+      })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    return fetchMock
+  }
+
+  it('refreshes before sending, rather than being answered as a stranger', async () => {
+    const fresh = tokenExpiring(900, 'fresh')
+    saveTokens({ access_token: tokenExpiring(-60), refresh_token: 'r' })
+    const fetchMock = optionalAuthServer(fresh, {
+      status: 200,
+      ok: true,
+      json: () => Promise.resolve({ access_token: fresh, refresh_token: 'r2' }),
+    })
+
+    await expect(send('/api/catalog')).resolves.toEqual([])
+
+    expect(fetchMock.mock.calls.map(([path]) => path)).toEqual([
+      '/api/auth/refresh',
+      '/api/catalog',
+    ])
+    expect(loadTokens()).toEqual({ access_token: fresh, refresh_token: 'r2' })
+  })
+
+  it('treats a token about to expire as expired', async () => {
+    const fresh = tokenExpiring(900, 'fresh')
+    saveTokens({ access_token: tokenExpiring(10), refresh_token: 'r' })
+    const fetchMock = optionalAuthServer(fresh, {
+      status: 200,
+      ok: true,
+      json: () => Promise.resolve({ access_token: fresh, refresh_token: 'r2' }),
+    })
+
+    await send('/api/catalog')
+
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/auth/refresh')
+  })
+
+  it('sends a live token as it is, with no refresh', async () => {
+    const live = tokenExpiring(900)
+    saveTokens({ access_token: live, refresh_token: 'r' })
+    const fetchMock = optionalAuthServer(live, null)
+
+    await send('/api/catalog')
+
+    expect(fetchMock.mock.calls.map(([path]) => path)).toEqual(['/api/catalog'])
+  })
+
+  it('signs out and asks anonymously when the refresh is refused', async () => {
+    saveTokens({ access_token: tokenExpiring(-60), refresh_token: 'r' })
+    const heard = vi.fn()
+    const stop = onSignedOut(heard)
+    const fetchMock = vi.fn((path) =>
+      Promise.resolve(
+        path === '/api/auth/refresh'
+          ? { status: 401, ok: false, text: () => Promise.resolve('{}') }
+          : { status: 200, ok: true, text: () => Promise.resolve('[]') },
+      ),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    try {
+      await expect(send('/api/catalog')).resolves.toEqual([])
+    } finally {
+      stop()
+    }
+
+    const [path, init] = fetchMock.mock.calls[1]
+    expect(path).toBe('/api/catalog')
+    expect(init.headers.Authorization).toBeUndefined()
+    expect(loadTokens()).toBeNull()
+    expect(heard).toHaveBeenCalledTimes(1)
+  })
+
+  it('refreshes once for requests that find it expired together', async () => {
+    const fresh = tokenExpiring(900, 'fresh')
+    saveTokens({ access_token: tokenExpiring(-60), refresh_token: 'r' })
+    const fetchMock = optionalAuthServer(fresh, {
+      status: 200,
+      ok: true,
+      json: () => Promise.resolve({ access_token: fresh, refresh_token: 'r2' }),
+    })
+
+    await Promise.all([
+      send('/api/catalog'),
+      send('/api/catalog'),
+      send('/api/catalog'),
+    ])
+
+    const refreshes = fetchMock.mock.calls.filter(
+      ([path]) => path === '/api/auth/refresh',
+    )
+    expect(refreshes).toHaveLength(1)
+    for (const [path, init] of fetchMock.mock.calls) {
+      if (path !== '/api/auth/refresh') {
+        expect(init.headers.Authorization).toBe(`Bearer ${fresh}`)
+      }
+    }
+  })
+
+  it('signs out once for requests whose refresh is refused together', async () => {
+    saveTokens({ access_token: tokenExpiring(-60), refresh_token: 'r' })
+    const heard = vi.fn()
+    const stop = onSignedOut(heard)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((path) =>
+        Promise.resolve(
+          path === '/api/auth/refresh'
+            ? { status: 401, ok: false, text: () => Promise.resolve('{}') }
+            : { status: 200, ok: true, text: () => Promise.resolve('[]') },
+        ),
+      ),
+    )
+
+    try {
+      await Promise.all([send('/api/a'), send('/api/b')])
+    } finally {
+      stop()
+    }
+
+    expect(heard).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('a 401 to a request sent with no token', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('leaves the session alone, and the cart with it', async () => {
+    // A gated endpoint asked anonymously -- nothing stored to send -- is a
+    // 401 that says nothing about any session. Signing out on it would tell
+    // every listener, and the shop's would empty the cart.
+    const heard = vi.fn()
+    const stop = onSignedOut(heard)
+    const fetchMock = vi.fn().mockResolvedValue({
+      status: 401,
+      ok: false,
+      text: () => Promise.resolve('{"detail":"Not authenticated"}'),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    try {
+      const err = await send('/api/orders?mine=true').catch((caught) => caught)
+      expect(err.status).toBe(401)
+    } finally {
+      stop()
+    }
+
+    expect(heard).not.toHaveBeenCalled()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+})
+
 describe('withQuery', () => {
   it('leaves a path alone when there is nothing to ask', () => {
     expect(withQuery('/api/catalog')).toBe('/api/catalog')

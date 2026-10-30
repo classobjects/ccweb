@@ -1,10 +1,11 @@
 // (c) Copyright 2026 Nathaniel Mills
 // Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
 // SPDX-License-Identifier: Apache-2.0
-import { Link, Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom'
+import { Link, NavLink, Route, Routes } from 'react-router-dom'
 
 import { api } from '../shared/api'
 import { useAuth } from '../shared/auth-context'
+import RequireSignIn from '../shared/RequireSignIn'
 import { SHOP_NAME, SHOP_OWNER } from '../shared/site'
 import { useRequest } from '../shared/useRequest'
 import { useCart } from './cart-context'
@@ -15,21 +16,6 @@ import CoinDetail from './pages/CoinDetail'
 import Login from './pages/Login'
 import Orders from './pages/Orders'
 import Register from './pages/Register'
-
-/**
- * A page for signed-in shoppers only. Anyone else is sent to sign in, with
- * the page they asked for as `from`, so signing in brings them back to it.
- */
-function RequireAuth({ children }) {
-  const { user, loading } = useAuth()
-  const location = useLocation()
-  if (loading) return <p className="muted">Loading...</p>
-  if (!user) {
-    const from = location.pathname + location.search
-    return <Navigate to="/login" replace state={{ from }} />
-  }
-  return children
-}
 
 /** The shop's name, which links home on every page, the closed one too. */
 function Brand() {
@@ -160,9 +146,9 @@ export default function StoreApp() {
           <Route
             path="/orders"
             element={
-              <RequireAuth>
+              <RequireSignIn>
                 <Orders />
-              </RequireAuth>
+              </RequireSignIn>
             }
           />
           <Route path="*" element={<p className="muted">Page not found.</p>} />

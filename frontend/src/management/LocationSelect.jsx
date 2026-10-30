@@ -41,25 +41,33 @@ export default function LocationSelect({
 }) {
   const loaded = useRequest('locations', () => api.listStorageLocations())
   const [added, setAdded] = useState([])
-  //: True once Add location was pressed before a kind was chosen.
-  const [held, setHeld] = useState(false)
   const addOption = useAddOption()
   const locations = [...(loaded.data ?? []), ...added]
-  const { adding, setAdding, draft, setDraft, error, add, wrapper, ready } =
-    useInlineAdd({
-      blank: BLANK_DRAFT,
-      ready: (d) => Boolean(d.kind),
-      create: (d) =>
-        api.createStorageLocation({
-          kind: d.kind,
-          institution: orNull(d.institution),
-          identifier: orNull(d.identifier),
-        }),
-      onCreated: (created) => {
-        setAdded((list) => [...list, created])
-        onChange(String(created.id))
-      },
-    })
+  const {
+    adding,
+    setAdding,
+    draft,
+    setDraft,
+    error,
+    submit,
+    cancel,
+    wrapper,
+    ready,
+    asked,
+  } = useInlineAdd({
+    blank: BLANK_DRAFT,
+    ready: (d) => Boolean(d.kind),
+    create: (d) =>
+      api.createStorageLocation({
+        kind: d.kind,
+        institution: orNull(d.institution),
+        identifier: orNull(d.identifier),
+      }),
+    onCreated: (created) => {
+      setAdded((list) => [...list, created])
+      onChange(String(created.id))
+    },
+  })
 
   if (adding) {
     return (
@@ -82,13 +90,13 @@ export default function LocationSelect({
           onChange={(e) => setDraft({ ...draft, identifier: e.target.value })}
         />
         {/* Kept live: pressed without a kind, it says that one is needed. */}
-        <button type="button" onClick={() => (ready ? add() : setHeld(true))}>
+        <button type="button" onClick={submit}>
           Add location
         </button>
-        <button type="button" className="link" onClick={() => setAdding(false)}>
+        <button type="button" className="link" onClick={cancel}>
           Cancel
         </button>
-        {held && !ready && <span className="error">Choose a kind first.</span>}
+        {asked && !ready && <span className="error">Choose a kind first.</span>}
         {error && <span className="error">{error}</span>}
       </div>
     )
@@ -101,16 +109,11 @@ export default function LocationSelect({
         disabled={disabled}
         aria-label={label}
         onKeyDown={addOption.onKeyDown}
-        onChange={(e) => {
-          if (e.target.value !== ADD) {
-            onChange(e.target.value)
-            return
-          }
-          // An arrow steps over Add; only choosing it opens the form.
-          const meant = addOption.steppedOver(e.target)
-          if (meant === undefined) setAdding(true)
-          else if (meant !== null) onChange(meant)
-        }}
+        // An arrow steps over Add; only choosing it opens the form.
+        onChange={addOption.onSelectChange({
+          pick: (id) => onChange(id),
+          open: () => setAdding(true),
+        })}
       >
         <option value="">{blankLabel}</option>
         <option value={ADD}>+ Add a location...</option>

@@ -1,9 +1,10 @@
 // (c) Copyright 2026 Nathaniel Mills
 // Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
 // SPDX-License-Identifier: Apache-2.0
-import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
+import { Navigate, Route, Routes } from 'react-router-dom'
 
 import { useAuth } from '../shared/auth-context'
+import RequireSignIn from '../shared/RequireSignIn'
 import { sideFor } from '../shared/kinds'
 import { SHOP_NAME } from '../shared/site'
 import { useRequest } from '../shared/useRequest'
@@ -33,21 +34,21 @@ import Vocabularies from './pages/Vocabularies'
  * Per-route guarding is fine at four routes and is the pattern that leaks at
  * page five, because a new page is left unguarded by *omission* -- a failure
  * that does not announce itself. Sign-in is the one route outside the guard,
- * since a guard covering it would lock everyone out permanently. The page
- * asked for goes along as `from`, so signing in comes back to it.
+ * since a guard covering it would lock everyone out permanently. Signing in
+ * is `RequireSignIn`'s, which sends the page asked for along as `from`;
+ * this adds that the account must be an administrator.
  */
 function RequireAdmin({ children }) {
-  const { user, loading, isAdmin } = useAuth()
-  const location = useLocation()
-  if (loading) return <p className="muted">Loading...</p>
-  if (!user) {
-    const from = location.pathname + location.search
-    return <Navigate to="/login" replace state={{ from }} />
-  }
-  if (!isAdmin) {
-    return <p className="error">This account does not have access to the console.</p>
-  }
-  return children
+  const { isAdmin } = useAuth()
+  return (
+    <RequireSignIn>
+      {isAdmin ? (
+        children
+      ) : (
+        <p className="error">This account does not have access to the console.</p>
+      )}
+    </RequireSignIn>
+  )
 }
 
 /**

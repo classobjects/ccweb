@@ -445,7 +445,7 @@ fieldset.identify {
 }
 /* The box must read as a place to type: in a table of figures, the usual
    faint border on the table's own colour looks like one more cell. */
-.spot-price-entry input:not([type='checkbox']):not([type='radio']) {
+.spot-price-entry input {
   background: var(--bg);
   border: 2px solid var(--accent);
   margin-top: 0;

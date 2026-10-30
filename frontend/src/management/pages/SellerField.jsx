@@ -95,22 +95,29 @@ export default function SellerField({ value, onChange }) {
   const [storeError, setStoreError] = useState('')
   // The address last picked from, so it is picked from once.
   const pickedFor = useRef(null)
-  // Add stays live: a press with no name says so, rather than a dimmed
-  // button that says nothing.
-  const [askedEmpty, setAskedEmpty] = useState(false)
   const sellers = [...(loaded.data ?? []), ...added].sort((a, b) =>
     a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }),
   )
-  const { adding, setAdding, draft, setDraft, error, add, wrapper, ready } =
-    useInlineAdd({
-      blank: BLANK_DRAFT,
-      ready: (d) => Boolean(d.name.trim()),
-      create: (d) => api.createSeller(newSeller(d)),
-      onCreated: (created) => {
-        setAdded((list) => [...list, created])
-        onChange(String(created.id))
-      },
-    })
+  const {
+    adding,
+    setAdding,
+    draft,
+    setDraft,
+    error,
+    submit,
+    cancel,
+    wrapper,
+    ready,
+    asked,
+  } = useInlineAdd({
+    blank: BLANK_DRAFT,
+    ready: (d) => Boolean(d.name.trim()),
+    create: (d) => api.createSeller(newSeller(d)),
+    onCreated: (created) => {
+      setAdded((list) => [...list, created])
+      onChange(String(created.id))
+    },
+  })
 
   /**
    * Choose the seller the typed store address names, adding one if none.
@@ -150,12 +157,6 @@ export default function SellerField({ value, onChange }) {
     setPicked(null)
     setStoreError('')
     pickedFor.current = null
-  }
-
-  /** Close the add form, leaving nothing typed in it for the next open. */
-  function cancelAdd() {
-    setAdding(false)
-    setDraft(BLANK_DRAFT)
   }
 
   const storeBox = (
@@ -253,19 +254,14 @@ export default function SellerField({ value, onChange }) {
             onChange={(e) => setDraft({ ...draft, contact_phone: e.target.value })}
           />
         </Captioned>
-        <button
-          type="button"
-          onClick={() => {
-            setAskedEmpty(!ready)
-            if (ready) add()
-          }}
-        >
+        {/* Kept live: pressed with no name, it says that one is needed. */}
+        <button type="button" onClick={submit}>
           Add seller
         </button>
-        <button type="button" className="link" onClick={cancelAdd}>
+        <button type="button" className="link" onClick={cancel}>
           Cancel
         </button>
-        {askedEmpty && !ready && (
+        {asked && !ready && (
           <span className="error">Type the seller&apos;s name first.</span>
         )}
         {error && <span className="error">{error}</span>}
@@ -279,18 +275,14 @@ export default function SellerField({ value, onChange }) {
       <select
         value={value ?? ''}
         onKeyDown={addOption.onKeyDown}
-        onChange={(e) => {
-          if (e.target.value !== ADD) {
-            onChange(e.target.value)
-            return
-          }
-          // An arrow steps over Add; only choosing it opens the form.
-          const meant = addOption.steppedOver(e.target)
-          if (meant === undefined) {
+        // An arrow steps over Add; only choosing it opens the form.
+        onChange={addOption.onSelectChange({
+          pick: (id) => onChange(id),
+          open: () => {
             setDraft(BLANK_DRAFT)
             setAdding(true)
-          } else if (meant !== null) onChange(meant)
-        }}
+          },
+        })}
         aria-label="Seller"
       >
         <option value="">--</option>

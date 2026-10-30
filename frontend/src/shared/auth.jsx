@@ -3,15 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
-import {
-  ApiError,
-  api,
-  clearTokens,
-  loadTokens,
-  onSignedOut,
-  saveTokens,
-  signOut,
-} from './api'
+import { api, loadTokens, onSignedOut, saveTokens, signOut } from './api'
 import { AuthContext } from './auth-context'
 
 /**
@@ -28,11 +20,12 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
 
-  // On first mount, exchange any stored token for the current profile. This
-  // also drops tokens that expired while the tab was closed -- but only when
-  // the server refuses them (401). A server that is down or a dropped
-  // connection says nothing about the tokens, so they are kept for the next
-  // load rather than signing the visitor out over a blip.
+  // On first mount, exchange any stored token for the current profile.
+  // Tokens the server refuses (a 401 past the refresh) are already dropped
+  // by `send`, which signs out; any failure is otherwise ignored here. A
+  // server that is down or a dropped connection says nothing about the
+  // tokens, so they are kept for the next load rather than signing the
+  // visitor out over a blip.
   useEffect(() => {
     let cancelled = false
     async function bootstrap() {
@@ -43,8 +36,8 @@ export function AuthProvider({ children }) {
       try {
         const me = await api.me()
         if (!cancelled) setUser(me)
-      } catch (err) {
-        if (err instanceof ApiError && err.status === 401) clearTokens()
+      } catch {
+        /* nobody signed in: a refusal has already signed out, a blip keeps the tokens */
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -80,7 +73,8 @@ export function AuthProvider({ children }) {
   // The server is asked first, while the tokens are still here to send, to
   // retire every token of the account -- a copy taken from this browser
   // stops working too. Its answer does not decide anything: offline, or
-  // already refused (401), the visitor is signed out here all the same.
+  // already refused (401), the visitor is signed out here all the same --
+  // `signOut` tells the listener above, which clears `user`.
   const logout = useCallback(async () => {
     try {
       await api.logout()
@@ -88,7 +82,6 @@ export function AuthProvider({ children }) {
       /* best effort: signing out here does not wait on the server */
     }
     signOut()
-    setUser(null)
   }, [])
 
   const value = useMemo(

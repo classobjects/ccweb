@@ -8,8 +8,8 @@
  * Both are settings read when the frontend is built -- VITE_SHOP_NAME and
  * VITE_SHOP_OWNER in the repository's .env -- so an installation brands the
  * shop without editing code. The defaults live here and nowhere else;
- * `vite.config.js` imports this module to put the same name into the HTML
- * page titles.
+ * `frontend/site-html.js`, the plugin `vite.config.js` loads, imports this
+ * module to put the same name into the HTML page titles.
  */
 
 /** The name a shop that sets none goes by. */
@@ -25,8 +25,8 @@ export function siteFrom(env = {}) {
   return { shopName: name || DEFAULT_SHOP_NAME, shopOwner: owner }
 }
 
-// `import.meta.env` is undefined when vite.config.js loads this module in
-// Node; only the bundled page has it.
+// `import.meta.env` is undefined when site-html.js loads this module in Node
+// for the build; only the bundled page has it.
 const site = siteFrom(import.meta.env ?? {})
 
 /** The shop's name, shown in the header, the page titles and the footer. */

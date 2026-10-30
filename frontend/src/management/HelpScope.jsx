@@ -4,6 +4,7 @@
 import { useState } from 'react'
 
 import { FIELD_HELP } from './fieldHelp'
+import { HelpText } from './HelpBar'
 import { useHelpBand } from './help-context'
 
 /**
@@ -64,18 +65,11 @@ export default function HelpScope({ children }) {
     )
   }
 
-  const help = localField ? FIELD_HELP[localField] : null
   return (
     <div className="help-scope" onFocus={onFocus} onMouseOver={onMouseOver}>
       {children}
       <div className="help-area" aria-live="polite">
-        {help ? (
-          <>
-            <strong>{help.title}</strong> {help.text}
-          </>
-        ) : (
-          <span className="muted">Click in a field to see what it means.</span>
-        )}
+        <HelpText field={localField} />
       </div>
     </div>
   )

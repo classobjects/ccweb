@@ -80,6 +80,19 @@ describe('text fields', () => {
     expect(style.width).toBe('100%')
   })
 
+  it('take the width a class gives them', () => {
+    // The shared full-width rule outweighed `.alias-add input` while its
+    // exclusions counted toward its specificity, and every alias box spread
+    // across the cell (9rem is 144px at jsdom's 16px root).
+    mount(`<div class="alias-add"><input type="text" /></div>`)
+    expect(getComputedStyle(document.querySelector('input')).width).toBe('144px')
+  })
+
+  it('in a spot price cell keep their width without repeating the exclusion', () => {
+    mount(`<div class="spot-price-entry"><input type="text" /></div>`)
+    expect(getComputedStyle(document.querySelector('input')).width).toBe('144px')
+  })
+
   it('still stack under their label inside a filter grid', () => {
     mount(
       `<div class="filter-grid"><label>Denomination <input type="text" /></label></div>`,
