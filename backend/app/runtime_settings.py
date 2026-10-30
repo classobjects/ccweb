@@ -40,7 +40,7 @@ from pydantic import (
 )
 from pydantic_core import PydanticUseDefault
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from sqlalchemy.engine import make_url
+from sqlalchemy.engine import URL, make_url
 from sqlalchemy.exc import ArgumentError
 
 from .logpipe import DEFAULT_KEEP, DEFAULT_MAX_BYTES
@@ -247,6 +247,17 @@ def assignments(s: RuntimeFields, *, include_password: bool = False) -> dict[str
     if include_password:
         values["CCWEB_DB_PASSWORD"] = url.password or ""
         values["CCWEB_TEST_DB_PASSWORD"] = test_url.password or ""
+    else:
+        # The URL carries its password, so only the caller that asked for
+        # passwords gets it whole; everyone else gets it without one.
+        values["CCWEB_TEST_DB_URL"] = URL.create(
+            test_url.drivername,
+            username=test_url.username,
+            host=test_url.host,
+            port=test_url.port,
+            database=test_url.database,
+            query=test_url.query,
+        ).render_as_string(hide_password=False)
     return values
 
 
@@ -397,7 +408,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--include-password",
         action="store_true",
-        help="add CCWEB_DB_PASSWORD, for a script to read into a variable",
+        help=(
+            "add CCWEB_DB_PASSWORD and CCWEB_TEST_DB_PASSWORD, and put the "
+            "password in CCWEB_TEST_DB_URL, for a script to read into a variable"
+        ),
     )
     parser.add_argument(
         "--render",

@@ -150,6 +150,25 @@ def test_relative_split_reconciles_on_an_awkward_total(
     assert body["allocated_shipping"] == "6.99"
 
 
+def test_a_relative_split_of_pieces_all_worth_nothing_is_split_per_piece(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    """No proportion to follow, so the split is an equal one: per piece, not row."""
+    parent = build_split_lot(
+        db, item_cost=Decimal("100.00"), shipping_cost=Decimal("0.00"), piece_count=4
+    )
+    payload = {
+        "mode": "relative",
+        "pieces": [
+            {"source_title": "Three of them", "piece_count": 3, "relative_value": "0"},
+            {"source_title": "The odd one", "piece_count": 1, "relative_value": "0"},
+        ],
+    }
+    body = do_split(client, admin_headers, parent.id, payload).json()
+    prices = {p["source_title"]: p["item_cost"] for p in body["pieces"]}
+    assert prices == {"Three of them": "75.00", "The odd one": "25.00"}
+
+
 def test_relative_mode_requires_values(
     client: TestClient, admin_headers: dict[str, str], db: Session
 ) -> None:

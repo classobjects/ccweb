@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from .live import live_item
 from .models import CurrencyDetail, Denomination, InventoryItem
 from .serial_patterns import SERIAL_DIGITS, digits_of
 
@@ -67,8 +68,7 @@ def serial_pairs(db: Session, serial: str | None, item_id: int) -> list[SerialPa
         )
         .where(
             InventoryItem.id != item_id,
-            InventoryItem.split_at.is_(None),
-            InventoryItem.deleted_at.is_(None),
+            live_item(),
             func.regexp_replace(CurrencyDetail.serial_number, r"\D", "", "g") == digits,
             ~starred if "*" in (serial or "") else starred,
         )

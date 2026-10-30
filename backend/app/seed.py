@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session
 from . import grades, offering_writes
 from .config import settings
 from .database import SessionLocal
+from .errors import ReferenceDataMissing
 from .lifecycle_writes import record_initial_status
 from .models import (
     Authenticity,
@@ -49,6 +50,7 @@ from .models import (
     UserRole,
     ValuationBasis,
 )
+from .sales_venues import store_venue_id
 from .security import account_by_email, hash_password, normalize_email_if_valid
 
 #: A demo catalog. Classifiers are given as codes, matching how they cross
@@ -135,12 +137,11 @@ def _code_id(db: Session, model: type[ReferenceMixin], code: str | None) -> int 
 
 def _store_venue(db: Session) -> SalesVenue:
     """The web store platform every demo listing is offered into."""
-    venue = db.scalar(select(SalesVenue).where(SalesVenue.is_own_store.is_(True)))
-    if venue is None:
-        raise SystemExit(
-            "No web store platform: run `alembic upgrade head` on this database"
-        )
-    return venue
+    try:
+        venue_id = store_venue_id(db)
+    except ReferenceDataMissing as missing:
+        raise SystemExit(str(missing)) from None
+    return db.get_one(SalesVenue, venue_id)
 
 
 def _build(db: Session, row: dict) -> None:

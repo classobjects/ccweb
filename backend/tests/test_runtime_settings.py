@@ -69,7 +69,7 @@ def test_with_no_env_file_the_values_are_todays_literals(
         "CCWEB_TEST_DB_HOST": "localhost",
         "CCWEB_TEST_DB_USER": "ccwebdb",
         "CCWEB_TEST_DB_URL": (
-            "postgresql+psycopg://ccwebdb:devpassword@localhost:5433/ccwebdb_test"
+            "postgresql+psycopg://ccwebdb@localhost:5433/ccwebdb_test"
         ),
         "CCWEB_LOG_DIR": str(REPO_ROOT / "logs"),
         "CCWEB_LOG_KEEP": "3",
@@ -106,6 +106,24 @@ def test_the_test_clusters_role_comes_from_its_url(bare: pytest.MonkeyPatch) -> 
     assert "CCWEB_TEST_DB_PASSWORD" not in plain
     asked = assignments(defaults(), include_password=True)
     assert asked["CCWEB_TEST_DB_PASSWORD"] == "t3st-pw"
+
+
+def test_the_test_url_carries_its_password_only_when_asked(
+    bare: pytest.MonkeyPatch,
+) -> None:
+    """The test URL holds a password too: printed plainly, it must not."""
+    bare.setenv(
+        "TEST_DATABASE_URL", "postgresql+psycopg://tester:t3st-pw@localhost:5433/x_test"
+    )
+    plain = assignments(defaults())
+    assert not [name for name, value in plain.items() if "t3st-pw" in value]
+    assert plain["CCWEB_TEST_DB_URL"] == (
+        "postgresql+psycopg://tester@localhost:5433/x_test"
+    )
+    asked = assignments(defaults(), include_password=True)
+    assert asked["CCWEB_TEST_DB_URL"] == (
+        "postgresql+psycopg://tester:t3st-pw@localhost:5433/x_test"
+    )
 
 
 def test_the_test_clusters_host_comes_from_its_url(bare: pytest.MonkeyPatch) -> None:

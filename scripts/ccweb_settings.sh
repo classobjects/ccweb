@@ -14,7 +14,8 @@
 #  CCWEB_DB_CLUSTER_DIR and the rest, exported, as
 #  backend/app/runtime_settings.py gives them -- from .env, then the
 #  defaults there. A value already in the environment wins over .env.
-#  --include-password adds CCWEB_DB_PASSWORD and CCWEB_TEST_DB_PASSWORD.
+#  --include-password adds CCWEB_DB_PASSWORD and CCWEB_TEST_DB_PASSWORD, and
+#  leaves CCWEB_TEST_DB_URL its password; without it the URL has none.
 #
 #  Sourced from a script, never from ccweb_env.sh: in an interactive shell
 #  these would then outrank later edits to .env.

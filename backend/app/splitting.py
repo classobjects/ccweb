@@ -144,6 +144,12 @@ def _weights(pieces: list[SplitPiece], mode: str) -> list[Decimal]:
         # loudly rather than multiplying by None.
         assert relative is not None
         weights.append(Decimal(relative) * piece.piece_count)
+    if not any(weights):
+        # Every piece worth nothing leaves no proportion to follow. The split
+        # is then an equal one, per piece as `equal` mode's is: left to
+        # `allocate`'s own fallback it would be per row, and a child holding
+        # three coins would carry one coin's share.
+        return _weights(pieces, EQUAL)
     return weights
 
 

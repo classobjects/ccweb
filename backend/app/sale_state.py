@@ -360,10 +360,6 @@ def guard(
     if not found:
         return
     codes = {item.id: item.item_code for item in wanted}
-    # A bare 409 rather than `status.HTTP_409_CONFLICT`: `orders_holding` above
-    # binds a local named `status` in its order loop, and importing fastapi's
-    # `status` into this module would put a shadowed name one function away
-    # from a live one. Both spellings are already used in this codebase.
     raise HTTPException(
         status_code=status.HTTP_409_CONFLICT,
         detail=refusal({codes[item_id]: uses for item_id, uses in found.items()}),

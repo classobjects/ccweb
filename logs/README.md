@@ -64,6 +64,12 @@ those grows past 1 GB.**
   the older files stay as they were. Linux allows the move, so a program
   still writing to the old file goes on writing into it under its new name,
   `.1`.
+- The current file is renamed `<name>.rotating.log` for the moment the older
+  ones move up. If one of them cannot move, the current file goes back to
+  its plain name. If the writer was killed in that moment, the next start
+  rotates the `.rotating` file in as the newest older file -- unless a new
+  current file already exists beside it, when no new file is started and the
+  `[logpipe]` line names the `.rotating` file to move away by hand.
 - `pg_stop.log` holds a few lines from each stop. Shutdown rotates it before
   each stop and never measures it.
 - `initdb-test.log` is written afresh each time `ccweb_testdb` builds the

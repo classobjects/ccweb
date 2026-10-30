@@ -368,6 +368,25 @@ def test_a_rename_to_an_existing_name_is_refused(db: Session) -> None:
     assert db.get_one(Vendor, vendor.id).name == "one.example"
 
 
+def test_a_rename_clash_is_found_as_the_index_lowers_it(db: Session) -> None:
+    """`casefold` reads "ß" as "ss"; `lower`, as the index does, keeps it."""
+    vendor = _vendor(db, "one.example")
+    _vendor(db, "straße.example")
+
+    with pytest.raises(CleanupError, match=r"straße\.example already has"):
+        run(
+            db,
+            merges=[],
+            kinds=[],
+            deletes=[],
+            renames=[(vendor.id, "STRAßE.example")],
+            commit=True,
+        )
+
+    db.expire_all()
+    assert db.get_one(Vendor, vendor.id).name == "one.example"
+
+
 @pytest.mark.parametrize("autoflush", [True, False])
 def test_a_rename_happens_after_a_merge(db: Session, autoflush: bool) -> None:
     """The merged-away row's name is free to reuse in the same call.

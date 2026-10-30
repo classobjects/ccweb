@@ -75,19 +75,46 @@ def rotate(path: Path, keep: int) -> None:
     rather than kept, so restarting a program that wrote nothing does not
     push a useful log out.
     """
+    aside = path.with_name(f"{path.stem}.rotating{path.suffix}")
+    if aside.exists():
+        # A rotation that never finished (the process was killed mid-way)
+        # left the current file aside. It goes back to being the current
+        # file, or the move below would overwrite it; if a newer current
+        # file has since been started, the rotation stops rather than lose
+        # either.
+        if path.exists():
+            raise FileExistsError(
+                f"{aside.name} is left from an unfinished rotation beside "
+                f"{path.name}; move one of them away"
+            )
+        aside.replace(path)
     if path.exists() and path.stat().st_size == 0:
         path.unlink()
+        return
+    if not path.exists():
+        _shift(path, keep)
         return
     # The current file is moved aside before anything older is touched: one
     # another program holds open cannot be moved, and the rotation must then
     # fail with every older file still where it was.
-    aside = None
-    if path.exists():
-        aside = path.with_name(f"{path.stem}.rotating{path.suffix}")
-        path.replace(aside)
-    if keep == 1:
-        if aside is not None:
+    path.replace(aside)
+    try:
+        if keep == 1:
             aside.unlink()
+            return
+        _shift(path, keep)
+        aside.replace(numbered(path, 1))
+    except OSError:
+        # An older file another program holds open stops the shift part-way.
+        # The current file goes back where it was, so nothing is lost and
+        # nothing is left aside for the next rotation to overwrite.
+        aside.replace(path)
+        raise
+
+
+def _shift(path: Path, keep: int) -> None:
+    """Drop the oldest numbered file and move each other one up a number."""
+    if keep == 1:
         return
     oldest = numbered(path, keep - 1)
     if oldest.exists():
@@ -96,8 +123,6 @@ def rotate(path: Path, keep: int) -> None:
         source = numbered(path, n)
         if source.exists():
             source.replace(numbered(path, n + 1))
-    if aside is not None:
-        aside.replace(numbered(path, 1))
 
 
 class RollingWriter:

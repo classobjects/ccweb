@@ -51,10 +51,10 @@ from sqlalchemy.orm import QueryableAttribute, Session, aliased
 
 from .database import SessionLocal
 from .field_sources import (
-    HELD,
     SERIES_CLASSIFY,
     SUGGESTION,
     forget,
+    held_empty,
     record_derived_many,
 )
 from .models import (
@@ -355,11 +355,7 @@ def _items(
             func.length(func.btrim(InventoryItem.source_title)) > SHORT_TITLE,
         ),
     )
-    held = exists().where(
-        ItemFieldSource.inventory_item_id == InventoryItem.id,
-        ItemFieldSource.field_name == "series_id",
-        ItemFieldSource.derived_by == HELD,
-    )
+    held = held_empty("series_id")
     query = (
         _with_facts(
             InventoryItem.id,

@@ -20,11 +20,11 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from sqlalchemy import delete, select
+from sqlalchemy import Exists, delete, exists, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
-from .models import ItemFieldSource, utcnow
+from .models import InventoryItem, ItemFieldSource, utcnow
 
 #: Rules that fill fields, as recorded in `derived_by`.
 NOTE_ISSUE = "note_issue"
@@ -126,6 +126,19 @@ def forget(db: Session, item_ids: Iterable[int], fields: Iterable[str]) -> None:
 def hold(db: Session, item_ids: Iterable[int], fields: Iterable[str]) -> None:
     """A person has emptied these fields: keep them empty."""
     _record(db, item_ids, fields, HELD)
+
+
+def held_empty(field_name: str) -> Exists:
+    """Whether a person emptied this field of the outer query's `InventoryItem`.
+
+    A rule that fills the field leaves such an item out: what was emptied
+    stays empty (`hold`).
+    """
+    return exists().where(
+        ItemFieldSource.inventory_item_id == InventoryItem.id,
+        ItemFieldSource.field_name == field_name,
+        ItemFieldSource.derived_by == HELD,
+    )
 
 
 def derived_fields(db: Session, item_id: int) -> dict[str, str]:

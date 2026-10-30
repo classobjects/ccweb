@@ -22,10 +22,9 @@ import argparse
 import sys
 from collections.abc import Callable, Sequence
 
-from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from .models import User
+from .security import account_by_email
 
 #: What a pass prints when it was not asked to write.
 DRY_RUN = "dry run: nothing written (--commit --by EMAIL to apply)"
@@ -48,8 +47,9 @@ def parse_args(
 
 
 def user_id_by_email(db: Session, email: str) -> int | None:
-    """The account with this email address, whatever its capitals; None for no one."""
-    return db.scalar(select(User.id).where(func.lower(User.email) == email.lower()))
+    """The id of `account_by_email`'s account for this address; None for no one."""
+    account = account_by_email(db, email)
+    return None if account is None else account.id
 
 
 def commit_or_report(

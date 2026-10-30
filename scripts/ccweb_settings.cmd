@@ -14,7 +14,8 @@ rem  Sets CCWEB_API_PORT, CCWEB_DB_CLUSTER_DIR and the rest, as
 rem  backend\app\runtime_settings.py gives them: from .env, then the defaults
 rem  there. A script never writes a port or a folder of its own. A value
 rem  already in the environment wins over .env, as it does for the API.
-rem  --include-password adds CCWEB_DB_PASSWORD and CCWEB_TEST_DB_PASSWORD.
+rem  --include-password adds CCWEB_DB_PASSWORD and CCWEB_TEST_DB_PASSWORD, and
+rem  leaves CCWEB_TEST_DB_URL its password; without it the URL has none.
 rem
 rem  No setlocal: setting the caller's variables is the point, so call it
 rem  from inside the caller's own setlocal. Never from ccweb_env.cmd, which

@@ -22,6 +22,8 @@ as everywhere else in this codebase.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -191,8 +193,15 @@ def members_held(lot: SalesLot) -> list[SalesLotItem]:
     return sorted(lot.members, key=lambda row: row.inventory_item_id)
 
 
-def _refuse_unless_assembling(db: Session, lot: SalesLot) -> None:
+def _refuse_unless_assembling(
+    db: Session,
+    lot: SalesLot,
+    reason: Callable[[Session, SalesLot], str] | None = None,
+) -> None:
     """Refuse any membership change once a lot is no longer assembling.
+
+    The refusal says why in `reason`'s words, read after the re-read below,
+    or by default `_frozen_reason`'s.
 
     Once offered, the buyer is looking at that exact group -- both `offer`
     and a removal or addition after that point would silently change what
@@ -219,7 +228,7 @@ def _refuse_unless_assembling(db: Session, lot: SalesLot) -> None:
     db.flush()
     db.refresh(lot, with_for_update=True)
     if lot.status is not SalesLotStatus.assembling:
-        raise LotRefused(_frozen_reason(db, lot))
+        raise LotRefused((reason or _frozen_reason)(db, lot))
 
 
 def _frozen_reason(db: Session, lot: SalesLot) -> str:
