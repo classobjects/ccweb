@@ -174,11 +174,77 @@ h2 {
   overflow: hidden;
 }
 
+/* A table fits the page rather than scrolling it sideways, on a phone least
+   of all. A link or an email address has no space to break at, so a cell
+   may break one anywhere; a box being edited shrinks with its column rather
+   than holding it at its default size. */
 .table th,
 .table td {
   text-align: left;
   padding: 9px 12px;
   border-bottom: 1px solid var(--border);
+}
+
+.table td {
+  overflow-wrap: anywhere;
+}
+
+/* Zero width, then the cell's: a box at its default width would set the
+   column's, and a row opened for editing would widen the table. */
+.table td :is(input, select, textarea) {
+  width: 0;
+  min-width: max(100%, 6rem);
+}
+
+/* A long value kept on one line, scrolled within its cell instead of
+   widening the column, the cap narrowing with the window. On the cell's
+   content, not the cell: a table cell ignores max-width. */
+.cell-scroll {
+  max-width: clamp(6rem, 14vw, 16rem);
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+/* On a phone a table marked `stacks` lays each row out as a card, a line
+   per cell under the column's name (its `data-label`). */
+@media (max-width: 40rem) {
+  .table.stacks thead {
+    display: none;
+  }
+
+  /* Blocks, not table boxes, all the way down: a table sizes itself to its
+     content and would still overflow the page. */
+  .table.stacks,
+  .table.stacks tbody {
+    display: block;
+  }
+
+  .table.stacks tr {
+    display: block;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .table.stacks td {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 4px 12px;
+    border-bottom: none;
+  }
+
+  .table.stacks td[data-label]::before {
+    content: attr(data-label);
+    flex: 0 0 6.5rem;
+    color: var(--muted);
+  }
+
+  .table.stacks td > :is(.cell-scroll, input, select, textarea) {
+    flex: 1;
+    width: auto;
+    min-width: 0;
+    max-width: none;
+  }
 }
 
 .table tbody tr:last-child td {
