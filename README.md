@@ -201,7 +201,7 @@ by `deps.require_admin`). By area:
 | Customer orders | `/orders` (at most 50 lines, and a few pending orders, per customer; paged for managers) | customers their own; managers all |
 | Inventory | `/inventory` (search, create, bulk, edit, receive, split, detach a piece, errors, history, sales, suggested description, preview, serial pairs, delete) | manager |
 | Purchases | `/vendors`, `/sellers`, `/purchase-orders`, `/storage-locations` | manager |
-| Vocabularies | `/reference` (the shop's vocabularies readable by anyone; every other read, retired values, and add, rename, alias, merge manager), `/defaults` (suggested classifiers while entering an item) | mixed |
+| Vocabularies | `/reference` (the shop's vocabularies readable by anyone; every other read, retired values, and add, rename, alias, merge manager), `/defaults` (suggested classifiers while entering an item, and `/defaults/item-kind`, the kind the console opens on) | mixed |
 | Photographs | `/images` (upload, from a web address, file against an item, list, delete, renditions), `/image-links` (role, primary, move, detach) | renditions public, by content hash; the rest manager |
 | Selling | `/sales-venues`, `/metal-prices` (spot prices), `/offers`, `/listings` (edit, end, record a sale), `/sales-lots`, `/auctions` | manager |
 | Friedberg numbers | `/friedberg`, `/inventory/{id}/friedberg` | manager; the owner's own numbers only |
