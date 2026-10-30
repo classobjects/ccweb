@@ -1,6 +1,6 @@
 # Deploying on a Windows server
 
-*Written 2026-10-14; made general 2026-10-20.*
+Last revised: 2026-10-29.
 
 How to run the system on a Windows server the public can reach over
 `https://` at a domain of your own. The development machine runs everything
@@ -226,21 +226,27 @@ the backup workbook by environment-setup-windows.md step 8 (*This collection, on
 new machine*), it is complete.
 
 Restore the current collection. On the
-development machine, with nothing writing to the database, dump it and copy
-its photographs to a folder you can carry across -- the example uses
-`D:\to_server`:
+development machine, with nothing writing to the database, dump it and
+prove the dump exactly as
+[system-administration.md](system-administration.md#applying-a-schema-release)
+(*Applying a schema release*, step 1) does: it signs in as the `ccwebdb`
+account, writes the dump to `ccwebdb-backups` in `%USERPROFILE%\dev`, and
+restores it into `ccwebdb_rehearsal` to compare it; drop that database
+afterwards, in the same window, with `"%PGBIN%\dropdb.exe"
+ccwebdb_rehearsal`. Then copy the photographs to a folder you can carry
+across -- the example uses `D:\to_server`:
 
 ```console
 cd /d %USERPROFILE%\dev\ccweb\backend
+conda activate ccwebdb
 if not exist D:\to_server mkdir D:\to_server
-pg_dump -Fc -f D:\to_server\ccwebdb_to_server.dump ccwebdb
 python -m app.media_backup copy D:\to_server\media
 python -m app.media_backup check D:\to_server\media
 ```
 
-Carry `ccwebdb_to_server.dump` and the `media` folder to the server. There,
-restore into an empty database (`createdb`, then `pg_restore -d ccwebdb
-ccwebdb_to_server.dump`), as in
+Carry the dump and the `media` folder to the server. There,
+restore into an empty database (`createdb`, then `pg_restore -d ccwebdb`
+and the dump), as in
 [system-administration.md](system-administration.md) (*Applying a schema
 release*, step 1), and copy `media` to the folder `MEDIA_ROOT` will name.
 Then, on the server, with `MEDIA_FOLDER` replaced by the folder `MEDIA_ROOT`
@@ -264,16 +270,16 @@ with its default; [settings.md](settings.md) says what each one takes):
 | `DATABASE_URL` | the server's database, with a password that is not `devpassword`: change it first, as below |
 | `MEDIA_ROOT` | the folder the photographs were copied to, as a full path |
 | `SALES_TAX_RATE`, `SALES_TAX_INCLUDES_SHIPPING` | as on the development machine |
-| `DEFAULT_ITEM_KIND` | the kind a new item on a purchase starts as; unset, `coin`. The example: `currency` |
-| `SHOP_OPEN` | `false` until opening day: visitors who are not signed in see a coming-soon page, and the API refuses them the catalog and registration. Set it to `true` and restart the API to open the shop |
+| `DEFAULT_ITEM_KIND` | as on the development machine. The example: `currency` |
+| `SHOP_OPEN` | `false` until opening day; then `true`, and restart the API, to open the shop |
 | `CCWEB_SITE_DOMAIN` | the domain, without `https://` or `www.` (the example: `classobjects.com`) |
 | `CCWEB_TLS_CERT`, `CCWEB_TLS_KEY` | the full paths of `fullchain.pem` and the key from step 1 (the example: `C:\caddy\certs\fullchain.pem`, `C:\caddy\certs\classobjects.com.key`); both empty when Caddy is to obtain the certificate (*No certificate to buy*) |
 | `CCWEB_SITE_ROOT` | unset: the repository's `frontend\dist`, which Caddy, running as `SYSTEM`, can read |
 | `CCWEB_CADDY_IMPORT` | unset, unless the server runs sites of its own beside the shop (step 7, *Other sites on the server*); the example: `C:\caddy\sites\*.caddy` |
-| `VITE_DIGICERT_SEAL_ID` | DigiCert's seal for the certificate, the eight characters after `DigiCertClickID_` in DigiCert's seal code; unset, the shop shows no seal. Read when the frontend is built (step 5) |
-| `VITE_SHOP_NAME`, `VITE_SHOP_OWNER` | the shop's name, shown in its header, page titles and coming-soon page (unset: `Coin Shop`), and the legal name the footer's copyright line names (unset: none). Read when the frontend is built (step 5) |
-| `CCWEB_BACKUP_DIR`, `CCWEB_BACKUP_TIME` | where and when the daily backup runs (*Keeping it running*); unset, `ccwebdb-backup` in the home folder at 20:00. The example: its OneDrive folder, 20:00 |
-| `TIME_ZONE` | unset keeps the server's own zone; set it (`America/New_York`) if the server's clock runs on another zone than the business's |
+| `VITE_DIGICERT_SEAL_ID` | the eight characters after `DigiCertClickID_` in DigiCert's seal code for the certificate, or unset for no seal. Read when the frontend is built (step 5) |
+| `VITE_SHOP_NAME`, `VITE_SHOP_OWNER` | the shop's name and its owner's legal name. Read when the frontend is built (step 5) |
+| `CCWEB_BACKUP_DIR`, `CCWEB_BACKUP_TIME` | a folder that leaves the machine, and the time of the daily backup (*Keeping it running*). The example: its OneDrive folder, 20:00 |
+| `TIME_ZONE` | the business's zone (`America/New_York`) if the server's clock runs on another; otherwise unset |
 
 `FIRST_ADMIN_EMAIL` and `FIRST_ADMIN_PASSWORD` are read by `app.seed`, which
 is never run on the server, and `FIRST_ADMIN_PASSWORD`, when set, by
@@ -525,7 +531,7 @@ port 80 by sending visitors to `https://`. The two `tls` lines must name the
 key file Caddy is really to use, and that is the copy to lock down with
 `icacls` (step 1). Keep one copy of the key in `C:\caddy\certs`, not several
 under different names. With `CCWEB_TLS_CERT` and `CCWEB_TLS_KEY` both empty
-the file has no `tls` lines at all: see *No certificate to buy*, below.
+the file has no `tls` lines at all: see *No certificate to buy* (step 1).
 
 Check the file. It says `Valid configuration`, and, with the certificate
 files given, that it is skipping automatic certificates because they are
@@ -632,11 +638,15 @@ With your domain, `CCWEB_SITE_DOMAIN`, in place of `YOUR_DOMAIN`:
 
 ```console
 curl -sI https://YOUR_DOMAIN/
-curl -s -o nul -w "%{http_code}\n" "https://YOUR_DOMAIN/api/catalog?limit=1"
+curl -s https://YOUR_DOMAIN/api/shop
 curl -sI http://YOUR_DOMAIN/
 ```
 
-Expect `200`, `200`, and a redirect to `https://`. Then in a browser: the
+Expect `200`, `{"open":false}` (`{"open":true}` once `SHOP_OPEN` is
+`true`), and a redirect to `https://`. `/api/shop` answers anyone, open or
+not, so it proves Caddy reaches the API; the catalog would not do here,
+since while the shop is closed it refuses a visitor who is not signed in
+(403). Then in a browser: the
 shop loads with the coin-and-note favicon, the certificate's seal appears in the
 footer if `VITE_DIGICERT_SEAL_ID` is set (it shows only on the domain the
 certificate names), and the domain's `/management` signs in.

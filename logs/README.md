@@ -25,6 +25,7 @@ logs/
   postgres.log  .1  .2    PostgreSQL: pg_ctl's start messages, then the server's own log
   pg_stop.log   .1  .2    pg_ctl stop: "server stopped"
   postgres-test.log       the test cluster (ccweb_testdb), the same way
+  initdb-test.log         initdb, when ccweb_testdb builds the test cluster
   backup.log              ccweb_backup: what each backup run did
 ```
 
@@ -39,11 +40,12 @@ logs/
 | `frontend.log` | the site will not load, or startup says the frontend FAILED |
 | `postgres.log` | PostgreSQL will not start (a bad setting or a stale `postmaster.pid` is explained here), a query fails or a connection is refused, or you want to see a shutdown finish (`database system is shut down`) |
 | `pg_stop.log` | shutdown says PostgreSQL is still running |
+| `initdb-test.log` | `ccweb_testdb` says `initdb failed` |
 | `backup.log` | a backup run says FAILED, or to see that the daily runs say `proved` |
 
 ## How the files rotate
 
-**Every type but `backup.log` keeps its last three files, and no file of
+**Every type but `backup.log` and `initdb-test.log` keeps its last three files, and no file of
 those grows past 1 GB.**
 
 - The current file always has the plain name. When a new one starts, the
@@ -64,6 +66,8 @@ those grows past 1 GB.**
   `.1`.
 - `pg_stop.log` holds a few lines from each stop. Shutdown rotates it before
   each stop and never measures it.
+- `initdb-test.log` is written afresh each time `ccweb_testdb` builds the
+  test cluster, and holds only that run.
 - `backup.log` is one file that every backup run adds to, each under a line
   with its date and time. It is not rotated and has no size limit: delete it
   when it has grown long.

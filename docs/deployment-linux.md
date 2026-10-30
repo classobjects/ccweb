@@ -269,7 +269,9 @@ sudo caddy validate --config /etc/caddy/Caddyfile.new
 
 `validate` says `Valid configuration` (it runs as root because it reads the
 key, which only root and Caddy may). The rendered file sets the site's
-security headers and content policy, as
+security headers and content policy, and how long a browser keeps each
+file -- a year for the hashed files under `/assets/`, `no-cache` for every
+other file outside `/api` -- as
 [deployment-windows.md](deployment-windows.md) step 7 explains. The file goes to `Caddyfile.new`
 first, so that a refused setting -- an empty `CCWEB_SITE_DOMAIN`, say,
 which it names -- never empties the one a running Caddy reads. Only when it
@@ -299,15 +301,17 @@ Do not open the API's port or PostgreSQL's.
 
 ## 9. Check it
 
-As in [deployment-windows.md](deployment-windows.md), step 9, with
-`-o /dev/null` for `-o nul`, and your domain, `CCWEB_SITE_DOMAIN`, in place
-of `YOUR_DOMAIN`:
+As in [deployment-windows.md](deployment-windows.md), step 9, with your
+domain, `CCWEB_SITE_DOMAIN`, in place of `YOUR_DOMAIN`:
 
 ```console
 curl -sI https://YOUR_DOMAIN/
-curl -s -o /dev/null -w "%{http_code}\n" "https://YOUR_DOMAIN/api/catalog?limit=1"
+curl -s https://YOUR_DOMAIN/api/shop
 curl -sI http://YOUR_DOMAIN/
 ```
+
+The answers are the ones step 9 there expects: `200`, `{"open":false}`
+until `SHOP_OPEN` is `true`, and a redirect to `https://`.
 
 ## Keeping it running
 

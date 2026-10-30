@@ -230,7 +230,7 @@ down: it is inspected on demand, not part of the runtime.
 |---|---|
 | 0 | everything required is up |
 | 1 | something required is down or degraded |
-| 2 | the environment itself is not ready -- `ccwebdb` cannot be activated, or, with something down, no PostgreSQL cluster or no `node_modules` |
+| 2 | the environment itself is not ready -- `ccwebdb` cannot be activated, a setting in `.env` is refused, or, with something down, no PostgreSQL cluster or no `node_modules` |
 
 ---
 
@@ -615,20 +615,30 @@ its own, outside the shared folder (*A cluster for the tests*, above).
 ## Running a service by hand
 
 For `--reload` during active backend work, or to watch output directly. Start
-the database first, then in separate windows:
+the database first, then each of the others in a window of its own.
+
+The database:
 
 ```console
-:: database
+cd /d %USERPROFILE%\dev\ccweb
 conda activate ccwebdb
 pg_ctl -D .pgdata -l logs\postgres-by-hand.log start
 pg_isready -h localhost -p 5432
+```
 
-:: backend, with auto-reload
-cd backend
+The backend, with auto-reload, in a second window:
+
+```console
+cd /d %USERPROFILE%\dev\ccweb\backend
+conda activate ccwebdb
 uv run uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+```
 
-:: frontend
-cd frontend
+The frontend, in a third:
+
+```console
+cd /d %USERPROFILE%\dev\ccweb\frontend
+conda activate ccwebdb
 npm run dev
 ```
 

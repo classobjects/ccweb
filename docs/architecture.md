@@ -54,8 +54,12 @@ travels through them. Why it is built this way is in
   them. The API checks at start-up that `MEDIA_ROOT` holds the newest of
   them, and refuses to start when it holds none (`app/media_check.py`).
 - **Reverse proxy.** In production Caddy serves the built files, proxies
-  `/api/*` to the API, terminates TLS and sets the security headers
-  (`deploy/Caddyfile`, a template rendered from settings). The backend
+  `/api/*` to the API, terminates TLS, sets the security headers, and
+  sets how long a browser keeps each file: a year for the content-hashed
+  files under `/assets/`, `no-cache` for every other file outside `/api`, so
+  a deploy reaches every browser at once (`deploy/Caddyfile`, a template
+  rendered from settings; [deployment-windows.md](deployment-windows.md#7-caddy)
+  explains each rule). The backend
   serves no static files.
 - **Scripts.** `scripts/` holds every operation as a cmd script for Windows
   and a bash twin for Linux with the same name, modes, wording and exit

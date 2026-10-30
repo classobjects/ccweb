@@ -356,8 +356,8 @@ notepad .env
 | `FIRST_ADMIN_PASSWORD` | A password of your own, 12 characters or more, for the administrator `app.seed` makes on a **trial installation** (step 8). `app.create_admin`, which makes a new installation's first manager, takes it too when set, and otherwise asks. Restoring this collection runs neither, so it may stay empty there. |
 | `FIRST_ADMIN_EMAIL` | The trial administrator's sign-in; `admin@example.com` will do. |
 | `DATABASE_URL` | Leave it: it names the `ccwebdb` database and the `devpassword` of step 5. Change it only if step 5 used another password. |
-| `SALES_TAX_RATE`, `SALES_TAX_INCLUDES_SHIPPING` | Your sales tax on purchases, as a fraction (`0.0635` is 6.35%), and whether shipping is taxed (`true` or `false`). Unset, the rate is `0`: no tax. Each new item takes them when it is entered. |
-| `DEFAULT_ITEM_KIND` | The kind a new item on a purchase starts as: `coin` unless set; `currency` if you mostly buy notes. Any item can still be given another kind. |
+| `SALES_TAX_RATE`, `SALES_TAX_INCLUDES_SHIPPING` | Your sales tax on purchases as a fraction (`0.0635` is 6.35%), and `true` or `false` for whether shipping is taxed; unset, no tax ([settings.md](settings.md#the-shop-and-purchases)). |
+| `DEFAULT_ITEM_KIND` | `currency` if you mostly buy notes; otherwise leave it ([settings.md](settings.md#the-shop-and-purchases)). |
 | `ACCESS_TOKEN_EXPIRE_MINUTES`, `REFRESH_TOKEN_EXPIRE_DAYS` | Leave them. |
 | Everything commented out (`# CCWEB_API_PORT=8000` and the rest) | Leave it: each line shows its setting's default, which is what a machine that leaves it out gets. Uncomment one only to change it -- another port, the cluster in another folder (`CCWEB_DB_CLUSTER_DIR`), the backup folder (`CCWEB_BACKUP_DIR`). Every script reads them. |
 
@@ -448,32 +448,24 @@ set "BACKUP=%USERPROFILE%\ccwebdb-backup"
    dir "%BACKUP%"
    ```
 
-2. **Make a new database for it and give it the schema.** The import never
+2. **Load the newest workbook into a new database.** The import never
    loads into the database `.env` names, so the collection goes into
-   `ccwebdb_restored` first:
+   `ccwebdb_restored` first. This names the newest workbook:
 
    ```console
    cd /d %USERPROFILE%\dev\ccweb\backend
    conda activate ccwebdb
-   set "PGPASSWORD=devpassword"
-   psql -h localhost -U ccwebdb -d postgres -c "CREATE DATABASE ccwebdb_restored OWNER ccwebdb ENCODING 'UTF8';"
-   set "DATABASE_URL=postgresql+psycopg://ccwebdb:devpassword@localhost:5432/ccwebdb_restored"
-   uv run alembic upgrade head
-   set "DATABASE_URL="
-   ```
-
-3. **Load the newest workbook into it.** The first line finds it; the
-   import checks every link in the workbook before writing anything, and
-   refuses the whole workbook if one points at nothing:
-
-   ```console
-   cd /d %USERPROFILE%\dev\ccweb\backend
    for /f "delims=" %F in ('dir /b /od "%BACKUP%\ccwebdb_*.xlsx"') do @set "WORKBOOK=%BACKUP%\%F"
    echo %WORKBOOK%
-   uv run python -m app.workbook_backup import "%WORKBOOK%" --to postgresql+psycopg://ccwebdb:devpassword@localhost:5432/ccwebdb_restored
    ```
 
-4. **Put it in place as `ccwebdb`**, the name `.env` and the scripts use.
+   Then, in this same window, restore it as [system-administration.md](system-administration.md#the-workbook-backup)
+   (*The workbook backup*, *Restoring from it*) does: the password it asks
+   for is `devpassword` (step 5), and `"%WORKBOOK%"` goes in place of
+   `FILE.xlsx`. Leave out its last line, `compare`: it compares with the
+   live database, which here is still the empty `ccwebdb`.
+
+3. **Put it in place as `ccwebdb`**, the name `.env` and the scripts use.
    This drops the empty `ccwebdb` made in step 5 and renames the restored
    one -- but only when `ccwebdb` holds no tables, so it never drops a
    database with anything in it:
@@ -488,7 +480,7 @@ set "BACKUP=%USERPROFILE%\ccwebdb-backup"
    already holds tables, something was loaded into it already: look before
    going on.
 
-5. **Copy the photographs** into the folder the application keeps them in
+4. **Copy the photographs** into the folder the application keeps them in
    (`media` in the repository, unless `MEDIA_ROOT` in `.env` names
    another), then check every one against its record:
 
@@ -505,7 +497,7 @@ set "BACKUP=%USERPROFILE%\ccwebdb-backup"
    copied. The check names any photograph missing or not matching its
    record.
 
-6. **Stop the hand-started server** (step 5) and start everything the usual
+5. **Stop the hand-started server** (step 5) and start everything the usual
    way (*Running the application*, below):
 
    ```console

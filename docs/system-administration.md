@@ -237,8 +237,10 @@ before `series_classify`: note class is evidence for series. Before running
 any pass with `--commit` on the live database, take a verified backup and
 read the dry-run counts.
 
-The other command-line modules are not passes: `app.seeding` and `app.seed`
-(reference data and a new database's first manager), `app.backup`,
+The other command-line modules are not passes: `app.seeding` (the shipped
+reference data), `app.create_admin` (a new installation's first manager),
+`app.seed` (a trial installation's administrator and demo items; it
+refuses a database that already holds a collection), `app.backup`,
 `app.workbook_backup`, `app.media_backup` and `app.backup_run` (*Backing up
 and restoring*), and `app.reports` (*Reports*). None of them takes
 `--commit`; `app.media_backup prune` only lists unless given `--delete`.
@@ -1309,10 +1311,20 @@ The same registry, for a report wanted from a script or before the console is
 open, from `backend\` with the `ccwebdb` conda environment active:
 
 ```console
-cd backend
+cd /d %USERPROFILE%\dev\ccweb\backend
 python -m app.reports list
-python -m app.reports run pr_outstanding --param overdue_days=30 --workbook C:\Users\you\Downloads\outstanding.xlsx
+python -m app.reports run pr_outstanding --param overdue_days=30 --workbook OUT.xlsx
 ```
+
+On Linux:
+
+```console
+cd ~/dev/ccweb/backend
+python -m app.reports list
+python -m app.reports run pr_outstanding --param overdue_days=30 --workbook OUT.xlsx
+```
+
+with the workbook's path in place of `OUT.xlsx`.
 
 `list` prints every registered report's id, group and title. `run <id>`
 prints the report as a plain-text table -- title, parameters, header, rows,
@@ -1966,6 +1978,22 @@ python -m alembic upgrade head
 set "DATABASE_URL="
 python -m app.workbook_backup import FILE.xlsx --to postgresql+psycopg://ccwebdb:%PGPASSWORD%@localhost:5432/ccwebdb_restored
 python -m app.workbook_backup compare postgresql+psycopg://ccwebdb:%PGPASSWORD%@localhost:5432/ccwebdb_restored
+```
+
+On Linux, the password the same way, on its own:
+
+```console
+read -rs PGPASSWORD && export PGPASSWORD
+```
+
+Then:
+
+```console
+cd ~/dev/ccweb/backend
+PGDATABASE=postgres ../scripts/ccweb_psql.sh -c "create database ccwebdb_restored"
+DATABASE_URL="postgresql+psycopg://ccwebdb:$PGPASSWORD@localhost:5432/ccwebdb_restored" python -m alembic upgrade head
+python -m app.workbook_backup import FILE.xlsx --to "postgresql+psycopg://ccwebdb:$PGPASSWORD@localhost:5432/ccwebdb_restored"
+python -m app.workbook_backup compare "postgresql+psycopg://ccwebdb:$PGPASSWORD@localhost:5432/ccwebdb_restored"
 ```
 
 The import refuses a database at a different migration revision than the
