@@ -66,11 +66,16 @@ async function openNoteTypes(user) {
   await screen.findByText('United States Note')
 }
 
+// A row's actions are listed from the ⋮ beside its label.
+async function actions(user, label) {
+  await user.click(screen.getByRole('button', { name: `Actions for ${label}` }))
+}
+
 // By the label cell: a message in the row may repeat the label.
 function row(label) {
   return screen
     .getAllByRole('row')
-    .find((r) => r.cells[0]?.textContent.startsWith(label))
+    .find((r) => r.cells[0]?.textContent.replace('⋮', '').startsWith(label))
 }
 
 describe('Vocabularies', () => {
@@ -275,6 +280,7 @@ describe('Vocabularies', () => {
     })
     await openNoteTypes(user)
 
+    await actions(user, 'United States Note')
     await user.click(screen.getByRole('button', { name: 'Rename United States Note' }))
     const input = screen.getByLabelText('New name for United States Note')
     await user.clear(input)
@@ -326,9 +332,39 @@ describe('Vocabularies', () => {
     expect(screen.queryByLabelText('Position of United States Note')).toBeNull()
   })
 
+  it("lists a value's actions from the ⋮ beside it", async () => {
+    const user = userEvent.setup()
+    await openNoteTypes(user)
+    const toggle = screen.getByRole('button', {
+      name: 'Actions for United States Note',
+    })
+    expect(
+      screen.queryByRole('button', { name: 'Rename United States Note' }),
+    ).toBeNull()
+
+    await user.click(toggle)
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    expect(
+      screen.getByRole('button', { name: 'Rename United States Note' }),
+    ).toHaveFocus()
+
+    await user.keyboard('{Escape}')
+    expect(
+      screen.queryByRole('button', { name: 'Rename United States Note' }),
+    ).toBeNull()
+    expect(toggle).toHaveFocus()
+
+    await user.click(toggle)
+    await user.click(screen.getByLabelText('Find'))
+    expect(
+      screen.queryByRole('button', { name: 'Rename United States Note' }),
+    ).toBeNull()
+  })
+
   it('cancels a rename without saving', async () => {
     const user = userEvent.setup()
     await openNoteTypes(user)
+    await actions(user, 'United States Note')
     await user.click(screen.getByRole('button', { name: 'Rename United States Note' }))
     await user.type(screen.getByLabelText('New name for United States Note'), 'x')
     await user.click(screen.getByRole('button', { name: 'Cancel' }))
@@ -344,6 +380,7 @@ describe('Vocabularies', () => {
     }))
     await openNoteTypes(user)
 
+    await actions(user, 'United States Note')
     await user.click(screen.getByRole('button', { name: 'Retire United States Note' }))
     expect(api.renameReferenceValue).toHaveBeenCalledWith('note_type', 'us_note', {
       label: 'United States Note',
@@ -351,17 +388,20 @@ describe('Vocabularies', () => {
     })
     expect(await screen.findByText('United States Note (retired)')).toBeVisible()
 
+    await actions(user, 'Old Type')
     await user.click(screen.getByRole('button', { name: 'Restore Old Type' }))
     expect(api.renameReferenceValue).toHaveBeenCalledWith('note_type', 'old_type', {
       label: 'Old Type',
       is_active: true,
     })
+    await actions(user, 'Old Type')
     expect(await screen.findByRole('button', { name: 'Retire Old Type' })).toBeVisible()
   })
 
   it('says why a value the application looks up is not retired', async () => {
     const user = userEvent.setup()
     await openNoteTypes(user)
+    await actions(user, 'Federal Reserve Note')
     const retire = screen.getByRole('button', { name: 'Retire Federal Reserve Note' })
     // Live, not greyed out: pressing it says why nothing happens.
     expect(retire).toBeEnabled()
@@ -374,6 +414,7 @@ describe('Vocabularies', () => {
           'by its code. It can still be renamed.',
       ),
     ).toBeVisible()
+    await actions(user, 'Federal Reserve Note')
     expect(
       screen.getByRole('button', { name: 'Rename Federal Reserve Note' }),
     ).toBeEnabled()
@@ -383,6 +424,7 @@ describe('Vocabularies', () => {
     const user = userEvent.setup()
     api.renameReferenceValue.mockRejectedValue(new Error('A label needs some text.'))
     await openNoteTypes(user)
+    await actions(user, 'United States Note')
     await user.click(screen.getByRole('button', { name: 'Retire United States Note' }))
     expect(
       await within(row('United States Note')).findByText('A label needs some text.'),
@@ -403,6 +445,7 @@ describe('Vocabularies', () => {
     }))
     await openNoteTypes(user)
 
+    await actions(user, 'National Bank Note')
     await user.click(
       screen.getByRole('button', {
         name: 'Merge National Bank Note into another value',
@@ -467,6 +510,7 @@ describe('Vocabularies', () => {
       names_not_kept: lost,
     }))
     await openNoteTypes(user)
+    await actions(user, 'National Bank Note')
     await user.click(
       screen.getByRole('button', {
         name: 'Merge National Bank Note into another value',
@@ -501,6 +545,7 @@ describe('Vocabularies', () => {
       new Error('National Bank Note is also used by series.note_type_id (1)'),
     )
     await openNoteTypes(user)
+    await actions(user, 'National Bank Note')
     await user.click(
       screen.getByRole('button', {
         name: 'Merge National Bank Note into another value',
@@ -518,6 +563,7 @@ describe('Vocabularies', () => {
   it('says why a value the application looks up is not merged away', async () => {
     const user = userEvent.setup()
     await openNoteTypes(user)
+    await actions(user, 'Federal Reserve Note')
     const merge = screen.getByRole('button', {
       name: 'Merge Federal Reserve Note into another value',
     })
@@ -549,6 +595,7 @@ describe('Vocabularies', () => {
     }))
 
     await openNoteTypes(user)
+    await actions(user, 'National Bank Note')
     await user.click(
       screen.getByRole('button', {
         name: 'Merge National Bank Note into another value',
@@ -592,6 +639,7 @@ describe('Vocabularies', () => {
     }))
 
     await openNoteTypes(user)
+    await actions(user, 'National Bank Note')
     await user.click(
       screen.getByRole('button', {
         name: 'Merge National Bank Note into another value',
@@ -627,6 +675,7 @@ describe('Vocabularies', () => {
     }))
 
     await openNoteTypes(user)
+    await actions(user, 'National Bank Note')
     await user.click(
       screen.getByRole('button', {
         name: 'Merge National Bank Note into another value',

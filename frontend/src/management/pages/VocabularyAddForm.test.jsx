@@ -124,6 +124,11 @@ beforeEach(() => {
   })
 })
 
+// A row's actions are listed from the ⋮ beside its label.
+async function actions(user, label) {
+  await user.click(screen.getByRole('button', { name: `Actions for ${label}` }))
+}
+
 async function open(user, table) {
   renderWithProviders(<Vocabularies />, { auth: adminAuth(), reference })
   await screen.findByText('Morgan Dollar')
@@ -256,6 +261,7 @@ describe('Adding a value to a vocabulary', () => {
     ).toBeInTheDocument()
 
     // A button is explained under the pointer: clicking it would press it.
+    await actions(user, 'Nickel')
     await user.hover(screen.getByRole('button', { name: 'Rename Nickel' }))
     expect(screen.getByText(/Changes the label only/)).toBeInTheDocument()
     await user.hover(screen.getByRole('button', { name: 'Add a value...' }))
@@ -302,6 +308,7 @@ describe('Adding a value to a vocabulary', () => {
     await open(user, 'denomination')
     await screen.findByText('Nickel')
 
+    await actions(user, 'Nickel')
     await user.click(screen.getByRole('button', { name: 'Edit details of Nickel' }))
     // Shown as it is held.
     expect(screen.getByLabelText('Face value')).toHaveValue('0.0500')
@@ -345,6 +352,7 @@ describe('Adding a value to a vocabulary', () => {
     )
     await open(user, 'denomination')
     await screen.findByText('Nickel')
+    await actions(user, 'Nickel')
     await user.click(screen.getByRole('button', { name: 'Edit details of Nickel' }))
 
     await user.clear(screen.getByLabelText('Face value'))
@@ -361,6 +369,7 @@ describe('Adding a value to a vocabulary', () => {
   it('offers no details where a vocabulary records none', async () => {
     const user = userEvent.setup()
     await open(user, 'series')
+    await actions(user, 'Morgan Dollar')
     expect(screen.queryByRole('button', { name: /Edit details of/ })).toBeNull()
   })
 
