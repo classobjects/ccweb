@@ -497,7 +497,8 @@ function CatalogTable({ config }) {
           </p>
         )
       ) : (
-        <table className="table">
+        // On a phone each row stacks into a card, a line per labelled cell.
+        <table className="table stacks">
           <thead>
             <tr>
               {config.columns.map((column) => (
@@ -515,7 +516,7 @@ function CatalogTable({ config }) {
               return (
                 <tr key={row.id}>
                   {config.columns.map((column) => (
-                    <td key={column.label}>
+                    <td key={column.label} data-label={column.label}>
                       {isEditing && column.field ? (
                         <Field
                           field={column.field}
@@ -534,21 +535,27 @@ function CatalogTable({ config }) {
                           onEnter={() => save(row)}
                           onEscape={cancelEdit}
                         />
-                      ) : column.opensEdit && editable && deleting !== row.id ? (
-                        <button
-                          type="button"
-                          className="link"
-                          aria-label={`Edit ${config.name(row)}`}
-                          onClick={() => startEdit(row)}
-                        >
-                          {column.value(row)}
-                        </button>
                       ) : (
-                        column.value(row)
+                        // A long link or address scrolls in its cell rather
+                        // than widening the table.
+                        <div className="cell-scroll">
+                          {column.opensEdit && editable && deleting !== row.id ? (
+                            <button
+                              type="button"
+                              className="link"
+                              aria-label={`Edit ${config.name(row)}`}
+                              onClick={() => startEdit(row)}
+                            >
+                              {column.value(row)}
+                            </button>
+                          ) : (
+                            column.value(row)
+                          )}
+                        </div>
                       )}
                     </td>
                   ))}
-                  <td>{uses}</td>
+                  <td data-label={config.usesLabel}>{uses}</td>
                   <td className="row">
                     {isEditing ? (
                       <>
