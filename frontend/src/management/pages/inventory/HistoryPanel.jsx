@@ -53,7 +53,8 @@ export default function HistoryPanel({ itemId, version, saves = 0 }) {
         <p className="muted">Nothing logged yet.</p>
       )}
       {rows.length > 0 && (
-        <table>
+        // On a phone each row stacks into a card, a line per labelled cell.
+        <table className="stacks">
           <thead>
             <tr>
               <th>When</th>
@@ -67,15 +68,25 @@ export default function HistoryPanel({ itemId, version, saves = 0 }) {
           <tbody>
             {rows.map((e, i) => (
               <tr key={`${e.at}-${e.kind}-${e.field}-${i}`}>
-                <td>{dateTime(e.at)}</td>
-                <td>{e.by ?? 'unknown'}</td>
-                <td>{subject(e)}</td>
-                <td>{shown(e.old_value)}</td>
-                <td>{shown(e.new_value)}</td>
-                <td>
-                  {[e.note, e.arrived_on && `arrived ${e.arrived_on}`]
-                    .filter(Boolean)
-                    .join('; ')}
+                <td data-label="When">{dateTime(e.at)}</td>
+                <td data-label="Who">
+                  <div className="cell-scroll">{e.by ?? 'unknown'}</div>
+                </td>
+                <td data-label="What">
+                  <div className="cell-scroll">{subject(e)}</div>
+                </td>
+                <td data-label="From">
+                  <div className="cell-scroll">{shown(e.old_value)}</div>
+                </td>
+                <td data-label="To">
+                  <div className="cell-scroll">{shown(e.new_value)}</div>
+                </td>
+                <td data-label="Note">
+                  <div className="cell-scroll">
+                    {[e.note, e.arrived_on && `arrived ${e.arrived_on}`]
+                      .filter(Boolean)
+                      .join('; ')}
+                  </div>
                 </td>
               </tr>
             ))}

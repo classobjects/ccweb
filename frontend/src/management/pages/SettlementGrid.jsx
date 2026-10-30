@@ -334,7 +334,8 @@ export default function SettlementGrid({ auction, isAuctionHouse, onSettled }) {
           ))}
         </ul>
       )}
-      <table className="table">
+      {/* On a phone each row stacks into a card, a line per labelled cell. */}
+      <table className="table stacks">
         <thead>
           <tr>
             <th>Lot</th>
@@ -352,10 +353,14 @@ export default function SettlementGrid({ auction, isAuctionHouse, onSettled }) {
             const problem = problemsByLot[lot.lot_number]
             return (
               <tr key={lot.id} className={problem ? 'error' : ''}>
-                <td className="mono">{lot.lot_number}</td>
-                <td>{subjectOf(lot.listing)}</td>
-                <td>{lot.reserve ?? UNKNOWN}</td>
-                <td>
+                <td className="mono" data-label="Lot">
+                  {lot.lot_number}
+                </td>
+                <td data-label="Item">
+                  <div className="cell-scroll">{subjectOf(lot.listing)}</div>
+                </td>
+                <td data-label="Reserve">{lot.reserve ?? UNKNOWN}</td>
+                <td data-label="Result">
                   <select
                     aria-label={`Result for lot ${lot.lot_number}`}
                     value={line.result}
@@ -369,7 +374,7 @@ export default function SettlementGrid({ auction, isAuctionHouse, onSettled }) {
                     ))}
                   </select>
                 </td>
-                <td>
+                <td data-label="Hammer price">
                   <input
                     inputMode="decimal"
                     aria-label={`Hammer price for lot ${lot.lot_number}`}
@@ -378,7 +383,7 @@ export default function SettlementGrid({ auction, isAuctionHouse, onSettled }) {
                     onChange={(e) => setLine(lot, 'hammer_price', e.target.value)}
                   />
                 </td>
-                <td>
+                <td data-label="Buyer">
                   <input
                     aria-label={`Buyer for lot ${lot.lot_number}`}
                     value={line.buyer_username}
@@ -387,7 +392,9 @@ export default function SettlementGrid({ auction, isAuctionHouse, onSettled }) {
                     onChange={(e) => setLine(lot, 'buyer_username', e.target.value)}
                   />
                 </td>
-                <td className="error">{problem ? problem.join('; ') : ''}</td>
+                <td className="error" data-label="Problem">
+                  {problem ? problem.join('; ') : ''}
+                </td>
               </tr>
             )
           })}

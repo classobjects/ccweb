@@ -222,7 +222,8 @@ export default function Orders() {
       {shown.length === 0 && <p className="muted">No orders to show.</p>}
 
       {shown.length > 0 && (
-        <table className="table">
+        // On a phone each row stacks into a card, a line per labelled cell.
+        <table className="table stacks">
           <thead>
             <tr>
               <th>Order</th>
@@ -237,33 +238,39 @@ export default function Orders() {
           <tbody>
             {shown.map((order) => (
               <tr key={order.id}>
-                <td className="mono">#{order.id}</td>
-                <td>{date(order.placed_at)}</td>
-                <td>
-                  {order.customer_name}
-                  {order.customer_email && (
-                    <div className="muted">{order.customer_email}</div>
-                  )}
-                  {order.placed_by_email &&
-                    order.placed_by_email !== order.customer_email && (
-                      <div className="muted">entered by {order.placed_by_email}</div>
+                <td data-label="Order" className="mono">
+                  #{order.id}
+                </td>
+                <td data-label="Placed">{date(order.placed_at)}</td>
+                <td data-label="Customer">
+                  <div className="cell-scroll">
+                    {order.customer_name}
+                    {order.customer_email && (
+                      <div className="muted">{order.customer_email}</div>
                     )}
+                    {order.placed_by_email &&
+                      order.placed_by_email !== order.customer_email && (
+                        <div className="muted">entered by {order.placed_by_email}</div>
+                      )}
+                  </div>
                 </td>
-                <td>
-                  {order.items.map((line) => (
-                    <div key={line.id}>
-                      {line.title} x {line.quantity}{' '}
-                      <span className="muted">@ {money(line.unit_price)}</span>
-                    </div>
-                  ))}
+                <td data-label="Items">
+                  <div className="cell-scroll">
+                    {order.items.map((line) => (
+                      <div key={line.id}>
+                        {line.title} x {line.quantity}{' '}
+                        <span className="muted">@ {money(line.unit_price)}</span>
+                      </div>
+                    ))}
+                  </div>
                 </td>
-                <td>
+                <td data-label="Total">
                   {money(order.total_amount)}
                   {order.payment_adjustment_due && (
                     <span className="badge">payment adjustment due</span>
                   )}
                 </td>
-                <td>
+                <td data-label="Status">
                   <select
                     aria-label={`Status of order ${order.id}`}
                     value={order.status}

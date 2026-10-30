@@ -422,7 +422,8 @@ export default function OfferDialog({
         </button>
         {filled && <output className="notice">{filled}</output>}
       </div>
-      <table>
+      {/* On a phone each row stacks into a card, a line per labelled cell. */}
+      <table className="stacks">
         <thead>
           <tr>
             <th>{lot ? 'Lot' : 'Item'}</th>
@@ -446,8 +447,10 @@ export default function OfferDialog({
             const margin = netMarginPercent(price, subject.cost, chosen)
             return (
               <tr key={subject.key}>
-                <td className="mono">{subject.label}</td>
-                <td data-help="offer_price">
+                <td className="mono" data-label={lot ? 'Lot' : 'Item'}>
+                  <div className="cell-scroll">{subject.label}</div>
+                </td>
+                <td data-help="offer_price" data-label="Price">
                   {/* Text, not number: money crosses the API as a decimal
                       string and a number input hands back a float. */}
                   <input
@@ -457,14 +460,14 @@ export default function OfferDialog({
                     onChange={set(subject, 'price')}
                   />
                 </td>
-                <td data-help="offer_title">
+                <td data-help="offer_title" data-label="Title">
                   <input
                     aria-label={`Title for ${subject.label}`}
                     value={draft.title}
                     onChange={set(subject, 'title')}
                   />
                 </td>
-                <td data-help="offer_description">
+                <td data-help="offer_description" data-label="Description">
                   <textarea
                     rows={2}
                     aria-label={`Description for ${subject.label}`}
@@ -472,7 +475,7 @@ export default function OfferDialog({
                     onChange={set(subject, 'description')}
                   />
                 </td>
-                <td data-help="offer_listing_number">
+                <td data-help="offer_listing_number" data-label="Listing number">
                   <input
                     aria-label={`Listing number for ${subject.label}`}
                     value={draft.external_id}
@@ -480,14 +483,14 @@ export default function OfferDialog({
                     placeholder="the platform's own number"
                   />
                 </td>
-                <td>{subject.cost ?? UNKNOWN}</td>
-                <td>{subject.value ?? UNKNOWN}</td>
+                <td data-label="Cost">{subject.cost ?? UNKNOWN}</td>
+                <td data-label="Value">{subject.value ?? UNKNOWN}</td>
                 {/* Blank rather than zero when nobody has recorded what this
                     platform charges: "free" and "not looked up" are
                     different facts. */}
-                <td>{fees === '' ? UNKNOWN : fees}</td>
-                <td>{net === '' ? UNKNOWN : net}</td>
-                <td>{margin === '' ? UNKNOWN : `${margin}%`}</td>
+                <td data-label="Fees">{fees === '' ? UNKNOWN : fees}</td>
+                <td data-label="Net">{net === '' ? UNKNOWN : net}</td>
+                <td data-label="Margin">{margin === '' ? UNKNOWN : `${margin}%`}</td>
               </tr>
             )
           })}

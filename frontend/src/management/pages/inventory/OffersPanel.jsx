@@ -152,7 +152,8 @@ export default function OffersPanel({ item, onChanged }) {
       {error && <p className="error">{error}</p>}
       {listings.length === 0 && <p className="muted">Not offered anywhere yet.</p>}
       {listings.length > 0 && (
-        <table>
+        // On a phone each row stacks into a card, a line per labelled cell.
+        <table className="stacks">
           <thead>
             <tr>
               <th>Platform</th>
@@ -169,28 +170,34 @@ export default function OffersPanel({ item, onChanged }) {
           <tbody>
             {listings.map((l) => (
               <tr key={l.id} className={l.status === 'active' ? '' : 'muted'}>
-                <td>{l.venue_name}</td>
+                <td data-label="Platform">
+                  <div className="cell-scroll">{l.venue_name}</div>
+                </td>
                 {/* What this offer is *of*. A lot listing offers a group, not
                     this one coin, and without this the group's
                     price reads as the coin's -- "1000.00" against a coin
                     the owner paid 500 for. `subjectOf` names a lot by its
                     title and size, the same way the Listings page, the end
                     confirmation and the record-sale dialog all name one. */}
-                <td>{subjectOf(l)}</td>
-                <td>
+                <td data-label="Item or lot">
+                  <div className="cell-scroll">{subjectOf(l)}</div>
+                </td>
+                <td data-label="Price">
                   {l.price} {l.currency}
                 </td>
-                <td>{labelFor(FORMATS, l.format)}</td>
-                <td>{labelFor(STATUSES, l.status)}</td>
-                <td>{date(l.listed_at)}</td>
-                <td>{l.ended_at ? date(l.ended_at) : UNKNOWN}</td>
-                <td>
+                <td data-label="Format">{labelFor(FORMATS, l.format)}</td>
+                <td data-label="Status">{labelFor(STATUSES, l.status)}</td>
+                <td data-label="Listed">{date(l.listed_at)}</td>
+                <td data-label="Ended">{l.ended_at ? date(l.ended_at) : UNKNOWN}</td>
+                <td data-label="Link">
                   {/* A stored address of another scheme -- `javascript:` --
                       would run in the console when clicked. */}
                   {isWebAddress(l.external_url) && (
-                    <a href={l.external_url} target="_blank" rel="noreferrer">
-                      {l.external_id ?? 'Listing'}
-                    </a>
+                    <div className="cell-scroll">
+                      <a href={l.external_url} target="_blank" rel="noreferrer">
+                        {l.external_id ?? 'Listing'}
+                      </a>
+                    </div>
                   )}
                 </td>
                 <td>

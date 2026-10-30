@@ -404,7 +404,8 @@ export default function Platforms() {
         Where items are sold. Fees here are defaults for estimates.
       </p>
       <button onClick={() => setOpen('new')}>Add platform</button>
-      <table>
+      {/* On a phone each row stacks into a card, a line per labelled cell. */}
+      <table className="stacks">
         <thead>
           <tr>
             <th>Name</th>
@@ -419,15 +420,21 @@ export default function Platforms() {
         <tbody>
           {venues.map((v) => (
             <tr key={v.code} className={v.is_active ? '' : 'muted'}>
-              <td>
-                {v.name}
-                {!v.is_active && ' (retired)'}
+              <td data-label="Name">
+                <div className="cell-scroll">
+                  {v.name}
+                  {!v.is_active && ' (retired)'}
+                </div>
               </td>
-              <td>{kindLabel(v.kind)}</td>
-              <td>{v.vendor_name ?? ''}</td>
-              <td>{v.account_handle ?? ''}</td>
-              <td>{feeSummary(v)}</td>
-              <td>{v.terms_as_of ?? ''}</td>
+              <td data-label="Kind">{kindLabel(v.kind)}</td>
+              <td data-label="Purchase source">
+                <div className="cell-scroll">{v.vendor_name ?? ''}</div>
+              </td>
+              <td data-label="Account">
+                <div className="cell-scroll">{v.account_handle ?? ''}</div>
+              </td>
+              <td data-label="Default fees">{feeSummary(v)}</td>
+              <td data-label="Fees as of">{v.terms_as_of ?? ''}</td>
               <td>
                 <button className="link" onClick={() => setOpen(v)}>
                   Edit
