@@ -199,8 +199,13 @@ echo.
 if not defined DOWN (
     echo   Everything is up.
     echo.
-    echo     shop     http://%CCWEB_FRONTEND_HOST%:%FPORT%/
-    echo     console  http://%CCWEB_FRONTEND_HOST%:%FPORT%/management
+    if defined FBUILD (
+        echo     shop     https://%CCWEB_SITE_DOMAIN%/
+        echo     console  https://%CCWEB_SITE_DOMAIN%/management
+    ) else (
+        echo     shop     http://%CCWEB_FRONTEND_HOST%:%FPORT%/
+        echo     console  http://%CCWEB_FRONTEND_HOST%:%FPORT%/management
+    )
     echo     API docs http://%CCWEB_API_HOST%:%BPORT%/docs
     echo ============================================
     exit /b 0
