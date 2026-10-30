@@ -15,7 +15,7 @@ out the window. The address is the caller's as uvicorn sees it, which with
 `--proxy-headers` behind Caddy is the browser's, not Caddy's.
 
 The memory is bounded. A key is at most `MAX_KEY_LENGTH` characters, every
-`SWEEP_EVERY` records the keys whose attempts have all aged out are dropped,
+`SWEEP_EVERY` attempts counted the keys whose attempts have all aged out are dropped,
 and a table that still holds more than `max_keys` loses the keys whose last
 attempt is oldest -- so a stranger naming a new account on every request
 cannot grow it without limit.
@@ -36,7 +36,7 @@ from fastapi import HTTPException, status
 #: so a longer one names no account and is cut to this length.
 MAX_KEY_LENGTH = 254
 
-#: How many records pass between sweeps of the keys whose window is over.
+#: How many counted attempts pass between sweeps of the keys whose window is over.
 SWEEP_EVERY = 1000
 
 
@@ -87,20 +87,39 @@ class Limit:
             for key, _ in stalest:
                 del self._seen[key]
 
-    def refuse_if_spent(self, *keys: str) -> None:
-        """A 429 when any key has used its attempts; otherwise nothing.
+    def take(self, *keys: str) -> float:
+        """Count one attempt against each key, or a 429 when any has none left.
 
-        Asked before the attempt is looked at, so a caller over the limit
+        Taken before the attempt is looked at, so a caller over the limit
         learns nothing from it -- not even whether the password was right.
+        The check and the count are one step under the lock: were they two,
+        requests arriving together would all pass the check before any was
+        counted, and a burst of guesses in parallel would never meet the
+        limit. A refused attempt counts against nothing.
+
+        Returns the attempt's stamp, which `give_back` takes when the
+        attempt turns out not to be one the limit counts.
         """
         now = time.monotonic()
         with self._lock:
-            recent = [self._recent(_key(key), now) for key in keys]
+            counted = [_key(key) for key in keys]
+            recent = [self._recent(key, now) for key in counted]
+            # The attempt that must age out before one more fits is the
+            # `attempts`-th newest: the oldest can leave and still leave
+            # the key full.
             waits = [
-                seen[0] + self.window_seconds - now
+                seen[-self.attempts] + self.window_seconds - now
                 for seen in recent
                 if len(seen) >= self.attempts
             ]
+            if not waits:
+                for key, seen in zip(counted, recent, strict=True):
+                    seen.append(now)
+                    self._seen[key] = seen
+                self._records += 1
+                if self._records >= SWEEP_EVERY or len(self._seen) > self.max_keys:
+                    self._records = 0
+                    self._sweep(now)
         if waits:
             retry_after = max(1, math.ceil(max(waits)))
             raise HTTPException(
@@ -108,20 +127,21 @@ class Limit:
                 detail="Too many attempts. Try again later.",
                 headers={"Retry-After": str(retry_after)},
             )
+        return now
 
-    def record(self, *keys: str) -> None:
-        """Count one attempt against each key."""
-        now = time.monotonic()
+    def give_back(self, stamp: float, *keys: str) -> None:
+        """Uncount the attempt `take` stamped `stamp` from each key.
+
+        A key that no longer holds it -- forgotten, swept or aged out since
+        -- is left as it is.
+        """
         with self._lock:
             for key in keys:
-                counted = _key(key)
-                seen = self._recent(counted, now)
-                seen.append(now)
-                self._seen[counted] = seen
-            self._records += 1
-            if self._records >= SWEEP_EVERY or len(self._seen) > self.max_keys:
-                self._records = 0
-                self._sweep(now)
+                seen = self._seen.get(_key(key))
+                if seen is not None and stamp in seen:
+                    seen.remove(stamp)
+                    if not seen:
+                        del self._seen[_key(key)]
 
     def forget(self, *keys: str) -> None:
         """Drop what each key has used."""

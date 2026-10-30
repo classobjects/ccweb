@@ -19,8 +19,8 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy import func, select
+from sqlalchemy.orm import InstrumentedAttribute, Session
 
 from ..models import InventoryItem, SalesLot, SalesVenue
 
@@ -107,6 +107,21 @@ def item_by_id(db: Session, item_id: int) -> InventoryItem:
 def lot_by_id(db: Session, lot_id: int) -> SalesLot:
     """The sales lot a request body names. An id no lot wears is a 422."""
     return get_or_422(db, SalesLot, lot_id, f"Unknown lot_id: {lot_id}")
+
+
+def counts_by(db: Session, column: InstrumentedAttribute[Any]) -> dict[int, int]:
+    """How many rows of `column`'s table name each key, in one grouped query.
+
+    A list counts this way rather than row by row, so its queries do not
+    grow with its length. A key no row names is absent, not zero.
+    """
+    return dict(
+        db.execute(
+            select(column, func.count()).where(column.is_not(None)).group_by(column)
+        )
+        .tuples()
+        .all()
+    )
 
 
 def refuse_null_required(data: Mapping[str, Any], required: Iterable[str]) -> None:

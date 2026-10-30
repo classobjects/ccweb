@@ -663,6 +663,61 @@ def test_re_uploading_the_same_photograph_keeps_its_role_and_primacy(
     assert role.code == "obverse"
 
 
+def test_re_uploading_a_photograph_moved_meanwhile_is_a_conflict(
+    client: TestClient,
+    admin_headers: dict[str, str],
+    db: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A link moved off the item before it is promoted is a 409, not a 500.
+
+    The move is stood in for by `_still_on` finding the link elsewhere,
+    which is what it finds when another request moved it in between.
+    """
+    from app import image_links
+
+    from tests.conftest import build_item
+
+    item = build_item(db)
+    db.commit()
+    raw = make_jpeg(color=(31, 32, 33))
+    form = {"inventory_item_id": str(item.id), "is_primary": "true"}
+    first = client.post(
+        "/api/images",
+        files={"file": ("coin.jpg", raw, "image/jpeg")},
+        data=form,
+        headers=admin_headers,
+    )
+    assert first.status_code == 201, first.text
+
+    def moved(_db: Session, _link: ItemImage, _item_id: int | None) -> None:
+        """The link is on another item by the time it is read again."""
+        raise image_links.LinkRefused(image_links.CHANGED_MEANWHILE)
+
+    monkeypatch.setattr(image_links, "_still_on", moved)
+    again = client.post(
+        "/api/images",
+        files={"file": ("coin.jpg", raw, "image/jpeg")},
+        data=form,
+        headers=admin_headers,
+    )
+    assert again.status_code == 409, again.text
+    assert again.json()["detail"] == image_links.CHANGED_MEANWHILE
+
+
+def test_an_upload_runs_off_the_event_loop() -> None:
+    """The upload route blocks -- queries, locks, conversion, storage writes.
+
+    As a coroutine it would run them on the event loop and stall every other
+    request meanwhile; a plain function runs in FastAPI's threadpool.
+    """
+    import inspect
+
+    from app.routers.images import upload_image
+
+    assert not inspect.iscoroutinefunction(upload_image)
+
+
 def test_a_photograph_can_exist_before_anyone_knows_what_it_shows(
     client: TestClient, admin_headers: dict[str, str], db: Session
 ) -> None:

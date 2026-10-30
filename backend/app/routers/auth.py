@@ -65,9 +65,7 @@ def register(payload: UserCreate, request: Request, db: DbSession) -> User:
     # catalog the coming-soon page is there to keep shut.
     if not settings.shop_open:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=SHOP_CLOSED)
-    address = _caller_address(request)
-    throttle.REGISTRATIONS_BY_ADDRESS.refuse_if_spent(address)
-    throttle.REGISTRATIONS_BY_ADDRESS.record(address)
+    throttle.REGISTRATIONS_BY_ADDRESS.take(_caller_address(request))
     email = normalize_email(payload.email)
     if account_by_email(db, email) is not None:
         raise HTTPException(
@@ -101,13 +99,18 @@ def login(
     Failed attempts are limited per caller address and per account named
     (`app.throttle`); over either limit the answer is a 429, given before
     the password is checked.
+
+    Each attempt is counted as a failure before the password is checked,
+    and given back once it proves right: counted only after, every guess in
+    a parallel burst would pass the limit before the first was counted.
     """
+    by_address = throttle.SIGN_IN_FAILURES_BY_ADDRESS
+    by_account = throttle.SIGN_IN_FAILURES_BY_ACCOUNT
     address = _caller_address(request)
-    throttle.SIGN_IN_FAILURES_BY_ADDRESS.refuse_if_spent(address)
+    address_stamp = by_address.take(address)
     # No address is longer than this, so the text names no account; refused
     # before it is keyed or looked up, and counted against the caller.
     if len(form.username) > throttle.MAX_KEY_LENGTH:
-        throttle.SIGN_IN_FAILURES_BY_ADDRESS.record(address)
         raise _incorrect_credentials()
     # OAuth2PasswordRequestForm calls the field "username"; we use the email.
     # Text the validator refuses is looked up as typed (see
@@ -115,7 +118,13 @@ def login(
     # as the lookup matches, so a guesser cannot spread over spellings.
     email = normalize_email_if_valid(form.username)
     account_key = email.lower()
-    throttle.SIGN_IN_FAILURES_BY_ACCOUNT.refuse_if_spent(account_key)
+    try:
+        account_stamp = by_account.take(account_key)
+    except HTTPException:
+        # Refused before any password was tried, so not a failure to count
+        # against the address.
+        by_address.give_back(address_stamp, address)
+        raise
     user = account_by_email(db, email)
 
     # One verification whether or not the address has an account -- against
@@ -127,19 +136,22 @@ def login(
         UNKNOWN_ACCOUNT_HASH if user is None else user.hashed_password,
     )
     if user is None or not verified:
-        throttle.SIGN_IN_FAILURES_BY_ADDRESS.record(address)
-        throttle.SIGN_IN_FAILURES_BY_ACCOUNT.record(account_key)
+        # Both attempts stay counted: this is the failure they stand for.
         raise _incorrect_credentials()
+    # The right password is no failure. Only this attempt is given back: the
+    # address's earlier failures are left to age out of its window, or a
+    # guesser holding any one account could sign into it between guesses
+    # and never meet the limit.
+    by_address.give_back(address_stamp, address)
     if not user.is_active:
+        by_account.give_back(account_stamp, account_key)
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Account is disabled"
         )
 
-    # The account's failures only: the owner is not locked out by a guesser
-    # who failed against it. The address's count is left to age out of its
-    # window, or a guesser holding any one account could sign into it
-    # between guesses and never meet the limit.
-    throttle.SIGN_IN_FAILURES_BY_ACCOUNT.forget(account_key)
+    # The account's failures, all of them: the owner is not locked out by a
+    # guesser who failed against it.
+    by_account.forget(account_key)
 
     # Transparently upgrade the stored hash if argon2 parameters changed.
     if needs_rehash(user.hashed_password):

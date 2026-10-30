@@ -395,23 +395,17 @@ def list_catalog(
     # coins that may have several of each. `q` is the exception: it is an
     # `or_` that also matches `Listing.title`, the lot's own wording, so a
     # search still finds one.
-    base = select(Listing).outerjoin(
-        InventoryItem, Listing.inventory_item_id == InventoryItem.id
+    matching = (
+        select(Listing)
+        .outerjoin(InventoryItem, Listing.inventory_item_id == InventoryItem.id)
+        .where(*filters)
     )
 
-    total = (
-        db.scalar(
-            select(func.count())
-            .select_from(Listing)
-            .outerjoin(InventoryItem, Listing.inventory_item_id == InventoryItem.id)
-            .where(*filters)
-        )
-        or 0
-    )
+    # Counted from the very statement the page is read from, so the total
+    # cannot count rows by a join the page does not make.
+    total = db.scalar(select(func.count()).select_from(matching.subquery())) or 0
     rows = db.scalars(
-        _eager(
-            base.where(*filters).order_by(Listing.id.desc()).limit(limit).offset(offset)
-        )
+        _eager(matching.order_by(Listing.id.desc()).limit(limit).offset(offset))
     ).all()
 
     return CatalogPage(

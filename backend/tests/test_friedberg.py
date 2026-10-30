@@ -10,6 +10,7 @@ accepts it -- never a real catalog number, per `docs/reference-data.md`.
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from typing import Any
 
 import pytest
@@ -28,7 +29,7 @@ from app.models import (
 )
 from app.routers import friedberg as friedberg_router
 from fastapi.testclient import TestClient
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
 from tests.builders import build_bare_item, code_id, patch_current
@@ -1382,6 +1383,129 @@ def test_attaching_a_row_deleted_since_it_was_read_is_a_422_not_a_500(
     assert str(row_id) in resp.json()["detail"]
     db.expire_all()
     assert db.get_one(CurrencyDetail, item.id).friedberg_id is None
+
+
+def test_confirming_a_row_deleted_since_it_was_read_is_a_422_not_a_409(
+    db: Session,
+    client: TestClient,
+    admin_headers: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Confirming also stamps the row, and a deleted row refuses that write.
+
+    That refusal is a version-style one (an UPDATE matching no row), and it
+    is still the id in the body naming nothing, not the item moving.
+    """
+    item = _currency_item(db)
+    row_id = _add_friedberg(db, fr_number="9952").id
+    monkeypatch.setattr(
+        friedberg_router,
+        "_refuse_shade_mismatch",
+        lambda *_args: _delete_behind_the_session(db, row_id),
+    )
+
+    resp = client.post(
+        f"/api/inventory/{item.id}/friedberg",
+        json={"friedberg_id": row_id, "status": "confirmed"},
+        headers=admin_headers,
+    )
+
+    assert resp.status_code == 422, resp.text
+    assert str(row_id) in resp.json()["detail"]
+
+
+def _move_item_behind_the_session(
+    db: Session, item_id: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Move the item's version at the refresh, as another request's edit would.
+
+    The number's write then touches the item with a version it no longer has.
+    """
+    real_refresh = friedberg_router.refresh_items
+
+    def moved_meanwhile(session: Session, item_ids: Collection[int]) -> None:
+        """Another request's commit moves the version, then the refresh runs.
+
+        Without autoflush, or the statement would first flush this request's
+        own pending write of the item, which would then win the race.
+        """
+        with session.no_autoflush:
+            session.execute(
+                update(InventoryItem)
+                .where(InventoryItem.id == item_id)
+                .values(version=InventoryItem.version + 1)
+                .execution_options(synchronize_session=False)
+            )
+        real_refresh(session, item_ids)
+
+    monkeypatch.setattr(friedberg_router, "refresh_items", moved_meanwhile)
+
+
+def test_attaching_to_a_note_edited_meanwhile_is_a_409_naming_it(
+    db: Session,
+    client: TestClient,
+    admin_headers: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The item moved, not the catalog row: a conflict, not an unknown id."""
+    item = _currency_item(db)
+    row_id = _add_friedberg(db, fr_number="9953").id
+    _move_item_behind_the_session(db, item.id, monkeypatch)
+
+    resp = client.post(
+        f"/api/inventory/{item.id}/friedberg",
+        json={"friedberg_id": row_id, "status": "proposed"},
+        headers=admin_headers,
+    )
+
+    assert resp.status_code == 409, resp.text
+    assert resp.json()["detail"] == (
+        f"{item.item_code} was changed while saving. Reload and retry."
+    )
+    db.expire_all()
+    assert db.get_one(CurrencyDetail, item.id).friedberg_id is None
+
+
+def test_clearing_a_note_edited_meanwhile_is_a_409_not_a_500(
+    db: Session,
+    client: TestClient,
+    admin_headers: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Taking a number off moves the item's version too, and can lose a race."""
+    item = _currency_item(db)
+    row_id = _add_friedberg(db, fr_number="9954").id
+    attached = client.post(
+        f"/api/inventory/{item.id}/friedberg",
+        json={"friedberg_id": row_id, "status": "proposed"},
+        headers=admin_headers,
+    )
+    assert attached.status_code == 200, attached.text
+    _move_item_behind_the_session(db, item.id, monkeypatch)
+
+    resp = client.delete(f"/api/inventory/{item.id}/friedberg", headers=admin_headers)
+
+    assert resp.status_code == 409, resp.text
+    db.expire_all()
+    assert db.get_one(CurrencyDetail, item.id).friedberg_id == row_id
+
+
+def test_a_catalog_search_reads_wildcards_as_typed(
+    db: Session, client: TestClient, admin_headers: dict[str, str]
+) -> None:
+    """A `%` or `_` in the search is that character, not any text."""
+    percent = _add_friedberg(db, fr_number="9955", description="100% red seal")
+    _add_friedberg(db, fr_number="9956", description="1000 red seal")
+
+    def found(q: str) -> set[int]:
+        resp = client.get(
+            "/api/friedberg/catalog", params={"q": q}, headers=admin_headers
+        )
+        assert resp.status_code == 200, resp.text
+        return _ids(resp.json())
+
+    assert found("0% red") == {percent.id}
+    assert found("995_") == set()
 
 
 def test_correcting_a_row_deleted_since_it_was_read_is_a_404_not_a_500(

@@ -3438,10 +3438,14 @@ def update_item(
     if moves:
         _move_if_elsewhere(db, item, to_location, admin.id)
 
-    try:
-        # Inside the try: ending the offers and the refresh both flush, and a
-        # version conflict found at either is the same 409 as one found at
-        # commit.
+    # A version that moved inside this request's own read-to-commit window,
+    # after `item` was loaded here: the UPDATE carried `WHERE version = ...`,
+    # matched no rows, and overwrote nothing. Ending the offers and the
+    # refresh both flush, and a conflict found at either is the same 409 as
+    # one found at commit. The code is read now: after the rollback, reading
+    # it from the expired item would be another query.
+    code = item.item_code
+    with committing(db, f"{code} was changed while saving. Reload and retry."):
         if standing is not None:
             assert locked is not None
             _end_offers_holding(
@@ -3478,17 +3482,6 @@ def update_item(
             ),
             user_id=admin.id,
         )
-        db.commit()
-    except StaleDataError as exc:
-        # A narrower race than the check above: another commit landed inside
-        # this request's own read-to-commit window, after `item` was loaded
-        # here but before this commit. The UPDATE carried `WHERE version =
-        # ...`, matched no rows, and overwrote nothing.
-        db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"{item.item_code} was changed while saving. Reload and retry.",
-        ) from exc
 
     db.refresh(item)
     return item

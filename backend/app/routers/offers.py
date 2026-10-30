@@ -31,7 +31,6 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import Select, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
-from sqlalchemy.orm.exc import StaleDataError
 from sqlalchemy.orm.strategy_options import _AbstractLoad
 
 from .. import lot_writes, offering_writes, order_writes, sales_writes
@@ -877,7 +876,10 @@ def record_listing_sale(
     `test_sale_input_invalid_from_record_sale_is_a_422_not_a_409`
     (`tests/test_record_sale_api.py`) proves the dispatch.
     """
-    try:
+    # `committing` rolls back every other exception, `HTTPException` and
+    # `sales_writes.SaleRefused`/`SaleInputInvalid` included, and re-raises it
+    # unchanged: it decides no status but the stale 409.
+    with committing(db, _STALE):
         listing = get_or_404(db, Listing, listing_id, f"No listing {listing_id}")
         order = sales_writes.record_sale(
             db,
@@ -892,21 +894,4 @@ def record_listing_sale(
             recorded_by=user,
             equal_shares=body.equal_shares,
         )
-    except StaleDataError as stale:
-        db.rollback()
-        raise HTTPException(status.HTTP_409_CONFLICT, _STALE) from stale
-    except Exception:
-        # Every other exception this can raise, `HTTPException` and
-        # `sales_writes.SaleRefused`/`SaleInputInvalid` included: rolled back
-        # here, unconditionally, and re-raised unchanged -- this decides no
-        # status, so it creates no ordering hazard of its own. The `client`
-        # fixture in `tests/conftest.py` shares one session across every
-        # request in a test with no per-request teardown, so a path that
-        # skipped this would leave that shared session dirty for the next
-        # assertion, not merely for the next request in production, where
-        # `database.get_db`'s own `finally: db.close()` would have done it
-        # anyway.
-        db.rollback()
-        raise
-    db.commit()
     return sale_recorded(db, order)

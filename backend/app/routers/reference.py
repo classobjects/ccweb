@@ -350,18 +350,10 @@ def _flush_or_refuse(
     "/{table}",
     status_code=status.HTTP_201_CREATED,
     responses={
-        422: {
-            "description": "Request validation failed, or the payload names a column "
-            "the table does not have, or the row was rejected by a database "
-            "constraint.",
-            # Restates FastAPI's generated content. Passing only a description
-            # replaces the whole 422 entry and drops the schema reference.
-            "content": {
-                "application/json": {
-                    "schema": {"$ref": "#/components/schemas/HTTPValidationError"}
-                }
-            },
-        }
+        422: unprocessable(
+            "Request validation failed, or the payload names a column the table "
+            "does not have, or the row was rejected by a database constraint."
+        )
     },
 )
 def create_value(

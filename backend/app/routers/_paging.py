@@ -1,13 +1,14 @@
 # (c) Copyright 2026 Nathaniel Mills
 # Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
 # SPDX-License-Identifier: Apache-2.0
-"""Paging for the console's list endpoints that answer a bare JSON array.
+"""Paging for the console's long list endpoints.
 
 `GET /api/orders`, `GET /api/listings` and `GET /api/auctions` grow for as
 long as the shop trades, and an unbounded read loads every row and its
 eager-loaded children in one request. Each takes `limit` and `offset`, and
 says how many rows match in the `X-Total-Count` response header, so its
-body keeps the shape the console already reads.
+body keeps the shape the console already reads: a bare JSON array for
+orders and listings, and for auctions the `AuctionListOut` object.
 """
 
 from __future__ import annotations

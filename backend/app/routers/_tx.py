@@ -33,10 +33,13 @@ from sqlalchemy.orm import Session
 from sqlalchemy.orm.exc import StaleDataError
 
 #: PostgreSQL's SQLSTATE for a unique index refusing a duplicate.
-_UNIQUE_VIOLATION = "23505"
-#: A foreign key's refusal: `RESTRICT` reports its own code, `NO ACTION`
-#: the general one.
-_STILL_REFERENCED = frozenset({"23001", "23503"})
+UNIQUE_VIOLATION = "23505"
+#: PostgreSQL's SQLSTATE for a foreign key refusing a row: one naming a row
+#: that is not there, or a `NO ACTION` key refusing a delete.
+FOREIGN_KEY_VIOLATION = "23503"
+#: A foreign key's refusal of a delete: `RESTRICT` reports its own code,
+#: `NO ACTION` the general one.
+_STILL_REFERENCED = frozenset({"23001", FOREIGN_KEY_VIOLATION})
 
 
 @contextmanager
@@ -121,7 +124,7 @@ def commit_unique(db: Session, taken_detail: str) -> None:
         # Only a unique index's refusal is a duplicate. A foreign key that
         # names nothing, a null or a failed check is an integrity error too,
         # and "already exists" would be the wrong thing to say about it.
-        if getattr(exc.orig, "sqlstate", None) != _UNIQUE_VIOLATION:
+        if getattr(exc.orig, "sqlstate", None) != UNIQUE_VIOLATION:
             raise
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail=taken_detail
