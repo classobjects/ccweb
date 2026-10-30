@@ -53,14 +53,7 @@ FHOST="$CCWEB_FRONTEND_HOST"
 FASK="$FHOST"
 [ "$FASK" = "0.0.0.0" ] && FASK="127.0.0.1"
 
-# The pid listening on TCP port $1, empty if none ("?" if another user's).
-portpid() {
-    local listing pid
-    listing="$(ss -Hltnp "sport = :$1" 2>/dev/null)"
-    [ -n "$listing" ] || return 0
-    pid="$(printf '%s\n' "$listing" | sed -n 's/.*pid=\([0-9]*\).*/\1/p' | head -n 1)"
-    printf '%s\n' "${pid:-?}"
-}
+. "$here/ccweb_portpid.sh"
 # Poll $1 until it answers (0) or $2 tries pass (1).
 waiturl() {
     local tries=0

@@ -180,8 +180,8 @@ frontend/
   scripts/               check-bundle-isolation.mjs
 scripts/                 ccweb_*.cmd and their ccweb_*.sh twins: startup,
                          shutdown, status, check, testdb, psql, pgadmin,
-                         backup, claude, sonar_*; env, settings, logdir and
-                         pgstart are helpers the others call
+                         backup, claude, sonar_*; env, settings, logdir,
+                         portpid and pgstart are helpers the others call
 deploy/                  Caddyfile and systemd templates, rendered from
                          settings by python -m app.runtime_settings --render
 docs/                    project, operations and design documents; designs

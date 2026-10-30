@@ -20,16 +20,7 @@ set -u
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$here/.." && pwd)"
 
-# The pid listening on TCP port $1: empty if nothing listens, "?" when
-# something does but belongs to another user, whose pid ss cannot show.
-portpid() {
-    local listing
-    listing="$(ss -Hltnp "sport = :$1" 2>/dev/null)"
-    [ -n "$listing" ] || return 0
-    local pid
-    pid="$(printf '%s\n' "$listing" | sed -n 's/.*pid=\([0-9]*\).*/\1/p' | head -n 1)"
-    printf '%s\n' "${pid:-?}"
-}
+. "$here/ccweb_portpid.sh"
 
 DOWN=""
 FBUILD=""

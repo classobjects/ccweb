@@ -32,8 +32,8 @@ esac
 
 PGBIN=""
 if ! . "$here/ccweb_env.sh"; then
-    echo "WARNING: ccwebdb environment unavailable - PostgreSQL cannot be"
-    echo "         stopped from here; the servers still will be."
+    echo "WARNING: ccwebdb environment unavailable - only the servers startup"
+    echo "         recorded are stopped; the port sweep and PostgreSQL are left."
     PGBIN=""
 fi
 SETOK=""
@@ -48,9 +48,7 @@ if [ -n "$SETOK" ]; then
 fi
 mkdir -p "$RUNTIME"
 
-portpid() {
-    ss -Hltnp "sport = :$1" 2>/dev/null | sed -n 's/.*pid=\([0-9]*\).*/\1/p' | head -n 1
-}
+. "$here/ccweb_portpid.sh"
 # Stop process group $1 if it is still the one startup made: its commands
 # must include $3 (uvicorn, vite).
 killgroup() {
@@ -152,8 +150,8 @@ if [ -z "$SETOK" ]; then
 else
     for port in "$CCWEB_API_PORT" "$CCWEB_FRONTEND_PORT"; do
         holder="$(portpid "$port")"
-        if [ -n "$holder" ] || ss -Hltn "sport = :$port" 2>/dev/null | grep -q .; then
-            echo "  port $port  STILL HELD by pid ${holder:-?}"
+        if [ -n "$holder" ]; then
+            echo "  port $port  STILL HELD by pid $holder"
             PROBLEM=1
         else
             echo "  port $port  free"

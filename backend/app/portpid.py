@@ -12,8 +12,8 @@ and took its LISTENING rows, but Windows 26300.9818 reports a listening
 socket's state as 0 -- or as a different wrong state on each read -- and
 netstat leaves a row out when it cannot name the state, so a held port
 read as free. The rest of each row is right, so a listener is told by
-its shape rather than its state: no remote address, no remote port, and
-an owning process. An established connection always has a remote port.
+its shape rather than its state: no remote port, and an owning process
+(not PID 0). An established connection always has a remote port.
 
 Reads the table netstat reads (`GetExtendedTcpTable`), IPv4 and IPv6.
 Run as a plain script, like `logpipe.py`, so it needs nothing but the
@@ -36,6 +36,7 @@ Row = tuple[str, int, int, int]
 _AF_INET = 2
 _AF_INET6 = 23
 _TCP_TABLE_OWNER_PID_ALL = 5
+_ERROR_INSUFFICIENT_BUFFER = 122
 #: MIB_TCPROW_OWNER_PID and MIB_TCP6ROW_OWNER_PID, after the row count.
 _ROW4 = struct.Struct("<I4sI4sII")
 _ROW6 = struct.Struct("<16sII16sIIII")
@@ -55,10 +56,13 @@ def tcp_rows() -> list[Row]:
     for family in (_AF_INET, _AF_INET6):
         size = ctypes.c_ulong(0)
         buffer = ctypes.create_string_buffer(0)
-        # The table can grow between asking its size and reading it.
-        while get_table(
+        # The table can grow between asking its size and reading it, so a
+        # buffer too small is asked again, larger; any other error is final.
+        while code := get_table(
             buffer, ctypes.byref(size), False, family, _TCP_TABLE_OWNER_PID_ALL, 0
         ):
+            if code != _ERROR_INSUFFICIENT_BUFFER:
+                raise OSError(code, "GetExtendedTcpTable failed")
             buffer = ctypes.create_string_buffer(size.value + 4096)
             size = ctypes.c_ulong(len(buffer))
         raw = buffer.raw

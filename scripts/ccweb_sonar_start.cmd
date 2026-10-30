@@ -14,8 +14,9 @@ rem  The database publishes no host port; SonarQube reaches it over the private
 rem  podman network. SonarQube binds 127.0.0.1 only, so it is unreachable from
 rem  the LAN whatever the firewall says.
 rem
-rem  Contract: pre-flights podman and port 9000, then exits non-zero unless
-rem  /api/system/status is confirmed UP within the poll window.
+rem  Contract: pre-flights podman and the SonarQube port (CCWEB_SONAR_PORT),
+rem  then exits non-zero unless /api/system/status is confirmed UP within the
+rem  poll window.
 rem ---------------------------------------------------------------------------
 setlocal enabledelayedexpansion
 
@@ -24,7 +25,6 @@ set "DBNAME=sonar-db"
 set "SQNAME=sonarqube"
 call "%~dp0ccweb_env.cmd" || exit /b 2
 call "%~dp0ccweb_settings.cmd" || exit /b 2
-for %%I in ("%~dp0..") do set "REPO=%%~fI"
 set "SQPORT=%CCWEB_SONAR_PORT%"
 set "DBPASS=sonar"
 
@@ -55,7 +55,7 @@ rem  its own SonarQube holds port 9000.
 set "SQRUNNING="
 for /f "delims=" %%N in ('podman ps --filter "name=^%SQNAME%$" --format "{{.Names}}"') do set "SQRUNNING=%%N"
 if not defined SQRUNNING (
-    call :portpid %SQPORT% SQHOLDER
+    call "%~dp0ccweb_portpid.cmd" %SQPORT% SQHOLDER
     if defined SQHOLDER (
         echo ERROR: port %SQPORT% is already in use by another process.
         exit /b 1
@@ -132,14 +132,3 @@ rem  scheduled caller runs this script. Do not "simplify" this back to
 rem  timeout; ping's reply delay is a console-independent ~1 second sleep.
 ping -n 2 127.0.0.1 >nul
 goto waitup_loop
-
-rem ---------------------------------------------------------------------------
-rem  :portpid <port> <varname> [address]  - PID listening on <port> (on
-rem  <address> alone, if given), empty if none.
-rem  portpid.py, not netstat's LISTENING rows: on Windows 26300.9818 a
-rem  listener's state reads wrong and netstat leaves it out (its docstring).
-rem ---------------------------------------------------------------------------
-:portpid
-set "%~2="
-for /f %%A in ('call "%ENVDIR%\python.exe" "%REPO%\backend\app\portpid.py" %~1 %~3') do set "%~2=%%A"
-goto :eof

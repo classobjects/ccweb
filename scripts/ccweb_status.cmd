@@ -108,7 +108,7 @@ if not defined SETOK (
     set "DOWN=!DOWN! backend"
     goto :frontend
 )
-call :portpid %BPORT% BPID
+call "%~dp0ccweb_portpid.cmd" %BPORT% BPID
 set "BOK="
 if defined BPID (
     curl -s -f -o nul --max-time 5 "http://%CCWEB_API_HOST%:%BPORT%/api/reference/item_kind" && set "BOK=1"
@@ -137,7 +137,7 @@ if not defined SETOK (
     set "DOWN=!DOWN! frontend"
     goto :sonar
 )
-call :portpid %FPORT% FPID
+call "%~dp0ccweb_portpid.cmd" %FPORT% FPID
 set "FOK="
 set "FBUILD="
 if defined FPID (
@@ -168,7 +168,7 @@ if not defined SETOK (
     echo   SonarQube    UNKNOWN - !WHY!   ^(optional^)
     goto :preflight
 )
-call :portpid %SPORT% SPID
+call "%~dp0ccweb_portpid.cmd" %SPORT% SPID
 if defined SPID (
     echo   SonarQube    127.0.0.1:%SPORT%   running   pid !SPID!   ^(optional^)
 ) else (
@@ -230,12 +230,3 @@ echo.
 echo   ^(safe to re-run: whatever is already listening is left alone^)
 echo ============================================
 exit /b 1
-
-rem ---------------------------------------------------------------------------
-:portpid
-rem  %1 = TCP port, %2 = variable to receive the listening PID.
-rem  portpid.py, not netstat's LISTENING rows: on Windows 26300.9818 a
-rem  listener's state reads wrong and netstat leaves it out (its docstring).
-set "%~2="
-for /f %%A in ('call "%ENVDIR%\python.exe" "%REPO%\backend\app\portpid.py" %~1 %~3') do set "%~2=%%A"
-goto :eof
