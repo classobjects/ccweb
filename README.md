@@ -181,7 +181,8 @@ frontend/
 scripts/                 ccweb_*.cmd and their ccweb_*.sh twins: startup,
                          shutdown, status, check, testdb, psql, pgadmin,
                          backup, claude, sonar_*; env, settings, logdir,
-                         portpid and pgstart are helpers the others call
+                         portpid, wait and pgstart are helpers the others
+                         call
 deploy/                  Caddyfile and systemd templates, rendered from
                          settings by python -m app.runtime_settings --render
 docs/                    project, operations and design documents; designs

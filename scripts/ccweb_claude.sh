@@ -34,7 +34,7 @@ done
 export PGDATA="$CCWEB_DB_CLUSTER_DIR" LOGS
 cd "$REPO" || exit 1
 
-pgready() { "$PGBIN/pg_isready" -h "$CCWEB_DB_HOST" -p "$CCWEB_DB_PORT" >/dev/null 2>&1; }
+. "$here/ccweb_wait.sh"
 
 echo "environment  $CONDA_DEFAULT_ENV  ($CCWEB_ENV_STATE)"
 echo "directory    $PWD"
@@ -55,9 +55,7 @@ if [ -z "$SKIPDB" ]; then
     elif ! "$here/ccweb_pgstart.sh"; then
         DBSTATE="NOT STARTED - postmaster.pid: another computer may be running it"
     else
-        tries=0
-        until pgready || [ "$tries" -ge 60 ]; do tries=$((tries + 1)); sleep 1; done
-        if pgready; then DBSTATE="started"; else DBSTATE="FAILED TO START - see $LOGS/postgres.log"; fi
+        if waitpg 60; then DBSTATE="started"; else DBSTATE="FAILED TO START - see $LOGS/postgres.log"; fi
     fi
 fi
 echo "postgres     $DBSTATE"

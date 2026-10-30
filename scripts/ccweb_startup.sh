@@ -54,16 +54,7 @@ FASK="$FHOST"
 [ "$FASK" = "0.0.0.0" ] && FASK="127.0.0.1"
 
 . "$here/ccweb_portpid.sh"
-# Poll $1 until it answers (0) or $2 tries pass (1).
-waiturl() {
-    local tries=0
-    until curl -s -o /dev/null --max-time 2 "$1"; do
-        tries=$((tries + 1))
-        [ "$tries" -ge "$2" ] && return 1
-        sleep 1
-    done
-}
-pgready() { "$PGBIN/pg_isready" -h "$CCWEB_DB_HOST" -p "$CCWEB_DB_PORT" >/dev/null 2>&1; }
+. "$here/ccweb_wait.sh"
 
 echo "============================================"
 echo "  ccwebdb runtime startup"
@@ -93,9 +84,7 @@ if pgready; then
 else
     echo "[1/3] postgresql   starting..."
     "$here/ccweb_pgstart.sh" || exit 1
-    tries=0
-    until pgready || [ "$tries" -ge 60 ]; do tries=$((tries + 1)); sleep 1; done
-    if ! pgready; then
+    if ! waitpg 60; then
         echo "      FAILED - see $LOGS/postgres.log"
         exit 1
     fi

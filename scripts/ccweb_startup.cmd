@@ -110,8 +110,7 @@ if not errorlevel 1 (
 ) else (
     echo [1/3] postgresql   starting...
     call "%~dp0ccweb_pgstart.cmd" || exit /b 1
-    call :waitpg 60
-    "%PGBIN%\pg_isready.exe" -h %CCWEB_DB_HOST% -p %CCWEB_DB_PORT% >nul 2>&1
+    call "%~dp0ccweb_wait.cmd" pg 60
     if errorlevel 1 (
         echo       FAILED - see !LOGS!\postgres.log
         exit /b 1
@@ -138,7 +137,7 @@ if defined BPID (
     start "ccweb-backend" /MIN /D "%REPO%\backend" cmd /c ""%ENVDIR%\python.exe" -m uvicorn app.main:app --host %BHOST% --port %BPORT% 2>&1 | "%ENVDIR%\python.exe" "%LOGPIPE%" "%LOGS%\backend.log""
     rem  A held port is not an answer: a backend that binds and then hangs
     rem  holds 8000 exactly as a healthy one does.
-    call :waiturl "http://%BHOST%:%BPORT%/health" 60
+    call "%~dp0ccweb_wait.cmd" url "http://%BHOST%:%BPORT%/health" 60
     if errorlevel 1 (
         echo       FAILED - /health did not answer - see !LOGS!\backend.log
         exit /b 1
@@ -165,7 +164,7 @@ if defined FPID (
 ) else (
     echo [3/3] frontend     starting on %FPORT%...
     start "ccweb-frontend" /MIN /D "%REPO%\frontend" cmd /c ""%ENVDIR%\node.exe" .\node_modules\vite\bin\vite.js --host %FHOST% --port %FPORT% 2>&1 | "%ENVDIR%\python.exe" "%LOGPIPE%" "%LOGS%\frontend.log""
-    call :waiturl "http://%FASK%:%FPORT%/" 60
+    call "%~dp0ccweb_wait.cmd" url "http://%FASK%:%FPORT%/" 60
     if errorlevel 1 (
         echo       FAILED - Vite did not answer - see !LOGS!\frontend.log
         exit /b 1
@@ -220,37 +219,3 @@ if errorlevel 1 (
     echo   netsh advfirewall firewall add rule name="ccweb frontend LAN" dir=in action=allow protocol=TCP localport=%FPORT% remoteip=localsubnet
 )
 goto :eof
-
-rem ---------------------------------------------------------------------------
-rem  :waiturl <url> <max tries>  - poll until it answers (exit 0), or give
-rem  up (exit 1). A try that gets no answer takes up to two seconds, and a
-rem  second passes before the next.
-rem ---------------------------------------------------------------------------
-:waiturl
-set /a _tries=0
-:waiturl_loop
-curl -s -o nul --max-time 2 "%~1" >nul 2>&1
-if not errorlevel 1 exit /b 0
-set /a _tries+=1
-if !_tries! GEQ %~2 exit /b 1
-rem  ping, not timeout: timeout needs a real console and returns at once, with
-rem  no pause, when stdin is redirected - as it is for any caller that is not a
-rem  person at a keyboard - so the loop would give up almost instantly.
-ping -n 2 127.0.0.1 >nul
-goto waiturl_loop
-
-rem ---------------------------------------------------------------------------
-rem  :waitpg <max tries>  - poll until PostgreSQL accepts connections
-rem
-rem  pg_isready says "rejecting connections" while crash recovery replays WAL.
-rem  That is progress, not failure, so this waits through it.
-rem ---------------------------------------------------------------------------
-:waitpg
-set /a _tries=0
-:waitpg_loop
-"%PGBIN%\pg_isready.exe" -h %CCWEB_DB_HOST% -p %CCWEB_DB_PORT% >nul 2>&1
-if not errorlevel 1 goto :eof
-set /a _tries+=1
-if %_tries% GEQ %~1 goto :eof
-ping -n 2 127.0.0.1 >nul
-goto waitpg_loop

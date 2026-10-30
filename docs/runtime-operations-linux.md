@@ -185,7 +185,8 @@ It starts PostgreSQL when it is not running, as the Windows twin does.
   host without systemd. Development uses `ccweb_startup.sh` instead.
 - **Sourced helpers:** `ccweb_env.sh`, `ccweb_settings.sh`,
   `ccweb_logdir.sh`, `ccweb_portpid.sh` (`portpid`: the process listening
-  on a port); `ccweb_pgstart.sh` starts PostgreSQL detached.
+  on a port), `ccweb_wait.sh` (`pgready`, `waitpg`, `waiturl`);
+  `ccweb_pgstart.sh` starts PostgreSQL detached.
 
 ## Files it produces
 
