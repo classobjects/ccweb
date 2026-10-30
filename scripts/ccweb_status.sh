@@ -32,6 +32,7 @@ portpid() {
 }
 
 DOWN=""
+FBUILD=""
 BLOCKED=""
 
 echo "============================================"
@@ -114,6 +115,7 @@ else
             --connect-to "$CCWEB_SITE_DOMAIN::127.0.0.1:" \
             "https://$CCWEB_SITE_DOMAIN/management"; then
         echo "  Frontend     https://$CCWEB_SITE_DOMAIN   RUNNING   the build, served by Caddy"
+        FBUILD=1
     else
         check_server "Frontend     " "$CCWEB_FRONTEND_HOST" "$CCWEB_FRONTEND_PORT" /management frontend
     fi
@@ -152,8 +154,13 @@ echo
 if [ -z "$DOWN" ]; then
     echo "  Everything is up."
     echo
-    echo "    shop     http://$CCWEB_FRONTEND_HOST:$CCWEB_FRONTEND_PORT/"
-    echo "    console  http://$CCWEB_FRONTEND_HOST:$CCWEB_FRONTEND_PORT/management"
+    if [ -n "$FBUILD" ]; then
+        echo "    shop     https://$CCWEB_SITE_DOMAIN/"
+        echo "    console  https://$CCWEB_SITE_DOMAIN/management"
+    else
+        echo "    shop     http://$CCWEB_FRONTEND_HOST:$CCWEB_FRONTEND_PORT/"
+        echo "    console  http://$CCWEB_FRONTEND_HOST:$CCWEB_FRONTEND_PORT/management"
+    fi
     echo "    API docs http://$CCWEB_API_HOST:$CCWEB_API_PORT/docs"
     echo "============================================"
     exit 0
