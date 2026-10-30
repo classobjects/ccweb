@@ -58,6 +58,17 @@ describe('ReviewPane', () => {
     render(<ReviewPane ids={[1]} onClose={onClose} />)
     await user.click(screen.getByRole('button', { name: 'stub delete' }))
 
-    expect(onClose).toHaveBeenCalled()
+    expect(onClose).toHaveBeenCalledWith([1])
+  })
+
+  it('tells its opener which items were deleted when the review is left', async () => {
+    // A caller holding a deleted id must not read or receive it afterwards.
+    const user = userEvent.setup()
+    const onClose = vi.fn()
+    render(<ReviewPane ids={[1, 2, 3]} onClose={onClose} />)
+    await user.click(screen.getByRole('button', { name: 'stub delete' }))
+    await user.click(screen.getByRole('button', { name: 'Leave review' }))
+
+    expect(onClose).toHaveBeenCalledWith([1])
   })
 })
