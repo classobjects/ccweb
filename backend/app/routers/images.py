@@ -108,7 +108,7 @@ def to_image_out(image: Image) -> ImageOut:
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
-async def upload_image(
+def upload_image(
     db: DbSession,
     _admin: AdminUser,
     file: UploadFile = File(...),
@@ -127,6 +127,10 @@ async def upload_image(
     before `ingest` writes the bytes, so a refused upload leaves no file
     behind with no row pointing at it. The item is held before the
     picture's hash, the order adding by web address takes them in.
+
+    A plain `def`, so FastAPI runs it in its threadpool: the queries, the
+    row locks, the conversion and the storage writes all block, and on the
+    event loop they would stall every other request until they were done.
     """
     item: InventoryItem | None = None
     if inventory_item_id is not None:
@@ -139,7 +143,7 @@ async def upload_image(
 
     # One byte past the limit is enough to know it is over: the rest of an
     # oversized upload is never read into memory.
-    raw = await file.read(settings.max_upload_bytes + 1)
+    raw = file.file.read(settings.max_upload_bytes + 1)
     try:
         image = ingest(db, raw, source_ref=file.filename)
     except ImageRejected as exc:
@@ -186,7 +190,15 @@ async def upload_image(
             if image_role is not None:
                 image_links.set_role(db, link, image_role)
             if is_primary:
-                image_links.make_primary(db, link)
+                try:
+                    image_links.make_primary(db, link)
+                except image_links.LinkRefused as moved:
+                    # Moved or unfiled since it was read: 409, as
+                    # `routers.image_links.update_link` answers.
+                    db.rollback()
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT, detail=str(moved)
+                    ) from moved
 
     db.commit()
     db.refresh(image)

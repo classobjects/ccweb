@@ -13,8 +13,9 @@ a match to an item (`POST /inventory/{item_id}/friedberg`). The Lists page
 reads the whole catalog with its use (`GET /friedberg/catalog`), corrects or
 confirms a row (`PATCH /friedberg/{id}`) and deletes an unused one
 (`DELETE /friedberg/{id}`); `DELETE /inventory/{item_id}/friedberg` takes a
-number off a note, and `GET /friedberg/signatures` lists the signature pairs
-a series can carry.
+number off a note, `GET /friedberg/signatures` lists the signature pairs
+a series can carry, and `GET /friedberg/mule` says whether a note being
+entered is a mule by its series and back plate.
 
 See the `FriedbergNumber` docstring in `app.models.identification` for why the
 identifying tuple is only partially unique, and why `verified_at` is what
@@ -70,8 +71,8 @@ from ..schemas import (
     SignatureChoice,
     SignatureChoicesOut,
 )
-from ._resolve import get_or_404, get_or_422
-from ._tx import delete_unused
+from ._resolve import counts_by, get_or_404, get_or_422
+from ._tx import FOREIGN_KEY_VIOLATION, committing, delete_unused
 
 #: The catalog's own endpoints live under `/friedberg`; attaching a row to an
 #: item, and clearing it, are inventory-shaped, so they get their own router
@@ -88,8 +89,6 @@ FRIEDBERG_STATUSES = frozenset({"unknown", "proposed", "confirmed", "conflicting
 #: The statuses a number is attached with. `unknown` is a note with no
 #: number -- what clearing one leaves -- so it is not among them.
 ATTACHABLE_STATUSES = FRIEDBERG_STATUSES - {"unknown"}
-#: PostgreSQL's SQLSTATE for a foreign key naming a row that is not there.
-_FK_VIOLATION = "23503"
 
 
 class CombinationRecorded(Exception):
@@ -300,6 +299,17 @@ def _items_using(db: Session, friedberg_id: int) -> int:
             select(func.count()).where(CurrencyDetail.friedberg_id == friedberg_id)
         )
         or 0
+    )
+
+
+def _items_holding(db: Session, friedberg_id: int) -> list[int]:
+    """The ids of the items whose notes hold this catalog row."""
+    return list(
+        db.scalars(
+            select(CurrencyDetail.inventory_item_id).where(
+                CurrencyDetail.friedberg_id == friedberg_id
+            )
+        )
     )
 
 
@@ -616,23 +626,15 @@ def list_catalog(
     ] = None,
 ) -> list[FriedbergCatalogRow]:
     """Every catalog row, with how many notes hold it, for the Lists page."""
-    counts = dict(
-        db.execute(
-            select(CurrencyDetail.friedberg_id, func.count())
-            .where(CurrencyDetail.friedberg_id.is_not(None))
-            .group_by(CurrencyDetail.friedberg_id)
-        )
-        .tuples()
-        .all()
-    )
+    counts = counts_by(db, CurrencyDetail.friedberg_id)
     stmt = select(FriedbergNumber).order_by(FriedbergNumber.fr_number)
     text = (q or "").strip()
     if text:
-        pattern = f"%{text}%"
+        # Escaped, so a `%` or `_` typed is that character, not a wildcard.
         stmt = stmt.where(
             or_(
-                FriedbergNumber.fr_number.ilike(pattern),
-                FriedbergNumber.description.ilike(pattern),
+                FriedbergNumber.fr_number.icontains(text, autoescape=True),
+                FriedbergNumber.description.icontains(text, autoescape=True),
             )
         )
     return [
@@ -662,6 +664,7 @@ def update_catalog_row(
         f"No Friedberg catalog row with id {friedberg_id}",
     )
     sent = payload.model_fields_set
+    renumbered = False
     if "fr_number" in sent and payload.fr_number is not None:
         clash = db.scalar(
             select(FriedbergNumber).where(
@@ -684,6 +687,7 @@ def update_catalog_row(
         if held is not None:
             raise CombinationRecorded(held)
         row.district_letter = _district_of(row.district_letter, payload.fr_number)
+        renumbered = payload.fr_number != row.fr_number
         row.fr_number = payload.fr_number
     if "description" in sent:
         row.description = payload.description
@@ -695,8 +699,10 @@ def update_catalog_row(
         else:
             row.verified_by_id = None
             row.verified_at = None
+    # The row's own write first, alone, so what refuses it is the row's: the
+    # notes decided again below are other rows, with their own refusal.
     try:
-        db.commit()
+        db.flush()
     except StaleDataError as exc:
         db.rollback()
         # Deleted since it was read: the row named in the path is gone.
@@ -710,6 +716,14 @@ def update_catalog_row(
             status_code=status.HTTP_409_CONFLICT,
             detail="That combination is already recorded under another number.",
         ) from exc
+    with committing(
+        db, "A note holding this number was changed while saving. Reload and retry."
+    ):
+        if renumbered:
+            # The number says whether the row is a mule's, and a note holding
+            # it confirmed is a mule by it: the notes are decided again, as
+            # attaching and clearing decide them.
+            refresh_items(db, _items_holding(db, row.id))
     db.refresh(row)
     return _to_out(db, row)
 
@@ -736,6 +750,12 @@ def delete_catalog_row(friedberg_id: int, db: DbSession, _admin: AdminUser) -> R
         f"{row.fr_number} has just been attached to a note",
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+def _item_changed(db: Session, item_id: int) -> str:
+    """The 409 for a note whose item was edited while its number was saved."""
+    code = db.get_one(InventoryItem, item_id).item_code
+    return f"{code} was changed while saving. Reload and retry."
 
 
 def _note_detail(db: Session, item_id: int) -> CurrencyDetail:
@@ -801,13 +821,14 @@ def clear_friedberg(item_id: int, db: DbSession, admin: AdminUser) -> None:
     moves its version, as an edit of the item would.
     """
     detail = _note_detail(db, item_id)
+    stale = _item_changed(db, item_id)
     before = _friedberg_fields(db, detail)
-    detail.friedberg_id = None
-    detail.friedberg_status = "unknown"
-    _log_friedberg(db, detail, before, admin.id)
-    # A mule's number taken off takes its Mule attribute with it.
-    refresh_items(db, [item_id])
-    db.commit()
+    with committing(db, stale):
+        detail.friedberg_id = None
+        detail.friedberg_status = "unknown"
+        _log_friedberg(db, detail, before, admin.id)
+        # A mule's number taken off takes its Mule attribute with it.
+        refresh_items(db, [item_id])
 
 
 @item_router.post("/{item_id}/friedberg")
@@ -852,21 +873,26 @@ def attach_friedberg(
         friedberg.verified_by_id = admin.id
         friedberg.verified_at = utcnow()
 
+    stale = _item_changed(db, item_id)
+    # The note's number and the row's confirmation first, alone, so what
+    # refuses them is the row's going: the foreign key refuses the note's
+    # reference to it, and confirming updates a row no longer there. Either
+    # way the id in the body names nothing now. The item is touched after,
+    # where a version that moved is its own 409.
     try:
-        _log_friedberg(db, detail, before, admin.id)
-        # A mule's number, confirmed, makes the note a mule (`app.mule_rules`).
-        refresh_items(db, [item_id])
-        db.commit()
+        db.flush()
     except (IntegrityError, StaleDataError) as exc:
         db.rollback()
-        # Deleted since it was read: the foreign key refuses the note's
-        # reference to it, and the id in the body names nothing now.
         sqlstate = getattr(getattr(exc, "orig", None), "sqlstate", None)
-        if isinstance(exc, IntegrityError) and sqlstate != _FK_VIOLATION:
+        if isinstance(exc, IntegrityError) and sqlstate != FOREIGN_KEY_VIOLATION:
             raise
         raise _row_gone(
             payload.friedberg_id, status.HTTP_422_UNPROCESSABLE_CONTENT
         ) from exc
+    with committing(db, stale):
+        _log_friedberg(db, detail, before, admin.id)
+        # A mule's number, confirmed, makes the note a mule (`app.mule_rules`).
+        refresh_items(db, [item_id])
     db.refresh(detail)
     db.refresh(friedberg)
 

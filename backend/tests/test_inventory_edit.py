@@ -9,7 +9,7 @@ collection has no listing.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from decimal import Decimal
 
 import pytest
@@ -32,7 +32,7 @@ from app.models import (
 )
 from fastapi.testclient import TestClient
 from httpx import Response
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.exc import StaleDataError
 
@@ -986,3 +986,83 @@ def test_a_write_that_loses_to_another_writer_is_a_409(
     response: Response = client.request(method, path, json=body, headers=admin_headers)
 
     assert response.status_code == 409, response.text
+
+
+def test_an_edit_whose_item_moves_while_saving_is_a_409_naming_it(
+    client: TestClient,
+    admin_headers: dict[str, str],
+    db: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Another commit landing inside the edit's own window is refused, not lost.
+
+    The version is moved behind the session as the save's last steps begin,
+    as another request's commit would move it: the edit's UPDATE, flushed
+    by the refresh after, then matches no row.
+    """
+    from app.routers import inventory
+
+    item = build_bare_item(db, source_title="wrong")
+    real_forget = inventory.forget
+
+    def moved_meanwhile(
+        session: Session, item_ids: Iterable[int], fields: Iterable[str]
+    ) -> None:
+        """Another request's commit moves the version, then the save goes on.
+
+        Without autoflush, or the statement would first flush this request's
+        own pending write of the item, which would then win the race.
+        """
+        with session.no_autoflush:
+            session.execute(
+                update(InventoryItem)
+                .where(InventoryItem.id == item.id)
+                .values(version=InventoryItem.version + 1)
+                .execution_options(synchronize_session=False)
+            )
+        real_forget(session, item_ids, fields)
+
+    monkeypatch.setattr(inventory, "forget", moved_meanwhile)
+    response = patch_current(
+        client,
+        f"/api/inventory/{item.id}",
+        json={"source_title": "right"},
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 409, response.text
+    assert response.json()["detail"] == (
+        f"{item.item_code} was changed while saving. Reload and retry."
+    )
+
+
+def test_an_edit_that_fails_while_saving_leaves_nothing_written(
+    client: TestClient,
+    admin_headers: dict[str, str],
+    db: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failure after the edit is flushed rolls it back, not only a lost race.
+
+    The history write fails once the item row is flushed; left in the
+    transaction, the half-saved title would be what the next read sees.
+    """
+    from app import field_changes
+
+    item = build_bare_item(db, source_title="wrong")
+
+    def broken(*_args: object, **_kwargs: object) -> None:
+        """The history write fails."""
+        raise RuntimeError("history unavailable")
+
+    monkeypatch.setattr(field_changes, "record", broken)
+    with pytest.raises(RuntimeError, match="history unavailable"):
+        patch_current(
+            client,
+            f"/api/inventory/{item.id}",
+            json={"source_title": "right"},
+            headers=admin_headers,
+        )
+
+    db.expire_all()
+    assert db.get_one(InventoryItem, item.id).source_title == "wrong"

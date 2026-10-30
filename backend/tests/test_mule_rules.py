@@ -307,3 +307,37 @@ def test_a_confirmed_mule_number_makes_the_note_a_mule(
     )
     assert response.status_code == 204, response.text
     assert _mules(client, admin_headers, note) == []
+
+
+def test_correcting_a_held_number_redecides_its_notes_mule(
+    db: Session,
+    make_item: ItemFactory,
+    client: TestClient,
+    admin_headers: dict[str, str],
+) -> None:
+    """The notes hold the row, so a number corrected is theirs at once.
+
+    Dropping the `m` from a confirmed mule's number takes the attribute off
+    the note holding it, and putting it back adds it again, as attaching
+    and clearing do.
+    """
+    note = _note(db, make_item, None, None)
+    row = FriedbergNumber(fr_number="9908-Em")
+    db.add(row)
+    db.commit()
+    attached = client.post(
+        f"/api/inventory/{note.id}/friedberg",
+        json={"friedberg_id": row.id, "status": "confirmed"},
+        headers=admin_headers,
+    )
+    assert attached.status_code == 200, attached.text
+    assert _mules(client, admin_headers, note) == ["attribute_rule"]
+
+    for number, mules in (("9908-E", []), ("9908-Em", ["attribute_rule"])):
+        corrected = client.patch(
+            f"/api/friedberg/{row.id}",
+            json={"fr_number": number},
+            headers=admin_headers,
+        )
+        assert corrected.status_code == 200, corrected.text
+        assert _mules(client, admin_headers, note) == mules

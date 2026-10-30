@@ -14,12 +14,11 @@ item sits in, are neither a customer's business.
 
 from __future__ import annotations
 
-from typing import Any
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, HTTPException, Response, status
 from sqlalchemy import and_, case, delete, func, select
-from sqlalchemy.orm import InstrumentedAttribute, Session, selectinload
+from sqlalchemy.orm import Session, selectinload
 
 from .. import listing_links
 from ..config import settings
@@ -57,6 +56,7 @@ from ..schemas import (
     VendorUpdate,
 )
 from ._resolve import (
+    counts_by,
     found_or_404,
     get_or_404,
     get_or_422,
@@ -135,26 +135,11 @@ def _vendor_out(db: Session, vendor: Vendor) -> VendorOut:
     )
 
 
-def _counts_by(db: Session, column: InstrumentedAttribute[Any]) -> dict[int, int]:
-    """How many rows of `column`'s table name each key, in one grouped query.
-
-    A list counts this way rather than row by row, so its queries do not
-    grow with its length.
-    """
-    return dict(
-        db.execute(
-            select(column, func.count()).where(column.is_not(None)).group_by(column)
-        )
-        .tuples()
-        .all()
-    )
-
-
 @vendors_router.get("")
 def list_vendors(db: DbSession, _admin: AdminUser) -> list[VendorOut]:
     """Every vendor, ordered by name, for picking on the entry panels."""
-    orders = _counts_by(db, PurchaseOrder.vendor_id)
-    venues = _counts_by(db, SalesVenue.vendor_id)
+    orders = counts_by(db, PurchaseOrder.vendor_id)
+    venues = counts_by(db, SalesVenue.vendor_id)
     rows = db.execute(
         select(Vendor, VendorKind.code)
         .outerjoin(VendorKind, VendorKind.id == Vendor.vendor_kind_id)
@@ -463,15 +448,7 @@ def _seller_out(db: Session, seller: Seller) -> SellerOut:
 @sellers_router.get("")
 def list_sellers(db: DbSession, _admin: AdminUser) -> list[SellerOut]:
     """Every seller, ordered by name (case aside), with their purchases."""
-    counts = dict(
-        db.execute(
-            select(PurchaseOrder.seller_id, func.count())
-            .where(PurchaseOrder.seller_id.is_not(None))
-            .group_by(PurchaseOrder.seller_id)
-        )
-        .tuples()
-        .all()
-    )
+    counts = counts_by(db, PurchaseOrder.seller_id)
     sellers = db.scalars(select(Seller).order_by(func.lower(Seller.name))).all()
     return [_seller_wire(seller, counts.get(seller.id, 0)) for seller in sellers]
 
@@ -651,22 +628,7 @@ def create_storage_location(
             "code makes a consigned one, and sold is reserved",
         )
     kind_id = require_code(db, StorageLocationKind, payload.kind, "kind")
-    same = func.lower(func.coalesce(StorageLocation.institution, "")) == (
-        (payload.institution or "").casefold()
-    )
-    same_box = func.lower(func.coalesce(StorageLocation.identifier, "")) == (
-        (payload.identifier or "").casefold()
-    )
-    exists = db.scalar(
-        select(StorageLocation.id).where(
-            StorageLocation.storage_location_kind_id == kind_id, same, same_box
-        )
-    )
-    if exists is not None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=_LOCATION_EXISTS,
-        )
+    _refuse_same_location(db, kind_id, payload.institution, payload.identifier, None)
     location = StorageLocation(
         storage_location_kind_id=kind_id,
         institution=payload.institution,
@@ -710,9 +672,14 @@ def _refuse_same_location(
     kind_id: int,
     institution: str | None,
     identifier: str | None,
-    keep: int,
+    keep: int | None,
 ) -> None:
-    """409 when another location has this kind, institution and identifier."""
+    """409 when another location has this kind, institution and identifier.
+
+    Case aside, and a missing part matches only a missing one. `keep` is the
+    location being corrected, which does not clash with itself; `None` for
+    one being made.
+    """
     clash = db.scalar(
         select(StorageLocation.id).where(
             StorageLocation.storage_location_kind_id == kind_id,
@@ -720,7 +687,7 @@ def _refuse_same_location(
             == (institution or "").casefold(),
             func.lower(func.coalesce(StorageLocation.identifier, ""))
             == (identifier or "").casefold(),
-            StorageLocation.id != keep,
+            StorageLocation.id != (keep if keep is not None else -1),
         )
     )
     if clash is not None:
@@ -810,8 +777,8 @@ def list_storage_locations(
     locations = db.scalars(
         select(StorageLocation).options(selectinload(StorageLocation.kind))
     ).all()
-    held = _counts_by(db, InventoryItem.storage_location_id)
-    moves = _counts_by(db, LocationHistory.storage_location_id)
+    held = counts_by(db, InventoryItem.storage_location_id)
+    moves = counts_by(db, LocationHistory.storage_location_id)
     return [
         _location_out(
             db, location, held.get(location.id, 0) + moves.get(location.id, 0)

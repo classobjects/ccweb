@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, status
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
@@ -32,7 +32,7 @@ from ..schemas import (
     CustomerUpdate,
     OrderOut,
 )
-from ._resolve import get_or_404
+from ._resolve import get_or_404, refuse_null_required
 from .orders import order_out
 
 router = APIRouter(prefix="/customers", tags=["customers"])
@@ -62,11 +62,7 @@ def update_customer(
     fields = update.model_dump(exclude_unset=True)
     # `display_name` is NOT NULL: an explicit null would reach the database
     # and come back as a 500 rather than a refusal naming the field.
-    if "display_name" in fields and fields["display_name"] is None:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="display_name cannot be null",
-        )
+    refuse_null_required(fields, {"display_name"})
     for name, value in fields.items():
         setattr(customer, name, value)
 
