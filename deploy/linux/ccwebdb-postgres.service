@@ -24,7 +24,7 @@ After=network.target
 Type=forking
 User=@CCWEB_USER@
 PIDFile=@CCWEB_DB_CLUSTER_DIR@/postmaster.pid
-ExecStart=@CCWEB_ENV_DIR@/bin/pg_ctl start -D @CCWEB_DB_CLUSTER_DIR@ -w -t 300 -o "-c logging_collector=off"
+ExecStart=@CCWEB_ENV_DIR@/bin/pg_ctl start -D @CCWEB_DB_CLUSTER_DIR@ -w -t 300 -o "-p @CCWEB_DB_PORT@ -c logging_collector=off"
 ExecStop=@CCWEB_ENV_DIR@/bin/pg_ctl stop -D @CCWEB_DB_CLUSTER_DIR@ -m fast -w
 ExecReload=@CCWEB_ENV_DIR@/bin/pg_ctl reload -D @CCWEB_DB_CLUSTER_DIR@
 # Crash recovery replaying a long WAL can take a while before it accepts

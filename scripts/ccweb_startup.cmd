@@ -120,7 +120,7 @@ if not errorlevel 1 (
 )
 
 rem --- 2. FastAPI backend ---------------------------------------------------
-call :portpid %BPORT% BPID
+call "%~dp0ccweb_portpid.cmd" %BPORT% BPID
 rem  A listener on the API's port is this backend only if it answers /health
 rem  as the API does; anything else is another program that has the port,
 rem  and the frontend would proxy /api to it.
@@ -135,7 +135,7 @@ if defined BPID (
 ) else (
     echo [2/3] backend      starting on %BPORT%...
     rem  The pipe is inside the quoted part, so the new console runs it.
-    start "ccweb-backend" /MIN /D "%REPO%\backend" cmd /c ""%ENVDIR%\Scripts\uvicorn.exe" app.main:app --host %BHOST% --port %BPORT% 2>&1 | "%ENVDIR%\python.exe" "%LOGPIPE%" "%LOGS%\backend.log""
+    start "ccweb-backend" /MIN /D "%REPO%\backend" cmd /c ""%ENVDIR%\python.exe" -m uvicorn app.main:app --host %BHOST% --port %BPORT% 2>&1 | "%ENVDIR%\python.exe" "%LOGPIPE%" "%LOGS%\backend.log""
     rem  A held port is not an answer: a backend that binds and then hangs
     rem  holds 8000 exactly as a healthy one does.
     call :waiturl "http://%BHOST%:%BPORT%/health" 60
@@ -143,7 +143,7 @@ if defined BPID (
         echo       FAILED - /health did not answer - see !LOGS!\backend.log
         exit /b 1
     )
-    call :portpid %BPORT% BPID
+    call "%~dp0ccweb_portpid.cmd" %BPORT% BPID
     if not defined BPID (
         echo       FAILED - see !LOGS!\backend.log
         exit /b 1
@@ -152,11 +152,11 @@ if defined BPID (
 )
 
 rem --- 3. Vite frontend -----------------------------------------------------
-call :portpid %FPORT% FPID
+call "%~dp0ccweb_portpid.cmd" %FPORT% FPID
 if defined FPID (
     echo [3/3] frontend     already running on %FPORT% ^(pid !FPID!^)
     if defined LAN (
-        call :portpid %FPORT% LANPID 0.0.0.0
+        call "%~dp0ccweb_portpid.cmd" %FPORT% LANPID 0.0.0.0
         if not defined LANPID (
             echo       WARNING - it answers this machine only, so /lan changed nothing.
             echo       Stop it with scripts\ccweb_shutdown.cmd /keepdb, then run this again.
@@ -170,7 +170,7 @@ if defined FPID (
         echo       FAILED - Vite did not answer - see !LOGS!\frontend.log
         exit /b 1
     )
-    call :portpid %FPORT% FPID
+    call "%~dp0ccweb_portpid.cmd" %FPORT% FPID
     if not defined FPID (
         echo       FAILED - see !LOGS!\frontend.log
         exit /b 1
@@ -219,17 +219,6 @@ if errorlevel 1 (
     echo               administrator window, you run:
     echo   netsh advfirewall firewall add rule name="ccweb frontend LAN" dir=in action=allow protocol=TCP localport=%FPORT% remoteip=localsubnet
 )
-goto :eof
-
-rem ---------------------------------------------------------------------------
-rem  :portpid <port> <varname> [address]  - PID listening on <port> (on
-rem  <address> alone, if given), empty if none.
-rem  portpid.py, not netstat's LISTENING rows: on Windows 26300.9818 a
-rem  listener's state reads wrong and netstat leaves it out (its docstring).
-rem ---------------------------------------------------------------------------
-:portpid
-set "%~2="
-for /f %%A in ('call "%ENVDIR%\python.exe" "%REPO%\backend\app\portpid.py" %~1 %~3') do set "%~2=%%A"
 goto :eof
 
 rem ---------------------------------------------------------------------------

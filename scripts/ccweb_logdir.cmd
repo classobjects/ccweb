@@ -11,7 +11,8 @@ rem  not from wherever the caller happens to stand, so startup and shutdown
 rem  always agree.
 rem
 rem  Called by ccweb_startup.cmd, ccweb_shutdown.cmd, ccweb_claude.cmd,
-rem  ccweb_backup.cmd and ccweb_testdb.cmd after ccweb_settings.cmd. No
+rem  ccweb_backup.cmd, ccweb_testdb.cmd, ccweb_api.cmd and ccweb_pgstart.cmd
+rem  after ccweb_settings.cmd. No
 rem  setlocal: setting the caller's LOGS is the point.
 rem ---------------------------------------------------------------------------
 set "LOGS=%CCWEB_LOG_DIR%"

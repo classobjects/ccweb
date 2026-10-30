@@ -145,4 +145,6 @@ unset -f _ccweb_testdb_main
 unset _ccweb_testdb_sourced _ccweb_testdb_url
 # The file's status is its last command's: the function's, without a
 # top-level return that would read as ending the script that sourced this.
-(exit "$_ccweb_testdb_rc")
+# eval puts the code into the text before running it, so the variable can
+# go too; `set --` would do it by overwriting the caller's own "$@".
+eval "unset _ccweb_testdb_rc; (exit $_ccweb_testdb_rc)"

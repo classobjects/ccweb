@@ -22,9 +22,10 @@ rem  The folder is CCWEB_BACKUP_DIR, read from .env through ccweb_settings
 rem  (unset: ccwebdb-backup in your home folder). Set it in .env, which the
 rem  daily task reads too; a variable set only in this window it never sees.
 rem  Everything the backup prints goes to backup.log in the logs folder, each
-rem  run under a line with its date and time; a run that could not put the
-rem  environment in play says so there too, because a scheduled run has no
-rem  console for anyone to read.
+rem  run under a line with its date and time, because a scheduled run has
+rem  no console for anyone to read. A run that could not put the
+rem  environment in play has no log folder to write to: it says so on the
+rem  console only, and a scheduled run's failure is in the task's Last Result.
 rem
 rem  PostgreSQL has to be running: a backup of a stopped database is a failed
 rem  run, logged as one. A scheduled run the machine was off or asleep for is

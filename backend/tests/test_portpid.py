@@ -80,6 +80,22 @@ def test_it_finds_a_real_listener_and_not_a_connection() -> None:
                 assert _helper(str(client.getsockname()[1])) == ""
 
 
+@windows_only
+def test_an_error_other_than_a_small_buffer_is_raised(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Retried only on ERROR_INSUFFICIENT_BUFFER: any other code would loop forever."""
+
+    class _Iphlpapi:
+        @staticmethod
+        def GetExtendedTcpTable(*_args: object) -> int:
+            return 87  # ERROR_INVALID_PARAMETER
+
+    monkeypatch.setattr(portpid.ctypes, "WinDLL", lambda _name: _Iphlpapi())
+    with pytest.raises(OSError, match="GetExtendedTcpTable failed"):
+        portpid.tcp_rows()
+
+
 #: A netstat call outside a `rem` line.
 _NETSTAT = re.compile(r"^(?!\s*rem\b).*\bnetstat\b", re.IGNORECASE | re.MULTILINE)
 

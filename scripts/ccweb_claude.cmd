@@ -13,6 +13,7 @@ rem          scripts\ccweb_claude.cmd 01G7CtsF...      resume that session id
 rem          scripts\ccweb_claude.cmd ccweb --effort high   extra flags pass through
 rem          scripts\ccweb_claude.cmd /check           report state, start nothing
 rem          scripts\ccweb_claude.cmd /nodb ...        skip the database check
+rem  (--check and --nodb as well, for Git Bash, which rewrites a /switch)
 rem
 rem  claude's -r/--resume takes a session id, or any other value as a search
 rem  term for the interactive picker - so a session name works.
@@ -24,13 +25,16 @@ rem ---------------------------------------------------------------------------
 
 rem This script lives in scripts\, so the repo root is one level up.
 for %%I in ("%~dp0..") do set "REPO=%%~fI"
-set "ENVNAME=ccwebdb"
 
 set "CHECKONLY="
 set "SKIPDB="
 :parseargs
-if /I "%~1"=="/check" ( set "CHECKONLY=1" & shift & goto parseargs )
-if /I "%~1"=="/nodb"  ( set "SKIPDB=1"    & shift & goto parseargs )
+rem  The -- forms too: Git Bash rewrites /check into a path such as
+rem  C:/Program Files/Git/check, which would reach claude as a search term.
+if /I "%~1"=="/check"  ( set "CHECKONLY=1" & shift & goto parseargs )
+if /I "%~1"=="--check" ( set "CHECKONLY=1" & shift & goto parseargs )
+if /I "%~1"=="/nodb"   ( set "SKIPDB=1"    & shift & goto parseargs )
+if /I "%~1"=="--nodb"  ( set "SKIPDB=1"    & shift & goto parseargs )
 
 rem  What is left goes to claude. `shift` does not change %*, so the remaining
 rem  arguments are gathered here; passing %* would hand claude the switches too.

@@ -26,15 +26,16 @@ rem This script lives in scripts\, so the repo root is one level up.
 rem %%~fI resolves the "..\" to a real absolute path with no trailing slash.
 for %%I in ("%~dp0..") do set "REPO=%%~fI"
 
-rem  Put ccwebdb in play for pg_ctl. Unlike startup, a failure here
-rem  does NOT abort: stopping things by port needs no environment, and a
-rem  broken environment is exactly when you most want a way out. Only the
-rem  PostgreSQL step depends on it, and it says so when skipped.
+rem  Put ccwebdb in play for pg_ctl and the port lookups (portpid.py runs
+rem  on its Python). Unlike startup, a failure here does NOT abort: a
+rem  broken environment is exactly when you most want a way out, and the
+rem  servers startup recorded are still stopped by their PIDs. The port
+rem  sweep and the PostgreSQL step need it, and each says so when skipped.
 set "PGBIN="
 call "%~dp0ccweb_env.cmd"
 if errorlevel 1 (
-    echo WARNING: ccwebdb environment unavailable - PostgreSQL cannot be
-    echo          stopped from here; the servers still will be.
+    echo WARNING: ccwebdb environment unavailable - only the servers startup
+    echo          recorded are stopped; the port sweep and PostgreSQL are left.
     set "PGBIN="
 )
 rem  Ports and folders are settings, read by the environment's Python.
@@ -137,7 +138,7 @@ if not defined SETOK (
     set "PROBLEM=1"
 )
 if defined SETOK for %%P in (%CCWEB_API_PORT% %CCWEB_FRONTEND_PORT%) do (
-    call :portpid %%P HOLDER
+    call "%~dp0ccweb_portpid.cmd" %%P HOLDER
     if defined HOLDER (
         echo   port %%P  STILL HELD by pid !HOLDER!
         set "PROBLEM=1"
@@ -190,7 +191,7 @@ rem  the images it runs as. A listener that is not one of those is some other
 rem  program that happens to have the port: it is named and left alone, and
 rem  the verify step reports the port still held. cmd has no way to read a
 rem  process's command line now that wmic is gone, so the image is the test.
-call :portpid %~1 SURVIVOR
+call "%~dp0ccweb_portpid.cmd" %~1 SURVIVOR
 if not defined SURVIVOR (
     echo       port %~1 free
     goto :eof
@@ -208,12 +209,4 @@ if defined OURS (
     echo       WARNING: port %~1 held by pid !SURVIVOR!, which is not %~2 - left alone
 )
 set "SURVIVOR="
-goto :eof
-
-rem ---------------------------------------------------------------------------
-:portpid
-rem  portpid.py, not netstat's LISTENING rows: on Windows 26300.9818 a
-rem  listener's state reads wrong and netstat leaves it out (its docstring).
-set "%~2="
-for /f %%A in ('call "%ENVDIR%\python.exe" "%REPO%\backend\app\portpid.py" %~1 %~3') do set "%~2=%%A"
 goto :eof

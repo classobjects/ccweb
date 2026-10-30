@@ -65,7 +65,9 @@ if exist "%TESTDATA%\PG_VERSION" goto launch
 echo Creating the test cluster in %TESTDATA%
 set "PWFILE=%TEMP%\ccweb_testdb_pw.txt"
 rem  No space before the redirection: it would end up in the password.
->"%PWFILE%" echo %PGPASSWORD%
+rem  !PGPASSWORD!, expanded after the line is parsed, so a & | < or > in
+rem  it is text, not an operator; echo( writes an empty one as empty.
+>"%PWFILE%" echo(!PGPASSWORD!
 "%PGBIN%\initdb.exe" -D "%TESTDATA%" -U postgres --pwfile="%PWFILE%" --auth-host=scram-sha-256 --auth-local=scram-sha-256 --encoding=UTF8 >"%LOGS%\initdb-test.log" 2>&1
 set "RC=!errorlevel!"
 del "%PWFILE%"
