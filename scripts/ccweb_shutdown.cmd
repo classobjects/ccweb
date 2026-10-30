@@ -212,6 +212,8 @@ goto :eof
 
 rem ---------------------------------------------------------------------------
 :portpid
+rem  portpid.py, not netstat's LISTENING rows: on Windows 26300.9818 a
+rem  listener's state reads wrong and netstat leaves it out (its docstring).
 set "%~2="
-for /f "tokens=5" %%A in ('netstat -ano -p TCP ^| findstr /R /C:":%~1  *[0-9]" ^| findstr "LISTENING"') do set "%~2=%%A"
+for /f %%A in ('call "%ENVDIR%\python.exe" "%REPO%\backend\app\portpid.py" %~1 %~3') do set "%~2=%%A"
 goto :eof
