@@ -146,8 +146,9 @@ export default function AddItem({
   const [busy, setBusy] = useState(false)
   // The item just created and open in the editor, until it is saved or closed.
   const [entering, setEntering] = useState(null)
-  // Items closed without a save. `items` goes on holding one until the
-  // purchase is read again, and it is not there to be copied.
+  // Items closed without a save, or deleted in the editor. `items` goes on
+  // holding one until the purchase is read again, and it is not there to be
+  // copied.
   const [abandonedIds, setAbandonedIds] = useState([])
   // Whether the editor has written anything to the item it has open: a
   // save that got part of the way leaves a real item behind.
@@ -214,6 +215,15 @@ export default function AddItem({
   function saved() {
     onEntered?.(entering.id)
     setEntering(null)
+    onChanged?.()
+  }
+
+  // Deleted in the editor: gone, so never an entry, whatever a save wrote
+  // before it.
+  function deleted() {
+    const item = entering
+    setEntering(null)
+    setAbandonedIds((ids) => [...ids, item.id])
     onChanged?.()
   }
 
@@ -294,6 +304,7 @@ export default function AddItem({
           key={entering.id}
           itemId={entering.id}
           onSaved={saved}
+          onDeleted={deleted}
           onChanged={() => {
             written.current = true
             onChanged?.()

@@ -120,6 +120,10 @@ function GroupIntoLot({ ids, codes, onGrouped, onClose }) {
       onGrouped(lot.title)
     } catch (err) {
       if (!mounted.current) return
+      // An existing lot refused -- changed elsewhere since it was listed,
+      // most often -- is listed again, so a retry sends the version it has
+      // now rather than the one this dialog opened with.
+      if (target !== 'new') assembling.reload()
       setGroupError(
         target === 'new' && lot !== null
           ? `${lot.title} was started but is empty: ${err.message}`

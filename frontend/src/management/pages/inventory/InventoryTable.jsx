@@ -45,6 +45,12 @@ function sortMarker(current, key) {
   return current.desc === 'true' ? ' v' : ' ^'
 }
 
+/** A sortable column's `aria-sort`: its direction when it is the sort, else none. */
+function sortDirection(current, key) {
+  if (current.sort !== key) return 'none'
+  return current.desc === 'true' ? 'descending' : 'ascending'
+}
+
 /**
  * The inventory results table: column headers plus the rows themselves.
  *
@@ -91,6 +97,7 @@ export default function InventoryTable({
                 something anyone means. */}
               <input
                 type="checkbox"
+                aria-label="Select this page"
                 checked={allShown}
                 onChange={() =>
                   onSelect(
@@ -103,19 +110,27 @@ export default function InventoryTable({
             </th>
             {config.columns.map(([label, key]) =>
               sortable.includes(key) ? (
+                // A button, so the sort is reached from the keyboard, and
+                // `aria-sort` says which way: the marker is only seen.
                 <th
                   key={key}
                   className="sortable"
-                  onClick={() =>
-                    apply({
-                      sort: key,
-                      desc:
-                        current.sort === key && current.desc !== 'true' ? 'true' : '',
-                    })
-                  }
+                  aria-sort={sortDirection(current, key)}
                 >
-                  {label}
-                  {sortMarker(current, key)}
+                  <button
+                    type="button"
+                    className="link sort-header"
+                    onClick={() =>
+                      apply({
+                        sort: key,
+                        desc:
+                          current.sort === key && current.desc !== 'true' ? 'true' : '',
+                      })
+                    }
+                  >
+                    {label}
+                    <span aria-hidden="true">{sortMarker(current, key)}</span>
+                  </button>
                 </th>
               ) : (
                 <th key={key}>{label}</th>
@@ -132,6 +147,7 @@ export default function InventoryTable({
                   <td className="select-cell" data-help="select_row">
                     <input
                       type="checkbox"
+                      aria-label={`Select ${row.item_code}`}
                       checked={selected.includes(row.id)}
                       onChange={() => toggle(row.id)}
                     />

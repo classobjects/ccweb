@@ -3,7 +3,28 @@
 // SPDX-License-Identifier: Apache-2.0
 import { describe, expect, it } from 'vitest'
 
-import { identifyChanges, identifyKeys, identifyValues } from './identify'
+import { identifyChanges, identifyKeys, identifyValues, isYearRange } from './identify'
+
+describe('isYearRange', () => {
+  // The server's rule, `app/years.py` `is_single`: no end, or an end equal
+  // to the start, is one year.
+  it('takes no end, or an end equal to the start, as one year', () => {
+    expect(isYearRange(1881, null)).toBe(false)
+    expect(isYearRange(1881, undefined)).toBe(false)
+    expect(isYearRange(1878, 1878)).toBe(false)
+    expect(isYearRange(null, null)).toBe(false)
+  })
+
+  it('compares as numbers: a typed year is text', () => {
+    expect(isYearRange('1878', 1878)).toBe(false)
+    expect(isYearRange('1878', 1885)).toBe(true)
+  })
+
+  it('takes an end that differs, or an end with no start, as a range', () => {
+    expect(isYearRange(1999, 2008)).toBe(true)
+    expect(isYearRange(null, 1900)).toBe(true)
+  })
+})
 
 describe('identifyKeys', () => {
   it('asks a note for its series, face value and serial, then its plates', () => {

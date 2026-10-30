@@ -2,7 +2,7 @@
 // Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
 // SPDX-License-Identifier: Apache-2.0
 import userEvent from '@testing-library/user-event'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../../api', () => ({
@@ -139,6 +139,44 @@ describe('OrderEditor', () => {
         items: [{ listing_id: 4, quantity: 1, unit_price: '10.00' }],
       }),
     )
+  })
+
+  it('shows the latest search, not a slower answer to an earlier one', async () => {
+    let answerDime
+    api.listCatalog.mockImplementation(({ q }) =>
+      q === 'dime'
+        ? new Promise((resolve) => {
+            answerDime = resolve
+          })
+        : Promise.resolve({
+            items: [{ id: 5, title: 'Nickel', price: '5.00', quantity_available: 2 }],
+          }),
+    )
+    const { user } = await setup()
+    const box = screen.getByRole('searchbox', { name: 'Find item' })
+    await user.type(box, 'dime')
+    await user.click(screen.getByRole('button', { name: 'Search' }))
+    await user.clear(box)
+    await user.type(box, 'nickel')
+    await user.click(screen.getByRole('button', { name: 'Search' }))
+    await screen.findByRole('button', { name: 'Add Nickel' })
+
+    await act(async () =>
+      answerDime({
+        items: [{ id: 4, title: 'Dime', price: '10.00', quantity_available: 7 }],
+      }),
+    )
+    expect(screen.queryByRole('button', { name: 'Add Dime' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Add Nickel' })).toBeInTheDocument()
+  })
+
+  it('searches again when Search is pressed again for the same words', async () => {
+    const { user } = await setup()
+    await user.type(screen.getByRole('searchbox', { name: 'Find item' }), 'dime')
+    await user.click(screen.getByRole('button', { name: 'Search' }))
+    await screen.findByRole('button', { name: 'Add Dime' })
+    await user.click(screen.getByRole('button', { name: 'Search' }))
+    await waitFor(() => expect(api.listCatalog).toHaveBeenCalledTimes(2))
   })
 
   it('creates a customer record for an account before placing the order', async () => {

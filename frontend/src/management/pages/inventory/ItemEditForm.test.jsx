@@ -207,6 +207,20 @@ describe('ItemEditForm', () => {
     asked.mockRestore()
   })
 
+  it('tells an opener that tells them apart of a deletion, not a save', async () => {
+    const user = userEvent.setup()
+    const onSaved = vi.fn()
+    const onDeleted = vi.fn()
+    const asked = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    api.deleteInventoryItem = vi.fn().mockResolvedValue(null)
+    render(<ItemEditForm itemId={12} onSaved={onSaved} onDeleted={onDeleted} />)
+
+    await user.click(await screen.findByRole('button', { name: 'Delete item...' }))
+    await waitFor(() => expect(onDeleted).toHaveBeenCalled())
+    expect(onSaved).not.toHaveBeenCalled()
+    asked.mockRestore()
+  })
+
   it("says why an item was not deleted, in the server's words, and stays open", async () => {
     const user = userEvent.setup()
     const onSaved = vi.fn()
@@ -1349,6 +1363,14 @@ describe('ItemEditForm years', () => {
     expect(screen.getByRole('spinbutton', { name: 'Year to' })).toHaveValue(2008)
   })
 
+  it('opens an end year with no start as a range, so the end is seen', async () => {
+    // The server takes it as no single year (`app/years.py`); one Year box
+    // would show it empty, and a year typed there would replace the end.
+    await open({ year_start: null, year_end: 1900 })
+    expect(rangeBox()).toBeChecked()
+    expect(screen.getByRole('spinbutton', { name: 'Year to' })).toHaveValue(1900)
+  })
+
   it('saves one year as both ends', async () => {
     const user = await open({ year_start: 1878, year_end: 1878 })
     const year = screen.getByRole('spinbutton', { name: 'Year' })
@@ -2065,6 +2087,40 @@ describe('ItemEditForm: changes to filed photographs wait for Save', () => {
     expect(screen.getByText(/not saved yet/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled()
     expect(onSaved).not.toHaveBeenCalled()
+  })
+
+  it('keeps a change made while Save runs, for the next Save', async () => {
+    const user = userEvent.setup()
+    let answer
+    api.updateImageLink.mockReturnValue(
+      new Promise((resolve) => {
+        answer = resolve
+      }),
+    )
+    api.detachImage.mockResolvedValue(null)
+    const onSaved = await open()
+    const pickers = screen.getAllByRole('combobox', { name: 'image_role' })
+    await user.selectOptions(pickers[1], 'reverse')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(api.updateImageLink).toHaveBeenCalled())
+    expect(screen.getByRole('button', { name: /^Sav/ })).toBeDisabled()
+
+    // While the role change is out, a removal.
+    await user.click(screen.getByRole('button', { name: 'Remove (photo 10)' }))
+    await act(async () => answer({}))
+
+    // Not closed over the removal, which is still held.
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled(),
+    )
+    expect(onSaved).not.toHaveBeenCalled()
+    expect(api.detachImage).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() =>
+      expect(api.detachImage).toHaveBeenCalledWith(1, { acknowledgeForSale: false }),
+    )
+    // The role change applied is not sent twice.
+    expect(api.updateImageLink).toHaveBeenCalledTimes(1)
   })
 
   it("applies them for an item for sale under the form's acknowledgement", async () => {
@@ -2843,6 +2899,42 @@ describe('ItemEditForm: photographs wait for Save', () => {
     )
     await user.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(api.uploadImage).toHaveBeenCalled())
+  })
+
+  it('keeps a photograph added while Save runs, and files it on the next', async () => {
+    const user = userEvent.setup()
+    const onSaved = vi.fn()
+    let answer
+    api.uploadImage.mockReturnValueOnce(
+      new Promise((resolve) => {
+        answer = resolve
+      }),
+    )
+    api.uploadImage.mockResolvedValue({})
+    render(<ItemEditForm itemId={12} onSaved={onSaved} onClose={vi.fn()} />)
+    await screen.findByDisplayValue('Mercury Dime')
+    const front = new File(['a'], 'front.jpg', { type: 'image/jpeg' })
+    const back = new File(['b'], 'back.jpg', { type: 'image/jpeg' })
+    await user.upload(await screen.findByLabelText('Photo'), front)
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(api.uploadImage).toHaveBeenCalledTimes(1))
+
+    // Added while the first is being filed.
+    await user.upload(screen.getByLabelText('Photo'), back)
+    await act(async () => answer({}))
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled(),
+    )
+    expect(screen.queryByRole('combobox', { name: 'What front.jpg shows' })).toBeNull()
+    expect(screen.getByRole('combobox', { name: 'What back.jpg shows' })).toBeVisible()
+    // Not closed: the editor would close over the photograph still held.
+    expect(onSaved).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(api.uploadImage).toHaveBeenCalledTimes(2))
+    expect(api.uploadImage.mock.calls[1][1].name).toBe('back.jpg')
+    await waitFor(() => expect(onSaved).toHaveBeenCalled())
   })
 
   it('discards a held photograph without filing it', async () => {

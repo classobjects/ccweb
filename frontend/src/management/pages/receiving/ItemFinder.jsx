@@ -53,6 +53,13 @@ function statusesFor(filters) {
   return OUTSTANDING_STATUSES
 }
 
+/** What an empty answer says, by the status it was searched for. */
+function nothingMatches(status) {
+  if (status === ANY_STATUS) return 'Nothing matches, in any status.'
+  if (status) return 'Nothing in that status matches.'
+  return 'Nothing outstanding matches.'
+}
+
 /**
  * The filters every request of one search carries, whichever view it asks:
  * the denomination, part of a serial (a note's on the currency view, a
@@ -437,11 +444,7 @@ export default function ItemFinder({
         )}
 
         {results?.length === 0 && (
-          <p className="muted">
-            {searchedStatus
-              ? 'Nothing in that status matches.'
-              : 'Nothing outstanding matches.'}
-          </p>
+          <p className="muted">{nothingMatches(searchedStatus)}</p>
         )}
 
         {results && results.length > 0 && (

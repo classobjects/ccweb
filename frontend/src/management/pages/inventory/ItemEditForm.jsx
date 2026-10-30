@@ -6,6 +6,7 @@ import { Fragment, useCallback, useEffect, useId, useRef, useState } from 'react
 import { money } from '../../../shared/format'
 import { api } from '../../api'
 import { listingIdFrom } from '../../listing'
+import { isYearRange } from '../../identify'
 import {
   fieldFitsKind,
   fitsKind,
@@ -115,19 +116,6 @@ const TEXT_FIELDS = [
 
 const NUMBER_FIELDS = [['Pieces', 'piece_count', 'p']]
 
-/**
- * Whether stored years are a range rather than one year.
- *
- * One year is stored as start == end, and a few older items as a start with
- * no end; both are one year. A range is for a multi-year set, or a coin dated
- * only to an era -- rare -- so the form asks for one year unless the item
- * already has a range. Opening a stored range as one would let a
- * save collapse it without anyone seeing the end year.
- */
-function isRange(start, end) {
-  return start != null && end != null && Number(start) !== Number(end)
-}
-
 /** An emptied number box clears the year rather than sending "". */
 const yearValue = (text) => (text === '' ? null : text)
 
@@ -211,6 +199,18 @@ const FIXED_VOCABULARIES = new Set([
  */
 const certsFrom = (text) => text.split(',').map((part) => part.trim())
 
+/**
+ * A copy of `changes` with its certificate numbers' empty entries dropped,
+ * as they are sent (see `certsFrom`).
+ */
+function certsCleaned(changes) {
+  const cleaned = { ...changes }
+  if (Array.isArray(cleaned.cert_numbers)) {
+    cleaned.cert_numbers = cleaned.cert_numbers.filter(Boolean)
+  }
+  return cleaned
+}
+
 /** What Save says when held photographs could not be filed. */
 function photosFailed(failed) {
   const what =
@@ -238,12 +238,9 @@ function errorsKey(rows) {
  */
 function fieldsPayload(draft, item, baseItem, acknowledge) {
   const payload = {
-    ...draft,
+    ...certsCleaned(draft),
     version: item.version,
     base: baseFor(baseItem, draft),
-  }
-  if (Array.isArray(payload.cert_numbers)) {
-    payload.cert_numbers = payload.cert_numbers.filter(Boolean)
   }
   if (acknowledge) payload.acknowledge_for_sale = true
   return payload
@@ -400,9 +397,17 @@ const factsDecidedFor = (kind, askedFacts) =>
  * while the item is for sale and that has not been acknowledged. `onSaved`
  * runs when all of it was saved; `onChanged` when only part of it was, or
  * when the item was split, so whoever opened the form reads its list again.
+ * `onDeleted` runs when the item was deleted; a caller that gives none is
+ * told through `onSaved`, since either way the form is done with.
  * `onClose`, when given, adds a button that leaves without saving.
  */
-export default function ItemEditForm({ itemId, onSaved, onChanged, onClose }) {
+export default function ItemEditForm({
+  itemId,
+  onSaved,
+  onChanged,
+  onDeleted,
+  onClose,
+}) {
   const [item, setItem] = useState(null)
   const [draft, setDraft] = useState({})
   // Where each edited field's edit began (see `fieldMerge.js`): a change made
@@ -422,6 +427,9 @@ export default function ItemEditForm({ itemId, onSaved, onChanged, onClose }) {
   // Changes to photographs already filed -- a role, the primary, a removal
   // -- keyed by link id, held the same way (see PhotosPanel).
   const [photoEdits, setPhotoEdits] = useState({})
+  // Counts the photograph changes made in the panel, so a Save can tell
+  // whether one was made while it ran -- read at once, unlike state.
+  const photoTouches = useRef(0)
   // A Friedberg number confirmed, chosen or cleared in its panel, held for
   // Save the same way.
   const [pendingFriedberg, setPendingFriedberg] = useState(null)
@@ -432,6 +440,11 @@ export default function ItemEditForm({ itemId, onSaved, onChanged, onClose }) {
   const [savedErrors, setSavedErrors] = useState(null)
   const [errors, setErrors] = useState(null)
   const [errorsReadError, setErrorsReadError] = useState('')
+  // Whether the years are shown as a range. A range is for a multi-year set,
+  // or a coin dated only to an era -- rare -- so the form asks for one year
+  // unless the item already has a range (`isYearRange`). Opening a stored
+  // range as one would let a save collapse it without anyone seeing the end
+  // year.
   const [ranged, setRanged] = useState(false)
   // Ticked to change an item that is for sale; reset whenever it is loaded.
   const [acknowledged, setAcknowledged] = useState(false)
@@ -502,7 +515,7 @@ export default function ItemEditForm({ itemId, onSaved, onChanged, onClose }) {
   const adopt = useCallback((body) => {
     setItem(body)
     setBaseItem(body)
-    setRanged(isRange(body.year_start, body.year_end))
+    setRanged(isYearRange(body.year_start, body.year_end))
     setDraft({})
     setPreview(null)
     setKindCleared({})
@@ -626,10 +639,7 @@ export default function ItemEditForm({ itemId, onSaved, onChanged, onClose }) {
     if (draftKey === '{}') return undefined
     let cancelled = false
     const timer = setTimeout(() => {
-      const changes = JSON.parse(draftKey)
-      if (Array.isArray(changes.cert_numbers)) {
-        changes.cert_numbers = changes.cert_numbers.filter(Boolean)
-      }
+      const changes = certsCleaned(JSON.parse(draftKey))
       api
         .previewItem(itemId, { changes })
         .then((body) => {
@@ -741,7 +751,7 @@ export default function ItemEditForm({ itemId, onSaved, onChanged, onClose }) {
     // year with no start edited, that is no change at all, so nothing is left
     // in the draft to save.
     const next = { ...draft }
-    if (!isRange(item.year_start, item.year_end) && !('year_start' in draft)) {
+    if (!isYearRange(item.year_start, item.year_end) && !('year_start' in draft)) {
       delete next.year_end
     } else {
       next.year_end = 'year_start' in draft ? draft.year_start : item.year_start
@@ -807,7 +817,7 @@ export default function ItemEditForm({ itemId, onSaved, onChanged, onClose }) {
   function yearClaim() {
     const start = item.lot_claims?.year_start
     const end = item.lot_claims?.year_end
-    return claimed(isRange(start, end) ? `${start}-${end}` : (start ?? end))
+    return claimed(isYearRange(start, end) ? `${start ?? '?'}-${end}` : (start ?? end))
   }
 
   // No date: the piece carries none at all (a gold bar), as distinct from a
@@ -829,7 +839,7 @@ export default function ItemEditForm({ itemId, onSaved, onChanged, onClose }) {
     if (next.year_start === null && next.year_end === null) {
       delete next.year_start
       delete next.year_end
-      setRanged(isRange(item.year_start, item.year_end))
+      setRanged(isYearRange(item.year_start, item.year_end))
     }
     setDraft(next)
   }
@@ -870,11 +880,8 @@ export default function ItemEditForm({ itemId, onSaved, onChanged, onClose }) {
   // send it, and the errors the panel holds.
   async function suggestDescription() {
     // Not the description itself: the suggestion is what replaces it.
-    const changes = { ...draft }
+    const changes = certsCleaned(draft)
     delete changes.description
-    if (Array.isArray(changes.cert_numbers)) {
-      changes.cert_numbers = changes.cert_numbers.filter(Boolean)
-    }
     const body = { changes }
     if (errorsChanged) {
       body.errors = errors.map((row) => ({
@@ -901,11 +908,16 @@ export default function ItemEditForm({ itemId, onSaved, onChanged, onClose }) {
   /**
    * File each held photograph; those that fail stay held with their reason.
    * Returns the ones that failed.
+   *
+   * What is held is merged with the list as it is by then, not replaced by
+   * the one sent: a photograph added while Save runs is still held, and one
+   * discarded meanwhile is not brought back.
    */
   async function filePhotos() {
     const ack = forSale && acknowledged
+    const sent = pendingPhotos
     const left = []
-    for (const entry of pendingPhotos) {
+    for (const entry of sent) {
       try {
         if (entry.kind === 'file') {
           await api.uploadImage(itemId, entry.file, {
@@ -922,8 +934,20 @@ export default function ItemEditForm({ itemId, onSaved, onChanged, onClose }) {
         left.push({ ...entry, error: err.message })
       }
     }
-    setPendingPhotos(left)
-    if (pendingPhotos.length > 0) setPhotoKey((n) => n + 1)
+    const refused = new Map(left.map((entry) => [entry.key, entry]))
+    setPendingPhotos((now) =>
+      now.flatMap((entry) => {
+        const was = sent.find((held) => held.key === entry.key)
+        // Added while Save ran: still to be filed.
+        if (!was) return [entry]
+        // Filed: held no longer, or the next Save would file it twice.
+        if (!refused.has(entry.key)) return []
+        // Refused: held with its reason -- or, relabelled meanwhile, with
+        // the new role, to be filed with that.
+        return [entry === was ? refused.get(entry.key) : entry]
+      }),
+    )
+    if (sent.length > 0) setPhotoKey((n) => n + 1)
     return left
   }
 
@@ -935,10 +959,14 @@ export default function ItemEditForm({ itemId, onSaved, onChanged, onClose }) {
    * last: a primary moved off a photograph that then leaves has already been
    * given its successor, so the server's own fill-in
    * (`fill_primary_vacancy`) never overrides it.
+   *
+   * As with new photographs, a change made or altered while Save runs is
+   * kept as it is by then; only the changes sent are settled here.
    */
   async function applyPhotoEdits() {
     const ack = forSale && acknowledged
-    const entries = Object.entries(photoEdits)
+    const sent = photoEdits
+    const entries = Object.entries(sent)
     const ordered = [
       ...entries.filter(([, edit]) => !edit.remove && !edit.move_to),
       ...entries.filter(([, edit]) => edit.move_to),
@@ -964,7 +992,16 @@ export default function ItemEditForm({ itemId, onSaved, onChanged, onClose }) {
         left[id] = { ...edit, error: err.message }
       }
     }
-    setPhotoEdits(left)
+    setPhotoEdits((now) => {
+      const next = {}
+      for (const [id, edit] of Object.entries(now)) {
+        // Made or changed while Save ran: still to be applied.
+        if (edit !== sent[id]) next[id] = edit
+        // Sent and refused: held with its reason. Sent and applied: done.
+        else if (id in left) next[id] = left[id]
+      }
+      return next
+    })
     if (entries.length > 0) setPhotoKey((n) => n + 1)
     return Object.values(left).map((edit) => edit.error)
   }
@@ -1121,11 +1158,13 @@ export default function ItemEditForm({ itemId, onSaved, onChanged, onClose }) {
       return
     }
     setSaving(true)
+    const photoTouchesBefore = photoTouches.current
     const heldFriedberg = pendingFriedberg
     if (!(await clearedFirst(heldFriedberg))) return
     if (!(await fieldsSaved(heldFriedberg))) return
     const problems = await restSaved(heldFriedberg)
     const typedSince = await readBack(problems)
+    const photosSince = photoTouches.current !== photoTouchesBefore
     if (problems.length > 0) {
       setError(`Not all was saved -- ${problems.join('; ')}`)
       // Something may have been written all the same: whoever opened the
@@ -1134,14 +1173,16 @@ export default function ItemEditForm({ itemId, onSaved, onChanged, onClose }) {
       return
     }
     setError('')
-    // An edit made meanwhile is still to be saved: the form stays open on
-    // it, and whoever opened the form is told only that something changed.
-    if (Object.keys(typedSince).length > 0) onChanged?.()
+    // An edit made meanwhile -- typed, or to the photographs -- is still to
+    // be saved: the form stays open on it, and whoever opened the form is
+    // told only that something changed.
+    if (Object.keys(typedSince).length > 0 || photosSince) onChanged?.()
     else onSaved?.()
   }
 
   // Deleting is for a row that should never have existed, and leaves the
-  // editor: `onSaved` closes it and has the list behind read again. A
+  // editor: `onDeleted` (else `onSaved`) closes it and has the list behind
+  // read again -- never as a save, which would count the item as done. A
   // refusal -- the item has pieces, has been offered, is in a sales lot --
   // is said beside the button, in the server's words.
   async function deleteItem() {
@@ -1154,7 +1195,8 @@ export default function ItemEditForm({ itemId, onSaved, onChanged, onClose }) {
     setDeleteError('')
     try {
       await api.deleteInventoryItem(item.id)
-      onSaved?.()
+      const gone = onDeleted ?? onSaved
+      gone?.()
     } catch (err) {
       setDeleteError(err.message)
       setDeleting(false)
@@ -1631,24 +1673,30 @@ export default function ItemEditForm({ itemId, onSaved, onChanged, onClose }) {
           itemId={itemId}
           pending={pendingPhotos}
           edits={photoEdits}
-          onEditsChange={setPhotoEdits}
+          onEditsChange={(next) => {
+            photoTouches.current += 1
+            setPhotoEdits(next)
+          }}
           reloadKey={photoKey}
-          onAdd={(entry) =>
+          onAdd={(entry) => {
+            photoTouches.current += 1
             setPendingPhotos((list) => [
               ...list,
               { ...entry, key: crypto.randomUUID() },
             ])
-          }
-          onRoleChange={(key, role) =>
+          }}
+          onRoleChange={(key, role) => {
+            photoTouches.current += 1
             setPendingPhotos((list) =>
               list.map((entry) =>
                 entry.key === key ? { ...entry, role, error: undefined } : entry,
               ),
             )
-          }
-          onDiscard={(key) =>
+          }}
+          onDiscard={(key) => {
+            photoTouches.current += 1
             setPendingPhotos((list) => list.filter((entry) => entry.key !== key))
-          }
+          }}
         />
 
         {/* The saved kind: a Friedberg number hangs on the note's stored row,

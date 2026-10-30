@@ -57,7 +57,7 @@ describe('InventoryTable', () => {
   it('sorts ascending on the first click of an unsorted column', async () => {
     const user = userEvent.setup()
     const { props } = setup()
-    await user.click(screen.getByRole('columnheader', { name: /code/i }))
+    await user.click(screen.getByRole('button', { name: 'Code' }))
     // Ascending is the empty string, not 'false' -- the value goes straight
     // into the query string.
     expect(props.apply).toHaveBeenCalledWith({ sort: 'item_code', desc: '' })
@@ -66,31 +66,54 @@ describe('InventoryTable', () => {
   it('flips to descending when the column is already the ascending sort', async () => {
     const user = userEvent.setup()
     const { props } = setup({ current: { sort: 'item_code', desc: '' } })
-    await user.click(screen.getByRole('columnheader', { name: /code/i }))
+    await user.click(screen.getByRole('button', { name: 'Code' }))
     expect(props.apply).toHaveBeenCalledWith({ sort: 'item_code', desc: 'true' })
   })
 
-  it('marks the sorted column and flips direction', () => {
-    setup({ current: { sort: 'item_code', desc: 'true' } })
-    // The header carries a direction marker only for the active sort column.
-    expect(screen.getByRole('columnheader', { name: /code v/i })).toBeInTheDocument()
+  it('sorts from the keyboard', async () => {
+    const user = userEvent.setup()
+    const { props } = setup()
+    screen.getByRole('button', { name: 'Code' }).focus()
+    await user.keyboard('{Enter}')
+    expect(props.apply).toHaveBeenCalledWith({ sort: 'item_code', desc: '' })
   })
 
-  it('does not offer a sort the server cannot perform', async () => {
+  it('says which way the sorted column is sorted, and no other', () => {
+    setup({
+      current: { sort: 'item_code', desc: 'true' },
+      sortable: ['item_code', 'item_cost'],
+    })
+    const code = screen.getByRole('columnheader', { name: 'Code' })
+    expect(code).toHaveAttribute('aria-sort', 'descending')
+    // The marker is seen, not read: aria-sort says it.
+    expect(code).toHaveTextContent('Code v')
+    expect(screen.getByRole('columnheader', { name: 'Cost' })).toHaveAttribute(
+      'aria-sort',
+      'none',
+    )
+  })
+
+  it('does not offer a sort the server cannot perform', () => {
     // The server lists what it can sort by; a header outside that list must
     // not be clickable, or a click puts "cannot sort by" on the page.
-    const user = userEvent.setup()
-    const { props } = setup({ sortable: ['item_code'] })
-    await user.click(screen.getByRole('columnheader', { name: /cost/i }))
-    expect(props.apply).not.toHaveBeenCalled()
+    setup({ sortable: ['item_code'] })
+    const cost = screen.getByRole('columnheader', { name: /cost/i })
+    expect(within(cost).queryByRole('button')).not.toBeInTheDocument()
+    expect(cost).not.toHaveAttribute('aria-sort')
   })
 
   it('selects every row on the page from the header checkbox', async () => {
     const user = userEvent.setup()
     const { props } = setup()
-    const header = screen.getAllByRole('columnheader')[0]
-    await user.click(within(header).getByRole('checkbox'))
+    await user.click(screen.getByRole('checkbox', { name: 'Select this page' }))
     expect(props.onSelect).toHaveBeenCalledWith([1, 2])
+  })
+
+  it('names each row checkbox by its item', async () => {
+    const user = userEvent.setup()
+    const { props } = setup()
+    await user.click(screen.getByRole('checkbox', { name: 'Select C-002' }))
+    expect(props.onSelect).toHaveBeenCalledWith([2])
   })
 })
 

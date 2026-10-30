@@ -9,6 +9,7 @@ import { AccessLabel } from '../../AccessLabel'
 import { accel, useSaveShortcut } from '../../shortcuts'
 import { fromCents, isMoney, toCents } from '../../../shared/cents'
 import { totalCents } from './cents'
+import { useRequest } from '../../../shared/useRequest'
 import { SaveButton } from '../../SaveButton'
 
 /**
@@ -36,7 +37,14 @@ export default function OrderEditor({ order, onSaved, onClose }) {
   )
   const [notes, setNotes] = useState(order?.notes ?? '')
   const [query, setQuery] = useState('')
-  const [results, setResults] = useState([])
+  // The words last searched for, null before any search. The results are
+  // keyed by them, so a slow answer for earlier words never replaces the
+  // answer for the latest, and none is shown while the latest is out.
+  const [searched, setSearched] = useState(null)
+  const catalog = useRequest(searched, () =>
+    api.listCatalog({ q: searched, in_stock: true, limit: 10 }),
+  )
+  const results = catalog.busy ? [] : (catalog.data?.items ?? [])
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
 
@@ -117,13 +125,11 @@ export default function OrderEditor({ order, onSaved, onClose }) {
       ),
     )
 
-  async function search() {
-    try {
-      const page = await api.listCatalog({ q: query, in_stock: true, limit: 10 })
-      setResults(page.items)
-    } catch (err) {
-      setError(err.message)
-    }
+  // Asked again for the same words, since stock moves: Search pressed twice
+  // is a fresh answer.
+  function search() {
+    if (searched === query) catalog.reload()
+    else setSearched(query)
   }
 
   function add(listing) {
@@ -301,6 +307,7 @@ export default function OrderEditor({ order, onSaved, onClose }) {
           <AccessLabel text="Search" accessKey="h" />
         </button>
       </div>
+      {catalog.error && <p className="error">{catalog.error}</p>}
       {results.map((listing) => (
         <div key={listing.id} className="row">
           <span>

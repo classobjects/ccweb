@@ -1,11 +1,12 @@
 // (c) Copyright 2026 Nathaniel Mills
 // Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
 // SPDX-License-Identifier: Apache-2.0
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 
 import { api } from '../../api'
 import { COIN_VIEW, CURRENCY_VIEW } from './specs'
+import { useRequest } from '../../../shared/useRequest'
 
 /**
  * The other view's matches for the search made here.
@@ -37,44 +38,33 @@ import { COIN_VIEW, CURRENCY_VIEW } from './specs'
 export default function OtherViewMatches({ view, filters, hereEmpty }) {
   const here = view === COIN_VIEW.view ? COIN_VIEW : CURRENCY_VIEW
   const other = view === COIN_VIEW.view ? CURRENCY_VIEW : COIN_VIEW
-  const [found, setFound] = useState(null)
   const navigate = useNavigate()
   const { state } = useLocation()
 
   const key = new URLSearchParams(filters).toString()
   const serial = filters.serial_number
   const ask = Boolean(key) && (Boolean(serial) || hereEmpty)
-
-  useEffect(() => {
-    if (!ask) return
-    let cancelled = false
-    api
-      .searchInventory(other.view, {
-        ...Object.fromEntries(new URLSearchParams(key)),
-        limit: 1,
-      })
-      .then((body) => {
-        if (!cancelled) setFound({ key, total: body.total })
-      })
-      .catch(() => {
-        if (!cancelled) setFound(null)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [other.view, key, ask])
-
-  const counted = ask && found?.key === key
   const target = `/inventory/${other.view}?${key}`
-  const switching = counted && found.total > 0 && hereEmpty
+
+  // Keyed by the other view and the filters: `busy` while the count on hand
+  // was asked for others.
+  const answer = useRequest(ask ? target : null, () =>
+    api.searchInventory(other.view, {
+      ...Object.fromEntries(new URLSearchParams(key)),
+      limit: 1,
+    }),
+  )
+  const counted = ask && !answer.busy && !answer.error && answer.data != null
+  const total = counted ? answer.data.total : 0
+  const switching = counted && total > 0 && hereEmpty
 
   useEffect(() => {
     if (!switching) return
     navigate(target, {
       replace: true,
-      state: { switchedFrom: here.title, key, total: found.total },
+      state: { switchedFrom: here.title, key, total },
     })
-  }, [switching, navigate, target, here.title, key, found?.total])
+  }, [switching, navigate, target, here.title, key, total])
 
   // The serial alone is said as a serial; anything more as the filters.
   const serialAlone = Object.keys(filters).length === 1 && Boolean(serial)
@@ -92,11 +82,11 @@ export default function OtherViewMatches({ view, filters, hereEmpty }) {
     )
   }
 
-  if (!counted || !found.total || switching) return null
-  const one = found.total === 1
+  if (!total || switching) return null
+  const one = total === 1
   return (
     <p className="notice">
-      {found.total} {one ? 'item' : 'items'} in {other.title}{' '}
+      {total} {one ? 'item' : 'items'} in {other.title}{' '}
       {one ? what(['has', 'matches']) : what(['have', 'match'])}.{' '}
       <Link to={target}>{one ? 'Show it' : 'Show them'}</Link>
     </p>

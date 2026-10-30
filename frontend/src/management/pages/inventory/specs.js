@@ -4,10 +4,11 @@
 /**
  * What each inventory view shows and filters on.
  *
- * Separated from the components because three modules import it -- the
+ * Separated from the components because four modules import it -- the
  * inventory page, which hands a view to the table and the filter panel, the
- * filter panel and the search hook -- and a specification imported in three
- * places should not live inside any one of them.
+ * filter panel, the search hook, and the other view's matches -- and a
+ * specification imported in four places should not live inside any one of
+ * them.
  *
  * `detail` is shown on a second line under each item, across the columns.
  * The description is long and read rather than compared, so it takes no
