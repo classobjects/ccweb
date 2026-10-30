@@ -131,8 +131,9 @@ class ImageDerivative(Base):
     __tablename__ = "image_derivative"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    #: Not indexed alone: `uq_image_derivative_kind` leads with it.
     image_id: Mapped[int] = mapped_column(
-        ForeignKey(_FK_IMAGE, ondelete="CASCADE"), index=True, nullable=False
+        ForeignKey(_FK_IMAGE, ondelete="CASCADE"), nullable=False
     )
     kind: Mapped[DerivativeKind] = mapped_column(
         enum_column(DerivativeKind, "derivative_kind"), nullable=False
@@ -162,10 +163,9 @@ class ItemImage(Base):
     __tablename__ = "item_image"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    #: Not indexed alone: `uq_item_image_pair` leads with it.
     inventory_item_id: Mapped[int | None] = mapped_column(
-        ForeignKey("inventory_item.id", ondelete="CASCADE"),
-        index=True,
-        nullable=True,
+        ForeignKey("inventory_item.id", ondelete="CASCADE"), nullable=True
     )
     image_id: Mapped[int] = mapped_column(
         ForeignKey(_FK_IMAGE, ondelete="CASCADE"), index=True, nullable=False

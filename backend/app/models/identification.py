@@ -60,16 +60,17 @@ class ItemCertification(TimestampMixin, Base):
     """A grading certificate.
 
     One to many, not one to one: a lot may contain several certified pieces,
-    and each certificate number is its own row.
+    and each certificate number is its own row -- once per item
+    (`uq_item_certification_item_number`), since the editor keys an item's
+    certificates by number.
     """
 
     __tablename__ = "item_certification"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    #: Not indexed alone: `uq_item_certification_item_number` leads with it.
     inventory_item_id: Mapped[int] = mapped_column(
-        ForeignKey(_FK_INVENTORY_ITEM, ondelete="CASCADE"),
-        index=True,
-        nullable=False,
+        ForeignKey(_FK_INVENTORY_ITEM, ondelete="CASCADE"), nullable=False
     )
     grading_service_id: Mapped[int | None] = mapped_column(
         ForeignKey("grading_service.id", ondelete="RESTRICT"),
@@ -78,6 +79,12 @@ class ItemCertification(TimestampMixin, Base):
     )
     #: Text, always -- certificate serials carry leading zeros and letters.
     cert_number: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "inventory_item_id", "cert_number", name="uq_item_certification_item_number"
+        ),
+    )
 
 
 class ItemError(Base):
@@ -98,10 +105,9 @@ class ItemError(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     #: An error is meaningless without its item, so it is deleted with it.
+    #: Not indexed alone: `uq_item_error_item_type` leads with it.
     inventory_item_id: Mapped[int] = mapped_column(
-        ForeignKey(_FK_INVENTORY_ITEM, ondelete="CASCADE"),
-        index=True,
-        nullable=False,
+        ForeignKey(_FK_INVENTORY_ITEM, ondelete="CASCADE"), nullable=False
     )
     #: RESTRICT, matching every other classifier FK here: a type in use
     #: cannot be deleted out from under the rows that reference it.

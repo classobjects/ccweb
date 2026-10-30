@@ -36,10 +36,16 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import Mapped, declared_attr, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..config import settings
-from .base import Base, ProvenanceSource, TimestampMixin, enum_column
+from .base import (
+    Base,
+    ProvenanceSource,
+    TimestampMixin,
+    VersionedMixin,
+    enum_column,
+)
 
 if TYPE_CHECKING:  # relationship targets only -- importing these at runtime
     # would make core, images and sales import one another in a cycle.
@@ -237,40 +243,25 @@ class PurchaseOrder(TimestampMixin, Base):
     )
 
 
-class InventoryItem(TimestampMixin, Base):
+class InventoryItem(VersionedMixin, TimestampMixin, Base):
     """One acquired item or lot -- the shared spine of the whole schema."""
 
     __tablename__ = "inventory_item"
 
-    #: Optimistic concurrency. Incremented on every ORM update, and the UPDATE
-    #: carries `WHERE version = <the one that was read>`; if another writer got
-    #: there first the statement matches no rows and SQLAlchemy raises.
-    #:
-    #: This is the protection PostgreSQL's MVCC does not give. MVCC makes
-    #: readers and writers never block each other, but a read and a write in
-    #: *different* transactions -- which is what an edit form is -- can still
-    #: lose an update: two people load the same item, both save, and the second
-    #: silently overwrites the first with values it loaded before the change.
-    #:
-    #: Optimistic rather than a lock, because editing an item is a document
-    #: edit: conflicts are rare, they can take minutes of human thinking time,
-    #: and when one happens a person can resolve it. Holding a row lock across
-    #: that would block every reader of the row for as long as the form is
-    #: open. Contrast `create_order`, which decrements a counter and uses
-    #: SELECT ... FOR UPDATE -- there, conflicts are the normal case and there
-    #: is nothing for a human to merge.
-    version: Mapped[int] = mapped_column(
-        Integer, nullable=False, server_default=text("1")
-    )
-
-    # A directive rather than a dict literal: see the note on __tablename__
-    # in base.py. ClassVar conflicts with DeclarativeBase's declaration and
-    # Final is a Liskov violation over it, while a bare literal trips
-    # RUF012. A directive is none of those, and matches __table_args__.
-    @declared_attr.directive
-    def __mapper_args__(cls) -> dict[str, Any]:
-        """Optimistic concurrency: every UPDATE checks the version it read."""
-        return {"version_id_col": cls.version}
+    # Optimistic concurrency (`VersionedMixin`) is the protection PostgreSQL's
+    # MVCC does not give. MVCC makes readers and writers never block each
+    # other, but a read and a write in *different* transactions -- which is
+    # what an edit form is -- can still lose an update: two people load the
+    # same item, both save, and the second silently overwrites the first with
+    # values it loaded before the change.
+    #
+    # Optimistic rather than a lock, because editing an item is a document
+    # edit: conflicts are rare, they can take minutes of human thinking time,
+    # and when one happens a person can resolve it. Holding a row lock across
+    # that would block every reader of the row for as long as the form is
+    # open. Contrast `create_order`, which decrements a counter and uses
+    # SELECT ... FOR UPDATE -- there, conflicts are the normal case and there
+    # is nothing for a human to merge.
 
     id: Mapped[int] = mapped_column(primary_key=True)
 
@@ -282,8 +273,9 @@ class InventoryItem(TimestampMixin, Base):
     )
 
     # -- classification ---------------------------------------------------
+    #: Not indexed alone: `ix_inventory_item_kind_status` leads with it.
     item_kind_id: Mapped[int] = mapped_column(
-        ForeignKey("item_kind.id", ondelete="RESTRICT"), index=True, nullable=False
+        ForeignKey("item_kind.id", ondelete="RESTRICT"), nullable=False
     )
     denomination_id: Mapped[int | None] = mapped_column(
         ForeignKey("denomination.id", ondelete="RESTRICT"), index=True, nullable=True
@@ -565,18 +557,6 @@ class InventoryItem(TimestampMixin, Base):
     disposition: Mapped[Disposition] = relationship()
     metal: Mapped[Metal | None] = relationship()
 
-    #: The pieces this lot was broken into, and the lot a piece came from.
-    pieces: Mapped[list[InventoryItem]] = relationship(
-        back_populates="parent",
-        remote_side=None,
-        foreign_keys=lambda: [InventoryItem.parent_item_id],
-    )
-    parent: Mapped[InventoryItem | None] = relationship(
-        back_populates="pieces",
-        remote_side=lambda: [InventoryItem.id],
-        foreign_keys=lambda: [InventoryItem.parent_item_id],
-    )
-
     #: Photographs of this item. Ordered so the primary one comes first,
     #: which is what a thumbnail lookup wants without further sorting.
     images: Mapped[list[ItemImage]] = relationship(
@@ -639,9 +619,10 @@ class InventoryItem(TimestampMixin, Base):
         Index("ix_inventory_item_kind_status", "item_kind_id", "status_id"),
         # Partial indexes for the search panel's facet counts.
         #
-        # The plain foreign-key index on each of these already exists; these
-        # are smaller indexes over live rows only (`split_at IS NULL`). They
-        # do not make the default facet query index-only: that query also
+        # A plain index on each of these already exists (for the kind,
+        # `ix_inventory_item_kind_status`); these are smaller indexes over
+        # live rows only (`split_at IS NULL`). They do not make the default
+        # facet query index-only: that query also
         # filters `deleted_at IS NULL`, which is not in the predicate, so the
         # rows are still visited. What they save is the split lots, and the
         # size of the index the planner walks.

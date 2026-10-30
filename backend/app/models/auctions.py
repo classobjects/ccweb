@@ -20,23 +20,21 @@ from __future__ import annotations
 import enum
 from datetime import date, datetime
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     CheckConstraint,
     Date,
     DateTime,
     ForeignKey,
-    Integer,
     Numeric,
     String,
     Text,
     UniqueConstraint,
-    text,
 )
-from sqlalchemy.orm import Mapped, declared_attr, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from .base import Base, TimestampMixin, enum_column
+from .base import Base, TimestampMixin, VersionedMixin, enum_column
 
 if TYPE_CHECKING:  # relationship targets only -- see the note in sales.py.
     from .sales import Customer, Listing, SalesVenue
@@ -73,7 +71,7 @@ class AuctionLotResult(enum.StrEnum):
     withdrawn = "withdrawn"
 
 
-class Auction(TimestampMixin, Base):
+class Auction(VersionedMixin, TimestampMixin, Base):
     """One sale event at a platform: a live auction show, or an auction house's sale.
 
     `sales_venue_id` points at the platform running the sale (kind
@@ -88,16 +86,6 @@ class Auction(TimestampMixin, Base):
     """
 
     __tablename__ = "auction"
-
-    #: Optimistic concurrency -- see the note on InventoryItem.version.
-    version: Mapped[int] = mapped_column(
-        Integer, nullable=False, server_default=text("1")
-    )
-
-    @declared_attr.directive
-    def __mapper_args__(cls) -> dict[str, Any]:
-        """Optimistic concurrency: every UPDATE checks the version it read."""
-        return {"version_id_col": cls.version}
 
     id: Mapped[int] = mapped_column(primary_key=True)
     sales_venue_id: Mapped[int] = mapped_column(

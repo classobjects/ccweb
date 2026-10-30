@@ -175,7 +175,11 @@ SELECT
     cud.friedberg_status,
     sig.treasurer,
     sig.secretary,
-    g.code            AS grade,
+    sig.register,
+    grade_display(
+        stk.prefix, stk.suffix, g.numeric_value, g.is_plus, g.label,
+        gsc.code = 'sheldon'
+    ) AS grade,
     g.numeric_value   AS grade_value,
     gd.code           AS grade_designation,
     gs.code           AS grading_service,
@@ -212,6 +216,8 @@ LEFT JOIN fed_district fd     ON fd.id = cud.fed_district_id
 LEFT JOIN signature_combination sig ON sig.id = cud.signature_combination_id
 LEFT JOIN friedberg_number fr ON fr.id = cud.friedberg_id
 LEFT JOIN grade g             ON g.id  = i.grade_id
+LEFT JOIN grade_scale gsc     ON gsc.id = g.grade_scale_id
+LEFT JOIN strike_type stk     ON stk.id = i.strike_type_id
 LEFT JOIN grade_designation gd ON gd.id = i.grade_designation_id
 LEFT JOIN grading_service gs  ON gs.id = i.grading_service_id
 WHERE i.split_at IS NULL

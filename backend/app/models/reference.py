@@ -33,7 +33,6 @@ from sqlalchemy import (
     Computed,
     DateTime,
     ForeignKey,
-    Index,
     Integer,
     Numeric,
     String,
@@ -195,8 +194,7 @@ class Denomination(ReferenceMixin, Base):
 
     currency: Mapped[Currency] = relationship()
 
-    __table_args__ = (
-        UniqueConstraint("code", name="uq_denomination_code"),
+    extra_table_args = (
         UniqueConstraint(
             "currency_id", "face_value", "kind", name="uq_denomination_value"
         ),
@@ -228,6 +226,8 @@ class Series(ReferenceMixin, Base):
     year_end: Mapped[int | None] = mapped_column(Integer, nullable=True)
     #: Which inventory this series belongs to, so the coin picker does not
     #: offer Silver Certificate and the currency picker does not offer Morgan.
+    #: `coin` or `currency` (`ck_series_applies_to`): a design belongs to one
+    #: side, so the `any` the other `applies_to` columns allow is refused.
     applies_to: Mapped[str] = mapped_column(
         String(16), default="coin", server_default=text("'coin'"), nullable=False
     )
@@ -263,7 +263,11 @@ class Series(ReferenceMixin, Base):
         back_populates="series", cascade="all, delete-orphan"
     )
 
-    __table_args__ = (UniqueConstraint("code", name="uq_series_code"),)
+    extra_table_args = (
+        CheckConstraint(
+            "applies_to IN ('coin', 'currency')", name="ck_series_applies_to"
+        ),
+    )
 
 
 class SeriesAlias(Base):
@@ -282,8 +286,9 @@ class SeriesAlias(Base):
     __tablename__ = "series_alias"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    #: Not indexed alone: `uq_series_alias` leads with it.
     series_id: Mapped[int] = mapped_column(
-        ForeignKey("series.id", ondelete="CASCADE"), index=True, nullable=False
+        ForeignKey("series.id", ondelete="CASCADE"), nullable=False
     )
     alias: Mapped[str] = mapped_column(String(64), nullable=False)
     #: False once someone removed a shipped alias: seed loads only add, so
@@ -326,8 +331,9 @@ class SeriesYearRange(Base):
     NO_LETTER = "*"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    #: Not indexed alone: `uq_series_year_range` leads with it.
     series_id: Mapped[int] = mapped_column(
-        ForeignKey("series.id", ondelete="CASCADE"), index=True, nullable=False
+        ForeignKey("series.id", ondelete="CASCADE"), nullable=False
     )
     denomination_id: Mapped[int | None] = mapped_column(
         ForeignKey(_FK_DENOMINATION, ondelete="RESTRICT"), nullable=True
@@ -536,7 +542,6 @@ class NoteIssue(Base):
             name="uq_note_issue",
             postgresql_nulls_not_distinct=True,
         ),
-        Index("ix_note_issue_lookup", "denomination_id", "series_year"),
     )
 
 
@@ -573,7 +578,6 @@ class ReferenceAlias(Base):
 
     __table_args__ = (
         UniqueConstraint("table_name", "row_id", "alias", name="uq_reference_alias"),
-        Index("ix_reference_alias_table_row", "table_name", "row_id"),
     )
 
 
@@ -661,8 +665,7 @@ class SealColor(ReferenceMixin, Base):
         ForeignKey("seal_color.id", ondelete="RESTRICT"), index=True, nullable=True
     )
 
-    __table_args__ = (
-        UniqueConstraint("code", name="uq_seal_color_code"),
+    extra_table_args = (
         CheckConstraint(
             "base_seal_color_id IS NULL OR base_seal_color_id <> id",
             name="ck_seal_color_base_is_another",
@@ -696,8 +699,7 @@ class SignatureCombination(ReferenceMixin, Base):
     term_from: Mapped[int | None] = mapped_column(Integer, nullable=True)
     term_to: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
-    __table_args__ = (
-        UniqueConstraint("code", name="uq_signature_combination_code"),
+    extra_table_args = (
         CheckConstraint(
             "(secretary IS NULL) <> (register IS NULL)",
             name="ck_signature_combination_one_cosigner",
@@ -724,8 +726,7 @@ class Metal(ReferenceMixin, Base):
         ForeignKey("metal.id", ondelete="RESTRICT"), index=True, nullable=True
     )
 
-    __table_args__ = (
-        UniqueConstraint("code", name="uq_metal_code"),
+    extra_table_args = (
         CheckConstraint(
             "base_metal_id IS NULL OR base_metal_id <> id",
             name="ck_metal_base_is_another",
