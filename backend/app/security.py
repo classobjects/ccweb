@@ -55,8 +55,9 @@ def account_by_email(db: Session, address: str) -> User | None:
 
     `Bob@example.com` and `bob@example.com` reach one mailbox in practice,
     so they are one account: sign-in finds it either way, and registration
-    refuses the second spelling as taken. The oldest wins should two
-    spellings predate this rule.
+    refuses the second spelling as taken. The database holds the same rule
+    (`uq_users_email`, a unique index on the lowered address), so two
+    spellings cannot exist side by side even when two sign-ups race.
     """
     return db.scalar(
         select(User)
