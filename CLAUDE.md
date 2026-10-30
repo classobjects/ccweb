@@ -68,7 +68,7 @@ skill specifies a different path, format, or workflow, this file wins.
   recognized" even in the current directory. Always invoke as
   `.\script.cmd` or with a full path, which works everywhere.
 - In bash: `ccweb_env.sh`, `ccweb_settings.sh`, `ccweb_logdir.sh`,
-  `ccweb_portpid.sh` and `ccweb_testdb.sh use` are sourced and must not `set -u` or end in a
+  `ccweb_portpid.sh`, `ccweb_wait.sh` and `ccweb_testdb.sh use` are sourced and must not `set -u` or end in a
   top-level `return`/`exit`; `shellcheck -x` must report no warning or error.
   WSL from Git Bash: `MSYS_NO_PATHCONV=1 wsl.exe -d Ubuntu --cd /mnt/c/...
   --exec bash -c '...'` — `wsl.exe --` re-parses through a shell and eats

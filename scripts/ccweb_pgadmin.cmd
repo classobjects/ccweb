@@ -99,7 +99,7 @@ echo Starting pgAdmin on %URL%
 echo   (first run takes a few seconds while it builds its config database)
 start "pgAdmin 4" /min "%PGADMIN%"
 
-call :waiturl "%URL%" 60
+call "%~dp0ccweb_wait.cmd" url "%URL%" 60
 if errorlevel 1 goto :notready
 call "%~dp0ccweb_portpid.cmd" %PORT% HELD 127.0.0.1
 if not defined HELD goto :notready
@@ -122,23 +122,3 @@ echo.
 echo ERROR: pgAdmin did not answer on %URL% in 60 tries (one to three minutes).
 echo        Check its log: %APPDATA%\pgAdmin\pgadmin4.log
 exit /b 1
-
-rem ---------------------------------------------------------------------------
-rem  :waiturl <url> <max tries>  - poll until it answers, or give up. A try
-rem  that gets no answer takes up to two seconds, and a second passes before
-rem  the next.
-rem ---------------------------------------------------------------------------
-:waiturl
-set /a _tries=0
-:waiturl_loop
-curl -s -o nul --max-time 2 "%~1" >nul 2>&1
-if not errorlevel 1 exit /b 0
-set /a _tries+=1
-if !_tries! GEQ %~2 exit /b 1
-rem  One second. `timeout /t` is the obvious choice, but it aborts with
-rem  "Input redirection is not supported" whenever stdin is not a console -
-rem  which is any invocation from a script, a CI step or a tool. ping has no
-rem  such restriction: -n 2 sends two packets one second apart, so it waits
-rem  ~1s.
-ping -n 2 127.0.0.1 >nul 2>&1
-goto waiturl_loop

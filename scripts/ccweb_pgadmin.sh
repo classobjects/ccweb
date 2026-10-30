@@ -17,6 +17,7 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$here/.." && pwd)"
 . "$here/ccweb_env.sh" || exit 2
 . "$here/ccweb_settings.sh" || exit 2
+. "$here/ccweb_wait.sh"
 
 PGADMIN="$HOME/.local/bin/pgadmin4"
 PGADMIN_CLI="$HOME/.local/bin/pgadmin4-cli"
@@ -78,17 +79,12 @@ echo "Starting pgAdmin on $URL"
 echo "  (first run takes a few seconds while it builds its config database)"
 setsid nohup "$PGADMIN" >/dev/null 2>&1 &
 
-tries=0
-until curl -s -o /dev/null --max-time 2 "$URL"; do
-    tries=$((tries + 1))
-    if [ "$tries" -ge 60 ]; then
-        echo
-        echo "ERROR: pgAdmin did not answer on $URL in 60 tries (one to three minutes)."
-        echo "       Check its log: $HOME/.pgadmin/pgadmin4.log"
-        exit 1
-    fi
-    sleep 1
-done
+if ! waiturl "$URL" 60; then
+    echo
+    echo "ERROR: pgAdmin did not answer on $URL in 60 tries (one to three minutes)."
+    echo "       Check its log: $HOME/.pgadmin/pgadmin4.log"
+    exit 1
+fi
 listening || { echo "ERROR: pgAdmin answered but is not listening on $PORT"; exit 1; }
 
 echo "pgAdmin is up. Opening the browser."

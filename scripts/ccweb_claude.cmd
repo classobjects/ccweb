@@ -82,8 +82,7 @@ if not defined SKIPDB (
                 if errorlevel 1 (
                     set "DBSTATE=NOT STARTED - postmaster.pid: another computer may be running it"
                 ) else (
-                    call :waitpg 60
-                    "%PGBIN%\pg_isready.exe" -h %CCWEB_DB_HOST% -p %CCWEB_DB_PORT% >nul 2>&1
+                    call "%~dp0ccweb_wait.cmd" pg 60
                     if errorlevel 1 (
                         set "DBSTATE=FAILED TO START - see %LOGS%\postgres.log"
                     ) else (
@@ -128,25 +127,3 @@ if not defined REST (
     claude --resume%REST%
 )
 exit /b %ERRORLEVEL%
-
-rem ---------------------------------------------------------------------------
-rem  :waitpg <max tries>  - poll until PostgreSQL accepts connections
-rem
-rem  PostgreSQL is started through `start`, into a console of its own, because
-rem  it must outlive this window and the Claude Code session run from it. The
-rem  postmaster spawns a process per connection and background task, each
-rem  inheriting its console; once that console is gone, every new one dies
-rem  with 0xC0000142 while the postmaster itself keeps running. See
-rem  ccweb_pgstart.cmd. pg_isready says "rejecting connections" during crash
-rem  recovery, which is progress, so this waits through it. ping, not timeout:
-rem  timeout does not pause when stdin is redirected.
-rem ---------------------------------------------------------------------------
-:waitpg
-set /a _tries=0
-:waitpg_loop
-"%PGBIN%\pg_isready.exe" -h %CCWEB_DB_HOST% -p %CCWEB_DB_PORT% >nul 2>&1
-if not errorlevel 1 goto :eof
-set /a _tries+=1
-if %_tries% GEQ %~1 goto :eof
-ping -n 2 127.0.0.1 >nul
-goto waitpg_loop

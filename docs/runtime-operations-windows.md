@@ -374,8 +374,9 @@ connection dies.
   `ccweb_env.cmd` (the conda environment), `ccweb_settings.cmd` (the
   settings), `ccweb_logdir.cmd` (sets the log folder from `CCWEB_LOG_DIR`),
   `ccweb_portpid.cmd` (the process listening on a port, through
-  `backend\app\portpid.py`) and `ccweb_pgstart.cmd` (starts PostgreSQL in
-  its own console).
+  `backend\app\portpid.py`), `ccweb_wait.cmd` (waits for a URL to answer
+  or PostgreSQL to accept connections) and `ccweb_pgstart.cmd` (starts
+  PostgreSQL in its own console).
 
 ---
 
