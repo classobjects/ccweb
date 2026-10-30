@@ -682,7 +682,8 @@ function AuctionDetail({ auction, venues, onChanged }) {
       )}
       {auction.lots.length === 0 && <p className="muted">No lot has been added yet.</p>}
       {auction.lots.length > 0 && (
-        <table className="table">
+        // On a phone each row stacks into a card, a line per labelled cell.
+        <table className="table stacks">
           <thead>
             <tr>
               <th>Lot #</th>
@@ -700,7 +701,7 @@ function AuctionDetail({ auction, venues, onChanged }) {
               const subject = subjectOf(lot.listing)
               return (
                 <tr key={lot.id}>
-                  <td>
+                  <td data-label="Lot #">
                     <input
                       aria-label={`Lot number for ${subject}`}
                       value={draft.lot_number}
@@ -708,8 +709,10 @@ function AuctionDetail({ auction, venues, onChanged }) {
                       onChange={(e) => setDraft(lot, 'lot_number', e.target.value)}
                     />
                   </td>
-                  <td>{subject}</td>
-                  <td>
+                  <td data-label="Item">
+                    <div className="cell-scroll">{subject}</div>
+                  </td>
+                  <td data-label="Reserve">
                     <input
                       inputMode="decimal"
                       aria-label={`Reserve for ${subject}`}
@@ -718,9 +721,13 @@ function AuctionDetail({ auction, venues, onChanged }) {
                       onChange={(e) => setDraft(lot, 'reserve', e.target.value)}
                     />
                   </td>
-                  <td>{lot.result ? RESULT_LABEL[lot.result] : UNKNOWN}</td>
-                  <td>{lot.hammer_price ?? UNKNOWN}</td>
-                  <td>{lot.buyer ?? UNKNOWN}</td>
+                  <td data-label="Result">
+                    {lot.result ? RESULT_LABEL[lot.result] : UNKNOWN}
+                  </td>
+                  <td data-label="Hammer price">{lot.hammer_price ?? UNKNOWN}</td>
+                  <td data-label="Buyer">
+                    <div className="cell-scroll">{lot.buyer ?? UNKNOWN}</div>
+                  </td>
                   <td>
                     {editable && (
                       <>
@@ -896,7 +903,8 @@ export default function Auctions() {
       {auctions === null && !error && <p className="muted">Loading...</p>}
 
       {auctions !== null && (
-        <table className="table">
+        // On a phone each row stacks into a card, a line per labelled cell.
+        <table className="table stacks">
           <thead>
             <tr>
               <th>Platform</th>
@@ -909,10 +917,16 @@ export default function Auctions() {
           <tbody>
             {auctions.map((a) => (
               <tr key={a.id}>
-                <td>{a.venue_name}</td>
-                <td>{a.title}</td>
-                <td>{AUCTION_STATUS_LABEL[a.status] ?? a.status}</td>
-                <td>{a.lots.length}</td>
+                <td data-label="Platform">
+                  <div className="cell-scroll">{a.venue_name}</div>
+                </td>
+                <td data-label="Auction">
+                  <div className="cell-scroll">{a.title}</div>
+                </td>
+                <td data-label="Status">
+                  {AUCTION_STATUS_LABEL[a.status] ?? a.status}
+                </td>
+                <td data-label="Lots">{a.lots.length}</td>
                 <td>
                   <button
                     className="link"

@@ -198,7 +198,8 @@ function Accounts({ notify }) {
           <button onClick={() => setAdding(true)}>New account</button>
         </div>
       )}
-      <table className="table">
+      {/* On a phone each row stacks into a card, a line per labelled cell. */}
+      <table className="table stacks">
         <thead>
           <tr>
             <th>Email</th>
@@ -211,12 +212,18 @@ function Accounts({ notify }) {
         <tbody>
           {rows.map((u) => (
             <tr key={u.id}>
-              <td className="mono">
-                {u.email}
-                {u.id === me?.id && <span className="badge">you</span>}
+              <td className="mono" data-label="Email">
+                <div className="cell-scroll">
+                  {u.email}
+                  {u.id === me?.id && <span className="badge">you</span>}
+                </div>
               </td>
-              <td>{u.full_name || <span className="muted">-</span>}</td>
-              <td>
+              <td data-label="Name">
+                <div className="cell-scroll">
+                  {u.full_name || <span className="muted">-</span>}
+                </div>
+              </td>
+              <td data-label="Role">
                 <select
                   aria-label={`Role of ${u.email}`}
                   value={u.role}
@@ -232,7 +239,7 @@ function Accounts({ notify }) {
                   <option value="manager">manager</option>
                 </select>
               </td>
-              <td>
+              <td data-label="Active">
                 <button
                   className="link"
                   onClick={() =>
@@ -246,7 +253,7 @@ function Accounts({ notify }) {
                   {u.is_active ? 'Active' : 'Disabled'}
                 </button>
               </td>
-              <td>
+              <td data-label="Password">
                 {pwFor === u.id ? (
                   <span className="row">
                     <input
@@ -435,7 +442,8 @@ function Customers({ notify }) {
   return (
     <>
       {error && <p className="error">{error}</p>}
-      <table className="table">
+      {/* On a phone each row stacks into a card, a line per labelled cell. */}
+      <table className="table stacks">
         <thead>
           <tr>
             <th>Name</th>
@@ -453,7 +461,7 @@ function Customers({ notify }) {
             const isEditing = editing === c.id
             return (
               <tr key={c.id}>
-                <td>
+                <td data-label="Name">
                   {isEditing ? (
                     <input
                       aria-label={`Name of ${c.display_name}`}
@@ -463,10 +471,10 @@ function Customers({ notify }) {
                       }
                     />
                   ) : (
-                    c.display_name
+                    <div className="cell-scroll">{c.display_name}</div>
                   )}
                 </td>
-                <td className="mono">
+                <td className="mono" data-label="Email">
                   {isEditing ? (
                     <input
                       aria-label={`Email of ${c.display_name}`}
@@ -474,10 +482,12 @@ function Customers({ notify }) {
                       onChange={(e) => setDraft({ ...draft, email: e.target.value })}
                     />
                   ) : (
-                    c.email || <span className="muted">-</span>
+                    <div className="cell-scroll">
+                      {c.email || <span className="muted">-</span>}
+                    </div>
                   )}
                 </td>
-                <td className="mono">
+                <td className="mono" data-label="Phone">
                   {isEditing ? (
                     <input
                       aria-label={`Phone of ${c.display_name}`}
@@ -492,9 +502,9 @@ function Customers({ notify }) {
                     c.phone || <span className="muted">-</span>
                   )}
                 </td>
-                <td>
+                <td data-label="Shipping address">
                   {shipping ? (
-                    addressLine(shipping)
+                    <div className="cell-scroll">{addressLine(shipping)}</div>
                   ) : (
                     <span className="muted">none</span>
                   )}

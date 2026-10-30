@@ -81,29 +81,36 @@ function ExistingPurchasePicker({ orders, filterText, openOnly, onPick }) {
   }
 
   return (
-    <table className="table purchase-table" aria-label="Purchases">
+    // On a phone each row stacks into a card, a line per labelled cell.
+    <table className="table purchase-table stacks" aria-label="Purchases">
       <thead>
         <SortHeaders columns={PURCHASE_COLUMNS} sort={sort} onSort={setSort} />
       </thead>
       <tbody>
         {shown.map((order) => (
           <tr key={order.id} className="purchase-row" onClick={() => onPick(order.id)}>
-            <td>
-              <button
-                type="button"
-                className="link"
-                onClick={(e) => {
-                  // The row picks it too; once is enough.
-                  e.stopPropagation()
-                  onPick(order.id)
-                }}
-              >
-                {order.order_number || 'no order number'}
-              </button>
+            <td data-label="Order number">
+              <div className="cell-scroll">
+                <button
+                  type="button"
+                  className="link"
+                  onClick={(e) => {
+                    // The row picks it too; once is enough.
+                    e.stopPropagation()
+                    onPick(order.id)
+                  }}
+                >
+                  {order.order_number || 'no order number'}
+                </button>
+              </div>
             </td>
-            <td>{date(order.ordered_on)}</td>
-            <td>{order.vendor}</td>
-            <td className="mono">{purchaseNumber(order.id)}</td>
+            <td data-label="Date">{date(order.ordered_on)}</td>
+            <td data-label="Vendor">
+              <div className="cell-scroll">{order.vendor}</div>
+            </td>
+            <td data-label="No." className="mono">
+              {purchaseNumber(order.id)}
+            </td>
           </tr>
         ))}
       </tbody>
@@ -580,7 +587,8 @@ export default function NewPurchase() {
               </label>
             </div>
 
-            <table className="table">
+            {/* On a phone each row stacks into a card, a line per labelled cell. */}
+            <table className="table stacks">
               <thead>
                 <tr>
                   <th>Item code</th>
@@ -593,7 +601,7 @@ export default function NewPurchase() {
               <tbody>
                 {(purchase.lines ?? []).map((line) => (
                   <tr key={line.id}>
-                    <td className="mono">
+                    <td data-label="Item code" className="mono">
                       <button
                         type="button"
                         className="link mono"
@@ -602,10 +610,12 @@ export default function NewPurchase() {
                         {line.item_code}
                       </button>
                     </td>
-                    <td>{line.source_title}</td>
-                    <td>{line.item_kind}</td>
-                    <td>{line.item_cost}</td>
-                    <td>{line.status}</td>
+                    <td data-label="Title">
+                      <div className="cell-scroll">{line.source_title}</div>
+                    </td>
+                    <td data-label="Kind">{line.item_kind}</td>
+                    <td data-label="Cost">{line.item_cost}</td>
+                    <td data-label="Status">{line.status}</td>
                   </tr>
                 ))}
                 {(purchase.lines ?? []).length === 0 && (

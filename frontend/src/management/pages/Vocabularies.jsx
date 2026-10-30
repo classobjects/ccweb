@@ -250,11 +250,13 @@ function ValueRow({
 
   return (
     <tr className={value.is_active ? undefined : 'muted'}>
-      <td>
+      <td data-label="Label">
         {label === null ? (
           <>
-            {value.label}
-            {value.is_active ? '' : ' (retired)'}
+            <div className="cell-scroll">
+              {value.label}
+              {value.is_active ? '' : ' (retired)'}
+            </div>
             <div className="value-actions">
               <button
                 type="button"
@@ -383,7 +385,7 @@ function ValueRow({
         )}
       </td>
       {sequenced && (
-        <td>
+        <td data-label="Position">
           <form
             className="alias-add"
             data-help="vocabulary_position"
@@ -414,10 +416,10 @@ function ValueRow({
           </form>
         </td>
       )}
-      <td>
+      <td data-label="Code">
         <code>{value.code}</code>
       </td>
-      <td>
+      <td data-label="Aliases">
         <div className="alias-list" data-help="vocabulary_alias">
           {value.aliases.map((alias) => {
             const isShared = shared(alias)
@@ -654,7 +656,8 @@ export default function Vocabularies() {
         {values === null ? (
           !error && <p className="muted">Loading...</p>
         ) : (
-          <table className="table">
+          // On a phone each row stacks into a card, a line per labelled cell.
+          <table className="table stacks">
             <thead>
               <tr>
                 <th>Label</th>

@@ -134,25 +134,34 @@ export default function OrderLookup() {
                 : 'No purchase matches. Clear a box to widen the search.'}
             </p>
           ) : (
-            <table className="table purchase-table" aria-label="Purchases found">
+            // On a phone each row stacks into a card, a line per labelled cell.
+            <table className="table purchase-table stacks" aria-label="Purchases found">
               <thead>
                 <SortHeaders columns={COLUMNS} sort={sort} onSort={setSort} />
               </thead>
               <tbody>
                 {shown.map((order) => (
                   <tr key={order.id}>
-                    <td>
-                      <Link to={`/purchases?order=${order.id}`}>
-                        {order.order_number || 'no order number'}
-                      </Link>
+                    <td data-label="Order number">
+                      <div className="cell-scroll">
+                        <Link to={`/purchases?order=${order.id}`}>
+                          {order.order_number || 'no order number'}
+                        </Link>
+                      </div>
                     </td>
-                    <td>{date(order.ordered_on)}</td>
-                    <td>{order.vendor}</td>
-                    <td>{order.seller ?? ''}</td>
-                    <td>{order.total}</td>
-                    <td>{order.outstanding || ''}</td>
-                    <td>{money(order.total_cost)}</td>
-                    <td className="mono">{purchaseNumber(order.id)}</td>
+                    <td data-label="Date">{date(order.ordered_on)}</td>
+                    <td data-label="Vendor">
+                      <div className="cell-scroll">{order.vendor}</div>
+                    </td>
+                    <td data-label="Seller">
+                      <div className="cell-scroll">{order.seller ?? ''}</div>
+                    </td>
+                    <td data-label="Items">{order.total}</td>
+                    <td data-label="Not received">{order.outstanding || ''}</td>
+                    <td data-label="Cost">{money(order.total_cost)}</td>
+                    <td data-label="No." className="mono">
+                      {purchaseNumber(order.id)}
+                    </td>
                   </tr>
                 ))}
               </tbody>

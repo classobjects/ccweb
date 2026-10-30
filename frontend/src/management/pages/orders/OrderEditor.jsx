@@ -233,7 +233,8 @@ export default function OrderEditor({ order, onSaved, onClose }) {
         </label>
       </div>
 
-      <table className="table">
+      {/* On a phone each row stacks into a card, a line per labelled cell. */}
+      <table className="table stacks">
         <thead>
           <tr>
             <th>Item</th>
@@ -246,8 +247,10 @@ export default function OrderEditor({ order, onSaved, onClose }) {
         <tbody>
           {lines.map((line) => (
             <tr key={line.listing_id}>
-              <td>{line.title}</td>
-              <td>
+              <td data-label="Item">
+                <div className="cell-scroll">{line.title}</div>
+              </td>
+              <td data-label="Quantity">
                 <input
                   type="number"
                   min="1"
@@ -256,7 +259,7 @@ export default function OrderEditor({ order, onSaved, onClose }) {
                   onChange={setLine(line.listing_id, 'quantity')}
                 />
               </td>
-              <td>
+              <td data-label="Unit price">
                 <input
                   type="text"
                   inputMode="decimal"
@@ -273,7 +276,7 @@ export default function OrderEditor({ order, onSaved, onClose }) {
                     </div>
                   )}
               </td>
-              <td className="muted">
+              <td data-label="Available" className="muted">
                 {line.available ??
                   (line.unavailable ? `not known: ${line.unavailable}` : '-')}
               </td>

@@ -156,8 +156,9 @@ function ReportTable({ result, onOpenItem }) {
     })
   }
 
+  // On a phone each row stacks into a card, a line per labelled cell.
   return (
-    <table className="table report-table">
+    <table className="table report-table stacks">
       <thead data-help="report_sort">
         <tr>
           {columns.map((column) => {
@@ -187,8 +188,8 @@ function ReportTable({ result, onOpenItem }) {
       <tbody data-help="report_rows">
         {shown.map(({ row, drill, index }) => (
           <tr key={index}>
-            {columns.map((column) => (
-              <td key={column.key} className={alignment(column)}>
+            {columns.map((column) => {
+              const cell = (
                 <Cell
                   column={column}
                   value={row[column.key]}
@@ -196,8 +197,23 @@ function ReportTable({ result, onOpenItem }) {
                   linked={column.key === linkKey}
                   onOpenItem={onOpenItem}
                 />
-              </td>
-            ))}
+              )
+              // A long name scrolls in its cell rather than widening the
+              // table; a number is short and stays as it is.
+              return (
+                <td
+                  key={column.key}
+                  className={alignment(column)}
+                  data-label={column.label}
+                >
+                  {NUMERIC_KINDS.has(column.kind) ? (
+                    cell
+                  ) : (
+                    <div className="cell-scroll">{cell}</div>
+                  )}
+                </td>
+              )
+            })}
           </tr>
         ))}
       </tbody>
@@ -205,7 +221,11 @@ function ReportTable({ result, onOpenItem }) {
         <tfoot>
           <tr className="report-totals">
             {columns.map((column) => (
-              <td key={column.key} className={alignment(column)}>
+              <td
+                key={column.key}
+                className={alignment(column)}
+                data-label={column.label}
+              >
                 {cellText(column.kind, result.totals[column.key])}
               </td>
             ))}

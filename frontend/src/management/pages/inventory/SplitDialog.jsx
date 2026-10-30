@@ -227,7 +227,8 @@ export default function SplitDialog({ item, onSplit, onClose }) {
             </select>
           </label>
         </div>
-        <table>
+        {/* On a phone each row stacks into a card, a line per labelled cell. */}
+        <table className="stacks">
           <thead>
             <tr>
               <th>#</th>
@@ -241,8 +242,8 @@ export default function SplitDialog({ item, onSplit, onClose }) {
           <tbody>
             {rows.map((row, index) => (
               <tr key={row.key}>
-                <td>{index + 1}</td>
-                <td data-help="split_description">
+                <td data-label="#">{index + 1}</td>
+                <td data-help="split_description" data-label="Description">
                   <input
                     aria-label={`Description of piece ${index + 1}`}
                     value={row.description}
@@ -250,7 +251,7 @@ export default function SplitDialog({ item, onSplit, onClose }) {
                   />
                 </td>
                 {dated && (
-                  <td data-help="split_year">
+                  <td data-help="split_year" data-label="Year">
                     <input
                       aria-label={`Year of piece ${index + 1}`}
                       inputMode="numeric"
@@ -260,7 +261,7 @@ export default function SplitDialog({ item, onSplit, onClose }) {
                     />
                   </td>
                 )}
-                <td data-help="split_items">
+                <td data-help="split_items" data-label="Items">
                   <input
                     aria-label={`Items in piece ${index + 1}`}
                     inputMode="numeric"
@@ -270,7 +271,7 @@ export default function SplitDialog({ item, onSplit, onClose }) {
                   />
                 </td>
                 {mode === 'relative' && (
-                  <td data-help="split_value">
+                  <td data-help="split_value" data-label="Value of one">
                     <input
                       aria-label={`Value of piece ${index + 1}`}
                       inputMode="decimal"
@@ -280,7 +281,9 @@ export default function SplitDialog({ item, onSplit, onClose }) {
                     />
                   </td>
                 )}
-                <td>{estimate[index] === null ? '--' : fromCents(estimate[index])}</td>
+                <td data-label="Cost, about">
+                  {estimate[index] === null ? '--' : fromCents(estimate[index])}
+                </td>
               </tr>
             ))}
           </tbody>

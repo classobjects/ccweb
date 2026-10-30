@@ -388,7 +388,8 @@ export default function Lots() {
             </tbody>
           </table>
           {lot.members.length > 0 && (
-            <table className="table">
+            // On a phone each row stacks into a card, a line per labelled cell.
+            <table className="table stacks">
               <thead>
                 <tr>
                   <th>Item</th>
@@ -401,12 +402,16 @@ export default function Lots() {
               <tbody>
                 {lot.members.map((member) => (
                   <tr key={member.inventory_item_id}>
-                    <td className="mono">{member.item_code}</td>
-                    <td>{member.title}</td>
-                    <td>{member.cost_basis}</td>
+                    <td className="mono" data-label="Item">
+                      {member.item_code}
+                    </td>
+                    <td data-label="Title">
+                      <div className="cell-scroll">{member.title}</div>
+                    </td>
+                    <td data-label="Cost">{member.cost_basis}</td>
                     {/* Blank rather than zero: "worth nothing" and "nobody
                         has valued it" are different facts. */}
-                    <td>{member.value ?? UNKNOWN}</td>
+                    <td data-label="Value">{member.value ?? UNKNOWN}</td>
                     <td>
                       <button
                         className="link"
@@ -481,7 +486,8 @@ export default function Lots() {
         <p className="muted">No lot has been offered yet.</p>
       )}
       {history.length > 0 && (
-        <table className="table">
+        // On a phone each row stacks into a card, a line per labelled cell.
+        <table className="table stacks">
           <thead>
             <tr>
               <th>Lot</th>
@@ -495,15 +501,17 @@ export default function Lots() {
           <tbody>
             {history.map((lot) => (
               <tr key={lot.id}>
-                <td>{lot.title}</td>
-                <td>{STATUS_LABEL[lot.status] ?? lot.status}</td>
+                <td data-label="Lot">
+                  <div className="cell-scroll">{lot.title}</div>
+                </td>
+                <td data-label="Status">{STATUS_LABEL[lot.status] ?? lot.status}</td>
                 {/* Every membership the lot ever held, which is what the API
                     sends for a lot past `assembling`: ending one releases its
                     memberships rather than deleting them, precisely so this
                     stays answerable. */}
-                <td>{lot.members.length}</td>
-                <td>{lot.cost_basis}</td>
-                <td>{lot.value}</td>
+                <td data-label="Coins">{lot.members.length}</td>
+                <td data-label="Cost basis">{lot.cost_basis}</td>
+                <td data-label="Value">{lot.value}</td>
                 <td>
                   {/* A dissolved lot is the only one worth offering again:
                       its coins are free, and nothing brings the lot itself

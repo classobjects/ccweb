@@ -369,7 +369,8 @@ export default function Listings() {
           later="Next"
         />
       </div>
-      <table>
+      {/* On a phone each row stacks into a card, a line per labelled cell. */}
+      <table className="stacks">
         <thead>
           <tr>
             <th>Platform</th>
@@ -390,32 +391,40 @@ export default function Listings() {
             const margin = marginPercent(l.price, l.cost_basis)
             return (
               <tr key={l.id} className={l.status === 'active' ? '' : 'muted'}>
-                <td>{l.venue_name}</td>
+                <td data-label="Platform">
+                  <div className="cell-scroll">{l.venue_name}</div>
+                </td>
                 {/* The item's code, or the lot by name and size: a lot
                     listing has no code of its own. */}
-                <td>{subjectOf(l)}</td>
-                <td>{l.title}</td>
-                <td>{labelFor(FORMATS, l.format)}</td>
-                <td>
+                <td data-label="Item or lot">
+                  <div className="cell-scroll">{subjectOf(l)}</div>
+                </td>
+                <td data-label="Title">
+                  <div className="cell-scroll">{l.title}</div>
+                </td>
+                <td data-label="Format">{labelFor(FORMATS, l.format)}</td>
+                <td data-label="Price">
                   {l.price} {l.currency}
                 </td>
-                <td>{l.cost_basis ?? UNKNOWN}</td>
-                <td>{margin === '' ? UNKNOWN : `${margin}%`}</td>
-                <td>
+                <td data-label="Cost">{l.cost_basis ?? UNKNOWN}</td>
+                <td data-label="Margin">{margin === '' ? UNKNOWN : `${margin}%`}</td>
+                <td data-label="Status">
                   {labelFor(STATUSES, l.status)}
                   {l.status === 'paused' && (
                     <span className="muted"> {pausedFor(l)}</span>
                   )}
                 </td>
-                <td>{date(l.listed_at)}</td>
-                <td>
+                <td data-label="Listed">{date(l.listed_at)}</td>
+                <td data-label="Link">
                   {/* Only a web address: the URL is typed by hand, and a
                       `javascript:` one would run in the console when
                       clicked. */}
                   {isWebAddress(l.external_url) && (
-                    <a href={l.external_url} target="_blank" rel="noreferrer">
-                      {l.external_id ?? 'Listing'}
-                    </a>
+                    <div className="cell-scroll">
+                      <a href={l.external_url} target="_blank" rel="noreferrer">
+                        {l.external_id ?? 'Listing'}
+                      </a>
+                    </div>
                   )}
                 </td>
                 <td>

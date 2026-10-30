@@ -146,7 +146,8 @@ export default function SpotPrices() {
       {said && <output className="notice status-line">{said}</output>}
       {!loaded.error && !loaded.data && <p className="muted">Loading...</p>}
       {rows.length > 0 && (
-        <table className="table" aria-label="Spot prices">
+        // On a phone each row stacks into a card, a line per labelled cell.
+        <table className="table stacks" aria-label="Spot prices">
           <thead>
             <tr>
               <th>Metal</th>
@@ -162,12 +163,20 @@ export default function SpotPrices() {
               const draft = drafts[row.metal] ?? ''
               return (
                 <tr key={row.metal}>
-                  <td>{row.label}</td>
-                  <td>{shownPrice(row.price_per_ozt)}</td>
-                  <td>{row.quoted_at ? dateTime(row.quoted_at) : 'never'}</td>
-                  <td>{shownOunces(row.fine_ozt_held)}</td>
-                  <td>{row.melt_value === null ? '--' : money(row.melt_value)}</td>
-                  <td>
+                  <td data-label="Metal">{row.label}</td>
+                  <td data-label="Price per troy ounce">
+                    {shownPrice(row.price_per_ozt)}
+                  </td>
+                  <td data-label="Recorded">
+                    {row.quoted_at ? dateTime(row.quoted_at) : 'never'}
+                  </td>
+                  <td data-label="Fine ounces held">
+                    {shownOunces(row.fine_ozt_held)}
+                  </td>
+                  <td data-label="Melt value">
+                    {row.melt_value === null ? '--' : money(row.melt_value)}
+                  </td>
+                  <td data-label="New price">
                     <form
                       className="spot-price-entry"
                       onSubmit={(e) => {
@@ -208,7 +217,7 @@ export default function SpotPrices() {
             <tfoot>
               <tr>
                 <td colSpan={4}>Melt value of everything quoted</td>
-                <td>{money(fromCents(total))}</td>
+                <td data-label="Melt value">{money(fromCents(total))}</td>
                 <td />
               </tr>
             </tfoot>

@@ -88,7 +88,8 @@ export default function InventoryTable({
 
   return (
     <HelpScope>
-      <table className="table inventory-table">
+      {/* On a phone each row stacks into a card, a line per labelled cell. */}
+      <table className="table inventory-table stacks">
         <thead>
           <tr>
             <th className="select-cell" data-help="select_page">
@@ -152,7 +153,7 @@ export default function InventoryTable({
                       onChange={() => toggle(row.id)}
                     />
                   </td>
-                  {config.columns.map(([, key, kind]) => {
+                  {config.columns.map(([label, key, kind]) => {
                     // The code opens the item; the order links to its
                     // purchase; every other column is its value.
                     let shown
@@ -167,9 +168,19 @@ export default function InventoryTable({
                     } else {
                       shown = cell(row, key, kind)
                     }
+                    // A long value scrolls in its cell rather than widening
+                    // the table; an amount is short and stays as it is.
                     return (
-                      <td key={key} className={kind === 'money' ? undefined : kind}>
-                        {shown}
+                      <td
+                        key={key}
+                        className={kind === 'money' ? undefined : kind}
+                        data-label={label}
+                      >
+                        {kind === 'money' ? (
+                          shown
+                        ) : (
+                          <div className="cell-scroll">{shown}</div>
+                        )}
                       </td>
                     )
                   })}

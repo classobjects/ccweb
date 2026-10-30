@@ -137,7 +137,8 @@ export default function Cart() {
   return (
     <section>
       <h1>Cart</h1>
-      <table className="table">
+      {/* On a phone each row stacks into a card, a line per labelled cell. */}
+      <table className="table stacks">
         <thead>
           <tr>
             <th>Item</th>
@@ -150,18 +151,20 @@ export default function Cart() {
         <tbody>
           {lines.map(({ coin, quantity }) => (
             <tr key={coin.id}>
-              <td>
-                <Link to={`/coins/${coin.id}`}>{coin.title}</Link>
+              <td data-label="Item">
+                <div className="cell-scroll">
+                  <Link to={`/coins/${coin.id}`}>{coin.title}</Link>
+                </div>
               </td>
-              <td>{money(coin.price, coin.currency)}</td>
-              <td>
+              <td data-label="Unit price">{money(coin.price, coin.currency)}</td>
+              <td data-label="Quantity">
                 <QuantityInput
                   coin={coin}
                   quantity={quantity}
                   onChange={(next) => setQuantity(coin.id, next)}
                 />
               </td>
-              <td>{lineMoney({ coin, quantity })}</td>
+              <td data-label="Line total">{lineMoney({ coin, quantity })}</td>
               <td>
                 <button className="link" onClick={() => remove(coin.id)}>
                   Remove
