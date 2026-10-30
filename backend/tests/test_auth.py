@@ -92,6 +92,23 @@ def test_register_losing_a_race_for_an_email_is_a_409_not_a_500(
     assert response.status_code == 409, response.text
 
 
+def test_register_losing_a_race_with_another_spelling_is_a_409(
+    client: TestClient, db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The loser spells the address with other capitals.
+
+    An index on the address as typed let `Race@` in beside `race@`; the
+    index on its lowered text (`uq_users_email`) stops it, as the 409.
+    """
+    first = {"email": "race@example.com", "password": "longenough"}
+    assert client.post("/api/auth/register", json=first).status_code == 201
+    monkeypatch.setattr(db, "scalar", lambda *_args, **_kwargs: None)
+
+    second = {"email": "Race@Example.com", "password": "longenough"}
+    response = client.post("/api/auth/register", json=second)
+    assert response.status_code == 409, response.text
+
+
 @pytest.mark.parametrize(
     "password,reason",
     [("short", "under 8 characters"), ("", "empty")],
