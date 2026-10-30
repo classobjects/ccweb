@@ -196,9 +196,9 @@ function MergePanel({ table, value, active, onMerged, onCancel }) {
  * `fields` are the vocabulary's own columns, and Edit details... is offered
  * only when it has some. `active` are the values a merge may go into, and
  * `shared(alias)` says whether another value has that alias too. Each
- * action is saved as it is taken: `onChanged` gets the value as the server
- * now holds it, `onMerged` the result of a merge. A refusal is shown in the
- * row.
+ * action is saved as it is taken: `onChanged` gets the row's table and the
+ * value as the server now holds it, `onMerged` the result of a merge. A
+ * refusal is shown in the row.
  */
 function ValueRow({
   table,
@@ -223,7 +223,7 @@ function ValueRow({
   async function run(call) {
     setSaving(true)
     try {
-      onChanged(await call())
+      onChanged(table, await call())
       setError('')
       return true
     } catch (err) {
@@ -339,7 +339,7 @@ function ValueRow({
                 fields={fields}
                 onSaved={(updated) => {
                   setDetailing(false)
-                  onChanged(updated)
+                  onChanged(table, updated)
                 }}
                 onCancel={() => setDetailing(false)}
               />
@@ -540,8 +540,13 @@ export default function Vocabularies() {
 
   const counts = useMemo(() => aliasCounts(values ?? []), [values])
 
-  function changed(updated) {
+  // `saved` is the table the row belonged to when it saved, which a late
+  // answer may no longer be: codes such as 'unknown' recur across
+  // vocabularies, so a value is put in place only in its own table's list,
+  // and not at all when that list failed to load.
+  function changed(saved, updated) {
     setLoaded((l) => {
+      if (l.table !== saved || !l.values) return l
       const next = l.values.map((v) => (v.code === updated.code ? updated : v))
       // A moved value goes where it now sorts, the way the server orders a
       // sequenced table: by position, then code.
@@ -551,7 +556,7 @@ export default function Vocabularies() {
       return { ...l, values: next }
     })
     // Pickers elsewhere hold this vocabulary; their copy is now stale.
-    context?.invalidate(table)
+    context?.invalidate(saved)
   }
 
   function merged(result) {

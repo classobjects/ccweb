@@ -486,6 +486,13 @@ describe('Lists: sellers, vendors and storage locations', () => {
     expect(screen.queryByText('Nothing here yet.')).toBeNull()
   })
 
+  it('says a load failed without also saying there is nothing here', async () => {
+    api.listSellers.mockRejectedValue(new Error('The server is unavailable.'))
+    open('sellers')
+    expect(await screen.findByText('The server is unavailable.')).toBeVisible()
+    expect(screen.queryByText('Nothing here yet.')).toBeNull()
+  })
+
   it('counts a location by the item records that name it, not by items', async () => {
     // An item kept there now also has the move that put it there in its
     // history: the count is records, and one item can be two of them.

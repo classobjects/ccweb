@@ -9,6 +9,7 @@ import { api } from '../api'
 import EndOfferConfirm from './EndOfferConfirm'
 import ModalDialog from '../ModalDialog'
 import RecordSaleDialog from './RecordSaleDialog'
+import Pager from '../Pager'
 import { accel, useSaveShortcut } from '../shortcuts'
 import { isMoney } from '../../shared/cents'
 import { FORMATS, STATUSES, UNKNOWN, labelFor, subjectOf } from './listing-labels'
@@ -89,8 +90,8 @@ function ListingForm({ listing, onSaved, onLateSaved, onClose }) {
       setError('Price must be an amount like 189.00.')
       return
     }
-    await send(async () => {
-      const saved = await api.updateListing(listing.id, {
+    await send(() =>
+      api.updateListing(listing.id, {
         price,
         title: form.title.trim(),
         // Sent as typed, including empty. `description` is NOT NULL on the
@@ -101,9 +102,8 @@ function ListingForm({ listing, onSaved, onLateSaved, onClose }) {
         // The version the form loaded, as a number: `ListingUpdate.version`
         // is an `int` and Pydantic v2 does not coerce "3".
         version: listing.version,
-      })
-      return saved
-    })
+      }),
+    )
   }
 
   // `subjectOf`, not `item_code`: a lot listing has none.
@@ -285,13 +285,6 @@ export default function Listings() {
   if (listings === null) return <p className="muted">Loading...</p>
 
   const byId = new Map(listings.map((l) => [l.id, l]))
-  // The header gives the count across every page; without it, this page's.
-  const matching = total ?? offset + listings.length
-  const first = listings.length === 0 ? 0 : offset + 1
-  const counted =
-    offset === 0 && listings.length === matching
-      ? `${matching} of ${matching}`
-      : `${first}-${offset + listings.length} of ${matching}`
 
   /** Whether a row's platform is the web store itself.
    *
@@ -364,23 +357,17 @@ export default function Listings() {
         </label>
       </div>
       <div className="row">
-        <span className="muted">{counted}</span>
-        {/* Shown only where there is a page to go to, rather than greyed
-            out where there is none. The server sends listings oldest first
-            (by id), so the pages are Previous and Next, not Newer and Older. */}
-        {offset > 0 && (
-          <button
-            className="link"
-            onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
-          >
-            Previous
-          </button>
-        )}
-        {offset + listings.length < matching && (
-          <button className="link" onClick={() => setOffset(offset + PAGE_SIZE)}>
-            Next
-          </button>
-        )}
+        {/* The server sends listings oldest first (by id), so the pages are
+            Previous and Next, not Newer and Older. */}
+        <Pager
+          offset={offset}
+          shown={listings.length}
+          total={total}
+          pageSize={PAGE_SIZE}
+          onOffset={setOffset}
+          earlier="Previous"
+          later="Next"
+        />
       </div>
       <table>
         <thead>
@@ -533,6 +520,9 @@ export default function Listings() {
             venues.find((v) => v.code === selling.venue)?.kind === 'auction_house'
           }
           onRecorded={recorded}
+          // Recorded after Cancel: the sale stands and ended the listing, so
+          // the page is read again, as `recorded` does, without the notice.
+          onLateRecorded={() => setReloads((n) => n + 1)}
           onClose={() => setSelling(null)}
         />
       )}

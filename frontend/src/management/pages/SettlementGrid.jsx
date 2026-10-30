@@ -155,7 +155,8 @@ function splitRefusals(refused) {
  *
  * `isAuctionHouse` lets a blank buyer stand for the house's undisclosed
  * one, which then gets a fee table of its own, and adds the picker for
- * where unsold and withdrawn items come back to. Settle asks for
+ * where unsold and withdrawn items come back to -- as does an auction the
+ * house still holds items of (`consigned_on`). Settle asks for
  * confirmation and sends the whole grid; `onSettled` gets the result, and a
  * refusal leaves the grid as typed with each refused lot marked on its row.
  */
@@ -426,7 +427,10 @@ export default function SettlementGrid({ auction, isAuctionHouse, onSettled }) {
         </div>
       )}
 
-      {isAuctionHouse && (
+      {/* Also wherever the house still holds something, which is what
+          `needsReturnLocation` asks: the venue may not have loaded, and
+          Settle must not wait on a location there is nowhere to choose. */}
+      {(isAuctionHouse || auction.consigned_on != null) && (
         <label>
           Return unsold and withdrawn items to{/* */}
           <LocationSelect

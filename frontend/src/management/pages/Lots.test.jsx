@@ -247,6 +247,58 @@ describe('Lots', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   })
 
+  it('keeps a rename that lands after Cancel, so the next edit is not stale', async () => {
+    const user = userEvent.setup()
+    api.listLots.mockResolvedValue({ lots: [assembling] })
+    let answer
+    api.updateLot.mockReturnValue(
+      new Promise((resolve) => {
+        answer = resolve
+      }),
+    )
+    renderWithProviders(<Lots />, { strict: true })
+
+    await user.click(await screen.findByRole('button', { name: 'Edit wording...' }))
+    const dialog = screen.getByRole('dialog', { name: 'Edit the lot Three Morgans' })
+    await user.clear(within(dialog).getByLabelText('Title'))
+    await user.type(within(dialog).getByLabelText('Title'), 'Four Morgans')
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+
+    answer({ ...assembling, title: 'Four Morgans', version: 2 })
+    expect(await screen.findByText('Four Morgans')).toBeVisible()
+
+    await user.click(screen.getByRole('button', { name: /remove/i }))
+    expect(api.updateLot).toHaveBeenLastCalledWith(
+      assembling.id,
+      expect.objectContaining({ version: 2 }),
+    )
+  })
+
+  it('reads the lots again when a new lot lands after Cancel', async () => {
+    const user = userEvent.setup()
+    api.listLots.mockResolvedValue({ lots: [] })
+    let answer
+    api.createLot.mockReturnValue(
+      new Promise((resolve) => {
+        answer = resolve
+      }),
+    )
+    renderWithProviders(<Lots />, { strict: true })
+
+    await user.click(await screen.findByRole('button', { name: 'New lot...' }))
+    const dialog = screen.getByRole('dialog', { name: 'Start a new lot' })
+    await user.type(within(dialog).getByLabelText('Title'), 'Four Peace Dollars')
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+
+    const lot = { ...assembling, id: 9, title: 'Four Peace Dollars', members: [] }
+    api.listLots.mockResolvedValue({ lots: [lot] })
+    answer(lot)
+    expect(await screen.findByText('Four Peace Dollars')).toBeVisible()
+  })
+
   it('keeps the form open, with the refusal, when a save is turned down', async () => {
     // This is the case that pins `LotForm`'s `mounted` ref. The console runs
     // in StrictMode, which invokes every effect setup, cleanup, setup on

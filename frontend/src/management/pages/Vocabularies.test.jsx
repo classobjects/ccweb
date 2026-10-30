@@ -129,6 +129,67 @@ describe('Vocabularies', () => {
     expect(reference.invalidate).toHaveBeenCalledWith('note_type')
   })
 
+  it('puts a late answer only into its own vocabulary, whose codes may recur', async () => {
+    const user = userEvent.setup()
+    const seriesUnknown = value('unknown', 'Unknown series')
+    const typeUnknown = value('unknown', 'Unknown type')
+    api.getReference.mockImplementation(async (table) => ({
+      table,
+      values: table === 'note_type' ? [typeUnknown] : [seriesUnknown],
+    }))
+    let answer
+    api.addReferenceAlias.mockReturnValue(
+      new Promise((resolve) => {
+        answer = resolve
+      }),
+    )
+    renderWithProviders(<Vocabularies />, { auth: adminAuth(), reference })
+    await screen.findByText('Unknown series')
+    await user.selectOptions(screen.getByLabelText('Vocabulary'), 'note_type')
+    await screen.findByText('Unknown type')
+
+    await user.type(
+      screen.getByLabelText('New alias for Unknown type'),
+      'Untyped{Enter}',
+    )
+    await user.selectOptions(screen.getByLabelText('Vocabulary'), 'series')
+    await screen.findByText('Unknown series')
+    answer({ ...typeUnknown, aliases: ['Untyped'] })
+
+    await waitFor(() => expect(reference.invalidate).toHaveBeenCalledWith('note_type'))
+    expect(screen.getByText('Unknown series')).toBeVisible()
+    expect(screen.queryByText('Unknown type')).toBeNull()
+    expect(screen.queryByText('Untyped')).toBeNull()
+  })
+
+  it('ignores an answer that arrives after its vocabulary failed to load', async () => {
+    const user = userEvent.setup()
+    let answer
+    api.addReferenceAlias.mockReturnValue(
+      new Promise((resolve) => {
+        answer = resolve
+      }),
+    )
+    await openNoteTypes(user)
+    await user.type(
+      screen.getByLabelText('New alias for United States Note'),
+      'Greenback{Enter}',
+    )
+    api.getReference.mockImplementation(async (table) => {
+      if (table === 'note_type') throw new Error('The server is unavailable.')
+      return { table, values: [value('walking_liberty_half', 'Walking Liberty')] }
+    })
+    await user.selectOptions(screen.getByLabelText('Vocabulary'), 'series')
+    await screen.findByText('Walking Liberty')
+    await user.selectOptions(screen.getByLabelText('Vocabulary'), 'note_type')
+    expect(await screen.findByText('The server is unavailable.')).toBeVisible()
+
+    answer({ ...US_NOTE, aliases: ['Greenback'] })
+
+    await waitFor(() => expect(reference.invalidate).toHaveBeenCalledWith('note_type'))
+    expect(screen.getByText('The server is unavailable.')).toBeVisible()
+  })
+
   it('shows a refusal beside the value and keeps what was typed', async () => {
     const user = userEvent.setup()
     api.addReferenceAlias.mockRejectedValue(

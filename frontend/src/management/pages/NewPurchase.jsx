@@ -15,6 +15,8 @@ import { matchesFilter, sortPurchases } from '../purchase-list'
 import { date } from '../../shared/format'
 import { orNull } from '../../shared/text'
 import { SaveButton, SaveShortcut } from '../SaveButton'
+import SortHeaders from '../SortHeaders'
+import PurchaseHeading from '../PurchaseHeading'
 
 /**
  * Recording an acquisition: a vendor and a purchase, then the items bought
@@ -78,35 +80,10 @@ function ExistingPurchasePicker({ orders, filterText, openOnly, onPick }) {
     return <p className="muted">No purchases match "{filterText}".</p>
   }
 
-  function sortBy(key, first) {
-    setSort((current) =>
-      current.key === key
-        ? { key, desc: !current.desc }
-        : { key, desc: first === 'desc' },
-    )
-  }
-
   return (
     <table className="table purchase-table" aria-label="Purchases">
       <thead>
-        <tr>
-          {PURCHASE_COLUMNS.map(([label, key, first]) => {
-            const active = sort.key === key
-            const direction = sort.desc ? 'descending' : 'ascending'
-            return (
-              <th key={key} aria-sort={active ? direction : 'none'}>
-                <button
-                  type="button"
-                  className="link sort-header"
-                  onClick={() => sortBy(key, first)}
-                >
-                  {label}
-                  {active && <span aria-hidden="true">{sort.desc ? ' ▼' : ' ▲'}</span>}
-                </button>
-              </th>
-            )
-          })}
-        </tr>
+        <SortHeaders columns={PURCHASE_COLUMNS} sort={sort} onSort={setSort} />
       </thead>
       <tbody>
         {shown.map((order) => (
@@ -548,41 +525,7 @@ export default function NewPurchase() {
         <h1>Purchases</h1>
         <HelpScope>
           <div className="admin-form">
-            <h2>
-              {purchase.order_number || <span className="muted">no order number</span>}
-              {' · '}
-              {purchase.vendor}
-              {' · '}
-              {date(purchase.ordered_on)}
-              {purchase.source_url && (
-                <>
-                  {' · '}
-                  <a
-                    href={purchase.source_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    Vendor page
-                  </a>
-                </>
-              )}
-              {purchase.seller && (
-                <>
-                  {' · Seller '}
-                  {purchase.seller_url ? (
-                    <a
-                      href={purchase.seller_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      {purchase.seller}
-                    </a>
-                  ) : (
-                    purchase.seller
-                  )}
-                </>
-              )}
-            </h2>
+            <PurchaseHeading purchase={purchase} />
             <PurchaseDetails
               // Its own key, not the bare id the item form below also takes:
               // two siblings with one key leave the first on screen when the

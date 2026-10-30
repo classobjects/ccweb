@@ -70,13 +70,16 @@ const KEYS = {
  * difference is which call they are sent to. A lot starts empty --
  * `SalesLotIn` takes a title and a description and nothing else, and
  * membership is a PATCH -- so there is nothing else this form could ask for.
+ *
+ * `onLateSaved` gets a save that lands after the window was closed
+ * (`useGuardedSave`).
  */
-function LotForm({ lot, onSaved, onClose }) {
+function LotForm({ lot, onSaved, onLateSaved, onClose }) {
   const [form, setForm] = useState({
     title: lot?.title ?? '',
     description: lot?.description ?? '',
   })
-  const { error, setError, saving, send } = useGuardedSave(onSaved)
+  const { error, setError, saving, send } = useGuardedSave(onSaved, onLateSaved)
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value })
 
   // `save` is a function declaration below, hoisted for the whole component
@@ -93,9 +96,9 @@ function LotForm({ lot, onSaved, onClose }) {
       setError('A lot needs a title: it is what the offer and the shop call it.')
       return
     }
-    await send(async () => {
-      const saved = lot
-        ? await api.updateLot(lot.id, {
+    await send(() =>
+      lot
+        ? api.updateLot(lot.id, {
             title,
             // Sent as typed, including empty. `description` is NOT NULL on
             // the row; an empty string is how the wording is cleared.
@@ -104,9 +107,8 @@ function LotForm({ lot, onSaved, onClose }) {
             // is an `int` and Pydantic v2 does not coerce "3".
             version: lot.version,
           })
-        : await api.createLot({ title, description: form.description })
-      return saved
-    })
+        : api.createLot({ title, description: form.description }),
+    )
   }
 
   const label = lot ? `Edit the lot ${lot.title}` : 'Start a new lot'
@@ -526,6 +528,10 @@ export default function Lots() {
         <LotForm
           lot={editing.lot}
           onSaved={(lot) => saved(lot, editing.lot === null)}
+          // A save that lands after Cancel still happened: a renamed lot's
+          // row takes the saved version, or its next edit is refused as
+          // stale, and a started lot is read in with the rest.
+          onLateSaved={editing.lot === null ? () => setReloads((n) => n + 1) : replace}
           onClose={() => setEditing(null)}
         />
       )}

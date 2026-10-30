@@ -218,6 +218,7 @@ function Accounts({ notify }) {
               <td>{u.full_name || <span className="muted">-</span>}</td>
               <td>
                 <select
+                  aria-label={`Role of ${u.email}`}
                   value={u.role}
                   onChange={(e) =>
                     patch(
@@ -250,6 +251,7 @@ function Accounts({ notify }) {
                   <span className="row">
                     <input
                       type="password"
+                      aria-label={`New password for ${u.email}`}
                       autoFocus
                       placeholder="at least 8 characters"
                       value={pw}
@@ -454,6 +456,7 @@ function Customers({ notify }) {
                 <td>
                   {isEditing ? (
                     <input
+                      aria-label={`Name of ${c.display_name}`}
                       value={draft.display_name ?? c.display_name}
                       onChange={(e) =>
                         setDraft({ ...draft, display_name: e.target.value })
@@ -466,6 +469,7 @@ function Customers({ notify }) {
                 <td className="mono">
                   {isEditing ? (
                     <input
+                      aria-label={`Email of ${c.display_name}`}
                       value={draft.email ?? c.email ?? ''}
                       onChange={(e) => setDraft({ ...draft, email: e.target.value })}
                     />
@@ -476,6 +480,7 @@ function Customers({ notify }) {
                 <td className="mono">
                   {isEditing ? (
                     <input
+                      aria-label={`Phone of ${c.display_name}`}
                       // Prefilled with the country code rather than storing it
                       // separately: the number is kept whole in E.164 so it is
                       // dialable from anywhere, and two columns could disagree.

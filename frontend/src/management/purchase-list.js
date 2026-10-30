@@ -43,6 +43,17 @@ function newest(a, b) {
 const NUMERIC = new Set(['total', 'outstanding', 'total_cost'])
 
 /**
+ * The sort after a click on the header of column `key`: the other way round
+ * when it is already the sorted column, and otherwise that column in its
+ * `first` direction (`'asc'` or `'desc'`).
+ */
+export function nextSort(current, key, first) {
+  return current.key === key
+    ? { key, desc: !current.desc }
+    : { key, desc: first === 'desc' }
+}
+
+/**
  * The purchases in the order asked for. A purchase with nothing in the sorted
  * column goes last whichever way it runs -- an undated purchase is not the
  * oldest or the newest -- and ties, one vendor's purchases say, list newest

@@ -14,6 +14,7 @@ export default function VocabularyFieldInput({ field, value, onChange }) {
     return (
       <ReferenceSelect
         table={field.table}
+        label={label}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         // One value is being described here; what it points at is picked.

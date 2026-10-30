@@ -389,7 +389,70 @@ describe('Platforms', () => {
     })
   })
 
-  it('does not apply a save the user cancelled before it resolved', async () => {
+  it('keeps what was typed while a purchase source is being added', async () => {
+    const user = userEvent.setup()
+    let answer
+    api.createVendor.mockReturnValue(
+      new Promise((resolve) => {
+        answer = resolve
+      }),
+    )
+    renderPage()
+    await screen.findByRole('row', { name: /eBay/ })
+
+    await user.click(screen.getByRole('button', { name: 'Add platform' }))
+    const dialog = screen.getByRole('dialog', { name: 'Add platform' })
+    await user.selectOptions(
+      within(dialog).getByLabelText('Purchase source'),
+      '+ Add a vendor...',
+    )
+    await user.type(
+      within(dialog).getByLabelText('Vendor web address'),
+      'https://hibid.com',
+    )
+    await user.click(within(dialog).getByRole('button', { name: 'Add' }))
+    // Typed while the vendor is still being made.
+    await user.type(within(dialog).getByLabelText('Name'), 'HiBid')
+
+    await act(async () => {
+      answer({ id: 3, name: 'hibid.com', vendor_kind: null })
+    })
+
+    expect(await within(dialog).findByLabelText('Purchase source')).toHaveValue('3')
+    expect(within(dialog).getByLabelText('Name')).toHaveValue('HiBid')
+  })
+
+  it('keeps an edit that lands after Cancel, so the next one is not stale', async () => {
+    const user = userEvent.setup()
+    let answer
+    api.updateSalesVenue.mockReturnValueOnce(
+      new Promise((resolve) => {
+        answer = resolve
+      }),
+    )
+    renderPage()
+    const row = await screen.findByRole('row', { name: /eBay/ })
+
+    await user.click(within(row).getByRole('button', { name: 'Edit' }))
+    let dialog = screen.getByRole('dialog', { name: 'Edit eBay' })
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+    await act(async () => {
+      answer({ ...EBAY, name: 'eBay US', version: 2 })
+    })
+
+    const updated = await screen.findByRole('row', { name: /eBay US/ })
+    api.updateSalesVenue.mockResolvedValue({ ...EBAY, name: 'eBay US', version: 3 })
+    await user.click(within(updated).getByRole('button', { name: 'Edit' }))
+    dialog = screen.getByRole('dialog', { name: 'Edit eBay US' })
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }))
+    expect(api.updateSalesVenue).toHaveBeenLastCalledWith(
+      'ebay',
+      expect.objectContaining({ version: 2 }),
+    )
+  })
+
+  it('lists a platform whose save lands after Cancel, and opens nothing', async () => {
     const user = userEvent.setup()
     let resolveCreate
     api.createSalesVenue.mockReturnValue(
@@ -414,7 +477,9 @@ describe('Platforms', () => {
       resolveCreate({ ...EBAY, code: 'whatnot', name: 'Whatnot' })
     })
 
-    expect(screen.queryByRole('row', { name: /Whatnot/ })).toBeNull()
+    // The server made it, so the list shows it; the closed dialog stays shut.
+    expect(screen.getByRole('row', { name: /Whatnot/ })).toBeInTheDocument()
+    expect(screen.queryByRole('dialog')).toBeNull()
   })
 
   it('shows a sample listing link from the template', async () => {

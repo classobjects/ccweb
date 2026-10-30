@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react'
 import { api } from '../api'
 import { date, money } from '../../shared/format'
 import ModalDialog from '../ModalDialog'
+import Pager from '../Pager'
 import OrderEditor from './orders/OrderEditor'
 import OrderHistory from './orders/OrderHistory'
 
@@ -181,12 +182,6 @@ export default function Orders() {
   if (!page) return <p className="muted">Loading...</p>
 
   const shown = page.rows
-  // The header gives the count across every page; without it, this page's.
-  const total = page.total ?? offset + shown.length
-  const counted =
-    offset === 0 && shown.length === total
-      ? `${total} of ${total}`
-      : `${shown.length === 0 ? 0 : offset + 1}-${offset + shown.length} of ${total}`
 
   return (
     <section>
@@ -214,22 +209,13 @@ export default function Orders() {
             ))}
           </select>
         </label>
-        <span className="muted">{counted}</span>
-        {/* Shown only where there is a page to go to, rather than greyed
-            out where there is none. */}
-        {offset > 0 && (
-          <button
-            className="link"
-            onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
-          >
-            Newer
-          </button>
-        )}
-        {offset + shown.length < total && (
-          <button className="link" onClick={() => setOffset(offset + PAGE_SIZE)}>
-            Older
-          </button>
-        )}
+        <Pager
+          offset={offset}
+          shown={shown.length}
+          total={page.total}
+          pageSize={PAGE_SIZE}
+          onOffset={setOffset}
+        />
       </div>
 
       {error && <p className="error">{error}</p>}

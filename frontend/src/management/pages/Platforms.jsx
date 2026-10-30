@@ -146,18 +146,30 @@ function toPayload(form) {
  * `venue` is `null` while adding a new platform and the record being edited
  * otherwise. The web store's kind and active status cannot be changed here,
  * so those fields are hidden for it and dropped from what gets sent.
+ * `onLateSaved` gets a save that lands after the dialog was closed
+ * (`useGuardedSave`).
  */
-function PlatformForm({ venue, venues, vendors, onVendorAdded, onSaved, onClose }) {
+function PlatformForm({
+  venue,
+  venues,
+  vendors,
+  onVendorAdded,
+  onSaved,
+  onLateSaved,
+  onClose,
+}) {
   const adding = venue === null
   const [form, setForm] = useState(adding ? BLANK : toForm(venue))
-  const { error, saving, send } = useGuardedSave(onSaved)
+  const { error, saving, send } = useGuardedSave(onSaved, onLateSaved)
   const kinds = useReference('sales_venue_kind') ?? []
   const isStore = !adding && venue.is_own_store
-  const set = (k) => (e) =>
-    setForm({
-      ...form,
-      [k]: e.target.type === 'checkbox' ? !e.target.checked : e.target.value,
-    })
+  // Each change is made to the form as it stands when it lands: a purchase
+  // source added inline answers later, and must not put back what was typed
+  // meanwhile.
+  const set = (k) => (e) => {
+    const value = e.target.type === 'checkbox' ? !e.target.checked : e.target.value
+    setForm((current) => ({ ...current, [k]: value }))
+  }
 
   // A purchase source may be linked to one platform: offer the free ones
   // and this platform's own.
@@ -172,25 +184,19 @@ function PlatformForm({ venue, venues, vendors, onVendorAdded, onSaved, onClose 
   useSaveShortcut(save, !saving)
 
   async function save() {
-    await send(async () => {
+    await send(() => {
       const payload = toPayload(form)
-      let saved
       if (adding) {
         // SalesVenueCreate has no is_active field and forbids extras; a new
         // platform is active by default.
         delete payload.is_active
-        saved = await api.createSalesVenue({ ...payload, code: form.code.trim() })
-      } else {
-        if (isStore) {
-          delete payload.kind
-          delete payload.is_active
-        }
-        saved = await api.updateSalesVenue(venue.code, {
-          ...payload,
-          version: venue.version,
-        })
+        return api.createSalesVenue({ ...payload, code: form.code.trim() })
       }
-      return saved
+      if (isStore) {
+        delete payload.kind
+        delete payload.is_active
+      }
+      return api.updateSalesVenue(venue.code, { ...payload, version: venue.version })
     })
   }
 
@@ -239,7 +245,9 @@ function PlatformForm({ venue, venues, vendors, onVendorAdded, onSaved, onClose 
           <VendorField
             vendors={sources}
             value={form.vendor_id}
-            onChange={(id) => setForm({ ...form, vendor_id: id ?? '' })}
+            onChange={(id) =>
+              setForm((current) => ({ ...current, vendor_id: id ?? '' }))
+            }
             onVendorAdded={onVendorAdded}
             blankLabel="(none)"
             label="Purchase source"
@@ -365,7 +373,8 @@ export default function Platforms() {
     }
   }, [])
 
-  function saved(venue) {
+  /** Put one platform the API just returned in the list, where it sorts. */
+  function place(venue) {
     setVenues((current) => {
       const others = current.filter((v) => v.code !== venue.code)
       return [...others, venue].sort(
@@ -374,6 +383,10 @@ export default function Platforms() {
           a.name.localeCompare(b.name),
       )
     })
+  }
+
+  function saved(venue) {
+    place(venue)
     setOpen(null)
   }
 
@@ -435,6 +448,9 @@ export default function Platforms() {
             )
           }
           onSaved={saved}
+          // A save that lands after Cancel still happened: the row takes the
+          // saved version, or its next edit is refused as stale.
+          onLateSaved={place}
           onClose={() => setOpen(null)}
         />
       )}

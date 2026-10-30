@@ -220,6 +220,10 @@ export function ReferenceSelect({
   //: Holds the picker still -- select, find box, and the text box shown
   //: before the vocabulary loads -- while its form is saving.
   disabled = false,
+  //: The picker's accessible name: the table's own name unless the form
+  //: calls the field something else, which an `aria-label` would otherwise
+  //: hide from a screen reader.
+  label = table,
 }) {
   const values = useReference(table, { includeRetired: true })
   const context = useContext(ReferenceContext)
@@ -368,7 +372,7 @@ export function ReferenceSelect({
         value={value ?? ''}
         onChange={onChange}
         placeholder={placeholder}
-        aria-label={table}
+        aria-label={label}
         accessKey={accessKey}
         aria-keyshortcuts={ariaKeyshortcuts}
         disabled={disabled}
@@ -441,7 +445,7 @@ export function ReferenceSelect({
             setAdding(true)
           },
         })}
-        aria-label={table}
+        aria-label={label}
         accessKey={accessKey}
         aria-keyshortcuts={ariaKeyshortcuts}
         disabled={disabled}
