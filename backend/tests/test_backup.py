@@ -13,10 +13,13 @@ copy, `run`, is made here from the test database.
 from __future__ import annotations
 
 from collections.abc import Iterator
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import pytest
 from app import backup
-from app.backup import generated_columns, timestamped_name
+from app.backup import database_url, generated_columns, timestamped_name
+from app.config import settings
 from app.models import Base
 from app.models.views import ALL_VIEWS
 from sqlalchemy import create_engine, text
@@ -79,7 +82,7 @@ def test_the_backup_url_keeps_its_password() -> None:
     """
     url = make_url("postgresql+psycopg://user:secret@localhost:5432/ccwebdb")
     masked = str(url.set(database="ccwebdb_bak_1"))
-    kept = url.set(database="ccwebdb_bak_1").render_as_string(hide_password=False)
+    kept = database_url(url.render_as_string(hide_password=False), "ccwebdb_bak_1")
 
     assert "***" in masked
     assert "secret" not in masked
@@ -94,6 +97,24 @@ def test_backup_names_sort_chronologically() -> None:
     stamp = name.removeprefix("ccwebdb_bak_")
     assert len(stamp) == len("20260908_123538")
     assert stamp.replace("_", "").isdigit(), "no day names -- they do not sort"
+
+
+def test_a_backup_name_is_stamped_in_local_time(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The stamp is TIME_ZONE's clock, as the workbooks' is, not UTC's.
+
+    UTC+14 all year, so its hour is never UTC's.
+    """
+    zone = ZoneInfo("Pacific/Kiritimati")
+    monkeypatch.setattr(settings, "time_zone", zone.key)
+    before = datetime.now(zone).replace(second=0, microsecond=0)
+    stamp = datetime.strptime(
+        timestamped_name().removeprefix("ccwebdb_bak_"), "%Y%m%d_%H%M%S"
+    ).replace(tzinfo=zone)
+    after = datetime.now(zone)
+
+    assert before <= stamp <= after
 
 
 @pytest.mark.parametrize(

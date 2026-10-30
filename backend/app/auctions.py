@@ -306,7 +306,7 @@ def add_lot(
     Takes the `auction` row first (`_lock_auction`), like every transition
     that reaches an auction's coins -- see that function for why.
     """
-    auction = _lock_auction(db, auction)
+    auction = _lock_auction(db, auction.id)
     _refuse_unless(
         auction, (AuctionStatus.draft, AuctionStatus.scheduled), "lots cannot be added"
     )
@@ -405,7 +405,7 @@ def remove_lot(
     return from consignment writes item rows, and written ahead of that pass
     they would be taken before the lot row -- items before lots.
     """
-    auction = _lock_auction(db, auction_lot.auction)
+    auction = _lock_auction(db, auction_lot.auction_id)
     _refuse_unless(auction, _LOTS_REMOVABLE, "lots cannot be removed")
     offering_writes.lock_for_sale(
         db, listing_ids=[auction_lot.listing_id], including_paused=True
@@ -559,18 +559,13 @@ def refuse_unless_lot_editable(db: Session, auction_lot: AuctionLot) -> None:
     between the caller's read and its write. The caller commits, which
     releases the row.
     """
-    # `get_one`, not `scalar(select(...))`: `auction_id` is `ondelete="RESTRICT"`,
-    # so the row is guaranteed to exist, and this reads that guarantee's
-    # type as well as its data -- `AuctionStatus`, never `AuctionStatus | None`.
-    #
-    # Then the row itself, locked and re-read (`_lock_auction`): the instance
-    # `get_one` answers with is whatever the session already holds, and a
-    # `close` committed since it was loaded would leave the gate deciding on
-    # `scheduled` for an auction that is `closed`. Holding the row until the
-    # caller commits is also what keeps a `close` from landing between this
-    # check and the write it permits.
+    # The row itself, locked and re-read (`_lock_auction`), not the instance
+    # the session may already hold: a `close` committed since that was loaded
+    # would leave the gate deciding on `scheduled` for an auction that is
+    # `closed`. Holding the row until the caller commits is also what keeps a
+    # `close` from landing between this check and the write it permits.
     _refuse_unless(
-        _lock_auction(db, db.get_one(Auction, auction_lot.auction_id)),
+        _lock_auction(db, auction_lot.auction_id),
         _LOTS_REMOVABLE,
         f"lot {auction_lot.lot_number} cannot be renumbered or have its "
         "reserve changed",
@@ -616,7 +611,7 @@ def consign(
     deadlock on a scheduled auction. Reads its lots through `_lots_of`, not
     `auction.lots`, for the reason that function gives.
     """
-    auction = _lock_auction(db, auction)
+    auction = _lock_auction(db, auction.id)
     venue = auction.sales_venue
     if venue.kind.code != _AUCTION_HOUSE_KIND_CODE:
         raise AuctionRefused(
@@ -767,7 +762,7 @@ def cancel(
     (see this module's docstring): every `end_offer` call goes through
     `_remove_lot`, on a listing named by this auction's own lot rows.
     """
-    auction = _lock_auction(db, auction)
+    auction = _lock_auction(db, auction.id)
     if auction.status in (AuctionStatus.settled, AuctionStatus.cancelled):
         raise AuctionRefused(f"auction #{auction.id} is already {auction.status.value}")
     if auction.consigned_on is not None and returned_to_location_id is None:
@@ -776,7 +771,6 @@ def cancel(
                 auction, " to bring its items back before it can be cancelled"
             )
         )
-    still_consigned = auction.consigned_on is not None
     lots = _lots_of(db, auction)
     # Every lot's rows in one pass, before the first removal: the sales lot
     # rows in one ascending statement, then the items, then the listings.
@@ -794,8 +788,7 @@ def cancel(
             returned_to_location_id=returned_to_location_id,
             user_id=user_id,
         )
-    if still_consigned:
-        auction.consigned_on = None
+    auction.consigned_on = None
     auction.status = AuctionStatus.cancelled
     db.flush()
 
@@ -852,7 +845,7 @@ def _buyer_key(username: str | None) -> str | None:
     return None if name is None else name.casefold()
 
 
-def _lock_auction(db: Session, auction: Auction) -> Auction:
+def _lock_auction(db: Session, auction_id: int) -> Auction:
     """Take the auction row FOR UPDATE and re-read it. The outermost lock.
 
     **An outermost level above `offering_writes`' canonical order**
@@ -899,7 +892,7 @@ def _lock_auction(db: Session, auction: Auction) -> Auction:
     db.flush()
     return db.scalars(
         select(Auction)
-        .where(Auction.id == auction.id)
+        .where(Auction.id == auction_id)
         .with_for_update()
         .execution_options(populate_existing=True)
     ).one()
@@ -1397,7 +1390,7 @@ def settle(
     passed, and the savepoint above has already undone whatever had been
     written.
     """
-    auction = _lock_auction(db, auction)
+    auction = _lock_auction(db, auction.id)
     _refuse_unless(auction, (AuctionStatus.closed,), "it cannot be settled")
     lots = _lots_of(db, auction)
 
@@ -1465,10 +1458,9 @@ def settle(
 
         # Cleared here and only after the loop above: the house is holding
         # nothing of this auction's any more, whether because everything sold
-        # or because everything that did not has just come back. An auction
-        # that was never consigned leaves this alone.
-        if auction.consigned_on is not None:
-            auction.consigned_on = None
+        # or because everything that did not has just come back. For an
+        # auction that was never consigned it is empty already.
+        auction.consigned_on = None
         auction.status = AuctionStatus.settled
         db.flush()
     return orders

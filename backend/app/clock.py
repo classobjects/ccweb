@@ -4,9 +4,10 @@
 """Local time: TIME_ZONE's, or the host's own zone when it names none.
 
 Every stored moment is UTC. Local time belongs only where a moment becomes a
-calendar day or a name -- "today" in a report, the day a sale falls on, a
-backup file's stamp -- and every such place asks here, so a server running
-on UTC can still keep its owner's days by setting TIME_ZONE.
+calendar day or a name -- "today" in a report, the day a sale falls on, the
+stamp in a backup's name (a workbook's or a database copy's) -- and every
+such place asks here, so a server running on UTC can still keep its owner's
+days by setting TIME_ZONE.
 """
 
 from __future__ import annotations

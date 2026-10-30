@@ -116,6 +116,30 @@ def _clear_primary(db: Session, item_id: int, keep: int | None = None) -> None:
     db.flush()
 
 
+def _primary_id(db: Session, item_id: int, *, besides: int | None = None) -> int | None:
+    """The id of the item's primary link, other than `besides`; None if it has none."""
+    stmt = select(ItemImage.id).where(
+        ItemImage.inventory_item_id == item_id, ItemImage.is_primary
+    )
+    if besides is not None:
+        stmt = stmt.where(ItemImage.id != besides)
+    return db.scalar(stmt)
+
+
+def _refuse_if_filed(db: Session, item: InventoryItem, image_id: int) -> None:
+    """Raise `LinkRefused` if the item already has this photograph."""
+    held = db.scalar(
+        select(ItemImage.id).where(
+            ItemImage.inventory_item_id == item.id,
+            ItemImage.image_id == image_id,
+        )
+    )
+    if held is not None:
+        raise LinkRefused(
+            f"{item.item_code} already has this photograph (link #{held})."
+        )
+
+
 def next_position(db: Session, item_id: int) -> int:
     """The place after the item's last photograph: 1 for its first.
 
@@ -160,26 +184,12 @@ def attach(
     `link.is_primary` on the row returned.
     """
     hold_items(db, [item.id])
-    existing = db.scalar(
-        select(ItemImage).where(
-            ItemImage.inventory_item_id == item.id,
-            ItemImage.image_id == image.id,
-        )
-    )
-    if existing is not None:
-        raise LinkRefused(
-            f"{item.item_code} already has this photograph (link #{existing.id})."
-        )
+    _refuse_if_filed(db, item, image.id)
 
     if is_primary:
         _clear_primary(db, item.id)
     else:
-        incumbent = db.scalar(
-            select(ItemImage.id).where(
-                ItemImage.inventory_item_id == item.id, ItemImage.is_primary
-            )
-        )
-        is_primary = incumbent is None
+        is_primary = _primary_id(db, item.id) is None
 
     if sort_order is None:
         sort_order = next_position(db, item.id)
@@ -240,16 +250,7 @@ def move(db: Session, link: ItemImage, target: InventoryItem) -> ItemImage:
     _still_on(db, link, source_id)
     if source_id == target.id:
         raise LinkRefused(f"This photograph is already filed on {target.item_code}.")
-    held = db.scalar(
-        select(ItemImage.id).where(
-            ItemImage.inventory_item_id == target.id,
-            ItemImage.image_id == link.image_id,
-        )
-    )
-    if held is not None:
-        raise LinkRefused(
-            f"{target.item_code} already has this photograph (link #{held})."
-        )
+    _refuse_if_filed(db, target, link.image_id)
 
     # Demoted before it leaves: the target may have a primary of its own,
     # and the index allows one per item.
@@ -258,14 +259,7 @@ def move(db: Session, link: ItemImage, target: InventoryItem) -> ItemImage:
     link.sort_order = next_position(db, target.id)
     link.inventory_item_id = target.id
     db.flush()
-    incumbent = db.scalar(
-        select(ItemImage.id).where(
-            ItemImage.inventory_item_id == target.id,
-            ItemImage.is_primary,
-            ItemImage.id != link.id,
-        )
-    )
-    if incumbent is None:
+    if _primary_id(db, target.id, besides=link.id) is None:
         link.is_primary = True
         db.flush()
     if source_id is not None:
@@ -325,12 +319,7 @@ def fill_primary_vacancy(db: Session, item_ids: Collection[int]) -> list[ItemIma
     """
     promoted = []
     for item_id in item_ids:
-        held = db.scalar(
-            select(ItemImage.id).where(
-                ItemImage.inventory_item_id == item_id, ItemImage.is_primary
-            )
-        )
-        if held is not None:
+        if _primary_id(db, item_id) is not None:
             continue
         successor = db.scalar(
             select(ItemImage)

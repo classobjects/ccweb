@@ -12,7 +12,9 @@ from __future__ import annotations
 from decimal import Decimal
 
 import pytest
+from app import bullion_weights
 from app.bullion_weights import apply, fineness_in, plan, weight_in
+from app.classifier_defaults import refresh_items
 from app.field_sources import HELD, derived_fields, record_derived
 from app.models import BullionForm, InventoryItem, ItemFieldChange, Metal, User
 from sqlalchemy import select
@@ -389,3 +391,40 @@ def test_applying_writes_the_guess_works_out_fine_weight_and_logs_it(
     ]
     # Run again, nothing is left to do: it has a fine weight now.
     assert _guesses(db, bar) == {}
+
+
+def test_what_the_save_defaults_leave_unflushed_is_kept_and_logged(
+    db: Session,
+    make_item: ItemFactory,
+    admin_user: User,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The defaults' second round, for an item whose series changed, is not flushed.
+
+    `refresh_items` writes it to the item and returns; reading the item back
+    from the database before flushing would throw it away.
+    """
+    bar = _bullion(db, make_item, form="bar", title="5 oz Silver Bar")
+    db.commit()
+
+    def second_round(session: Session, item_ids: list[int]) -> None:
+        refresh_items(session, item_ids)
+        item = session.get_one(InventoryItem, bar.id)
+        item.fineness = Decimal("0.9990")
+        item.fine_weight_ozt = Decimal("4.995000")
+
+    monkeypatch.setattr(bullion_weights, "refresh_items", second_round)
+    apply(db, plan(db), admin_user.id)
+    db.commit()
+
+    db.expire_all()
+    assert (bar.fineness, bar.fine_weight_ozt) == (
+        Decimal("0.9990"),
+        Decimal("4.995000"),
+    )
+    logged = db.scalars(
+        select(ItemFieldChange.field_name).where(
+            ItemFieldChange.inventory_item_id == bar.id
+        )
+    ).all()
+    assert sorted(logged) == ["fine_weight_ozt", "fineness", "gross_weight_ozt"]

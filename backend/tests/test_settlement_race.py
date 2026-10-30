@@ -904,7 +904,7 @@ def test_cancelling_an_auction_races_settling_it(
     both are legal on a `closed` auction.
 
     **The mutation that reds this test:** delete the
-    `auction = _lock_auction(db, auction)` line from `app.auctions.cancel`.
+    `auction = _lock_auction(db, auction.id)` line from `app.auctions.cancel`.
     It fails in two shapes:
 
     - `AssertionError: ['cancelled', 'deadlock']`. `settle` is the victim,
