@@ -190,7 +190,8 @@ function MergePanel({ table, value, active, onMerged, onCancel }) {
 }
 
 /**
- * One value's row: its label with the actions on it, its position when the
+ * One value's row: its label with the ⋮ that lists its actions, one to a
+ * line, its position when the
  * table is `sequenced`, its code, and its aliases.
  *
  * `fields` are the vocabulary's own columns, and Edit details... is offered
@@ -219,6 +220,22 @@ function ValueRow({
   const [merging, setMerging] = useState(false)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
+  // Whether the row's actions are listed, opened from the ⋮ beside its label.
+  const [menu, setMenu] = useState(false)
+  const toggle = useRef(null)
+  const list = useRef(null)
+
+  // Opened: focus on the first action, and a click anywhere else closes it.
+  useEffect(() => {
+    if (!menu) return undefined
+    list.current?.querySelector('button')?.focus()
+    const away = (e) => {
+      if (!list.current?.contains(e.target) && !toggle.current?.contains(e.target))
+        setMenu(false)
+    }
+    document.addEventListener('mousedown', away)
+    return () => document.removeEventListener('mousedown', away)
+  }, [menu])
 
   async function run(call) {
     setSaving(true)
@@ -253,87 +270,112 @@ function ValueRow({
       <td data-label="Label">
         {label === null ? (
           <>
-            <div className="cell-scroll">
-              {value.label}
-              {value.is_active ? '' : ' (retired)'}
-            </div>
-            <div className="value-actions">
+            <div className="value-label">
               <button
                 type="button"
-                className="link"
-                aria-label={`Rename ${value.label}`}
-                data-help="vocabulary_rename"
-                onClick={() => setLabel(value.label)}
+                ref={toggle}
+                className="link value-actions-toggle"
+                aria-label={`Actions for ${value.label}`}
+                aria-expanded={menu}
+                onClick={() => setMenu((open) => !open)}
               >
-                Rename
+                ⋮
               </button>
-              {value.is_active ? (
+              <div className="cell-scroll">
+                {value.label}
+                {value.is_active ? '' : ' (retired)'}
+              </div>
+            </div>
+            {menu && (
+              // A click on an action closes the list once the action has run.
+              <div
+                className="value-actions"
+                ref={list}
+                onClick={() => setMenu(false)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    setMenu(false)
+                    toggle.current?.focus()
+                  }
+                }}
+              >
                 <button
                   type="button"
                   className="link"
-                  aria-label={`Retire ${value.label}`}
-                  data-help="vocabulary_retire"
+                  aria-label={`Rename ${value.label}`}
+                  data-help="vocabulary_rename"
+                  onClick={() => setLabel(value.label)}
+                >
+                  Rename
+                </button>
+                {value.is_active ? (
+                  <button
+                    type="button"
+                    className="link"
+                    aria-label={`Retire ${value.label}`}
+                    data-help="vocabulary_retire"
+                    disabled={saving}
+                    title="Stop offering it; records that use it keep it"
+                    onClick={() => {
+                      // Kept live: pressing it says why, as the server would.
+                      if (value.retirable === false) {
+                        setError(
+                          `${value.label} cannot be retired: the application looks ` +
+                            'it up by its code. It can still be renamed.',
+                        )
+                        return
+                      }
+                      update({ is_active: false })
+                    }}
+                  >
+                    Retire
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="link"
+                    aria-label={`Restore ${value.label}`}
+                    data-help="vocabulary_restore"
+                    disabled={saving}
+                    onClick={() => update({ is_active: true })}
+                  >
+                    Restore
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="link"
+                  aria-label={`Merge ${value.label} into another value`}
+                  data-help="vocabulary_merge"
                   disabled={saving}
-                  title="Stop offering it; records that use it keep it"
+                  title="Move its items to another value, then remove it"
                   onClick={() => {
-                    // Kept live: pressing it says why, as the server would.
                     if (value.retirable === false) {
                       setError(
-                        `${value.label} cannot be retired: the application looks ` +
-                          'it up by its code. It can still be renamed.',
+                        `${value.label} cannot be merged away: the application ` +
+                          'looks it up by its code.',
                       )
                       return
                     }
-                    update({ is_active: false })
+                    setMerging(true)
                   }}
                 >
-                  Retire
+                  Merge into...
                 </button>
-              ) : (
-                <button
-                  type="button"
-                  className="link"
-                  aria-label={`Restore ${value.label}`}
-                  data-help="vocabulary_restore"
-                  disabled={saving}
-                  onClick={() => update({ is_active: true })}
-                >
-                  Restore
-                </button>
-              )}
-              <button
-                type="button"
-                className="link"
-                aria-label={`Merge ${value.label} into another value`}
-                data-help="vocabulary_merge"
-                disabled={saving}
-                title="Move its items to another value, then remove it"
-                onClick={() => {
-                  if (value.retirable === false) {
-                    setError(
-                      `${value.label} cannot be merged away: the application ` +
-                        'looks it up by its code.',
-                    )
-                    return
-                  }
-                  setMerging(true)
-                }}
-              >
-                Merge into...
-              </button>
-              {fields.length > 0 && (
-                <button
-                  type="button"
-                  className="link"
-                  aria-label={`Edit details of ${value.label}`}
-                  data-help="vocabulary_details"
-                  disabled={saving}
-                  onClick={() => setDetailing(true)}
-                >
-                  Edit details...
-                </button>
-              )}
-            </div>
+                {fields.length > 0 && (
+                  <button
+                    type="button"
+                    className="link"
+                    aria-label={`Edit details of ${value.label}`}
+                    data-help="vocabulary_details"
+                    disabled={saving}
+                    onClick={() => setDetailing(true)}
+                  >
+                    Edit details...
+                  </button>
+                )}
+              </div>
+            )}
             {detailing && (
               <VocabularyDetailsForm
                 table={table}
