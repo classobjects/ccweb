@@ -100,7 +100,7 @@ if not defined SETOK (
 )
 
 rem --- 2. Backend -----------------------------------------------------------
-rem  /api/reference/item_status is public and reads the database, so a 200
+rem  /api/reference/item_kind is public and reads the database, so a 200
 rem  here means the backend is up AND talking to PostgreSQL. A port held with
 rem  no answer is reported as its own state, not as running.
 if not defined SETOK (
@@ -111,7 +111,7 @@ if not defined SETOK (
 call :portpid %BPORT% BPID
 set "BOK="
 if defined BPID (
-    curl -s -f -o nul --max-time 5 "http://%CCWEB_API_HOST%:%BPORT%/api/reference/item_status" && set "BOK=1"
+    curl -s -f -o nul --max-time 5 "http://%CCWEB_API_HOST%:%BPORT%/api/reference/item_kind" && set "BOK=1"
 )
 if defined BOK (
     echo   Backend      %CCWEB_API_HOST%:%BPORT%   RUNNING   pid !BPID!

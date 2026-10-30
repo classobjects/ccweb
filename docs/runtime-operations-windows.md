@@ -211,7 +211,7 @@ look exactly like "stopped". A setting `.env` gets wrong gives the same
 
 Each service is checked **twice** where it can be: a listening port says only
 that something holds it. The backend is also asked for
-`/api/reference/item_status`, which is public and reads the database, so a 200
+`/api/reference/item_kind`, which is public and reads the database, so a 200
 means the API is up *and* talking to PostgreSQL; the frontend is asked for
 `/management`. A port held with no answer is reported as **LISTENING but not
 answering**, never rounded up to RUNNING.

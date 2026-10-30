@@ -103,7 +103,7 @@ if [ -z "$SETOK" ]; then
     echo "  Frontend     UNKNOWN - $WHY"
     DOWN="$DOWN backend frontend"
 else
-    check_server "Backend      " "$CCWEB_API_HOST" "$CCWEB_API_PORT" /api/reference/item_status backend
+    check_server "Backend      " "$CCWEB_API_HOST" "$CCWEB_API_PORT" /api/reference/item_kind backend
     check_server "Frontend     " "$CCWEB_FRONTEND_HOST" "$CCWEB_FRONTEND_PORT" /management frontend
 fi
 
