@@ -339,6 +339,32 @@ def test_a_certificate_number_creates_one_certification_row(
     assert cert.grading_service_id is not None
 
 
+def test_a_certificate_number_is_trimmed_and_never_blank(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    """Stored as an edit will later compare it, so " 123 " is not a new number."""
+    order = _purchase_order(db)
+    res = client.post(
+        "/api/inventory",
+        json=_coin_payload(order.id, grading_service="PCGS", cert_number=" 12345678 "),
+        headers=admin_headers,
+    )
+    assert res.status_code == 201, res.text
+    cert = db.scalars(
+        select(ItemCertification).where(
+            ItemCertification.inventory_item_id == res.json()["id"]
+        )
+    ).one()
+    assert cert.cert_number == "12345678"
+
+    blank = client.post(
+        "/api/inventory",
+        json=_coin_payload(order.id, grading_service="PCGS", cert_number="   "),
+        headers=admin_headers,
+    )
+    assert blank.status_code == 422, blank.text
+
+
 def test_a_single_year_is_normalised_to_start_equals_end(
     client: TestClient, admin_headers: dict[str, str], db: Session
 ) -> None:

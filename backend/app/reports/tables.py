@@ -9,6 +9,10 @@ written for the search against those aliases (`MISSING_FIELDS[key].sql`)
 can be reused in a report verbatim rather than restated against different
 table names.
 
+`item_status`, `disposition` and `currency_detail`, aliased `st`, `disp`
+and `cud` as the search aliases them (`_J_CUR_DETAIL` for the last), for
+the same reason: `MISSING_FIELDS[key].sql` names `cud` directly.
+
 `LIVE` is `live_item()` (`app.live`), the shared live-row predicate, moved
 onto the `i` alias: `live_item()` names `InventoryItem` unaliased, and
 `ClauseAdapter` rewrites its column references onto `ITEM` so it composes
@@ -20,10 +24,13 @@ from __future__ import annotations
 from sqlalchemy.sql.util import ClauseAdapter
 
 from ..live import live_item
-from ..models import InventoryItem, ItemKind
+from ..models import CurrencyDetail, Disposition, InventoryItem, ItemKind, ItemStatus
 
-__all__ = ["ITEM", "KIND", "LIVE"]
+__all__ = ["CURRENCY_DETAIL", "DISPOSITION", "ITEM", "ITEM_STATUS", "KIND", "LIVE"]
 
 ITEM = InventoryItem.__table__.alias("i")
 KIND = ItemKind.__table__.alias("k")
+ITEM_STATUS = ItemStatus.__table__.alias("st")
+DISPOSITION = Disposition.__table__.alias("disp")
+CURRENCY_DETAIL = CurrencyDetail.__table__.alias("cud")
 LIVE = ClauseAdapter(ITEM).traverse(live_item())

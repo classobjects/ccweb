@@ -23,12 +23,14 @@ from pydantic import BaseModel, Field
 from sqlalchemy import FromClause, func, select
 from sqlalchemy.orm import Session
 
-from ..models import Disposition, InventoryItem, ItemStatus, PurchaseOrder
+from ..models import InventoryItem, PurchaseOrder
 from .base import ZERO_MONEY, Column, DateRange, Report, ReportResult
 from .live_params import NOTHING_MATCHES, LiveParams, kind_query_string, live_where
 from .live_purchases import period_by_vendor
 from .registry import register
+from .tables import DISPOSITION as _DISP
 from .tables import ITEM as _I
+from .tables import ITEM_STATUS as _ST
 from .tables import KIND as _K
 from .tables import LIVE as _LIVE
 
@@ -45,9 +47,6 @@ __all__ = [
 # ---------------------------------------------------------------------------
 # mn_basis
 # ---------------------------------------------------------------------------
-
-_ST = ItemStatus.__table__.alias("st")
-_DISP = Disposition.__table__.alias("disp")
 
 _BASIS_COLUMNS = [
     Column("status", "Status", "text"),

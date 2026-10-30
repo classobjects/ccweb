@@ -10,36 +10,37 @@ every other of its kind, so the list is what a theft report or an insurance
 claim asks for: what each piece is, its metal and fine weight, its serial,
 and the grading service and certificate numbers printed on its holder.
 Each row opens the item's editor.
+
+Fine weight is recorded per piece, so a row's is the item's whole fine
+weight -- per piece times `piece_count`, as `cb_metal` and
+`item_valuation` count it -- and the total adds those.
 """
 
 from __future__ import annotations
 
 from collections import defaultdict
 from decimal import Decimal
-from urllib.parse import urlencode
 
 from sqlalchemy import FromClause, exists, or_, select
 from sqlalchemy.orm import Session
 
-from ..inventory_search import view_path
 from ..models import (
     CoinDetail,
-    CurrencyDetail,
     GradingService,
     ItemCertification,
     ItemImage,
     Metal,
 )
-from .base import Column, Report, ReportResult, among
-from .live_params import NOTHING_MATCHES, LiveParams, live_where
+from .base import Column, Report, ReportResult, among, listed
+from .live_params import NOTHING_MATCHES, LiveParams, item_drill, live_where
 from .registry import register
+from .tables import CURRENCY_DETAIL as _CUD
 from .tables import ITEM as _I
 from .tables import KIND as _K
 
 __all__ = ["CB_ID_NUMBERS"]
 
 _CD = CoinDetail.__table__.alias("cd")
-_CUD = CurrencyDetail.__table__.alias("cud")
 _MT = Metal.__table__.alias("mt")
 _CERT = ItemCertification.__table__
 _IMG = ItemImage.__table__
@@ -49,7 +50,7 @@ _COLUMNS = [
     Column("description", "Description", "text"),
     Column("kind", "Kind", "text"),
     Column("metal", "Metal", "text"),
-    Column("fine_weight_ozt", "Fine weight (ozt)", "ounces"),
+    Column("fine_weight_ozt", "Total fine weight (ozt)", "ounces"),
     Column("serial_number", "Serial number", "text"),
     Column("grading_service", "Grading service", "text"),
     Column("cert_numbers", "Certificate numbers", "text"),
@@ -73,11 +74,6 @@ def _certificates(
     return held
 
 
-def _joined(values: list[str | None]) -> str:
-    """The different values, as first met, blanks left out."""
-    return ", ".join(dict.fromkeys(value for value in values if value))
-
-
 def _cb_id_numbers(db: Session, params: LiveParams) -> ReportResult:
     """The held items a serial or a certificate identifies, by item code."""
     src: FromClause = (
@@ -95,7 +91,7 @@ def _cb_id_numbers(db: Session, params: LiveParams) -> ReportResult:
                 _I.c.id,
                 _I.c.item_code,
                 _I.c.description,
-                _I.c.fine_weight_ozt,
+                (_I.c.fine_weight_ozt * _I.c.piece_count).label("fine_weight_ozt"),
                 _K.c.code.label("kind_code"),
                 _K.c.label.label("kind"),
                 _MT.c.label.label("metal"),
@@ -136,14 +132,12 @@ def _cb_id_numbers(db: Session, params: LiveParams) -> ReportResult:
                 "metal": row["metal"] or "",
                 "fine_weight_ozt": row["fine_weight_ozt"],
                 "serial_number": row["bullion_serial"] or row["note_serial"] or "",
-                "grading_service": _joined([service for service, _ in certs]),
-                "cert_numbers": _joined([number for _, number in certs]),
+                "grading_service": listed([service for service, _ in certs]),
+                "cert_numbers": listed([number for _, number in certs]),
                 "photo": "yes" if row["photo"] else "no",
             }
         )
-        drills.append(
-            f"{view_path(row['kind_code'])}?{urlencode({'item': row['item_code']})}"
-        )
+        drills.append(item_drill(row["kind_code"], row["item_code"]))
         fine += row["fine_weight_ozt"] or Decimal("0")
 
     return ReportResult(

@@ -28,16 +28,16 @@ from sqlalchemy import FromClause, select
 from sqlalchemy.orm import Session
 
 from ..inventory_search import view_path
-from ..models import CurrencyDetail, Denomination, FedDistrict
+from ..models import Denomination, FedDistrict
 from ..serial_patterns import digits_of
-from .base import ZERO_MONEY, Column, Report, ReportResult
+from .base import ZERO_MONEY, Column, Report, ReportResult, listed
 from .live_params import LiveParams, live_where
 from .registry import register
+from .tables import CURRENCY_DETAIL as _CUD
 from .tables import ITEM as _I
 
 __all__ = ["CB_SERIALS", "NO_MATCHES", "SerialsParams"]
 
-_CUD = CurrencyDetail.__table__.alias("cud")
 _D = Denomination.__table__.alias("d")
 _FD = FedDistrict.__table__.alias("fd")
 
@@ -205,11 +205,6 @@ _COLUMNS = [
 ]
 
 
-def _listed(values: Sequence[object]) -> str:
-    """The different values among `values`, as first met, blanks left out."""
-    return ", ".join(dict.fromkeys(str(value) for value in values if value))
-
-
 #: Shown in place of rows when no two notes match.
 NO_MATCHES = "No two notes match on these settings."
 
@@ -269,10 +264,10 @@ def _cb_serials(db: Session, params: SerialsParams) -> ReportResult:
                 "digits": held[0][1].digits,
                 "notes": len(held),
                 "stars": sum(1 for _, parsed in held if parsed.star),
-                "serials": _listed([row["serial_number"] for row, _ in held]),
-                "denominations": _listed([row["denomination"] for row, _ in held]),
-                "series": _listed([row["series_designation"] for row, _ in held]),
-                "districts": _listed([row["district"] for row, _ in held]),
+                "serials": listed([row["serial_number"] for row, _ in held]),
+                "denominations": listed([row["denomination"] for row, _ in held]),
+                "series": listed([row["series_designation"] for row, _ in held]),
+                "districts": listed([row["district"] for row, _ in held]),
                 "total_cost": sum((row["total_cost"] for row, _ in held), ZERO_MONEY),
             }
         )

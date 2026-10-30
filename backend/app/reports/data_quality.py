@@ -70,8 +70,18 @@ from ..models import (
 )
 from ..purchases import GENERATED, WEB_ADDRESS
 from ..series_classify import classify
-from .base import ZERO_MONEY, Column, Report, ReportResult, among, local_date
+from .base import (
+    ZERO_MONEY,
+    Column,
+    Report,
+    ReportResult,
+    among,
+    local_date,
+    years_text,
+)
+from .live_params import kind_param
 from .registry import register
+from .tables import CURRENCY_DETAIL as _CUD
 from .tables import ITEM as _I
 from .tables import KIND as _K
 from .tables import LIVE as _LIVE
@@ -175,13 +185,6 @@ _FIELD_LABELS: dict[str, str] = {
     "sellers_item_id": "Seller's item id",
 }
 
-#: `currency_detail` aliased `cud`, as `inventory_search` aliases it
-#: (`_J_CUR_DETAIL`), alongside the shared `i`/`k` of `.tables`: together
-#: they let `MISSING_FIELDS[key].sql`'s text, written for the `missing=`
-#: filter, run here verbatim. One definition of "is this field missing",
-#: read by the filter and this report alike.
-_CUD = CurrencyDetail.__table__.alias("cud")
-
 _ONE_DP = Decimal("0.1")
 
 
@@ -194,9 +197,9 @@ def _percent(filled: int, live: int) -> Decimal:
 
 def _drill(kind_code: str) -> str:
     """The kind's own inventory search -- what the row (not a cell) drills to."""
-    if kind_code == "currency":
-        return view_path(kind_code)
-    return f"{view_path(kind_code)}?kind={kind_code}"
+    path = view_path(kind_code)
+    query = kind_param(kind_code)
+    return f"{path}?{urlencode(query)}" if query else path
 
 
 def _dq_completeness(db: Session, _params: DqCompletenessParams) -> ReportResult:
@@ -206,12 +209,11 @@ def _dq_completeness(db: Session, _params: DqCompletenessParams) -> ReportResult
     `_FIELD_LABELS`); a kind this field does not apply to -- metal on a
     note, grade or denomination on bullion -- renders that cell `None`
     rather than 0% or 100%, because "no field to be missing" is a different
-    fact from "every field is missing". Where `app.issues` states no kind
-    restriction for a field (year, country, photograph, storage location,
-    listing link, seller's item id), this report follows it in applying that
-    field to every kind -- a judgment call, not a rule read from `issues.py`.
-    Series is the exception, optional for currency
-    (`MISSING_FIELDS["series"]`).
+    fact from "every field is missing". Which kinds a field applies to is
+    `MISSING_FIELDS[key].applies_to` (`app.inventory_search`), the same rule
+    the `missing=` filter reads: denomination and grade only coins and
+    banknotes, metal neither currency nor sets, series optional for
+    currency, and every other field every kind.
 
     Every `count(*) FILTER` below runs `MISSING_FIELDS[key].sql` -- the same
     text the `missing=` filter itself runs -- so a cell's implied "missing"
@@ -230,10 +232,11 @@ def _dq_completeness(db: Session, _params: DqCompletenessParams) -> ReportResult
         )
         .select_from(_I)
         .join(_K, _K.c.id == _I.c.item_kind_id)
+        # `cud`, beside `i` and `k`: the aliases `MISSING_FIELDS[key].sql`
+        # names, so the filter's own text runs here verbatim.
         .outerjoin(_CUD, _CUD.c.inventory_item_id == _I.c.id)
         .where(_LIVE)
         .group_by(_K.c.id, _K.c.code, _K.c.label, _K.c.sort_order)
-        .having(func.count() > 0)
         # The kinds' own order, as `cb_holdings` lists them; `id` breaks a
         # tie between two kinds sharing a `sort_order`.
         .order_by(_K.c.sort_order, _K.c.id)
@@ -308,12 +311,10 @@ _PHOTO_ST = ItemStatus.__table__.alias("pst")
 def _photo_drill(kind_code: str, status_code: str) -> str:
     """A kind x status cell's own search: `missing=photo`, narrowed by status.
 
-    `kind=` is added the same way `kind_query_string` (`live_params.py`) adds it --
+    `kind=` is `kind_param`'s (`live_params.py`), as every kind drill's is --
     omitted for currency, which has its own view and needs no `kind=` at all.
     """
-    query: dict[str, str] = {}
-    if kind_code != "currency":
-        query["kind"] = kind_code
+    query = kind_param(kind_code)
     query["status"] = status_code
     query["missing"] = "photo"
     return f"{view_path(kind_code)}?{urlencode(query)}"
@@ -800,11 +801,6 @@ class DqSeriesYearsParams(BaseModel):
 _OUTSIDE_SERIES = COIN_ISSUES["year_outside_series"].sql
 
 
-def _years_text(start: int, end: int | None) -> str:
-    """``1990``, or ``1999-2009`` for a range."""
-    return str(start) if end in (None, start) else f"{start}-{end}"
-
-
 def _dq_series_years(db: Session, _params: DqSeriesYearsParams) -> ReportResult:
     """One row per live coin dated outside its series' years, by series then year.
 
@@ -837,7 +833,7 @@ def _dq_series_years(db: Session, _params: DqSeriesYearsParams) -> ReportResult:
             {
                 "item": row["item_code"],
                 "title": row["source_title"],
-                "year": _years_text(row["year_start"], row["year_end"]),
+                "year": years_text(row["year_start"], row["year_end"]),
                 "series": row["series"],
                 "series_years": f"{start} on" if end is None else f"{start}-{end}",
             }
@@ -904,9 +900,7 @@ def _review_year(row: RowMapping) -> str:
         if row["series_year"] is None:
             return ""
         return f"{row['series_year']}{row['series_letter'] or ''}"
-    if row["year_start"] is None:
-        return ""
-    return _years_text(row["year_start"], row["year_end"])
+    return years_text(row["year_start"], row["year_end"])
 
 
 def _dq_series_review(db: Session, params: DqSeriesReviewParams) -> ReportResult:

@@ -45,7 +45,7 @@ photograph, a grade or weight, a location and a cost -- and all four.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, cast
 from urllib.parse import urlencode
@@ -103,7 +103,9 @@ from .base import (
     among,
     local_date,
     period_label,
+    widened_utc_bounds,
 )
+from .live_params import item_drill, kind_param
 from .receipts import receipt_day, received_transitions
 from .registry import register
 
@@ -171,11 +173,6 @@ def _excluded_from_totals(
     return status is ListingStatus.paused and paused_by_status in ON_OFFER
 
 
-def _item_drill(kind_code: str, item_code: str) -> str:
-    """An item listing's console path: its own kind's search, opened on it."""
-    return f"{view_path(kind_code)}?{urlencode({'item': item_code})}"
-
-
 def _item_rows(db: Session, today: date) -> list[_Entry]:
     """One entry per live item listing that is active or paused.
 
@@ -228,7 +225,7 @@ def _item_rows(db: Session, today: date) -> list[_Entry]:
             "cost_basis": row["total_cost"],
             "days_listed": (today - local_date(listed_at)).days,
         }
-        drill = _item_drill(row["kind_code"], row["item_code"])
+        drill = item_drill(row["kind_code"], row["item_code"])
         excluded = _excluded_from_totals(status, row["paused_by_status"])
         entries.append(
             ((row["venue_name"], listed_at, row["id"]), row_dict, drill, excluded)
@@ -462,17 +459,12 @@ def _sales_prefilter(params: SalesParams) -> list[ColumnElement[bool]]:
     `timestamptz` instant's local calendar day can fall a day either side of
     the bound depending on the server's own time zone.
     """
+    lower, upper = widened_utc_bounds(params)
     conditions: list[ColumnElement[bool]] = []
-    if params.date_from is not None:
-        widened = datetime.combine(
-            params.date_from - timedelta(days=1), time.min, tzinfo=UTC
-        )
-        conditions.append(SalesOrder.placed_at >= widened)
-    if params.date_to is not None:
-        widened = datetime.combine(
-            params.date_to + timedelta(days=1), time.max, tzinfo=UTC
-        )
-        conditions.append(SalesOrder.placed_at <= widened)
+    if lower is not None:
+        conditions.append(SalesOrder.placed_at >= lower)
+    if upper is not None:
+        conditions.append(SalesOrder.placed_at <= upper)
     return conditions
 
 
@@ -505,12 +497,8 @@ def _excluded_order_count(db: Session, params: SalesParams) -> int:
     )
     count = 0
     for (placed_at,) in db.execute(stmt).all():
-        day = local_date(placed_at)
-        if params.date_from is not None and day < params.date_from:
-            continue
-        if params.date_to is not None and day > params.date_to:
-            continue
-        count += 1
+        if params.contains(local_date(placed_at)):
+            count += 1
     return count
 
 
@@ -569,9 +557,7 @@ def _sl_sales(db: Session, params: SalesParams) -> ReportResult:
     groups: dict[tuple[date, str], _SalesGroup] = {}
     for row in db.execute(stmt).mappings().all():
         day = local_date(row["placed_at"])
-        if params.date_from is not None and day < params.date_from:
-            continue
-        if params.date_to is not None and day > params.date_to:
+        if not params.contains(day):
             continue
         key = (day.replace(day=1), row["venue_name"])
         group = groups.setdefault(key, _SalesGroup())
@@ -1037,7 +1023,7 @@ _STATUS_RANK: dict[AuctionStatus, int] = {
     status: rank for rank, status in enumerate(AuctionStatus)
 }
 
-_SOLD_OR_NOT: tuple[AuctionLotResult, ...] = (
+_NOT_SOLD: tuple[AuctionLotResult, ...] = (
     AuctionLotResult.unsold,
     AuctionLotResult.withdrawn,
 )
@@ -1099,7 +1085,7 @@ def _sl_auctions(db: Session, _params: AuctionsParams) -> ReportResult:
     "did not sell".
     """
     is_sold = AuctionLot.result == AuctionLotResult.sold
-    is_unsold = AuctionLot.result.in_(_SOLD_OR_NOT)
+    is_unsold = AuctionLot.result.in_(_NOT_SOLD)
     stmt = (
         select(
             Auction.id,
@@ -1269,8 +1255,7 @@ def _sl_ready(db: Session, _params: ReadyParams) -> ReportResult:
         # Both halves of what the row counts, so the search lists the same
         # items: a received piece that is listed or sold is not one of them.
         query = {"status": "received", "disposition": "held"}
-        if row["kind_code"] != "currency":
-            query["kind"] = row["kind_code"]
+        query.update(kind_param(row["kind_code"]))
         drills.append(f"{view_path(row['kind_code'])}?{urlencode(query)}")
         for key in measures:
             totals[key] = cast("int", totals[key]) + row[key]
