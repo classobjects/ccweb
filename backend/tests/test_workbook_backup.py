@@ -114,6 +114,12 @@ INSERT INTO child (parent_id, note, finish_id, coinage_id) VALUES
 """
 
 
+#: The start of every scratch database's name: the session's own test
+#: database's, so two test sessions on one server (each with its own
+#: TEST_DATABASE_URL) never drop each other's copies.
+_SCRATCH = TEST_URL.database
+
+
 def _url(name: str) -> str:
     """The test server's address for the database of this name, password included."""
     return TEST_URL.set(database=name).render_as_string(hide_password=False)
@@ -134,7 +140,7 @@ def source() -> Iterator[Engine]:
     tables -- so one copy serves them all.
     """
     admin = _admin()
-    name = "ccwebdb_test_wb_source"
+    name = f"{_SCRATCH}_wb_source"
     with admin.connect() as conn:
         drop_database(conn, name)
         conn.execute(text(f'CREATE DATABASE "{name}"'))
@@ -157,7 +163,7 @@ def pair(
 ) -> Iterator[tuple[Engine, str]]:
     """The filled source database and a fresh, empty target with its schema."""
     admin = _admin()
-    name = "ccwebdb_test_wb_target"
+    name = f"{_SCRATCH}_wb_target"
     with admin.connect() as conn:
         drop_database(conn, name)
         conn.execute(text(f'CREATE DATABASE "{name}"'))
@@ -168,7 +174,7 @@ def pair(
         # As a migration might: a row the import must clear first.
         conn.execute(text("INSERT INTO parent (name) VALUES ('seeded by migration')"))
     # The live database is not the target: the source stands in for it.
-    monkeypatch.setattr(wb.settings, "database_url", _url("ccwebdb_test_wb_source"))
+    monkeypatch.setattr(wb.settings, "database_url", _url(f"{_SCRATCH}_wb_source"))
     try:
         yield source, _url(name)
     finally:
@@ -413,7 +419,7 @@ def test_an_unreachable_live_database_does_not_block_another(
     source, target_url = pair
     path = tmp_path / "backup.xlsx"
     wb.export_workbook(source, path)
-    live = _unreachable_live(target_url, database="ccwebdb_test_wb_elsewhere")
+    live = _unreachable_live(target_url, database=f"{_SCRATCH}_wb_elsewhere")
     monkeypatch.setattr(wb.settings, "database_url", live)
     wb.import_workbook(path, target_url)
 
@@ -539,7 +545,7 @@ NEXT_CODE = "CC-000042"
 def codes(monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[Engine, str]]:
     """A source holding issued item codes, and an empty target as migrated."""
     admin = _admin()
-    names = ("ccwebdb_test_wb_codes_source", "ccwebdb_test_wb_codes_target")
+    names = (f"{_SCRATCH}_wb_codes_source", f"{_SCRATCH}_wb_codes_target")
     with admin.connect() as conn:
         for name in names:
             drop_database(conn, name)
@@ -878,7 +884,7 @@ def test_the_proof_restores_the_workbook_and_compares_it_with_live(
     a cell changed, which differs; and one with a link to nothing, which
     cannot be restored. The scratch database is gone after each.
     """
-    monkeypatch.setattr(wb.settings, "database_url", _url("ccwebdb_test_wb_source"))
+    monkeypatch.setattr(wb.settings, "database_url", _url(f"{_SCRATCH}_wb_source"))
     monkeypatch.setattr(backup_run.command, "upgrade", _scratch_built_like_the_source)
     scratch = "ccwebdb_proof_wb_test"
     # One an interrupted run of this test left would refuse the first proof.
