@@ -164,10 +164,12 @@ def _rename_vendor(
         )
     # Case-insensitive, as `uq_vendor_name` is: two vendors differing
     # only in case are the same source. Asked first so the refusal
-    # names the vendor that has the name.
+    # names the vendor that has the name. Both sides lowered by the
+    # database, as the index lowers them: Python's casefold() would turn
+    # "ß" into "ss" and miss the clash the index then refuses.
     taken = db.scalar(
         select(Vendor).where(
-            func.lower(Vendor.name) == new_name.casefold(),
+            func.lower(Vendor.name) == func.lower(new_name),
             Vendor.id != vendor_id,
         )
     )

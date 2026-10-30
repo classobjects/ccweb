@@ -10,9 +10,9 @@ stops an oversell exists once.
 Functions flush and never commit; the caller's request owns the transaction.
 The one thing that ends it here is `_refuse`, which rolls back before raising
 so the row locks are released rather than held until the request unwinds --
-reached from `place_order`, `revise_order` and `_lock_listings`. A caller
-that catches one of those refusals is holding a rolled-back session, not a
-live one.
+reached from `place_order`, `revise_order`, `_lock_listings` and
+`refuse_too_many_pending`. A caller that catches one of those refusals is
+holding a rolled-back session, not a live one.
 
 **Known limit: `_refuse`'s rollback is whole-session, even inside a
 savepoint.** `db.rollback()` unwinds the outermost transaction, not just the
@@ -39,9 +39,9 @@ from decimal import Decimal
 from typing import NoReturn
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import Select, func, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import InstrumentedAttribute, Session, selectinload
 from sqlalchemy.orm.exc import StaleDataError
 
 from .allocation import allocate
@@ -600,6 +600,19 @@ EDITABLE_STATUSES = frozenset({"pending", "paid"})
 SHIPPED_STATUSES = frozenset({"packed", "shipped", "delivered"})
 
 
+def _shipped_history(order_id: int | InstrumentedAttribute[int]) -> Select[tuple[int]]:
+    """The history rows recording that an order reached a `SHIPPED_STATUSES` status.
+
+    `order_id` is one order's id, or `SalesOrder.id` to correlate the rows
+    with an outer query's order.
+    """
+    return select(SalesOrderChange.id).where(
+        SalesOrderChange.sales_order_id == order_id,
+        SalesOrderChange.change == SalesOrderChangeKind.status,
+        SalesOrderChange.to_value.in_(sorted(SHIPPED_STATUSES)),
+    )
+
+
 def ever_shipped(db: Session, order_id: int, *, before: int | None = None) -> bool:
     """Whether this order has ever been packed, shipped or delivered.
 
@@ -608,11 +621,7 @@ def ever_shipped(db: Session, order_id: int, *, before: int | None = None) -> bo
     afterwards does not bring the parcel home. `before` is a history row's
     id, and asks the question as of that row.
     """
-    shipped = select(SalesOrderChange.id).where(
-        SalesOrderChange.sales_order_id == order_id,
-        SalesOrderChange.change == SalesOrderChangeKind.status,
-        SalesOrderChange.to_value.in_(sorted(SHIPPED_STATUSES)),
-    )
+    shipped = _shipped_history(order_id)
     if before is not None:
         shipped = shipped.where(SalesOrderChange.id < before)
     return db.scalar(shipped.limit(1)) is not None
@@ -635,11 +644,7 @@ def orders_holding_stock(db: Session, listing_id: int) -> list[int]:
     leave the stock nowhere to go back to, so `routers.offers.end_listing`
     asks this first.
     """
-    shipped = select(SalesOrderChange.id).where(
-        SalesOrderChange.sales_order_id == SalesOrder.id,
-        SalesOrderChange.change == SalesOrderChangeKind.status,
-        SalesOrderChange.to_value.in_(sorted(SHIPPED_STATUSES)),
-    )
+    shipped = _shipped_history(SalesOrder.id)
     return list(
         db.scalars(
             select(SalesOrder.id)

@@ -168,7 +168,7 @@ def plan(db: Session) -> Plan:
         select(InventoryItem, PurchaseOrder, Vendor)
         .join(PurchaseOrder, PurchaseOrder.id == InventoryItem.purchase_order_id)
         .join(Vendor, Vendor.id == PurchaseOrder.vendor_id)
-        .where(InventoryItem.deleted_at.is_(None), InventoryItem.split_at.is_(None))
+        .where(live_item())
         .order_by(InventoryItem.id)
     ).all()
 

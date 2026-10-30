@@ -212,7 +212,9 @@ def _read_whole_number(name: str, value: object) -> int:
     if isinstance(value, bool) or (isinstance(value, float) and not value.is_integer()):
         raise FieldError(f"{name}: {value!r} is not a whole number")
     try:
-        whole = int(str(value).strip())
+        # An integral float (a JSON 3.0) is taken as itself: its text, "3.0",
+        # is not one int() reads.
+        whole = int(value) if isinstance(value, float) else int(str(value).strip())
     except ValueError as exc:
         raise FieldError(f"{name}: {value!r} is not a number") from exc
     if not -_INTEGER_LIMIT <= whole < _INTEGER_LIMIT:

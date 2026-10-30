@@ -1045,6 +1045,11 @@ def _refuse_grouped(db: Session, item: InventoryItem) -> None:
         )
 
 
+def _not_offerable_reason(_db: Session, lot: SalesLot) -> str:
+    """Why a lot past `assembling` cannot be offered."""
+    return f"lot #{lot.id} is {lot.status.value}, so it cannot be offered"
+
+
 def _lot_members(db: Session, lot: SalesLot) -> list[InventoryItem]:
     """Freeze one assembling lot's membership, and hand back the items in it.
 
@@ -1069,16 +1074,9 @@ def _lot_members(db: Session, lot: SalesLot) -> list[InventoryItem]:
     """
     from . import lot_writes
 
-    # Flushed first, because `Session.refresh` expires the instance *before*
-    # it autoflushes: a pending change to this lot would be discarded rather
-    # than written. The flush keeps a caller that changed the lot first -- a
-    # router among them -- from losing that change.
-    db.flush()
-    db.refresh(lot, with_for_update=True)
-    if lot.status is not SalesLotStatus.assembling:
-        raise lot_writes.LotRefused(
-            f"lot #{lot.id} is {lot.status.value}, so it cannot be offered"
-        )
+    # The same flush, row lock and re-read a membership change takes, in
+    # words about offering rather than about changing the lot.
+    lot_writes._refuse_unless_assembling(db, lot, _not_offerable_reason)
     rows = lot_writes.open_members(db, lot)
     if not rows:
         # `EmptyLot`, a `LotRefused` subclass, so the router answers 422 for

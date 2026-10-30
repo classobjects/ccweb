@@ -38,7 +38,6 @@ import argparse
 import re
 import sys
 from collections import Counter
-from dataclasses import dataclass
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -190,120 +189,6 @@ def analyse(serial: str) -> set[str]:
 #: A small-size US serial: one or two prefix letters, eight digits, one suffix
 #: letter, with a star replacing either letter on a replacement note.
 WELL_FORMED = re.compile(r"^(?:\*|[A-Z]{1,2})\d{8}[*A-Z]$")
-
-#: A letter with digits on both sides. Not the shape of a small-size US
-#: serial, so `check` warns: it is usually the suffix letter typed one
-#: position early.
-INTERNAL_LETTER = re.compile(r"\d[A-Z]\d")
-
-#: Advisory only. Some print runs ended at 96,000,000 rather than 99,999,999,
-#: so a serial above this is worth a second look -- but the real limit varies
-#: by series, denomination and era, and this project has no sourced table of
-#: them. The BEP publishes production figures and they are US government work,
-#: so such a table could be built; until it is, this is a prompt to check
-#: rather than a statement that the note cannot exist.
-ADVISORY_CEILING = 96_000_000
-
-
-@dataclass(frozen=True)
-class SerialIssue:
-    """Something wrong with a serial, and how wrong.
-
-    `error` means the serial cannot be what was typed; no rule here finds
-    one, since eight digits cannot exceed 99,999,999. `warning` means it is
-    unusual and worth a second look -- a collection holds genuine oddities,
-    and a system that would not let its owner record what is in their hand
-    records fiction instead. What `check` returns; nothing acts on either,
-    since no save calls `check`.
-    """
-
-    severity: str
-    message: str
-
-
-def _shape_issues(cleaned: str) -> list[SerialIssue]:
-    """What the arrangement of letters and digits says about the serial."""
-    # An internal letter is usually a transposition. Letters belong at the
-    # ends -- one or two in front, one behind -- so a serial with one in the
-    # middle is warned about: S97535476A entered as S9753547A6.
-    if INTERNAL_LETTER.search(cleaned):
-        return [
-            SerialIssue(
-                "warning",
-                "a letter appears among the digits. On a small-size US note "
-                "that is usually the suffix letter typed one position early "
-                "-- S9753547A6 for S97535476A -- so check it against the "
-                "note. Save anyway if that is what is printed.",
-            )
-        ]
-    if WELL_FORMED.match(cleaned):
-        return []
-
-    digits = digits_of(cleaned)
-    if len(digits) < SERIAL_DIGITS:
-        return [
-            SerialIssue(
-                "warning",
-                f"only {len(digits)} digits; a US small-size serial has "
-                f"{SERIAL_DIGITS}, so one may have been dropped.",
-            )
-        ]
-    return [
-        SerialIssue(
-            "warning",
-            "does not match the usual shape of one or two prefix "
-            "letters, eight digits and a suffix letter.",
-        )
-    ]
-
-
-def _range_issues(digits: str, series_year: int | None) -> list[SerialIssue]:
-    """What the serial's numeric value says about it."""
-    if len(digits) != SERIAL_DIGITS:
-        return []
-    value = int(digits)
-    if value > ADVISORY_CEILING:
-        year = f" for series {series_year}" if series_year else ""
-        return [
-            SerialIssue(
-                "warning",
-                f"above {ADVISORY_CEILING:,}{year}; some print runs ended "
-                "there rather than at 99,999,999, so this is worth "
-                "confirming against the note.",
-            )
-        ]
-    return []
-
-
-def check(
-    serial: str, series_year: int | None = None, country: str | None = "US"
-) -> list[SerialIssue]:
-    """Everything questionable about a serial, worst first.
-
-    Called by nothing in the application: data entry neither refuses nor
-    warns on a serial, and the inventory search's `malformed_serial` check
-    (`app.issues`) is what lists an internal letter. `_shape_issues`,
-    `_range_issues`, `SerialIssue`, `INTERNAL_LETTER` and `ADVISORY_CEILING`
-    serve only this function.
-
-    Shape rules apply to **US** notes only. A US small-size serial is letters
-    at the ends and eight digits between, but world notes are not: many
-    formats interleave letters and digits legitimately, so applying this to a
-    Bank of Canada or Bundesbank note would warn about a correct entry. Passing a
-    country other than "US" checks nothing structural.
-    """
-    if not serial or not serial.strip():
-        return []
-    if country is not None and country.upper() != "US":
-        return []
-    if series_year is not None and series_year < SMALL_SIZE_FROM:
-        # Large-size and obsolete issues predate the convention entirely.
-        return []
-
-    cleaned = serial.strip().upper()
-    issues = _shape_issues(cleaned) + _range_issues(digits_of(cleaned), series_year)
-    issues.sort(key=lambda i: 0 if i.severity == "error" else 1)
-    return issues
 
 
 def run(db: Session, *, commit: bool) -> tuple[Counter, list[tuple[str, str]]]:

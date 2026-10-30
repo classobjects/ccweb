@@ -53,16 +53,15 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import exists, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from . import aliases
 from .database import SessionLocal
-from .field_sources import HELD, SERIES_MATCH, record_derived
+from .field_sources import SERIES_MATCH, held_empty, record_derived
 from .models import (
     Denomination,
     InventoryItem,
-    ItemFieldSource,
     ItemKind,
     ProvenanceSource,
     SealColor,
@@ -408,11 +407,7 @@ def run(db: Session, *, commit: bool) -> Counter:
             InventoryItem.split_at.is_(None),
             InventoryItem.series_id.is_(None),
             # A series a person emptied stays empty.
-            ~exists().where(
-                ItemFieldSource.inventory_item_id == InventoryItem.id,
-                ItemFieldSource.field_name == "series_id",
-                ItemFieldSource.derived_by == HELD,
-            ),
+            ~held_empty("series_id"),
             # Notes are left to app.series_classify, which checks a note's
             # series year against the design before believing its text: a
             # note described as a Funnyback but recorded as Series 1923 is a

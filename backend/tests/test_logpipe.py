@@ -162,6 +162,54 @@ def test_a_log_held_open_elsewhere_leaves_the_older_files_as_they_were(
     assert b"while held\n" in log.read_bytes()
 
 
+def test_a_rotation_stopped_part_way_puts_the_current_file_back(
+    tmp_path: Path,
+) -> None:
+    """Nothing is left aside for the next rotation to overwrite."""
+    log = tmp_path / "backend.log"
+    numbered(log, 1).write_bytes(b"one start ago\n")
+    log.write_bytes(b"this start\n")
+    # A directory as the oldest file, which cannot be deleted as one: the
+    # shift fails after the current file has been moved aside, as it does
+    # when another program holds an older file open.
+    numbered(log, 2).mkdir()
+
+    with pytest.raises(OSError):
+        rotate(log, keep=3)
+
+    assert names(tmp_path) == {"backend.log", "backend.1.log", "backend.2.log"}
+    assert log.read_bytes() == b"this start\n"
+    assert numbered(log, 1).read_bytes() == b"one start ago\n"
+
+
+def test_a_file_left_aside_by_an_unfinished_rotation_is_kept(
+    tmp_path: Path,
+) -> None:
+    """A rotation killed mid-way left the current file aside; it is rotated in."""
+    log = tmp_path / "backend.log"
+    (tmp_path / "backend.rotating.log").write_bytes(b"left aside\n")
+
+    rotate(log, keep=3)
+
+    assert names(tmp_path) == {"backend.1.log"}
+    assert numbered(log, 1).read_bytes() == b"left aside\n"
+
+
+def test_a_file_left_aside_beside_a_newer_one_stops_the_rotation(
+    tmp_path: Path,
+) -> None:
+    """Neither the file left aside nor the newer current file is overwritten."""
+    log = tmp_path / "backend.log"
+    (tmp_path / "backend.rotating.log").write_bytes(b"left aside\n")
+    log.write_bytes(b"newer\n")
+
+    with pytest.raises(FileExistsError, match=r"backend\.rotating\.log"):
+        rotate(log, keep=3)
+
+    assert (tmp_path / "backend.rotating.log").read_bytes() == b"left aside\n"
+    assert log.read_bytes() == b"newer\n"
+
+
 def test_only_rotating_reports_a_log_it_could_not_move(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

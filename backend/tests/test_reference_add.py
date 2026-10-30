@@ -245,6 +245,23 @@ def test_whole_numbers_and_switches_are_read_strictly(
     assert made.json()["extra"]["is_plus"] is True
 
 
+def test_a_whole_number_sent_as_a_float_is_taken(
+    client: TestClient, admin_headers: dict[str, str]
+) -> None:
+    """JSON's 64.0 is the number 64, though its text is not one int() reads."""
+    made = client.post(
+        "/api/reference/grade",
+        json={
+            "code": "TESTGRADE",
+            "label": "Test grade",
+            "extra": {"numeric_value": 64.0},
+        },
+        headers=admin_headers,
+    )
+    assert made.status_code == 201, made.text
+    assert made.json()["extra"]["numeric_value"] == 64
+
+
 @pytest.mark.parametrize(
     ("table", "body", "said"),
     [
