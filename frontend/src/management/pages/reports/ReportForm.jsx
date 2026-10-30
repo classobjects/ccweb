@@ -14,7 +14,8 @@ import { choiceText, paramHelp } from './values'
  * else a text box.
  * The form holds its own draft; the page keys it by the address, so a new
  * address -- another report, Back, a link -- starts it again from there.
- * `error` is why the last run was refused, shown beside the fields it names.
+ * `error` is why the last run was refused, shown under the fields, where a
+ * field left empty is named the same way.
  * Beside Run it says the run is out (`busy`), or when the answer on screen
  * was run (`ranAt`).
  */

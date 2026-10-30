@@ -1,13 +1,13 @@
 // (c) Copyright 2026 Nathaniel Mills
 // Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
 // SPDX-License-Identifier: Apache-2.0
-import { useEffect, useState } from 'react'
-
 import { api } from '../../api'
-import { NUMBERS, identifyKeys } from '../../identify'
+import { NUMBERS, identifyKeys, isYearRange } from '../../identify'
 import { fitsKind, isCurrencyKind } from '../../../shared/kinds'
 import { ReferenceSelect } from '../../../shared/reference'
 import { useReference } from '../../../shared/reference-context'
+import { useDebounced } from '../../../shared/useDebounced'
+import { useRequest } from '../../../shared/useRequest'
 import SerialPair from '../inventory/SerialPair'
 
 //: How long typing must pause before the facts are looked up again.
@@ -35,20 +35,18 @@ const NOTE_DECIDED = [
 ]
 const COIN_DECIDED = ['series', 'metal']
 
-/** Whether a coin's years are a range, which one Year box cannot show. */
-function isRange(item) {
-  return item.year_end != null && item.year_end !== item.year_start
-}
-
 /**
  * What the facts typed here decide, as the entry form is told it: a note's
  * class, seal, signatures and Bank, a coin's metal, and either's design
  * series. Only the facts are sent, so a value a person set on the item is
  * not shown here and still stands when saved.
+ *
+ * Asked once typing pauses, and nothing is shown while the answer on hand
+ * is for other facts than those typed. A convenience: a failed look-up
+ * shows nothing rather than an error.
  */
 function Decided({ item, values }) {
   const currency = isCurrencyKind(item.item_kind)
-  const [found, setFound] = useState({ key: '', codes: {}, warning: '' })
   const facts = currency
     ? {
         denomination: values.denomination,
@@ -74,40 +72,26 @@ function Decided({ item, values }) {
     metal: useReference('metal', { includeRetired: true }),
   }
 
-  useEffect(() => {
-    const [isNote, params] = JSON.parse(factsKey)
-    if (!params.denomination) return undefined
-    let cancelled = false
-    const timer = setTimeout(() => {
-      const ask = isNote ? api.suggestNote : api.suggestCoin
-      Promise.resolve(ask(params))
-        .then((answer) => {
-          if (cancelled) return
-          const { warning, ...codes } = answer ?? {}
-          setFound({ key: factsKey, codes, warning: warning ?? '' })
-        })
-        // A convenience: a failed look-up shows nothing rather than an error.
-        .catch(() => {})
-    }, SUGGEST_DELAY_MS)
-    return () => {
-      cancelled = true
-      clearTimeout(timer)
-    }
-  }, [factsKey])
+  const settled = useDebounced(factsKey, SUGGEST_DELAY_MS)
+  const [isNote, params] = JSON.parse(settled)
+  const found = useRequest(params.denomination ? settled : null, () =>
+    (isNote ? api.suggestNote : api.suggestCoin)(params),
+  )
 
-  if (found.key !== factsKey) return null
+  if (settled !== factsKey || found.busy || found.error) return null
+  const { warning, ...codes } = found.data ?? {}
   const label = (table, code) =>
     vocabularies[table]?.find((entry) => entry.code === code)?.label ?? code
   const decided = (currency ? NOTE_DECIDED : COIN_DECIDED)
-    .filter((key) => found.codes[key])
-    .map((key) => label(key, found.codes[key]))
-  if (decided.length === 0 && !found.warning) return null
+    .filter((key) => codes[key])
+    .map((key) => label(key, codes[key]))
+  if (decided.length === 0 && !warning) return null
   return (
     <div className="identify-decided">
       {decided.length > 0 && (
         <output className="muted">From these facts: {decided.join(' · ')}</output>
       )}
-      {found.warning && <output className="notice">{found.warning}</output>}
+      {warning && <output className="notice">{warning}</output>}
     </div>
   )
 }
@@ -149,7 +133,8 @@ export default function IdentifySection({ item, values, onChange, disabled }) {
         />
       )
     }
-    const ranged = key === 'year_start' && isRange(item)
+    // A coin's years as a range, which one Year box cannot show.
+    const ranged = key === 'year_start' && isYearRange(item.year_start, item.year_end)
     return (
       <input
         type={NUMBERS.has(key) ? 'number' : 'text'}

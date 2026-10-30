@@ -1052,6 +1052,44 @@ describe('FriedbergLookup: whether the note is a mule', () => {
     ).toBeInTheDocument()
   })
 
+  it('records a number with the note as it is now, not as the box opened', async () => {
+    api.createFriedbergNumber.mockResolvedValue({ id: 9, fr_number: '1654' })
+    function Draft() {
+      const [seal, setSeal] = useState('')
+      const [year, setYear] = useState(1934)
+      return (
+        <>
+          <button
+            type="button"
+            onClick={() => {
+              setSeal('blue')
+              setYear(1935)
+            }}
+          >
+            Edit the note
+          </button>
+          <FriedbergLookup
+            itemId={412}
+            item={{ ...NOTE_1934A, seal_color: seal, series_year: year }}
+            entryOnly
+            onChoose={vi.fn()}
+          />
+        </>
+      )
+    }
+    renderWithProviders(<Draft />)
+    await userEvent.click(screen.getByRole('button', { name: 'Edit the note' }))
+    await userEvent.type(screen.getByLabelText(/fr\. number/i), '1654')
+    await userEvent.click(screen.getByRole('button', { name: /use as confirmed/i }))
+
+    await waitFor(() =>
+      expect(api.createFriedbergNumber).toHaveBeenCalledWith(
+        expect.objectContaining({ seal_color: 'blue', series_year: 1935 }),
+      ),
+    )
+    expect(screen.queryByText(/set the seal colour first/i)).not.toBeInTheDocument()
+  })
+
   it("says a mule's number makes it one as the number is typed", async () => {
     renderWithProviders(<FriedbergLookup itemId={412} item={NOTE_1934A} entryOnly />)
     await screen.findByText(/^Mule: its plates cannot tell/)

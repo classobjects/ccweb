@@ -118,6 +118,14 @@ describe('FilterPanel', () => {
     expect(props.apply).toHaveBeenCalledWith({ issue: '' })
   })
 
+  it('says which issue check is chosen, not only by its colour', () => {
+    const { rerender, props } = setup()
+    const chip = screen.getByRole('button', { name: /missing grade/i })
+    expect(chip).toHaveAttribute('aria-pressed', 'false')
+    rerender(<FilterPanel {...props} current={{ issue: 'missing_grade' }} />)
+    expect(chip).toHaveAttribute('aria-pressed', 'true')
+  })
+
   it('shows no missing-field chip when no field is being looked for', () => {
     setup()
     expect(screen.queryByRole('button', { name: /Missing:/ })).toBeNull()

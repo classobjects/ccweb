@@ -273,8 +273,12 @@ export default function FilterPanel({
           {config.issueChecks
             .filter((code) => issues[code])
             .map((code) => (
+              // A toggle: `aria-pressed` says which is chosen, as the class
+              // shows it.
               <button
                 key={code}
+                type="button"
+                aria-pressed={current.issue === code}
                 className={current.issue === code ? 'chip chip-on' : 'chip'}
                 title={issueDescriptions[code]}
                 onClick={() => apply({ issue: current.issue === code ? '' : code })}

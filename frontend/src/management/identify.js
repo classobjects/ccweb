@@ -25,6 +25,18 @@ export function identifyKeys(kind) {
     : ['year_start', ...(fieldFitsKind('mint', kind) ? ['mint'] : []), 'denomination']
 }
 
+/**
+ * Whether stored years are a range rather than one year -- the server's
+ * rule (`app/years.py`, `is_single`): one year is stored as start == end, and
+ * a few older items as a start with no end; both are one year. Any other end
+ * makes a range, an end with no start among them, since one Year box would
+ * hide it. Compared as numbers: a year typed is text, a stored one a number.
+ */
+export function isYearRange(start, end) {
+  if (end == null) return false
+  return start == null || Number(start) !== Number(end)
+}
+
 //: The facts that are numbers; the rest cross as text.
 export const NUMBERS = new Set(['series_year', 'year_start'])
 

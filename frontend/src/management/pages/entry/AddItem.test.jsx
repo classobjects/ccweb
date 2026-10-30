@@ -14,13 +14,14 @@ vi.mock('../../api', () => ({
 }))
 
 // The editor is tested on its own; here it stands in for the dialog this
-// opens, and offers the three things an editor can tell its opener.
+// opens, and offers the four things an editor can tell its opener.
 vi.mock('../inventory/ItemEditDialog', () => ({
-  default: ({ itemId, onSaved, onChanged, onClose }) => (
+  default: ({ itemId, onSaved, onChanged, onDeleted, onClose }) => (
     <div role="dialog" aria-label="Edit item">
       editing item {itemId}
       <button onClick={onSaved}>stub save</button>
       <button onClick={onChanged}>stub partial save</button>
+      <button onClick={onDeleted}>stub delete</button>
       <button onClick={onClose}>stub close</button>
     </div>
   ),
@@ -460,6 +461,22 @@ describe('AddItem', () => {
     // Never entered: nothing to add another like.
     expect(screen.queryByRole('button', { name: /Add another like/ })).toBeNull()
     expect(onEntered).not.toHaveBeenCalled()
+  })
+
+  it('does not count an item deleted in the editor as entered', async () => {
+    const user = userEvent.setup()
+    renderRow({ items: ENTERED })
+    await addNote(user)
+    // Partly saved first: a deleted item is gone all the same.
+    await user.click(await screen.findByRole('button', { name: 'stub partial save' }))
+    await user.click(screen.getByRole('button', { name: 'stub delete' }))
+
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(onEntered).not.toHaveBeenCalled()
+    // The editor deleted it; nothing is left to delete again.
+    expect(api.deleteInventoryItem).not.toHaveBeenCalled()
+    expect(screen.queryByRole('button', { name: /Add another like/ })).toBeNull()
+    expect(onChanged).toHaveBeenCalled()
   })
 
   it('offers another like the latest item of a purchase nothing was opened on', () => {

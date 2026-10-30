@@ -224,6 +224,11 @@ export default function FriedbergLookup({
   const [showFields, setShowFields] = useState(!searchNow)
   // The search fields, shaped as `fromItem` makes them.
   const [fields, setFields] = useState(initial)
+  // What a search, a record and its checks read. With only the number box
+  // shown there are no fields to type in, and the item editor's draft moves
+  // under a box that stays open: the note as it stands now, not as it was
+  // when the box opened.
+  const facts = entryOnly ? fromItem(item) : fields
   const {
     denomination,
     noteType,
@@ -238,7 +243,7 @@ export default function FriedbergLookup({
     printing,
     facePlate,
     backPlate,
-  } = fields
+  } = facts
   /** A change handler for one field, the typed value passed through `clean`. */
   const field =
     (key, clean = (text) => text) =>
@@ -353,7 +358,7 @@ export default function FriedbergLookup({
   const denominations = useReference('denomination')
   const noteTypes = useReference('note_type')
   const districts = useReference('fed_district')
-  const searchText = webSearchText(fields, {
+  const searchText = webSearchText(facts, {
     denomination: labelsOf(denominations),
     note_type: labelsOf(noteTypes),
     fed_district: labelsOf(districts),
@@ -407,7 +412,7 @@ export default function FriedbergLookup({
     searchCancelRef.current = null
   }
 
-  const currentFilters = () => filtersOf(fields)
+  const currentFilters = () => filtersOf(facts)
 
   async function search() {
     if (yearRefusal) {
@@ -426,7 +431,7 @@ export default function FriedbergLookup({
     setAttachMessage('')
     setUsedId(null)
     try {
-      const rows = await api.searchFriedberg(searchFiltersOf(fields))
+      const rows = await api.searchFriedberg(searchFiltersOf(facts))
       if (cancelled) return
       showResults(rows)
     } catch (err) {
@@ -604,12 +609,9 @@ export default function FriedbergLookup({
 
   const busy = attachingKey != null || recording
 
-  // Whether the note is a mule, said beside the Fr. number box. The facts
-  // are the search fields' -- or, with only the box shown, the note's as it
-  // stands now, since the item editor's draft moves under a box that stays
-  // open. Asked once typing pauses, by the rules Save applies.
-  const muleFacts = entryOnly ? fromItem(item) : fields
-  const muleKey = useDebounced(muleKeyOf(muleFacts), NARROW_DELAY_MS)
+  // Whether the note is a mule, said beside the Fr. number box, from `facts`.
+  // Asked once typing pauses, by the rules Save applies.
+  const muleKey = useDebounced(muleKeyOf(facts), NARROW_DELAY_MS)
   const muleAnswer = useRequest(muleKey, () => api.getMuleStatus(JSON.parse(muleKey)))
   const typedNumber =
     recordFrNumber.trim() && !typedProblem ? normalizeFr(recordFrNumber) : ''
@@ -617,8 +619,8 @@ export default function FriedbergLookup({
     says: muleAnswer.data?.says,
     number: typedNumber || (item?.friedberg_number ?? ''),
     marked: (item?.attributes ?? []).some((a) => a.code === 'mule'),
-    series: `${muleFacts.seriesYear}${muleFacts.seriesLetter}`,
-    backPlate: muleFacts.backPlate,
+    series: `${facts.seriesYear}${facts.seriesLetter}`,
+    backPlate: facts.backPlate,
   })
 
   /**

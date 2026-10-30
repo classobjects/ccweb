@@ -11,13 +11,21 @@ import ItemEditForm from './ItemEditForm'
  * `ModalDialog`, whose docstring records why any of this is modal. This is
  * the pairing of that shell with the item form, kept as its own component so
  * the results table names what it opens rather than assembling it inline.
+ * The callbacks are the form's own (`onDeleted` among them).
  */
-export default function ItemEditDialog({ itemId, onSaved, onChanged, onClose }) {
+export default function ItemEditDialog({
+  itemId,
+  onSaved,
+  onChanged,
+  onDeleted,
+  onClose,
+}) {
   return (
     <ModalDialog label="Edit item" onClose={onClose}>
       <ItemEditForm
         itemId={itemId}
         onSaved={onSaved}
+        onDeleted={onDeleted}
         onChanged={onChanged}
         onClose={onClose}
       />

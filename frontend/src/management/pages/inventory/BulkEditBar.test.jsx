@@ -371,6 +371,37 @@ describe('BulkEditBar', () => {
     })
   })
 
+  it('retries an add refused as changed elsewhere with the lot as it is now', async () => {
+    const user = userEvent.setup()
+    api.listLots
+      .mockResolvedValueOnce({
+        lots: [{ id: 3, title: 'Three Morgans', version: 7, members: [] }],
+      })
+      .mockResolvedValue({
+        // Someone else added a coin meanwhile.
+        lots: [{ id: 3, title: 'Three Morgans', version: 9, members: [{ id: 9 }] }],
+      })
+    api.updateLot
+      .mockRejectedValueOnce(
+        Object.assign(new Error('The lot was changed elsewhere'), { status: 409 }),
+      )
+      .mockResolvedValue({ id: 3, title: 'Three Morgans', version: 10, members: [] })
+    renderWithProviders(<BulkEditBar ids={[1, 2]} rows={ROWS} view="coins" />)
+    await user.click(screen.getByRole('button', { name: /group into lot/i }))
+    await user.selectOptions(await screen.findByLabelText('Lot'), '3')
+    await user.click(await screen.findByRole('button', { name: /^add to lot$/i }))
+    await screen.findByText('The lot was changed elsewhere')
+    await screen.findByRole('option', { name: 'Three Morgans (1 so far)' })
+
+    await user.click(screen.getByRole('button', { name: /^add to lot$/i }))
+    await waitFor(() =>
+      expect(api.updateLot).toHaveBeenLastCalledWith(3, {
+        add_item_ids: [1, 2],
+        version: 9,
+      }),
+    )
+  })
+
   it('groups a selection that reaches past this page of results', async () => {
     // Grouping needs only ids, so the off-page half of a selection goes in
     // too. Offering cannot do that -- it needs a price and a cost basis per

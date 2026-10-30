@@ -4,11 +4,13 @@
 /**
  * The fields the `missing=<field>` filter can look for, as a person reads them.
  *
- * The keys are exactly the backend's `inventory_search.MISSING_FIELDS` keys
- * -- the `missing=` values, and the completeness report's percent-column
- * keys -- so a drill from a report lands on a filter this page can name.
+ * The keys are the backend's `inventory_search.MISSING_FIELDS` keys -- the
+ * `missing=` values, and the completeness report's percent-column keys -- so
+ * a drill from a report lands on a filter this page can name. No test holds
+ * the two lists together, so a field added there and not here is named by
+ * its own key (`missingLabel`) until it is added.
  */
-export const MISSING_FIELDS = {
+const MISSING_FIELDS = {
   year: 'year',
   denomination: 'denomination',
   grade: 'grade',

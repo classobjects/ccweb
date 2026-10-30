@@ -97,6 +97,29 @@ describe('ItemFinder', () => {
     expect(calls().every(([, params]) => !('status' in params))).toBe(true)
   })
 
+  it('says nothing matches in any status, not "in that status", under Any status', async () => {
+    api.searchInventory.mockResolvedValue({ rows: [], total: 0 })
+    renderWithProviders(<ItemFinder onPick={vi.fn()} />, { reference: vocabularies })
+    await userEvent.selectOptions(
+      screen.getByRole('combobox', { name: /status/i }),
+      'any',
+    )
+    await find(2)
+    expect(await screen.findByText('Nothing matches, in any status.')).toBeVisible()
+    expect(screen.queryByText('Nothing in that status matches.')).toBeNull()
+  })
+
+  it('says nothing in that status matches for a status chosen', async () => {
+    api.searchInventory.mockResolvedValue({ rows: [], total: 0 })
+    renderWithProviders(<ItemFinder onPick={vi.fn()} />, { reference: vocabularies })
+    await userEvent.selectOptions(
+      screen.getByRole('combobox', { name: /status/i }),
+      'received',
+    )
+    await find(2)
+    expect(await screen.findByText('Nothing in that status matches.')).toBeVisible()
+  })
+
   it('finds items in a chosen status, such as received', async () => {
     // An item already recorded as received can still be found. Receiving it
     // twice is refused by the backend.
