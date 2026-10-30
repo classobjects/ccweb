@@ -483,10 +483,14 @@ wrong one leaves the other to respawn.
 
 **Pure cmd.** No PowerShell in the scripts themselves (conda's own
 activation calls it to name a temporary file, and succeeds without it):
-ports from `netstat`, readiness from `curl`, sleeps from
+the process on a port from `backend\app\portpid.py`, readiness from
+`curl`, sleeps from
 `ping -n 2 127.0.0.1 >nul` (`timeout` needs a real console and returns at
 once, with no pause, when stdin is redirected), process trees from
-`taskkill /T`.
+`taskkill /T`. Not `netstat`: on Windows 26300.9818 it reads a listening
+socket's state wrong and leaves the row out, so a held port looked free.
+`portpid.py` reads the same table and tells a listener by its empty remote
+address instead.
 
 ---
 
@@ -632,10 +636,14 @@ these up: the port sweep catches what the PID file does not know about.
 
 **`[WinError 10013] An attempt was made to access a socket in a way forbidden
 by its access permissions`** -- almost never permissions. Either something is
-already listening, or Windows has reserved the port range (Hyper-V / WSL):
+already listening, or Windows has reserved the port range (Hyper-V / WSL).
+In a window where `conda activate ccwebdb` has been run, the first prints
+the process ID holding the port, or nothing; the second lists the reserved
+ranges:
 
 ```console
-netstat -ano | findstr ":8000" | findstr LISTENING
+cd /d %USERPROFILE%\dev\ccweb
+python backend\app\portpid.py 8000
 netsh interface ipv4 show excludedportrange protocol=tcp
 ```
 

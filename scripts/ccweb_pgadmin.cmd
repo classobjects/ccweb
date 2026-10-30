@@ -82,8 +82,8 @@ if not exist "%PKG%\config_local.py" (
 )
 
 rem --- already running? -----------------------------------------------------
-netstat -ano -p TCP | findstr /c:"127.0.0.1:%PORT%" | findstr /c:"LISTENING" >nul
-if not errorlevel 1 (
+call :portpid %PORT% HELD 127.0.0.1
+if defined HELD (
     echo pgAdmin is already running.
     echo Opening %URL%
     start "" "%URL%"
@@ -97,8 +97,8 @@ start "pgAdmin 4" /min "%PGADMIN%"
 
 call :waiturl "%URL%" 60
 if errorlevel 1 goto :notready
-netstat -ano -p TCP | findstr /c:"127.0.0.1:%PORT%" | findstr /c:"LISTENING" >nul
-if errorlevel 1 goto :notready
+call :portpid %PORT% HELD 127.0.0.1
+if not defined HELD goto :notready
 
 echo pgAdmin is up. Opening the browser.
 start "" "%URL%"
@@ -138,3 +138,14 @@ rem  such restriction: -n 2 sends two packets one second apart, so it waits
 rem  ~1s.
 ping -n 2 127.0.0.1 >nul 2>&1
 goto waiturl_loop
+
+rem ---------------------------------------------------------------------------
+rem  :portpid <port> <varname> [address]  - PID listening on <port> (on
+rem  <address> alone, if given), empty if none.
+rem  portpid.py, not netstat's LISTENING rows: on Windows 26300.9818 a
+rem  listener's state reads wrong and netstat leaves it out (its docstring).
+rem ---------------------------------------------------------------------------
+:portpid
+set "%~2="
+for /f %%A in ('call "%ENVDIR%\python.exe" "%REPO%\backend\app\portpid.py" %~1 %~3') do set "%~2=%%A"
+goto :eof

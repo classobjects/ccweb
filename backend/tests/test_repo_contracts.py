@@ -559,6 +559,10 @@ def test_shutdown_stops_only_the_program_startup_runs_on_a_port(
             f"call :killport {port} {program} {images}\n"
             "exit /b 0\n"
             f"{routines}",
+            # What ccweb_env and the script's own top set: :portpid runs
+            # backend\app\portpid.py with the environment's Python.
+            ENVDIR=str(Path(sys.executable).parent),
+            REPO=str(REPO_ROOT),
         )
         with contextlib.suppress(subprocess.TimeoutExpired):
             process.wait(timeout=5)

@@ -83,7 +83,8 @@ of its own.
   `ccweb_backup` reports the failure on its console only.
 - On Linux, servers start with `setsid nohup`, their process groups are
   recorded in `.runtime/ccweb.pids`, and shutdown stops each group.
-  Port-to-pid lookups use `ss` (Linux) and `netstat` (Windows). Shutdown's
+  Port-to-pid lookups use `ss` (Linux) and `backend/app/portpid.py`
+  (Windows, where netstat misses listeners on 26300.9818). Shutdown's
   port sweep stops a listener only when it is the program startup runs
   there; startup takes a listener on the API's port for the API only when
   `/health` answers `{"status":"ok"}`.

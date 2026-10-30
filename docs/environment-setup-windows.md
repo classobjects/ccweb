@@ -404,8 +404,8 @@ pg_isready -h localhost -p 5432
 
 `accepting connections` is ready. `no response` means it is not running:
 start it with the `start` line of step 5 and check again. If it still says
-`no response` and `netstat -ano | findstr ":5432"` shows the port LISTENING,
-the server was started from a window that has since closed: see
+`no response` and `python backend\app\portpid.py 5432`, run in the
+repository with ccwebdb active, prints a process ID, the server was started from a window that has since closed: see
 [runtime-operations-windows.md](runtime-operations-windows.md) (*Troubleshooting*).
 
 ### This collection, on a new machine

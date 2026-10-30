@@ -29,8 +29,8 @@ rem  Safe to re-run: anything already listening is left alone. A listener on
 rem  the API's port counts as the API only if /health answers {"status":"ok"};
 rem  otherwise the port is reported as taken and the exit code is 1.
 rem
-rem  Pure cmd - no PowerShell. Uses netstat for PIDs and curl for readiness
-rem  (curl.exe ships with Windows 10 1803 and later).
+rem  Pure cmd - no PowerShell. Uses backend\app\portpid.py for PIDs and
+rem  curl for readiness (curl.exe ships with Windows 10 1803 and later).
 rem ---------------------------------------------------------------------------
 
 rem An unrecognised argument is refused, never ignored. Git bash rewrites /lan
@@ -156,8 +156,8 @@ call :portpid %FPORT% FPID
 if defined FPID (
     echo [3/3] frontend     already running on %FPORT% ^(pid !FPID!^)
     if defined LAN (
-        netstat -ano -p TCP | findstr /R /C:"0\.0\.0\.0:%FPORT%  *[0-9]" | findstr "LISTENING" >nul
-        if errorlevel 1 (
+        call :portpid %FPORT% LANPID 0.0.0.0
+        if not defined LANPID (
             echo       WARNING - it answers this machine only, so /lan changed nothing.
             echo       Stop it with scripts\ccweb_shutdown.cmd /keepdb, then run this again.
         )
@@ -222,11 +222,14 @@ if errorlevel 1 (
 goto :eof
 
 rem ---------------------------------------------------------------------------
-rem  :portpid <port> <varname>  - PID listening on <port>, empty if none
+rem  :portpid <port> <varname> [address]  - PID listening on <port> (on
+rem  <address> alone, if given), empty if none.
+rem  portpid.py, not netstat's LISTENING rows: on Windows 26300.9818 a
+rem  listener's state reads wrong and netstat leaves it out (its docstring).
 rem ---------------------------------------------------------------------------
 :portpid
 set "%~2="
-for /f "tokens=5" %%A in ('netstat -ano -p TCP ^| findstr /R /C:":%~1  *[0-9]" ^| findstr "LISTENING"') do set "%~2=%%A"
+for /f %%A in ('call "%ENVDIR%\python.exe" "%REPO%\backend\app\portpid.py" %~1 %~3') do set "%~2=%%A"
 goto :eof
 
 rem ---------------------------------------------------------------------------
