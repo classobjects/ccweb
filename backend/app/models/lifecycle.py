@@ -112,10 +112,9 @@ class ItemStatusHistory(Base):
     __tablename__ = "item_status_history"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    #: Not indexed alone: `ix_item_status_history_item_time` leads with it.
     inventory_item_id: Mapped[int] = mapped_column(
-        ForeignKey(_FK_INVENTORY_ITEM, ondelete="CASCADE"),
-        index=True,
-        nullable=False,
+        ForeignKey(_FK_INVENTORY_ITEM, ondelete="CASCADE"), nullable=False
     )
     #: Null on the first row -- an item has no status before it has one.
     from_status_id: Mapped[int | None] = mapped_column(
@@ -158,10 +157,9 @@ class LocationHistory(Base):
     __tablename__ = "location_history"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    #: Not indexed alone: `ix_location_history_item_time` leads with it.
     inventory_item_id: Mapped[int] = mapped_column(
-        ForeignKey(_FK_INVENTORY_ITEM, ondelete="CASCADE"),
-        index=True,
-        nullable=False,
+        ForeignKey(_FK_INVENTORY_ITEM, ondelete="CASCADE"), nullable=False
     )
     storage_location_id: Mapped[int | None] = mapped_column(
         ForeignKey("storage_location.id", ondelete="RESTRICT"), nullable=True
@@ -253,10 +251,9 @@ class ItemFieldSource(Base):
     __tablename__ = "item_field_source"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    #: Not indexed alone: `uq_item_field_source` leads with it.
     inventory_item_id: Mapped[int] = mapped_column(
-        ForeignKey(_FK_INVENTORY_ITEM, ondelete="CASCADE"),
-        index=True,
-        nullable=False,
+        ForeignKey(_FK_INVENTORY_ITEM, ondelete="CASCADE"), nullable=False
     )
     field_name: Mapped[str] = mapped_column(String(64), nullable=False)
     #: Which rule filled it -- one of the constants in `app.field_sources`

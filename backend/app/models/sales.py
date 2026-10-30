@@ -37,9 +37,16 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import Mapped, declared_attr, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from .base import Base, ReferenceMixin, TimestampMixin, enum_column, utcnow
+from .base import (
+    Base,
+    ReferenceMixin,
+    TimestampMixin,
+    VersionedMixin,
+    enum_column,
+    utcnow,
+)
 
 if TYPE_CHECKING:  # relationship targets only -- importing them at
     # runtime would make core and sales import each other in a cycle.
@@ -143,7 +150,7 @@ class ClaimState(enum.StrEnum):
     released = "released"
 
 
-class SalesVenue(TimestampMixin, Base):
+class SalesVenue(VersionedMixin, TimestampMixin, Base):
     """A platform the business sells through: the web store, eBay, an auction house.
 
     The owner's own accounts, not shipped reference data -- another
@@ -154,16 +161,6 @@ class SalesVenue(TimestampMixin, Base):
     """
 
     __tablename__ = "sales_venue"
-
-    #: Optimistic concurrency -- see the note on InventoryItem.version.
-    version: Mapped[int] = mapped_column(
-        Integer, nullable=False, server_default=text("1")
-    )
-
-    @declared_attr.directive
-    def __mapper_args__(cls) -> dict[str, Any]:
-        """Optimistic concurrency: every UPDATE checks the version it read."""
-        return {"version_id_col": cls.version}
 
     id: Mapped[int] = mapped_column(primary_key=True)
     #: Machine-facing and immutable, like a reference code.
@@ -230,7 +227,7 @@ class SalesVenue(TimestampMixin, Base):
     )
 
 
-class Listing(TimestampMixin, Base):
+class Listing(VersionedMixin, TimestampMixin, Base):
     """What is offered for sale, and at what price.
 
     Separate from `inventory_item` because an item may be listed, delisted and
@@ -247,24 +244,11 @@ class Listing(TimestampMixin, Base):
 
     __tablename__ = "listing"
 
-    #: Optimistic concurrency -- see the note on InventoryItem.version.
-    #: The order path decrements `quantity_available` under a row lock it
-    #: has just re-read, so its own UPDATE never meets a stale version and
-    #: a buyer is never told to try again. That decrement does move the
-    #: version, so a listing form opened before a sale is refused (409)
-    #: when saved after it.
-    version: Mapped[int] = mapped_column(
-        Integer, nullable=False, server_default=text("1")
-    )
-
-    # A directive rather than a dict literal: DeclarativeBase declares
-    # __mapper_args__ as an instance variable, so ClassVar is an override
-    # error and Final a Liskov violation, while a bare literal trips RUF012.
-    # See the note on __tablename__ in base.py.
-    @declared_attr.directive
-    def __mapper_args__(cls) -> dict[str, Any]:
-        """Optimistic concurrency: every UPDATE checks the version it read."""
-        return {"version_id_col": cls.version}
+    # Optimistic concurrency (`VersionedMixin`). The order path decrements
+    # `quantity_available` under a row lock it has just re-read, so its own
+    # UPDATE never meets a stale version and a buyer is never told to try
+    # again. That decrement does move the version, so a listing form opened
+    # before a sale is refused (409) when saved after it.
 
     id: Mapped[int] = mapped_column(primary_key=True)
     inventory_item_id: Mapped[int | None] = mapped_column(
@@ -337,7 +321,6 @@ class Listing(TimestampMixin, Base):
     sales_lot: Mapped[SalesLot | None] = relationship()
     currency: Mapped[Currency] = relationship()
     sales_venue: Mapped[SalesVenue] = relationship()
-    order_items: Mapped[list[SalesOrderItem]] = relationship(back_populates="listing")
     paused_by: Mapped[Listing | None] = relationship(
         remote_side=lambda: [Listing.id],
         foreign_keys=lambda: [Listing.paused_by_listing_id],
@@ -430,8 +413,9 @@ class OfferClaim(TimestampMixin, Base):
     inventory_item_id: Mapped[int] = mapped_column(
         ForeignKey(_FK_INVENTORY_ITEM, ondelete="RESTRICT"), index=True, nullable=False
     )
+    #: Not indexed alone: `uq_offer_claim_pair` leads with it.
     listing_id: Mapped[int] = mapped_column(
-        ForeignKey(_FK_LISTING, ondelete="RESTRICT"), index=True, nullable=False
+        ForeignKey(_FK_LISTING, ondelete="RESTRICT"), nullable=False
     )
     state: Mapped[ClaimState] = mapped_column(
         enum_column(ClaimState, "offer_claim_state"),
@@ -464,7 +448,7 @@ class SalesLotStatus(enum.StrEnum):
     dissolved = "dissolved"
 
 
-class SalesLot(TimestampMixin, Base):
+class SalesLot(VersionedMixin, TimestampMixin, Base):
     """A temporary grouping of items, offered and sold as one thing.
 
     Not an inventory item, deliberately: a lot that were an item would be
@@ -493,22 +477,9 @@ class SalesLot(TimestampMixin, Base):
         default=SalesLotStatus.assembling,
         server_default=SalesLotStatus.assembling.value,
     )
-    #: Optimistic concurrency, as on Listing and InventoryItem.
-    version: Mapped[int] = mapped_column(
-        Integer, nullable=False, server_default=text("1")
-    )
-
     members: Mapped[list[SalesLotItem]] = relationship(
         back_populates="lot", cascade=_CASCADE_ALL_DELETE_ORPHAN
     )
-
-    # A directive rather than a dict literal, for the reason `Listing` gives
-    # above: a literal trips RUF012 and every annotation that would silence
-    # it fails mypy instead.
-    @declared_attr.directive
-    def __mapper_args__(cls) -> dict[str, Any]:
-        """Optimistic concurrency: every UPDATE checks the version it read."""
-        return {"version_id_col": cls.version}
 
 
 class SalesLotItem(TimestampMixin, Base):
@@ -526,8 +497,9 @@ class SalesLotItem(TimestampMixin, Base):
     __tablename__ = "sales_lot_item"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    #: Not indexed alone: `uq_sales_lot_item_pair` leads with it.
     sales_lot_id: Mapped[int] = mapped_column(
-        ForeignKey("sales_lot.id", ondelete="CASCADE"), index=True, nullable=False
+        ForeignKey("sales_lot.id", ondelete="CASCADE"), nullable=False
     )
     inventory_item_id: Mapped[int] = mapped_column(
         ForeignKey(_FK_INVENTORY_ITEM, ondelete="RESTRICT"),
@@ -661,7 +633,7 @@ class Address(TimestampMixin, Base):
     )
 
 
-class SalesOrder(TimestampMixin, Base):
+class SalesOrder(VersionedMixin, TimestampMixin, Base):
     """A customer order. See the naming note at the top of this module."""
 
     __tablename__ = "sales_order"
@@ -703,10 +675,6 @@ class SalesOrder(TimestampMixin, Base):
     placed_by_id: Mapped[int | None] = mapped_column(
         ForeignKey(_FK_USERS, ondelete=_ON_DELETE_SET_NULL), nullable=True
     )
-    #: Optimistic concurrency, as on Listing and InventoryItem.
-    version: Mapped[int] = mapped_column(
-        Integer, nullable=False, server_default=text("1")
-    )
 
     customer: Mapped[Customer] = relationship(back_populates="orders")
     sales_venue: Mapped[SalesVenue] = relationship()
@@ -725,11 +693,6 @@ class SalesOrder(TimestampMixin, Base):
         cascade=_CASCADE_ALL_DELETE_ORPHAN,
         order_by="SalesOrderChange.id",
     )
-
-    @declared_attr.directive
-    def __mapper_args__(cls) -> dict[str, Any]:
-        """Optimistic concurrency: every UPDATE checks the version it read."""
-        return {"version_id_col": cls.version}
 
     __table_args__ = (
         CheckConstraint("total_amount >= 0", name="ck_sales_order_total_non_negative"),
@@ -765,9 +728,9 @@ class SalesOrderItem(Base):
     )
 
     order: Mapped[SalesOrder] = relationship(back_populates="items")
-    listing: Mapped[Listing] = relationship(back_populates="order_items")
+    listing: Mapped[Listing] = relationship()
     shares: Mapped[list[SalesOrderItemShare]] = relationship(
-        back_populates="line", cascade=_CASCADE_ALL_DELETE_ORPHAN
+        cascade=_CASCADE_ALL_DELETE_ORPHAN
     )
 
     __table_args__ = (
@@ -813,7 +776,6 @@ class SalesOrderFee(Base):
     note: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     order: Mapped[SalesOrder] = relationship(back_populates="fees")
-    fee_kind: Mapped[SalesFeeKind] = relationship()
 
     __table_args__ = (
         CheckConstraint("amount >= 0", name="ck_sales_order_fee_non_negative"),
@@ -836,10 +798,9 @@ class SalesOrderItemShare(Base):
     __tablename__ = "sales_order_item_share"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    #: Not indexed alone: `uq_share_line_item` leads with it.
     sales_order_item_id: Mapped[int] = mapped_column(
-        ForeignKey("sales_order_item.id", ondelete="CASCADE"),
-        index=True,
-        nullable=False,
+        ForeignKey("sales_order_item.id", ondelete="CASCADE"), nullable=False
     )
     inventory_item_id: Mapped[int] = mapped_column(
         ForeignKey(_FK_INVENTORY_ITEM, ondelete="RESTRICT"), index=True, nullable=False
@@ -850,8 +811,6 @@ class SalesOrderItemShare(Base):
     fee_amount: Mapped[Decimal] = mapped_column(
         Numeric(12, 2), nullable=False, server_default=text("0")
     )
-
-    line: Mapped[SalesOrderItem] = relationship(back_populates="shares")
 
     __table_args__ = (
         UniqueConstraint(
@@ -907,11 +866,13 @@ class SalesOrderChange(Base):
 
 
 class Shipment(TimestampMixin, Base):
-    """An outgoing parcel.
+    """An outgoing parcel -- unused scaffolding.
 
-    Sits on the order rather than the item, because one parcel carries many
-    lines. One-to-many, so partial shipment works the way partial receipt does
-    on the buying side.
+    Nothing in the application reads or writes it: an order's fulfilment is
+    its `sales_order_status`. The shape is kept for when parcels are
+    recorded: on the order rather than the item, because one parcel carries
+    many lines, and one-to-many, so partial shipment would work the way
+    partial receipt does on the buying side.
     """
 
     __tablename__ = "shipment"

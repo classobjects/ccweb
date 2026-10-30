@@ -63,8 +63,10 @@ class Composition(TimestampMixin, Base):
     __tablename__ = "composition"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    #: Not indexed alone: `uq_composition_span` and `ix_composition_lookup`
+    #: lead with it.
     denomination_id: Mapped[int | None] = mapped_column(
-        ForeignKey("denomination.id", ondelete="RESTRICT"), index=True, nullable=True
+        ForeignKey("denomination.id", ondelete="RESTRICT"), nullable=True
     )
     #: The design this row describes, when it is one design's and not every
     #: coin's of the denomination.
@@ -200,10 +202,9 @@ class ValuationSnapshot(Base):
     __tablename__ = "valuation_snapshot"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    #: Not indexed alone: `ix_valuation_snapshot_item_time` leads with it.
     inventory_item_id: Mapped[int] = mapped_column(
-        ForeignKey("inventory_item.id", ondelete="CASCADE"),
-        index=True,
-        nullable=False,
+        ForeignKey("inventory_item.id", ondelete="CASCADE"), nullable=False
     )
     captured_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, nullable=False

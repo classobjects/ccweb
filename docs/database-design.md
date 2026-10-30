@@ -233,6 +233,7 @@ that actually sold the pieces. One seller sells many purchases.
 |---|---|
 | `name` | unique whatever its case (`uq_seller_name`, on `lower(name)`) |
 | `store_url` | their store or profile page (http(s)), or a `mailto:` address (a mail address typed alone is stored as one) |
+| `contact_name`, `contact_email`, `contact_phone` | optional: the person behind the account, for a seller dealt with directly; the phone is E.164, checked at entry as a customer's is |
 
 | `purchase_order` | Notes |
 |---|---|
@@ -270,7 +271,7 @@ RESTRICT`, so a classifier in use cannot vanish.
 | `currency` | USD, … | `symbol`, `minor_units` |
 | `country` | issuer | `iso_alpha2` |
 | `denomination` | a face value | `currency_id`, `face_value` numeric(12,4), `kind` (`coin` \| `note`); unique `(currency_id, face_value, kind)` |
-| `series` | design series | `year_start`, `year_end`, `applies_to` (text, default `coin`), `denomination_id`, `needs_evidence`, `seal_color_id`, `note_type_id` |
+| `series` | design series | `year_start`, `year_end`, `applies_to` (`coin` \| `currency`, text with a check constraint, default `coin`), `denomination_id`, `needs_evidence`, `seal_color_id`, `note_type_id` |
 | `mint` | coin mint | `mark` (may be blank), `country_id` |
 | `grade_scale` | Sheldon, adjectival, note scale | |
 | `strike_type` | business, proof, specimen, reverse proof, … | `prefix`, `suffix` |
@@ -363,13 +364,13 @@ kept apart:
 | Bullion serial | stamped on one bar, round or Goldback | `coin_detail.serial_number` |
 | Type number | every item of the type | `friedberg_number`, `pcgs_type` |
 
-All serials and numbers are text, and none is unique: two pieces may repeat a number. Only bullion holds a serial on `coin_detail`; the item edit refuses one for another non-note kind.
+Serials and certificate numbers are text, and none is unique across items: two pieces may repeat a number. A certificate number appears once per item (`uq_item_certification_item_number`). The type numbers are the catalogs' own keys: `friedberg_number.fr_number` (text) and `pcgs_type.pcgs_number` (integer) are each unique. Only bullion holds a serial on `coin_detail`; the item edit refuses one for another non-note kind.
 
 ### Per-item link tables
 
 | Table | Key and columns | Notes |
 |---|---|---|
-| `item_certification` | `id`; `inventory_item_id`, `grading_service_id`, `cert_number` (indexed) | one to many: a lot may hold several certified pieces |
+| `item_certification` | `id`; `inventory_item_id`, `grading_service_id`, `cert_number` (indexed) | one to many: a lot may hold several certified pieces; unique `(inventory_item_id, cert_number)` |
 | `item_error` | `id`; `inventory_item_id`, `error_type_id`, `details`, `source`, `noted_by_id`, `noted_at` | unique `(inventory_item_id, error_type_id)`: a miscut and an overprint on one bill are two rows, the same error twice is one |
 | `item_attribute_link` | pk `(inventory_item_id, item_attribute_id)`; `source`, `derived_by`, `noted_by_id`, `noted_at`, `removed_at` | many to many; `derived_by` names the rule (`serial_pattern`, `attribute_rule`, `no_cost`) |
 
@@ -585,9 +586,11 @@ edit, the four passes run under a named person (`app.ebay_orders`,
 `app.listing_links`, `app.bullion_weights`, `app.seller_titles`), and a
 vocabulary merge (`app.reference_merge`), which logs each item whose
 classifier, attributes or errors it moved onto the surviving value. Three
-item actions log themselves the same way: a delete records `deleted_at`, a
+item actions log themselves: a delete records `deleted_at`, a
 detach records `parent_item_id` (the lot named by its item code), and a
-split records `split_at` on the lot. All of them go through
+split records `split_at` on the lot. Attaching a Friedberg number to a
+note or clearing it (`routers.friedberg`) logs the note's number and
+status the same way. All of them go through
 `app.field_changes`, in the same transaction as the change, only for a field
 whose value actually moved.
 Values are stored as the item editor sees them (codes for classifiers,
@@ -798,7 +801,7 @@ per customer and kind.
 | `sales_order_item_share` | `sales_order_item_id`, `inventory_item_id`, `amount`, `fee_amount` (default 0) | unique pair; one row per item on every line |
 | `sales_order_fee` | `sales_order_id`, `sales_fee_kind_id`, `amount`, `note` | actual fees from the platform's statement |
 | `sales_order_change` | `sales_order_id`, `changed_at`, `changed_by_id`, `change`, `listing_id`, `from_value`, `to_value` | the order's edit history; `change` is the `sales_order_change_kind` enum |
-| `shipment` | `sales_order_id`, `carrier_id`, `shipment_status_id`, `tracking_number`, `service_level`, `shipped_at`, `delivered_at`, `cost`, `insured_value`, `weight_oz` | on the order, one to many, so partial shipment works |
+| `shipment` | `sales_order_id`, `carrier_id`, `shipment_status_id`, `tracking_number`, `service_level`, `shipped_at`, `delivered_at`, `cost`, `insured_value`, `weight_oz` | unused scaffolding: nothing in the application reads or writes it. On the order, one to many, so partial shipment would work |
 
 **Shares are the one answer to "which items did this order carry".** A
 single-item line has one share, a lot line one per member; shares sum exactly
@@ -819,7 +822,7 @@ exclude split and soft-deleted items.
 | View | Shows |
 |---|---|
 | `coin_inventory` | kinds coin, bullion, set, medal, token, with coin detail and the composed grade; an item of kind `other` or `unknown` is in neither inventory view |
-| `currency_inventory` | kind currency, with note detail and the Friedberg number |
+| `currency_inventory` | kind currency, with note detail, the Friedberg number, both signers (`secretary` on a small-size note, `register` on a large-size one) and the composed grade |
 | `item_valuation` | melt, reported value, profit and profit % from the latest spot price (§6) |
 | `public_catalog` | active, fixed-price, own-store **item** listings with `quantity_available > 0`, and the public item fields; lot listings are not in it |
 
@@ -877,8 +880,9 @@ reference tables (§4).
 | `sales_order_change_kind` | placed, line_added, line_removed, quantity, unit_price, customer, notes, status, total | `sales_order_change` |
 | `user_role` | manager, customer | `users` |
 
-Four short vocabularies are text columns with a check constraint instead:
-`pcgs_status`, `friedberg_status`, `size_class`, `printing_facility`.
+Five short vocabularies are text columns with a check constraint instead:
+`pcgs_status`, `friedberg_status`, `size_class`, `printing_facility` and
+`series.applies_to` (`coin` or `currency`: a design belongs to one side).
 
 **Foreign keys.** To reference tables: `ON DELETE RESTRICT`. Detail, history
 and link rows owned by an item: `CASCADE`. References to `users` from audit
@@ -890,8 +894,8 @@ removing a member of staff never erases the record of what they did.
 fees (`ck_sales_order_item_share_fee_non_negative`), an auction lot's
 `reserve` and `hammer_price`, and shipment costs; `piece_count > 0`; year
 ranges ordered; fineness a fraction; fine weight within gross; the
-`pcgs_status`, `friedberg_status`, `size_class` and `printing_facility`
-vocabularies; `ck_listing_item_xor_lot` and `ck_listing_lot_quantity_one`;
+`pcgs_status`, `friedberg_status`, `size_class`, `printing_facility` and
+`series.applies_to` vocabularies; `ck_listing_item_xor_lot` and `ck_listing_lot_quantity_one`;
 `ck_listing_paused_by_only_when_paused` (only a paused listing names the
 offer that paused it); address validity ordered.
 
@@ -907,10 +911,13 @@ offer that paused it); address validity ordered.
 | `uq_purchase_order_vendor_number` | order numbers unique per vendor when present |
 | `uq_friedberg_number_identity`, `uq_pcgs_type_identity` | one catalog row per fully known type |
 | `uq_customer_venue_username`, `uq_customer_venue_undisclosed` | one buyer per platform account |
-| `uq_vendor_name`, `uq_seller_name`, `uq_storage_location_identity` | on lowered text: one row whatever the case |
+| `uq_vendor_name`, `uq_seller_name`, `uq_storage_location_identity`, `uq_users_email` | on lowered text: one row whatever the case |
 | `uq_note_issue`, `uq_series_year_range` | `NULLS NOT DISTINCT` identities for seeded facts |
 
-**Indexes.** Every foreign key that is filtered on. On `inventory_item`:
+**Indexes.** Every foreign key that is filtered on -- unless a unique
+constraint or composite index on the same table leads with it, which
+serves every lookup a single-column index would (a btree serves its
+leading columns), so the column has no index of its own. On `inventory_item`:
 `ix_inventory_item_kind_status`, and partial facet indexes on kind, grade,
 metal, country, status, disposition and bullion form `WHERE split_at IS
 NULL`: a smaller index over live rows. They do not give the default facet
@@ -932,8 +939,8 @@ trusted extension, so any role with `CREATE` on the database may, as may a
 superuser.
 
 **Optimistic concurrency.** `inventory_item`, `listing`, `sales_venue`,
-`sales_lot`, `sales_order` and `auction` carry `version`, used as
-SQLAlchemy's `version_id_col`: every UPDATE checks the version it read, so two
+`sales_lot`, `sales_order` and `auction` carry `version`
+(`models/base.py:VersionedMixin`), used as SQLAlchemy's `version_id_col`: every UPDATE checks the version it read, so two
 people editing one record cannot silently overwrite each other. Editing is a
 document edit where a person can resolve a conflict, so a row lock held across
 a form would be wrong. Every PATCH of these rows must send the version it
@@ -1096,7 +1103,8 @@ Seed files hold facts only, never a catalog publisher's numbering or prices
 
 ## 13. Users
 
-`users` is the login table (`models/scaffold.py`): `email` (unique),
+`users` is the login table (`models/scaffold.py`): `email` (unique
+whatever its case, `uq_users_email` on `lower(email)`),
 `full_name`, `hashed_password`, `role` (`manager` \| `customer`),
 `is_active`, `token_version`, `created_at`. Managers run the console and see
 cost basis; customers do not. Tokens are stateless JWTs carrying

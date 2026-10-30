@@ -14,7 +14,15 @@ import enum
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from sqlalchemy import Boolean, DateTime, Enum, Integer, String, UniqueConstraint
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Enum,
+    Integer,
+    String,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.orm import Mapped, declared_attr, mapped_column
 
 if TYPE_CHECKING:
@@ -27,6 +35,7 @@ __all__ = [
     "ProvenanceSource",
     "ReferenceMixin",
     "TimestampMixin",
+    "VersionedMixin",
     "enum_column",
     "utcnow",
 ]
@@ -120,11 +129,42 @@ class ReferenceMixin:
         nullable=False,
     )
 
+    #: What a classifier constrains beyond its code. A table that needs more
+    #: lists it here rather than defining `__table_args__`, which would
+    #: replace the code's unique constraint instead of adding to it.
+    extra_table_args: ClassVar[tuple[Any, ...]] = ()
+
     @declared_attr.directive
     def __table_args__(cls) -> tuple:
-        """Every reference table has a unique code."""
-        return (UniqueConstraint("code", name=f"uq_{cls.__tablename__}_code"),)
+        """Every reference table has a unique code, and its own extras."""
+        return (
+            UniqueConstraint("code", name=f"uq_{cls.__tablename__}_code"),
+            *cls.extra_table_args,
+        )
 
     def __repr__(self) -> str:  # pragma: no cover - debugging aid
         """The code, which is what identifies the row to a person."""
         return f"<{type(self).__name__} {self.code}>"
+
+
+class VersionedMixin:
+    """Optimistic concurrency: a `version` every UPDATE checks.
+
+    SQLAlchemy increments it on every ORM update, and the UPDATE carries
+    `WHERE version = <the one that was read>`; if another writer got there
+    first the statement matches no rows and SQLAlchemy raises
+    `StaleDataError`. See the note on `InventoryItem` for why this is
+    optimistic rather than a lock.
+    """
+
+    version: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("1")
+    )
+
+    # A directive rather than a dict literal: see the note on __tablename__
+    # above. ClassVar conflicts with DeclarativeBase's declaration and Final
+    # is a Liskov violation over it, while a bare literal trips RUF012.
+    @declared_attr.directive
+    def __mapper_args__(cls) -> dict[str, Any]:
+        """Every UPDATE checks the version it read."""
+        return {"version_id_col": cls.version}

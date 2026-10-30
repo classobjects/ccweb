@@ -173,9 +173,9 @@ table. It must also stay under `TYPE_CHECKING`; at runtime an `__init__` there
 would precede `Base` in the MRO and shadow the declarative constructor.
 
 **`__mapper_args__` is a `@declared_attr.directive`, not a dict literal.**
-Six models set it, to make `version` their `version_id_col`
-(`inventory_item`, `listing`, `sales_venue`, `sales_lot`, `sales_order`,
-`auction`). As a literal it is caught in a pincer: `RUF012` wants `ClassVar`
+`VersionedMixin` (`models/base.py`) sets it, to make `version` the
+`version_id_col` of the six models that carry one (`inventory_item`,
+`listing`, `sales_venue`, `sales_lot`, `sales_order`, `auction`). As a literal it is caught in a pincer: `RUF012` wants `ClassVar`
 on a mutable class attribute, mypy rejects `ClassVar` for the reason above,
 and `Final` is "cannot override writable attribute with a final one". A
 directive is not an attribute assignment, and matches how `__table_args__` is
