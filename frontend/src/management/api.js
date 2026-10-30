@@ -29,8 +29,9 @@ export const api = {
   // No catalog writes: the shop's catalog is filled by offering an item the
   // business already owns (`docs/specs/selling-design.md`).
 
-  // The vocabularies there are, for the Vocabularies page's picker.
-  listReferenceTables: () => send('/api/reference', { auth: false }),
+  // The vocabularies there are, for the Vocabularies page's picker. Signed
+  // in: asked anonymously, the server lists only the shop's.
+  listReferenceTables: () => send('/api/reference'),
   renameReferenceValue: (table, code, payload) =>
     send(`/api/reference/${table}/${encodeURIComponent(code)}`, {
       method: 'PATCH',

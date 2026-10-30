@@ -339,6 +339,22 @@ describe('setOrderStatus', () => {
   })
 })
 
+describe('listReferenceTables', () => {
+  // The server answers a request with no token with the shop's vocabularies
+  // alone (item_kind), so a picker listed anonymously offers a manager
+  // nothing else to edit.
+  it('asks signed in, so a manager is offered every vocabulary', async () => {
+    saveTokens({ access_token: 'a', refresh_token: 'r' })
+    const fetchMock = captureFetch()
+
+    await api.listReferenceTables()
+
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe('/api/reference')
+    expect(init.headers.Authorization).toBe('Bearer a')
+  })
+})
+
 describe('renameReferenceValue', () => {
   it('writes the code into the address encoded, as the alias and merge calls do', async () => {
     saveTokens({ access_token: 'a', refresh_token: 'r' })

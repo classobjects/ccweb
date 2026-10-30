@@ -344,6 +344,24 @@ describe('Lists: sellers, vendors and storage locations', () => {
     )
   })
 
+  // A seller's row is wide enough to push its Edit button off screen; the
+  // name, at the row's start, opens the same edit.
+  it('opens a seller for editing from its name', async () => {
+    const user = userEvent.setup()
+    api.updateSeller.mockResolvedValue({})
+    open('sellers')
+    const row = (await screen.findByText('idle_seler')).closest('tr')
+
+    await user.click(within(row).getByRole('button', { name: 'Edit idle_seler' }))
+    const name = within(row).getByRole('textbox', { name: 'Name' })
+    expect(name).toHaveFocus()
+    await user.clear(name)
+    await user.type(name, 'idle_seller{Enter}')
+    await waitFor(() =>
+      expect(api.updateSeller).toHaveBeenCalledWith(2, { name: 'idle_seller' }),
+    )
+  })
+
   it("changes a vendor's kind", async () => {
     const user = userEvent.setup()
     api.updateVendor.mockResolvedValue({})

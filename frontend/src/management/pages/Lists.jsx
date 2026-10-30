@@ -86,7 +86,8 @@ function typeOf(row) {
  * The description of each list, by tab key, that `CatalogTable` is driven
  * by: how it is read, added to, changed and deleted, what a row is called,
  * how many records use it, the text a search matches, its columns -- a
- * column with a `field` can be edited -- and `adds`, the fields a new row
+ * column with a `field` can be edited, and one marked `opensEdit` shows its
+ * value as a link that opens the row's edit -- and `adds`, the fields a new row
  * is asked for. A field `required` refuses a blank; one with an `initial`
  * text opens with it where it holds nothing; `type` is its box's. The two kind
  * vocabularies are passed in
@@ -188,6 +189,9 @@ function lists(vendorKinds, locationKinds) {
           label: 'Name',
           value: (row) => row.name,
           field: sellerName,
+          // The row is wide enough to push Edit off screen; the name is
+          // always in view.
+          opensEdit: true,
         },
         {
           label: 'Store',
@@ -376,6 +380,13 @@ function CatalogTable({ config }) {
     return write(() => config.update(row.id, body))
   }
 
+  function startEdit(row) {
+    setEditing(row.id)
+    setDraft({})
+    setDeleting(null)
+    setAdding(null)
+  }
+
   function cancelEdit() {
     setEditing(null)
     setDraft({})
@@ -523,6 +534,15 @@ function CatalogTable({ config }) {
                           onEnter={() => save(row)}
                           onEscape={cancelEdit}
                         />
+                      ) : column.opensEdit && editable && deleting !== row.id ? (
+                        <button
+                          type="button"
+                          className="link"
+                          aria-label={`Edit ${config.name(row)}`}
+                          onClick={() => startEdit(row)}
+                        >
+                          {column.value(row)}
+                        </button>
                       ) : (
                         column.value(row)
                       )}
@@ -561,15 +581,7 @@ function CatalogTable({ config }) {
                         )}
                         {deleting !== row.id && editable && (
                           <>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setEditing(row.id)
-                                setDraft({})
-                                setDeleting(null)
-                                setAdding(null)
-                              }}
-                            >
+                            <button type="button" onClick={() => startEdit(row)}>
                               Edit
                             </button>
                             {config.actions?.(row, change)}
