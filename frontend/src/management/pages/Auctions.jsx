@@ -20,6 +20,8 @@ import { useRequest } from '../../shared/useRequest'
 import { ASSEMBLING_LOTS } from './assembling-lots'
 import { orNull } from '../../shared/text'
 import { SaveButton } from '../SaveButton'
+import { sameItemCode, searchItemsByCode } from '../item-search'
+import Pager from '../Pager'
 
 /**
  * The Auctions page: running an auction from draft to settled.
@@ -80,8 +82,11 @@ const PAGE_SIZE = 100
 
 const CREATE_KEYS = { venue: 'p', title: 't', externalId: 'n' }
 
-/** Starting a new auction: its platform, its title, and its own sale number. */
-function AuctionForm({ venues, onSaved, onClose }) {
+/**
+ * Starting a new auction: its platform, its title, and its own sale number.
+ * `onLateSaved` gets one saved after the dialog was closed (`useGuardedSave`).
+ */
+function AuctionForm({ venues, onSaved, onLateSaved, onClose }) {
   const [form, setForm] = useState({
     venue: '',
     title: '',
@@ -90,7 +95,7 @@ function AuctionForm({ venues, onSaved, onClose }) {
     ends_at: '',
     notes: '',
   })
-  const { error, setError, saving, send } = useGuardedSave(onSaved)
+  const { error, setError, saving, send } = useGuardedSave(onSaved, onLateSaved)
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value })
 
   useSaveShortcut(save, !saving)
@@ -105,17 +110,16 @@ function AuctionForm({ venues, onSaved, onClose }) {
       setError('An auction needs a title.')
       return
     }
-    await send(async () => {
-      const saved = await api.createAuction({
+    await send(() =>
+      api.createAuction({
         venue: form.venue,
         title,
         external_id: orNull(form.external_id),
         starts_at: orNull(form.starts_at),
         ends_at: orNull(form.ends_at),
         notes: orNull(form.notes),
-      })
-      return saved
-    })
+      }),
+    )
   }
 
   return (
@@ -203,23 +207,15 @@ const ADD_LOT_KEYS = { lotNumber: 'l' }
  * console, `OfferDialog.jsx`, `Lots.jsx`, `ItemFinder.jsx`, shows the code,
  * not an id) to the id `AuctionLotIn.item_id` actually needs.
  *
- * `GET /api/inventory/{view}/search` filters `item_code` with `ilike`
- * (`inventory_search.py`), already reachable through `api.searchInventory`
- * -- no new endpoint. It takes a view, though, and a code alone does not
- * say whether the item is a coin or a note, so this tries `coins` first and
- * falls back to `currency`. Null when neither view has an exact match
- * (case-insensitive, since `ilike` itself is): the caller names the code
- * that came back empty rather than a raw id nobody typed.
+ * Both inventory views are searched (`searchItemsByCode`), coins first, as
+ * a code alone does not say whether the item is a coin or a note. Null when
+ * neither has an exact match (case-insensitive, as the search itself is):
+ * the caller names the code that came back empty rather than a raw id
+ * nobody typed.
  */
 async function findItemIdByCode(code) {
-  for (const view of ['coins', 'currency']) {
-    const page = await api.searchInventory(view, { item_code: code })
-    const match = (page?.rows ?? []).find(
-      (row) => String(row.item_code).toLowerCase() === code.toLowerCase(),
-    )
-    if (match) return match.id
-  }
-  return null
+  const rows = await searchItemsByCode(code)
+  return rows.find((row) => sameItemCode(row, code))?.id ?? null
 }
 
 /**
@@ -229,8 +225,12 @@ async function findItemIdByCode(code) {
  * (spec, *Three kinds of lot*), so this offers the choice as a radio rather
  * than two forms: the lot number, reserve and starting bid are the same
  * either way.
+ *
+ * `onLateSaved` gets the auction as saved when the lot is added after the
+ * dialog was closed (`useGuardedSave`); closed while the item was still
+ * being looked up, nothing is added and it is not called.
  */
-function AddLotDialog({ auction, onSaved, onClose }) {
+function AddLotDialog({ auction, onSaved, onLateSaved, onClose }) {
   const [mode, setMode] = useState('item')
   const [lotNumber, setLotNumber] = useState('')
   const [itemCode, setItemCode] = useState('')
@@ -239,7 +239,13 @@ function AddLotDialog({ auction, onSaved, onClose }) {
   const [price, setPrice] = useState('')
   const open = useRequest('assembling', () => api.listLots(ASSEMBLING_LOTS))
   const assemblingLots = open.data?.lots ?? []
-  const { error: saveError, setError, saving, send, mounted } = useGuardedSave(onSaved)
+  const {
+    error: saveError,
+    setError,
+    saving,
+    send,
+    mounted,
+  } = useGuardedSave(onSaved, (saved) => saved && onLateSaved(saved))
   const error = saveError || open.error
 
   useSaveShortcut(save, !saving)
@@ -274,8 +280,7 @@ function AddLotDialog({ auction, onSaved, onClose }) {
       } else {
         payload.lot_id = Number(lotId)
       }
-      const saved = await api.addAuctionLot(auction.id, payload)
-      return saved
+      return api.addAuctionLot(auction.id, payload)
     })
   }
 
@@ -369,10 +374,14 @@ function AddLotDialog({ auction, onSaved, onClose }) {
   )
 }
 
-/** Marking an auction consigned: when custody moved to the house. */
-function ConsignDialog({ auction, onSaved, onClose }) {
+/**
+ * Marking an auction consigned: when custody moved to the house.
+ * `onLateSaved` gets the auction saved after the dialog was closed
+ * (`useGuardedSave`).
+ */
+function ConsignDialog({ auction, onSaved, onLateSaved, onClose }) {
   const [onDate, setOnDate] = useState('')
-  const { error, setError, saving, send } = useGuardedSave(onSaved)
+  const { error, setError, saving, send } = useGuardedSave(onSaved, onLateSaved)
 
   useSaveShortcut(save, !saving)
 
@@ -382,10 +391,7 @@ function ConsignDialog({ auction, onSaved, onClose }) {
       setError('Enter the date custody moved to the house.')
       return
     }
-    await send(async () => {
-      const saved = await api.consignAuction(auction.id, { on_date: trimmed })
-      return saved
-    })
+    await send(() => api.consignAuction(auction.id, { on_date: trimmed }))
   }
 
   const label = `Mark ${auction.title} consigned`
@@ -754,6 +760,9 @@ function AuctionDetail({ auction, venues, onChanged }) {
         <AddLotDialog
           auction={auction}
           onSaved={lotAdded}
+          // A save that lands after Cancel still happened: the row takes the
+          // saved version, or its next write is refused as stale.
+          onLateSaved={onChanged}
           onClose={() => setAddingLot(false)}
         />
       )}
@@ -761,6 +770,7 @@ function AuctionDetail({ auction, venues, onChanged }) {
         <ConsignDialog
           auction={auction}
           onSaved={consigned}
+          onLateSaved={onChanged}
           onClose={() => setConsigning(false)}
         />
       )}
@@ -836,27 +846,26 @@ export default function Auctions() {
     )
   }
 
-  function created(saved) {
-    setCreating(false)
+  /** Put a new auction at the head of the list, the newest there is. */
+  function listed(saved) {
     setAuctions((current) => [saved, ...(current ?? [])])
     setTotal((current) => (current === null ? null : current + 1))
+  }
+
+  function created(saved) {
+    setCreating(false)
+    listed(saved)
     setSelectedId(saved.id)
     setNotice(`${saved.title} started as a draft.`)
   }
 
-  // Any of the three loads failing is said at the top, and the page keeps
-  // its own shell either way -- losing the whole page (the heading, "New
-  // auction...", any open dialog) is not an acceptable answer to a load
-  // failure the owner still needs to see and react to.
+  // Either load failing -- the auctions or the platforms -- is said at the
+  // top, and the page keeps its own shell either way: losing the whole
+  // page (the heading, "New auction...", any open dialog) is not an
+  // acceptable answer to a load failure the owner still needs to see and
+  // react to.
   const error = auctionsError || venuesError
   const selected = (auctions ?? []).find((a) => a.id === selectedId) ?? null
-  const shown = auctions ?? []
-  // The header gives the count across every page; without it, this page's.
-  const count = total ?? offset + shown.length
-  const counted =
-    offset === 0 && shown.length === count
-      ? `${count} of ${count}`
-      : `${shown.length === 0 ? 0 : offset + 1}-${offset + shown.length} of ${count}`
 
   return (
     <section>
@@ -874,22 +883,13 @@ export default function Auctions() {
 
       {auctions !== null && (
         <div className="row">
-          <span className="muted">{counted}</span>
-          {/* Shown only where there is a page to go to, rather than greyed
-              out where there is none. */}
-          {offset > 0 && (
-            <button
-              className="link"
-              onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
-            >
-              Newer
-            </button>
-          )}
-          {offset + shown.length < count && (
-            <button className="link" onClick={() => setOffset(offset + PAGE_SIZE)}>
-              Older
-            </button>
-          )}
+          <Pager
+            offset={offset}
+            shown={auctions.length}
+            total={total}
+            pageSize={PAGE_SIZE}
+            onOffset={setOffset}
+          />
         </div>
       )}
 
@@ -946,6 +946,8 @@ export default function Auctions() {
         <AuctionForm
           venues={venues}
           onSaved={created}
+          // Started after Cancel: listed, but not opened over what is shown.
+          onLateSaved={listed}
           onClose={() => setCreating(false)}
         />
       )}

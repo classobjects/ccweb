@@ -8,8 +8,8 @@ import { api } from '../api'
 import ItemFinder from './receiving/ItemFinder'
 import ModalDialog from '../ModalDialog'
 import { purchaseNumber } from '../purchase-number'
+import PurchaseHeading from '../PurchaseHeading'
 import ReceiptPanel from './receiving/ReceiptPanel'
-import { date } from '../../shared/format'
 import { useRequest } from '../../shared/useRequest'
 
 /** A positive integer `order` query parameter, or null when absent or bad. */
@@ -102,34 +102,7 @@ export default function Receiving() {
       {waitingForOrder && <p className="muted">Loading...</p>}
       {/* The order a link named: who it was bought from, when, and the
           seller's page. */}
-      {order && (
-        <h2>
-          {purchaseNumber(order.id)} &middot; {order.order_number} &middot;{' '}
-          {order.vendor} &middot; {date(order.ordered_on)}
-          {order.source_url && (
-            <>
-              {' '}
-              &middot;{' '}
-              <a href={order.source_url} target="_blank" rel="noopener noreferrer">
-                Vendor page
-              </a>
-            </>
-          )}
-          {order.seller && (
-            <>
-              {' '}
-              &middot; Seller{' '}
-              {order.seller_url ? (
-                <a href={order.seller_url} target="_blank" rel="noopener noreferrer">
-                  {order.seller}
-                </a>
-              ) : (
-                order.seller
-              )}
-            </>
-          )}
-        </h2>
-      )}
+      {order && <PurchaseHeading purchase={order} numbered />}
       {stillOrdered.length > 1 && (
         <p>
           <button

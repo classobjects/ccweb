@@ -140,9 +140,21 @@ export function netAfterFees(price, venue) {
 export function netMarginPercent(price, costBasis, venue) {
   if (!isMoney(price) || !isMoney(costBasis)) return ''
   const cents = toCents(price)
-  if (cents === 0) return ''
-  const net = cents - feeCents(cents, venue)
-  return String(Math.round(((net - toCents(costBasis)) * 1000) / cents) / 10)
+  return marginFromCents(cents, cents - feeCents(cents, venue), toCents(costBasis))
+}
+
+/**
+ * What is left of a price once fees and cost are taken out, as a share of
+ * the price: a percentage to one decimal place, from whole cents --
+ * `marginFromCents(18900, 16410, 12000)` is `'23.3'`.
+ *
+ * Blank for a price of zero, of which no share can be taken.
+ * `netMarginPercent` is this for a price and a platform's default fees;
+ * `RecordSaleDialog` uses it for the fees a sale was actually charged.
+ */
+export function marginFromCents(priceCents, netCents, costCents) {
+  if (priceCents === 0) return ''
+  return String(Math.round(((netCents - costCents) * 1000) / priceCents) / 10)
 }
 
 /**

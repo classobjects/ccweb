@@ -200,6 +200,17 @@ describe('SettlementGrid', () => {
     expect(screen.getByLabelText(/return unsold/i)).toBeVisible()
   })
 
+  it('asks for a return location wherever the house holds items, venue known or not', () => {
+    // The venues failing to load leaves `isAuctionHouse` false; Settle still
+    // needs the location, so the picker must still be there to give it.
+    const auction = closedAuction({ consigned_on: '2026-10-01' })
+    renderWithProviders(
+      <SettlementGrid auction={auction} isAuctionHouse={false} onSettled={vi.fn()} />,
+      { strict: true, reference: reference() },
+    )
+    expect(screen.getByLabelText(/return unsold/i)).toBeVisible()
+  })
+
   it('offers to add a return location that is not yet recorded', async () => {
     const auction = closedAuction()
     renderWithProviders(

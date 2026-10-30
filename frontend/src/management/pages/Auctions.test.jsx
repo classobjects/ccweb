@@ -387,6 +387,67 @@ describe('Auctions', () => {
     })
   })
 
+  it('keeps a lot added after Cancel, so the next save carries its version', async () => {
+    const user = userEvent.setup()
+    const row = auction({ status: 'scheduled', version: 3 })
+    api.listAuctions.mockResolvedValue({ auctions: [row] })
+    api.searchInventory.mockResolvedValue({
+      rows: [{ id: 42, item_code: 'CC-000042', description: 'A Morgan dollar' }],
+    })
+    let answer
+    api.addAuctionLot.mockReturnValue(
+      new Promise((resolve) => {
+        answer = resolve
+      }),
+    )
+    api.updateAuctionLot.mockResolvedValue({ ...row, version: 5, lots: [auctionLot()] })
+    renderWithProviders(<Auctions />, { strict: true })
+
+    await user.click(await screen.findByRole('button', { name: 'View' }))
+    await user.click(await screen.findByRole('button', { name: 'Add lot...' }))
+    const dialog = screen.getByRole('dialog', { name: /add a lot/i })
+    await user.type(within(dialog).getByLabelText('Lot number'), '1')
+    await user.type(within(dialog).getByLabelText('Item code'), 'CC-000042')
+    await user.click(within(dialog).getByRole('button', { name: 'Add lot' }))
+    await waitFor(() => expect(api.addAuctionLot).toHaveBeenCalled())
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+
+    answer({ ...row, version: 4, lots: [auctionLot()] })
+    const reserve = await screen.findByLabelText(/reserve for/i)
+    await user.clear(reserve)
+    await user.type(reserve, '25.00')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    expect(api.updateAuctionLot).toHaveBeenLastCalledWith(
+      row.id,
+      201,
+      expect.objectContaining({ version: 4 }),
+    )
+  })
+
+  it('shows an auction consigned after Cancel as consigned', async () => {
+    const user = userEvent.setup()
+    const row = auction({ status: 'scheduled' })
+    api.listAuctions.mockResolvedValue({ auctions: [row] })
+    let answer
+    api.consignAuction.mockReturnValue(
+      new Promise((resolve) => {
+        answer = resolve
+      }),
+    )
+    renderWithProviders(<Auctions />, { strict: true })
+
+    await user.click(await screen.findByRole('button', { name: 'View' }))
+    await user.click(screen.getByRole('button', { name: 'Mark consigned...' }))
+    const dialog = screen.getByRole('dialog', { name: /consigned/i })
+    await user.type(within(dialog).getByLabelText('Consigned on'), '2026-10-01')
+    await user.click(within(dialog).getByRole('button', { name: 'Mark consigned' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+
+    answer({ ...row, status: 'consigned', consigned_on: '2026-10-01', version: 2 })
+    expect((await screen.findAllByText('Consigned')).length).toBeGreaterThan(0)
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
   it('requires a return location to remove a lot from a consigned auction', async () => {
     const user = userEvent.setup()
     const row = auction({

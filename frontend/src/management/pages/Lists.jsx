@@ -476,10 +476,15 @@ function CatalogTable({ config }) {
         </form>
       )}
       {error && <p className="error">{error}</p>}
+      {/* `!error` as well as the count: a failed load leaves `rows` at []
+          so the page stays usable, and without the guard it would say both
+          that the load failed and that there is nothing here. */}
       {shown.length === 0 ? (
-        <p className="muted">
-          {needle ? `Nothing matches ${search.trim()}.` : 'Nothing here yet.'}
-        </p>
+        !error && (
+          <p className="muted">
+            {needle ? `Nothing matches ${search.trim()}.` : 'Nothing here yet.'}
+          </p>
+        )
       ) : (
         <table className="table">
           <thead>

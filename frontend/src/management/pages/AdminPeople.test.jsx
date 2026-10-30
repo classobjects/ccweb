@@ -160,6 +160,35 @@ describe('AdminPeople', () => {
     expect(screen.getByText('staff@example.com')).toBeInTheDocument()
   })
 
+  it("names each account's role and password fields by the account", async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<AdminPeople />, { auth: adminAuth() })
+
+    expect(
+      await screen.findByRole('combobox', { name: 'Role of staff@example.com' }),
+    ).toHaveValue('manager')
+    await user.click(screen.getByRole('button', { name: 'Set password' }))
+    expect(screen.getByLabelText('New password for staff@example.com')).toHaveAttribute(
+      'type',
+      'password',
+    )
+  })
+
+  it("names a customer's edit fields by the customer", async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<AdminPeople />, { auth: adminAuth() })
+    await user.click(await screen.findByRole('button', { name: 'Customers' }))
+    await user.click(await screen.findByRole('button', { name: 'Edit' }))
+
+    expect(screen.getByRole('textbox', { name: 'Name of Ada Lovelace' })).toHaveValue(
+      'Ada Lovelace',
+    )
+    expect(screen.getByRole('textbox', { name: 'Email of Ada Lovelace' })).toHaveValue(
+      'ada@example.com',
+    )
+    expect(screen.getByRole('textbox', { name: 'Phone of Ada Lovelace' })).toBeVisible()
+  })
+
   it('keeps a customer edit on screen when saving it is refused', async () => {
     // `draft` holds what the operator typed. It is React state, so it
     // survives the failure -- but only if the input is still mounted, which

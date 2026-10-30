@@ -609,6 +609,34 @@ describe('Listings', () => {
     ).toBeVisible()
   })
 
+  it('reads the listings again when a sale is recorded after Cancel', async () => {
+    const user = userEvent.setup()
+    let answer
+    api.recordSale.mockReturnValue(
+      new Promise((resolve) => {
+        answer = resolve
+      }),
+    )
+    api.listListingsPage
+      .mockResolvedValueOnce(page([EBAY, STORE]))
+      .mockResolvedValue(page([{ ...EBAY, status: 'ended' }, STORE]))
+    renderPage()
+    const row = await screen.findByRole('row', { name: /^eBay/ })
+    await user.click(within(row).getByRole('button', { name: 'Record sale…' }))
+    const dialog = screen.getByRole('dialog', { name: 'Record sale of C-0007 on eBay' })
+    await user.type(within(dialog).getByLabelText('Sale price'), '115.00')
+    await user.click(within(dialog).getByRole('button', { name: 'Record sale' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+
+    answer({ id: 5, net_amount: '115.00', buyer: 'coinfan88', item_codes: ['C-0007'] })
+
+    // The sale ended the listing on the server: the page shows that rather
+    // than an active row whose next write would be refused.
+    await waitFor(() => expect(api.listListingsPage).toHaveBeenCalledTimes(2))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(screen.queryByText(/^Recorded C-0007/)).toBeNull()
+  })
+
   it('shows a refusal to end without losing the table', async () => {
     const user = userEvent.setup()
     api.endListing.mockRejectedValue(new Error(STALE))

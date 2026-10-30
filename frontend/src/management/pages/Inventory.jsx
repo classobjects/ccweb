@@ -14,6 +14,15 @@ import { COIN_VIEW, CURRENCY_VIEW, PAGE_SIZE } from './inventory/specs'
 import { useInventorySearch } from './inventory/useInventorySearch'
 import { useLinkedItem } from './inventory/useLinkedItem'
 
+/** The search's filters: the address without its sorting and paging. */
+function filtersOf(current) {
+  return Object.fromEntries(
+    Object.entries(current).filter(
+      ([key]) => !['sort', 'desc', 'offset'].includes(key),
+    ),
+  )
+}
+
 /**
  * Staff inventory browse, one screen per kind.
  *
@@ -27,15 +36,6 @@ import { useLinkedItem } from './inventory/useLinkedItem'
  * fraction of the fifty-odd grades that exist, and offering all of them
  * buries the ones actually present.
  */
-/** The search's filters: the address without its sorting and paging. */
-function filtersOf(current) {
-  return Object.fromEntries(
-    Object.entries(current).filter(
-      ([key]) => !['sort', 'desc', 'offset'].includes(key),
-    ),
-  )
-}
-
 function InventoryView({ config }) {
   const {
     current,

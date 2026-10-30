@@ -10,8 +10,9 @@ import { accel, useSaveShortcut } from '../shortcuts'
 import { centsOrZero, isMoney, signedFromCents, toCents } from '../../shared/cents'
 import { UNKNOWN, subjectOf } from './listing-labels'
 import { useReference } from '../../shared/reference-context'
-import { useMounted } from '../useMounted'
+import { useGuardedSave } from '../useGuardedSave'
 import { orNull } from '../../shared/text'
+import { marginFromCents } from './platform-rates'
 
 /**
  * Recording a sale that happened on an outside platform -- eBay, Whatnot, an
@@ -56,12 +57,14 @@ const KEYS = {
  * `isAuctionHouse` changes only what a blank buyer is said to mean. A price
  * or fee that is not an amount is refused before anything is sent.
  * `onRecorded` gets the sale the server made; a refusal keeps the dialog
- * open as typed, and `onClose` leaves the listing active.
+ * open as typed, and `onClose` leaves the listing active -- unless the sale
+ * was already sent, when `onLateRecorded` gets it once it is made.
  */
 export default function RecordSaleDialog({
   listing,
   isAuctionHouse = false,
   onRecorded,
+  onLateRecorded,
   onClose,
 }) {
   const [price, setPrice] = useState('')
@@ -72,14 +75,11 @@ export default function RecordSaleDialog({
   // request -- "not charged" and "nobody typed this" must not collapse into
   // the same fee line.
   const [feeAmounts, setFeeAmounts] = useState({})
-  const [error, setError] = useState('')
-  const [saving, setSaving] = useState(false)
+  // Cancel (and Escape, which ModalDialog routes to onClose) can unmount
+  // this dialog while a sale is still being recorded; the sale stands
+  // regardless, and `onLateRecorded` hears of it (`useGuardedSave`).
+  const { error, setError, saving, send } = useGuardedSave(onRecorded, onLateRecorded)
   const feeKinds = useReference('sales_fee_kind') ?? []
-
-  // Guards save()'s continuation once the request settles: Cancel (and
-  // Escape, which ModalDialog routes to onClose) can unmount this dialog
-  // while a save is still in flight.
-  const mounted = useMounted()
 
   // `save` is a function declaration below, hoisted for the whole component
   // scope. Disabled while a save is in flight, so holding Ctrl+S cannot fire
@@ -114,10 +114,16 @@ export default function RecordSaleDialog({
       setError(`${badFee.kind.label} fee must be an amount like 20.35.`)
       return
     }
-    setSaving(true)
-    setError('')
-    try {
-      const sale = await api.recordSale(listing.id, {
+    // `err.message`, which `send` shows, is always a flattened string,
+    // whichever of the two 422 shapes this endpoint answers with:
+    // `shared/api.js`'s `send` already reduces a Pydantic error list to one
+    // line before the `ApiError` is thrown, and leaves a plain-string
+    // refusal (409, or the narrower `SaleInputInvalid` 422) untouched.
+    // Reading `err.body.detail` instead would work for one shape and hand
+    // React a raw array of error objects for the other -- not a string, so
+    // not something a `{error}` paragraph can render at all.
+    await send(() =>
+      api.recordSale(listing.id, {
         price: trimmedPrice,
         buyer_username: orNull(buyer),
         external_order_id: orNull(orderId),
@@ -132,23 +138,8 @@ export default function RecordSaleDialog({
         // front of every outside sale. The gap is recorded in
         // `docs/specs/selling-design.md` under *Known limits*.
         equal_shares: false,
-      })
-      if (!mounted.current) return
-      onRecorded(sale)
-    } catch (err) {
-      if (!mounted.current) return
-      // `err.message` is always a flattened string, whichever of the two
-      // 422 shapes this endpoint answers with: `shared/api.js`'s `send`
-      // already reduces a Pydantic error list to one line before the
-      // `ApiError` is thrown, and leaves a plain-string refusal (409, or the
-      // narrower `SaleInputInvalid` 422) untouched. Reading `err.body.detail`
-      // here instead would work for one shape and hand React a raw array of
-      // error objects for the other -- not a string, so not something a
-      // `{error}` paragraph can render at all.
-      setError(err.message)
-    } finally {
-      if (mounted.current) setSaving(false)
-    }
+      }),
+    )
   }
 
   const priceCents = isMoney(price.trim()) ? centsOrZero(price) : null
@@ -158,10 +149,9 @@ export default function RecordSaleDialog({
   )
   const netCents = priceCents === null ? null : priceCents - feeTotalCents
   const costText = String(listing.cost_basis ?? '')
-  const hasCost = isMoney(costText)
   const margin =
-    priceCents !== null && priceCents !== 0 && hasCost
-      ? String(Math.round(((netCents - toCents(costText)) * 1000) / priceCents) / 10)
+    priceCents !== null && isMoney(costText)
+      ? marginFromCents(priceCents, netCents, toCents(costText))
       : ''
 
   // `subjectOf`, not `item_code`. The Listings page offers "Record sale..."

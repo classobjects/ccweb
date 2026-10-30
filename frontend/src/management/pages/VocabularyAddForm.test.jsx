@@ -156,7 +156,10 @@ describe('Adding a value to a vocabulary', () => {
     expect(addButton()).toBeDisabled()
     expect(screen.getByText('Currency is needed first.')).toBeVisible()
 
-    await user.selectOptions(screen.getByLabelText('currency'), 'USD')
+    // Named by the field, as the form calls it, not by the table behind it.
+    expect(screen.getByRole('combobox', { name: 'Currency' })).toBeVisible()
+    expect(screen.queryByRole('combobox', { name: 'currency' })).toBeNull()
+    await user.selectOptions(screen.getByLabelText('Currency'), 'USD')
     await user.type(screen.getByLabelText('Face value'), '0.03')
     expect(addButton()).toBeDisabled()
     expect(screen.getByText('Kind is needed first.')).toBeVisible()

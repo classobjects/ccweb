@@ -6,6 +6,7 @@ import { Link } from 'react-router-dom'
 
 import { api } from '../api'
 import HelpScope from '../HelpScope'
+import SortHeaders from '../SortHeaders'
 import { purchaseNumber } from '../purchase-number'
 import { matchesFilter, sortPurchases } from '../purchase-list'
 import { centsOrZero, fromCents } from '../../shared/cents'
@@ -69,14 +70,6 @@ export default function OrderLookup() {
     sort,
   )
   const cost = shown.reduce((sum, order) => sum + centsOrZero(order.total_cost), 0)
-
-  function sortBy(key, first) {
-    setSort((current) =>
-      current.key === key
-        ? { key, desc: !current.desc }
-        : { key, desc: first === 'desc' },
-    )
-  }
 
   function clear() {
     setText('')
@@ -143,26 +136,7 @@ export default function OrderLookup() {
           ) : (
             <table className="table purchase-table" aria-label="Purchases found">
               <thead>
-                <tr>
-                  {COLUMNS.map(([label, key, first]) => {
-                    const active = sort.key === key
-                    const direction = sort.desc ? 'descending' : 'ascending'
-                    return (
-                      <th key={key} aria-sort={active ? direction : 'none'}>
-                        <button
-                          type="button"
-                          className="link sort-header"
-                          onClick={() => sortBy(key, first)}
-                        >
-                          {label}
-                          {active && (
-                            <span aria-hidden="true">{sort.desc ? ' ▼' : ' ▲'}</span>
-                          )}
-                        </button>
-                      </th>
-                    )
-                  })}
-                </tr>
+                <SortHeaders columns={COLUMNS} sort={sort} onSort={setSort} />
               </thead>
               <tbody>
                 {shown.map((order) => (
