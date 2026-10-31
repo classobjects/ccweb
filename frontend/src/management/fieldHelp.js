@@ -376,7 +376,7 @@ export const FIELD_HELP = {
       'names: the one you last opened on this purchase, or the latest when ' +
       'none was opened. Copied: ' +
       'kind, title, cost, shipping, listing and its item id, status, where it ' +
-      'is kept, country, denomination, series, set form, grade, grading ' +
+      'is kept, storage form and pieces, country, denomination, series, set form, grade, grading ' +
       "service, and a note's series, seal, district, class and signatures or " +
       "a coin's metal, mint, bullion form and strike, and a set's designation, " +
       'and its sales tax: "No sales tax charged" ticked on it is ticked on ' +
