@@ -194,8 +194,12 @@ table.stacks td {
    column's, and a row opened for editing would widen the table. The table
    in :where(), adding no weight: a box sized by its own form (`.alias-add`,
    a box with its button beside it) keeps that size, where the cell's whole
-   width would push the button out over the next column. */
-:where(.table, table.stacks) td :is(input, select, textarea) {
+   width would push the button out over the next column. A checkbox or a
+   radio button is drawn at its own size: stretched, it is drawn in the
+   middle of a box as wide as the column, out of line with its header's. */
+:where(.table, table.stacks)
+  td
+  :is(input, select, textarea):where(:not([type='checkbox'], [type='radio'])) {
   width: 0;
   min-width: max(100%, 6rem);
 }
@@ -250,7 +254,11 @@ table.stacks td {
     color: var(--muted);
   }
 
-  table.stacks td > :is(.cell-scroll, input, select, textarea) {
+  table.stacks
+    td
+    > :is(.cell-scroll, input, select, textarea):where(
+      :not([type='checkbox'], [type='radio'])
+    ) {
     flex: 1;
     width: auto;
     min-width: 0;
