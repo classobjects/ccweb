@@ -131,16 +131,41 @@ td.item-code {
 .inventory-table th.sortable:hover {
   text-decoration: underline;
 }
-/* Two lines per item: the attributes, then the description under them. The
-   pair reads as one item -- no rule between the lines, the usual one after. */
-.inventory-table tr.has-detail td {
+/* Three lines per item, under two lines of titles: what is read first, what
+   is read second, then the description. The lines read as one item -- no
+   rule between them (`item-line`), the usual one after the last. */
+.inventory-table thead tr:first-child th:not(.select-cell) {
   border-bottom: none;
-  padding-bottom: 2px;
+  padding-bottom: 0;
+}
+.inventory-table tr.second-titles th {
+  padding-top: 2px;
+  font-weight: 500;
+}
+.inventory-table tr.item-line td:not(.select-cell) {
+  border-bottom: none;
+  padding-bottom: 1px;
+}
+.inventory-table tr.item-second td {
+  padding-top: 1px;
+}
+.inventory-table tr.item-second,
+.inventory-table tr.second-titles th {
+  color: var(--muted);
 }
 .inventory-table tr.item-detail td {
-  color: var(--muted);
   font-size: 0.8rem;
-  padding-top: 0;
+  padding-top: 2px;
+}
+.inventory-table td.select-cell {
+  vertical-align: top;
+}
+@media (max-width: 40rem) {
+  /* A card per item: no rule between its lines. */
+  .inventory-table tr.item-line {
+    border-bottom: none;
+    padding-bottom: 0;
+  }
 }
 /* A row of small controls that wraps when the field is narrow: an item's
    attributes as removable chips with the picker after them, its recorded
@@ -558,6 +583,9 @@ fieldset.identify {
   height: 100vh;
   height: 100dvh;
   padding-bottom: 0;
+  /* Wider than the shop's page: a wide window gives the inventory's columns
+     room, and a long value's cap grows with the window (`cell-scroll`). */
+  max-width: 1800px;
 }
 .console-app > .topbar {
   flex: none;

@@ -10,9 +10,12 @@
  * specification imported in four places should not live inside any one of
  * them.
  *
- * `detail` is shown on a second line under each item, across the columns.
- * The description is long and read rather than compared, so it takes no
- * column; that leaves room for the denomination beside the code.
+ * An item takes three lines. `columns` are pairs: the first field of each
+ * on the item's first line, the second -- where there is one -- on the line
+ * under it, each with its own title and sort in a header of two lines.
+ * What is read first leads: the code, the serial, the year. `detail` is the
+ * third line, across the columns: the description is long and read rather
+ * than compared, so it takes no column.
  *
  * `searchExamples` are the "Search tips" under the search box, and each one
  * runs when clicked. The box has no field syntax: one term, matched anywhere
@@ -68,19 +71,31 @@ export const COIN_VIEW = {
   view: 'coins',
   title: 'Coins',
   columns: [
-    ['Code', 'item_code', 'mono'],
-    ['Denomination', 'denomination_label'],
-    ['Year', 'year_start'],
-    ['Mint', 'mint_mark'],
-    ['Series', 'series_label'],
-    ['Kind', 'item_kind'],
-    ['Grade', 'grade'],
-    ['Metal', 'metal'],
-    ['Fine ozt', 'fine_weight_ozt'],
-    ['Qty', 'piece_count'],
-    ['Cost', 'total_cost', 'money'],
-    ['Order', 'order_number', 'order'],
-    ['Status', 'status'],
+    [
+      ['Code', 'item_code', 'mono'],
+      ['Status', 'status'],
+    ],
+    [
+      ['Year', 'year_start'],
+      ['Mint', 'mint_mark'],
+    ],
+    [
+      ['Denomination', 'denomination_label'],
+      ['Series', 'series_label'],
+    ],
+    [
+      ['Grade', 'grade'],
+      ['Kind', 'item_kind'],
+    ],
+    [
+      ['Metal', 'metal'],
+      ['Fine ozt', 'fine_weight_ozt'],
+    ],
+    [
+      ['Cost', 'total_cost', 'money'],
+      ['Qty', 'piece_count'],
+    ],
+    [['Order', 'order_number', 'order']],
   ],
   detail: 'description',
   searchPlaceholder:
@@ -154,19 +169,31 @@ export const CURRENCY_VIEW = {
   view: 'currency',
   title: 'Currency',
   columns: [
-    ['Code', 'item_code', 'mono'],
-    ['Denomination', 'denomination_label'],
-    ['Series name', 'series_label'],
-    ['Series', 'series_designation'],
-    ['Seal', 'seal_color'],
-    ['District', 'fed_district_letter'],
-    ['Serial', 'serial_number', 'mono'],
-    ['Fr#', 'friedberg_number'],
-    // The label, because a note grade's code (`N64`) is not what anyone reads.
-    ['Grade', 'grade_label'],
-    ['Cost', 'total_cost', 'money'],
-    ['Order', 'order_number', 'order'],
-    ['Status', 'status'],
+    [
+      ['Code', 'item_code', 'mono'],
+      ['Status', 'status'],
+    ],
+    [
+      ['Serial', 'serial_number', 'mono'],
+      ['Fr#', 'friedberg_number'],
+    ],
+    [
+      ['Series', 'series_designation'],
+      ['Series name', 'series_label'],
+    ],
+    [
+      ['Denomination', 'denomination_label'],
+      // The label, because a note grade's code (`N64`) is not what anyone reads.
+      ['Grade', 'grade_label'],
+    ],
+    [
+      ['Seal', 'seal_color'],
+      ['District', 'fed_district_letter'],
+    ],
+    [
+      ['Cost', 'total_cost', 'money'],
+      ['Order', 'order_number', 'order'],
+    ],
   ],
   detail: 'description',
   // Series names match here too, once app.series_classify has assigned the
@@ -234,3 +261,8 @@ export const CURRENCY_VIEW = {
 }
 
 export const PAGE_SIZE = 50
+
+/** Every field a view's table shows: each column's first-line field, then its second. */
+export function fieldsOf(view) {
+  return view.columns.flat()
+}
