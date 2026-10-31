@@ -15,6 +15,12 @@ then what it is, with no field labels:
 
     MS64 First Strike 1921-S Morgan Dollar. Silver, 0.7734 ozt fine.
 
+    2017 $1. Federal Reserve Note Green Seal. Strap of 100.
+
+The last sentence is how the pieces are packed, by storage form and count:
+"Roll of 50", "Strap of 100"; "12 pieces" where they are loose, and nothing
+for one piece kept singly.
+
 A coin of another country names it after the year -- "1882 Spain Peseta" --
 and where no series or face value is recorded, the year and country are
 what it is: "MS62 1913 Denmark. Gold, 0.1296 ozt fine."
@@ -54,6 +60,7 @@ from .models import (
     NoteType,
     SealColor,
     Series,
+    StorageForm,
 )
 from .offer_titles import foreign_country, name_of
 from .serial_patterns import DIGIT_PATTERNS
@@ -88,6 +95,9 @@ _SHORT_GRADE_WORDS = ((re.compile(r"\bUncirculated\b"), "Unc"),)
 #: The noun a digit pattern's label ends in ("Radar Serial"). A label ending
 #: otherwise ("Solid Serial Number", "Star Note") is written whole.
 _SERIAL_NOUN = "Serial"
+
+#: The storage form a description leaves unsaid: one piece, kept singly.
+_SINGLE = "single"
 
 
 def _without_serial(label: str) -> str:
@@ -173,7 +183,7 @@ def _features(db: Session, item: InventoryItem, given: Features | None) -> list[
 
 
 def _note(db: Session, item: InventoryItem, given: Features | None) -> list[str]:
-    """``[grade attributes year face S/N serial, note type seal]``."""
+    """``[grade attributes year face S/N serial, note type seal, packaging]``."""
     detail = item.currency_detail
     assert detail is not None
     first: list[str] = []
@@ -227,7 +237,10 @@ def _note(db: Session, item: InventoryItem, given: Features | None) -> list[str]
         seal = db.get(SealColor, detail.seal_color_id)
         if seal is not None:
             second.append(seal.label)
-    return [" ".join(part) for part in (first, second) if part]
+    sentences = [" ".join(part) for part in (first, second) if part]
+    if (packed := _packaging(db, item, sentences)) is not None:
+        sentences.append(packed)
+    return sentences
 
 
 def _design(
@@ -277,7 +290,7 @@ def _plain(text: str) -> str:
 
 
 def _coin(db: Session, item: InventoryItem, given: Features | None) -> list[str]:
-    """``[grade attributes name, metal and fine weight, pieces]``."""
+    """``[grade attributes name, metal and fine weight, packaging]``."""
     first: list[str] = []
     if grade := _grade(item):
         first.append(grade)
@@ -294,9 +307,30 @@ def _coin(db: Session, item: InventoryItem, given: Features | None) -> list[str]
         if fine is not None and fine > 0:
             metal += f", {fine.normalize():f} ozt fine"
         sentences.append(metal)
-    if item.piece_count and item.piece_count > 1:
-        sentences.append(f"{item.piece_count} pieces")
+    if (packed := _packaging(db, item, sentences)) is not None:
+        sentences.append(packed)
     return sentences
+
+
+def _packaging(db: Session, item: InventoryItem, said: list[str]) -> str | None:
+    """``Roll of 50``, ``Strap of 100``: how the pieces are packed, and how many.
+
+    The storage form by its label, with the piece count after it; ``12
+    pieces`` where they are loose. Nothing for one piece kept singly, which
+    is every item that says nothing about it, and nothing more than the
+    count where the label is already said -- a Proof Set kept as a proof set.
+    """
+    count = item.piece_count or 1
+    form = (
+        db.get(StorageForm, item.storage_form_id)
+        if item.storage_form_id is not None
+        else None
+    )
+    if form is None or form.code == _SINGLE:
+        return f"{count} pieces" if count > 1 else None
+    if _plain(form.label) in _plain(" ".join(said)):
+        return f"{count} pieces" if count > 1 else None
+    return f"{form.label} of {count}" if count > 1 else form.label
 
 
 def suggested_description(

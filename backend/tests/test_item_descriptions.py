@@ -34,7 +34,9 @@ from app.models import (
     ReferenceMixin,
     SealColor,
     Series,
+    SetForm,
     SignatureCombination,
+    StorageForm,
     StrikeType,
 )
 from app.models.reference import Grade
@@ -453,3 +455,89 @@ def test_a_serial_feature_s_label_loses_the_noun_it_ends_in(
     label: str, written: str
 ) -> None:
     assert _without_serial(label) == written
+
+
+def test_a_note_in_a_strap_ends_with_its_packaging(db: Session) -> None:
+    item = _note(db, storage_form_id=code_id(db, StorageForm, "strap"), piece_count=100)
+    assert suggested_description(db, item).endswith(
+        f"{_label(db, SealColor, 'green')}. {_label(db, StorageForm, 'strap')} of 100."
+    )
+
+
+def test_a_roll_of_coins_says_so_after_its_metal(db: Session) -> None:
+    item = build_item(
+        db,
+        year_start=1947,
+        series_id=code_id(db, Series, "morgan_dollar"),
+        metal_id=code_id(db, Metal, "silver"),
+        grading_service_id=None,
+        grade_id=None,
+        storage_form_id=code_id(db, StorageForm, "roll"),
+        piece_count=20,
+    )
+    assert suggested_description(db, item) == (
+        f"1947 {_label(db, Series, 'morgan_dollar')}. "
+        f"{_label(db, Metal, 'silver')}. {_label(db, StorageForm, 'roll')} of 20."
+    )
+
+
+@pytest.mark.parametrize(
+    ("form", "pieces", "ending"),
+    [
+        # One piece kept singly is every item that says nothing about it.
+        ("single", 1, "Morgan Dollar."),
+        # Loose: a count and no form.
+        ("single", 12, "Morgan Dollar. 12 pieces."),
+        # A holder with one piece in it is named without a count.
+        ("album", 1, "Morgan Dollar. Album."),
+    ],
+)
+def test_packaging_is_said_only_where_it_says_something(
+    db: Session, form: str, pieces: int, ending: str
+) -> None:
+    item = build_item(
+        db,
+        year_start=None,
+        series_id=code_id(db, Series, "morgan_dollar"),
+        grading_service_id=None,
+        grade_id=None,
+        storage_form_id=code_id(db, StorageForm, form),
+        piece_count=pieces,
+    )
+    expected = ending.replace("Morgan Dollar", _label(db, Series, "morgan_dollar"))
+    expected = expected.replace("Album", _label(db, StorageForm, "album"))
+    assert suggested_description(db, item) == expected
+
+
+def test_a_set_kept_as_that_set_is_not_named_twice(db: Session) -> None:
+    item = build_item(
+        db,
+        kind="set",
+        year_start=2019,
+        set_form_id=code_id(db, SetForm, "proof_set"),
+        series_id=None,
+        denomination_id=None,
+        grading_service_id=None,
+        grade_id=None,
+        storage_form_id=code_id(db, StorageForm, "proof_set"),
+        piece_count=1,
+    )
+    assert suggested_description(db, item) == (
+        f"2019 {_label(db, SetForm, 'proof_set')}."
+    )
+
+
+def test_suggest_describes_a_storage_form_chosen_but_not_saved(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    item_id = _note(db).id
+    db.commit()
+    response = client.post(
+        f"/api/inventory/{item_id}/suggested-description",
+        json={"changes": {"storage_form": "strap", "piece_count": 100}},
+        headers=admin_headers,
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["description"].endswith(
+        f"{_label(db, StorageForm, 'strap')} of 100."
+    )
