@@ -144,6 +144,9 @@ const CLASSIFIERS = [
   ['Bullion form', 'bullion_form', 'bullion_form', null],
   // What kind of set -- proof set, mint set, mixed sets. A coin's side only.
   ['Set form', 'set_form', 'set_form', null],
+  // How it is packed: a roll, a tube, a strap. Choosing one fills Pieces
+  // with its usual count (`setStorageForm`).
+  ['Storage form', 'storage_form', 'storage_form', null],
   ['Country', 'country', 'country', 'u'],
   ['Metal', 'metal', 'metal', 'l'],
   // Status is editable here because Receiving only moves an item forward:
@@ -474,6 +477,7 @@ export default function ItemEditForm({
     grade: useReference('grade'),
     grade_designation: useReference('grade_designation'),
     item_attribute: useReference('item_attribute'),
+    storage_form: useReference('storage_form'),
   }
   const yearId = useId()
   const yearEndId = useId()
@@ -676,6 +680,22 @@ export default function ItemEditForm({
   // saying a person emptied it, and a rule would fill it straight back.
   const setOrClear = (key) => (e) =>
     setDraft({ ...draft, [key]: e.target.value === '' ? null : e.target.value })
+
+  // A storage form with a usual count -- 50 for a roll -- fills Pieces with
+  // it, where Pieces says nothing of its own: still 1, or the count the
+  // form being replaced filled in. A count typed for this lot stays.
+  function setStorageForm(e) {
+    const code = e.target.value === '' ? null : e.target.value
+    const usual = (form) =>
+      vocab.storage_form?.find((entry) => entry.code === form)?.extra?.default_quantity
+    const next = { ...draft, storage_form: code }
+    const pieces = Number(value('piece_count'))
+    const count = usual(code)
+    if (count && (pieces === 1 || pieces === usual(value('storage_form')))) {
+      next.piece_count = String(count)
+    }
+    setDraft(next)
+  }
 
   // A listing's address carries the seller's id for it -- eBay's item
   // number, a HiBid lot -- so typing or pasting the address fills the id.
@@ -1232,7 +1252,7 @@ export default function ItemEditForm({
         <ReferenceSelect
           table={table}
           value={value(key)}
-          onChange={setOrClear(key)}
+          onChange={key === 'storage_form' ? setStorageForm : setOrClear(key)}
           allowAdd={!FIXED_VOCABULARIES.has(table)}
           // A series is offered by the kind of item it is for, so one
           // added here is marked for this item's kind. Unmarked, it
@@ -1240,9 +1260,10 @@ export default function ItemEditForm({
           addFields={
             key === 'series' ? { applies_to: sideFor(value('item_kind')) } : undefined
           }
-          // Status is NOT NULL on the item, so there is no blank to pick:
-          // clearing it would be a 422 the operator cannot act on.
-          allowBlank={key !== 'status'}
+          // Status and storage form are NOT NULL on the item, so there is
+          // no blank to pick: clearing one would be a 422 the operator
+          // cannot act on.
+          allowBlank={key !== 'status' && key !== 'storage_form'}
           filter={offeredFor(key)}
           {...accel(letter)}
         />

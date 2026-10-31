@@ -267,7 +267,7 @@ RESTRICT`, so a classifier in use cannot vanish.
 | `item_kind` | coin, currency, bullion, set, medal, token, other, unknown | |
 | `bullion_form` | Silver Eagle, Silver Bar, Krugerrand, … | `metal_id`, `typical_fine_weight_ozt`, `typical_fineness` |
 | `set_form` | Mint Set, Proof Set, … | |
-| `storage_form` | single, roll, tube, box, bag, album, … | `default_quantity` (a data-entry default only) |
+| `storage_form` | single, roll, tube, box, bag, album, … | `default_quantity` (a data-entry default only: choosing the form in the item editor fills Pieces with it while Pieces is 1 or the previous form's count) |
 | `currency` | USD, … | `symbol`, `minor_units` |
 | `country` | issuer | `iso_alpha2` |
 | `denomination` | a face value | `currency_id`, `face_value` numeric(12,4), `kind` (`coin` \| `note`); unique `(currency_id, face_value, kind)` |

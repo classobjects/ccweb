@@ -3020,3 +3020,74 @@ describe('ItemEditForm: a Friedberg number waits for Save', () => {
     expect(onSaved).not.toHaveBeenCalled()
   })
 })
+
+describe('Storage form: Pieces from its usual count', () => {
+  const form = (code, label, count) => ({
+    code,
+    label,
+    source: 'seeded',
+    extra: count ? { default_quantity: count } : {},
+  })
+  const vocabularies = emptyReference({
+    tables: {
+      storage_form: [
+        form('single', 'Single', 1),
+        form('roll', 'Roll', 50),
+        form('tube', 'Tube', 20),
+        form('bag', 'Bag', null),
+      ],
+    },
+  })
+
+  async function open(overrides) {
+    api.getInventoryItem.mockResolvedValue({
+      ...item,
+      version: 3,
+      storage_form: 'single',
+      piece_count: 1,
+      ...overrides,
+    })
+    api.updateInventoryItem.mockResolvedValue({})
+    renderWithProviders(
+      <ItemEditForm itemId={12} onSaved={vi.fn()} onClose={vi.fn()} />,
+      { reference: vocabularies },
+    )
+    await screen.findByDisplayValue('Mercury Dime')
+  }
+
+  const storage = () => screen.getByRole('combobox', { name: 'storage_form' })
+  const pieces = () => screen.getByRole('spinbutton', { name: /Pieces/ })
+
+  it('fills Pieces from the form chosen, and follows a change of form', async () => {
+    const user = userEvent.setup()
+    await open()
+
+    await user.selectOptions(storage(), 'roll')
+    expect(pieces()).toHaveValue(50)
+    // 50 was the roll's, not typed: a tube replaces it.
+    await user.selectOptions(storage(), 'tube')
+    expect(pieces()).toHaveValue(20)
+
+    await user.click(screen.getByRole('button', { name: /save/i }))
+    await waitFor(() =>
+      expect(api.updateInventoryItem).toHaveBeenCalledWith(
+        12,
+        expect.objectContaining({ storage_form: 'tube', piece_count: '20' }),
+      ),
+    )
+  })
+
+  it('keeps a count of its own', async () => {
+    const user = userEvent.setup()
+    await open({ piece_count: 40 })
+    await user.selectOptions(storage(), 'roll')
+    expect(pieces()).toHaveValue(40)
+  })
+
+  it('leaves Pieces alone for a form with no usual count', async () => {
+    const user = userEvent.setup()
+    await open()
+    await user.selectOptions(storage(), 'bag')
+    expect(pieces()).toHaveValue(1)
+  })
+})
