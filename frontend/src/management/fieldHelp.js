@@ -267,6 +267,14 @@ export const FIELD_HELP = {
     title: 'Year to',
     text: 'The last year of the range.',
   },
+  storage_form: {
+    title: 'Storage form',
+    text:
+      'How the pieces are packed: single, roll, tube, strap and so on. Choosing one ' +
+      'with a usual count fills Pieces with it -- 50 for a roll -- unless Pieces ' +
+      'already holds a count of its own; change Pieces when this one holds more or ' +
+      'fewer.',
+  },
   set_form: {
     title: 'Set form',
     text:

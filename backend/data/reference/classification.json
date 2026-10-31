@@ -54,8 +54,8 @@
   ],
   "storage_form": [
     {"code": "single", "label": "Single", "sort_order": 10, "default_quantity": 1},
-    {"code": "roll", "label": "Roll", "sort_order": 20,
-     "_note": "Count varies by denomination -- 50 cents, 40 nickels -- so no default."},
+    {"code": "roll", "label": "Roll", "sort_order": 20, "default_quantity": 50,
+     "_note": "50 is a cent or dime roll; a nickel or quarter roll is 40, a half dollar 20 -- Pieces is corrected per item."},
     {"code": "tube", "label": "Tube", "sort_order": 30, "default_quantity": 20},
     {"code": "box", "label": "Box", "sort_order": 40},
     {"code": "bag", "label": "Bag", "sort_order": 50},
