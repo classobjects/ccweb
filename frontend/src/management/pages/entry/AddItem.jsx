@@ -5,6 +5,7 @@ import { useRef, useState } from 'react'
 
 import { api } from '../../api'
 import { ReferenceSelect } from '../../../shared/reference'
+import { useReference } from '../../../shared/reference-context'
 import ItemEditDialog from '../inventory/ItemEditDialog'
 
 //: What the next piece of one purchase shares with the last, copied by "Add
@@ -48,6 +49,10 @@ const SHARED_ON_REPEAT = [
 
 //: The country a new item starts with.
 const DEFAULT_COUNTRY = 'US'
+
+//: The storage form a new item starts with, and the one the server gives an
+//: item that names none: one piece, kept singly.
+const SINGLE = 'single'
 
 //: Sent only for the kind that has them: a note's fields on anything else,
 //: or a coin's on a note, is refused.
@@ -114,7 +119,8 @@ function taxOf(item) {
  * There is one form for an item, the editor: entering one and correcting
  * one must not differ in what they offer or in what Suggest description
  * writes. So this asks only for what the server needs to make the row --
- * its kind and a title -- creates it, and opens the editor on it, where the
+ * its kind and a title -- and how it is packed, which sets how many pieces
+ * it starts with (`packing`); creates it, and opens the editor on it, where the
  * photographs, the Friedberg number, the errors and everything else are.
  *
  * Closing the editor without saving removes the row again: an item nobody
@@ -144,6 +150,10 @@ export default function AddItem({
   disabledReason = '',
 }) {
   const [kind, setKind] = useState(defaultKind)
+  // Kept from one item to the next, as the kind is: a run of rolls is
+  // entered one roll after another.
+  const [storageForm, setStorageForm] = useState(SINGLE)
+  const storageForms = useReference('storage_form')
   const [title, setTitle] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -199,7 +209,25 @@ export default function AddItem({
     // United States, to be changed or emptied in the editor. A default, not
     // a fact about the piece -- which is why it is set here, where the item
     // is made, and not filled in by a rule.
-    create({ item_kind: kind, source_title: title.trim(), country: DEFAULT_COUNTRY })
+    create({
+      item_kind: kind,
+      source_title: title.trim(),
+      country: DEFAULT_COUNTRY,
+      ...packing(),
+    })
+  }
+
+  /**
+   * The storage form chosen, with its usual count as the pieces -- a Roll
+   * of 50, a Strap of 100 -- as the editor fills Pieces on choosing one;
+   * corrected there for a roll of 40. Nothing for Single, which is what the
+   * server gives an item that names no form.
+   */
+  function packing() {
+    if (!storageForm || storageForm === SINGLE) return {}
+    const usual = storageForms?.find((entry) => entry.code === storageForm)?.extra
+      ?.default_quantity
+    return { storage_form: storageForm, ...(usual > 1 && { piece_count: usual }) }
   }
 
   async function addAnother() {
@@ -268,6 +296,16 @@ export default function AddItem({
             table="item_kind"
             value={kind}
             onChange={(e) => setKind(e.target.value)}
+            allowAdd={false}
+            allowBlank={false}
+          />
+        </label>
+        <label data-help="storage_form">
+          Storage form
+          <ReferenceSelect
+            table="storage_form"
+            value={storageForm}
+            onChange={(e) => setStorageForm(e.target.value)}
             allowAdd={false}
             allowBlank={false}
           />
