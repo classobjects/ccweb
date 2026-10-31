@@ -143,7 +143,7 @@ class SetForm(ReferenceMixin, Base):
 
 
 class StorageForm(ReferenceMixin, Base):
-    """Physical packaging: single, roll, tube, box, bag, album, ..."""
+    """Physical packaging: single, roll, tube, strap, brick, box, bag, album, ..."""
 
     __tablename__ = "storage_form"
 
