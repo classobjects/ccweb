@@ -6,15 +6,17 @@ import { screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import InventoryTable from './InventoryTable'
-import { COIN_VIEW, CURRENCY_VIEW } from './specs'
+import { COIN_VIEW, CURRENCY_VIEW, fieldsOf } from './specs'
 import { date } from '../../../shared/format'
 import { renderWithProviders } from '../../../test/helpers'
 
 const config = {
   columns: [
-    ['Code', 'item_code'],
-    ['Description', 'description'],
-    ['Cost', 'item_cost', 'money'],
+    [
+      ['Code', 'item_code'],
+      ['Description', 'description'],
+    ],
+    [['Cost', 'item_cost', 'money']],
   ],
 }
 
@@ -117,17 +119,54 @@ describe('InventoryTable', () => {
   })
 })
 
-describe('two lines per item', () => {
-  const twoLine = {
+describe('three lines per item', () => {
+  const threeLine = {
     columns: [
-      ['Code', 'item_code'],
-      ['Denomination', 'denomination_label'],
+      [
+        ['Code', 'item_code'],
+        ['Status', 'status'],
+      ],
+      [['Denomination', 'denomination_label']],
     ],
     detail: 'description',
   }
+  const shown = [
+    {
+      id: 1,
+      item_code: 'C-001',
+      status: 'received',
+      denomination_label: 'One Dollar',
+      description: 'Morgan Dollar',
+    },
+    { id: 2, item_code: 'C-002', status: 'ordered', description: null },
+  ]
 
-  it('puts the description on a second line spanning the columns', () => {
-    setup({ config: twoLine })
+  it("puts each column's second field on the line under its first", () => {
+    setup({ config: threeLine, rows: shown })
+    const [first, second] = screen.getAllByRole('row').slice(2)
+    expect(within(first).getByText('C-001')).toBeInTheDocument()
+    expect(within(first).getByText('One Dollar')).toBeInTheDocument()
+    expect(within(second).getByText('received')).toBeInTheDocument()
+  })
+
+  it('gives every field its own title and sort, on two lines of titles', async () => {
+    const user = userEvent.setup()
+    const { props } = setup({
+      config: threeLine,
+      rows: shown,
+      sortable: ['item_code', 'status'],
+    })
+    const [top, under] = screen.getAllByRole('row')
+    expect(within(top).getByRole('columnheader', { name: 'Code' })).toBeInTheDocument()
+    expect(
+      within(under).getByRole('columnheader', { name: 'Status' }),
+    ).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Status' }))
+    expect(props.apply).toHaveBeenCalledWith({ sort: 'status', desc: '' })
+  })
+
+  it('puts the description on a third line spanning the columns', () => {
+    setup({ config: threeLine, rows: shown })
     const detail = screen.getByText('Morgan Dollar').closest('td')
     expect(detail).toHaveAttribute('colspan', '2')
     expect(
@@ -135,24 +174,35 @@ describe('two lines per item', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('adds no second line for an item without a description', () => {
-    setup({ config: twoLine })
-    // The header row, two item rows, and one detail row: C-002 has none.
-    expect(screen.getAllByRole('row')).toHaveLength(4)
+  it('adds no third line for an item without a description', () => {
+    setup({ config: threeLine, rows: shown })
+    // Two title lines, three lines for C-001, two for C-002.
+    expect(screen.getAllByRole('row')).toHaveLength(7)
   })
 
-  it('is how both inventories are shown, with denomination on the first line', () => {
+  it('is how both inventories are shown, the description under each item', () => {
     for (const view of [COIN_VIEW, CURRENCY_VIEW]) {
       expect(view.detail, view.view).toBe('description')
-      const keys = view.columns.map(([, key]) => key)
+      const keys = fieldsOf(view).map(([, key]) => key)
       expect(keys, view.view).toContain('denomination_label')
       expect(keys, view.view).not.toContain('description')
+      for (const pair of view.columns) expect(pair.length, view.view).toBeLessThan(3)
     }
+  })
+
+  it('leads with what is read first: the code, then the serial or the year', () => {
+    const lead = (view) => view.columns.map(([first]) => first[1]).slice(0, 3)
+    expect(lead(CURRENCY_VIEW)).toEqual([
+      'item_code',
+      'serial_number',
+      'series_designation',
+    ])
+    expect(lead(COIN_VIEW)).toEqual(['item_code', 'year_start', 'denomination_label'])
   })
 
   it('shows a note grade by its label, not its code', () => {
     // A note's grade code is `N64`; "Choice Uncirculated 64" is what is read.
-    const keys = CURRENCY_VIEW.columns.map(([, key]) => key)
+    const keys = fieldsOf(CURRENCY_VIEW).map(([, key]) => key)
     expect(keys).toContain('grade_label')
     expect(keys).not.toContain('grade')
   })
@@ -161,8 +211,10 @@ describe('two lines per item', () => {
 describe('the order column', () => {
   const orderConfig = {
     columns: [
-      ['Code', 'item_code'],
-      ['Order', 'order_number', 'order'],
+      [
+        ['Code', 'item_code'],
+        ['Order', 'order_number', 'order'],
+      ],
     ],
   }
 
