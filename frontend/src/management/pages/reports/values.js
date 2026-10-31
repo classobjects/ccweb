@@ -13,6 +13,9 @@ import { FIELD_HELP } from '../../fieldHelp'
 //: Column kinds that are numbers: right-aligned, and sorted by amount.
 export const NUMERIC_KINDS = new Set(['count', 'money', 'percent', 'ounces'])
 
+//: Column keys that hold an item's code: short, read whole, never scrolled.
+export const ITEM_CODE_KEYS = new Set(['item'])
+
 //: A weight as a plain decimal string, the only shape `ounces` formats.
 const DECIMAL = /^-?\d+(\.\d+)?$/
 

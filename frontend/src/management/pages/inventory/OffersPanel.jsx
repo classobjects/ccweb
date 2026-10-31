@@ -12,8 +12,8 @@ import {
   UNKNOWN,
   isLot,
   labelFor,
-  subjectOf,
 } from '../listing-labels'
+import SubjectCell from '../SubjectCell'
 import OfferDialog from './OfferDialog'
 import { date } from '../../../shared/format'
 import { useRequest } from '../../../shared/useRequest'
@@ -179,9 +179,7 @@ export default function OffersPanel({ item, onChanged }) {
                     the owner paid 500 for. `subjectOf` names a lot by its
                     title and size, the same way the Listings page, the end
                     confirmation and the record-sale dialog all name one. */}
-                <td data-label="Item or lot">
-                  <div className="cell-scroll">{subjectOf(l)}</div>
-                </td>
+                <SubjectCell listing={l} />
                 <td data-label="Price">
                   {l.price} {l.currency}
                 </td>
