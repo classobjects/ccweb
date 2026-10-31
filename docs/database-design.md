@@ -121,7 +121,7 @@ One row per acquired item or lot.
 | `item_kind_id` | fk | coin, currency, bullion, set, medal, token, other, unknown |
 | `denomination_id` | fk null | face value in a currency, coin or note |
 | `bullion_form_id`, `set_form_id` | fk null | Silver Eagle, Mint Set, … |
-| `storage_form_id` | fk | single, roll, tube, box, bag, album, … |
+| `storage_form_id` | fk | single, roll, tube, strap, brick, box, bag, album, … |
 | `piece_count` | int, default 1 | how many objects the row stands for; every weight and value multiplies by it |
 | `country_id` | fk null | issuer |
 | `year_start`, `year_end` | int null | a coin's year, or a range for sets and rolls; empty on a banknote, whose year is `currency_detail.series_year` (the API refuses a year on a note; there is no constraint) |
@@ -267,7 +267,7 @@ RESTRICT`, so a classifier in use cannot vanish.
 | `item_kind` | coin, currency, bullion, set, medal, token, other, unknown | |
 | `bullion_form` | Silver Eagle, Silver Bar, Krugerrand, … | `metal_id`, `typical_fine_weight_ozt`, `typical_fineness` |
 | `set_form` | Mint Set, Proof Set, … | |
-| `storage_form` | single, roll, tube, box, bag, album, … | `default_quantity` (a data-entry default only: choosing the form in the item editor fills Pieces with it while Pieces is 1 or the previous form's count) |
+| `storage_form` | single, roll, tube, strap, brick, box, bag, album, … | `default_quantity` (a data-entry default only: choosing the form in the item editor fills Pieces with it while Pieces is 1 or the previous form's count) |
 | `currency` | USD, … | `symbol`, `minor_units` |
 | `country` | issuer | `iso_alpha2` |
 | `denomination` | a face value | `currency_id`, `face_value` numeric(12,4), `kind` (`coin` \| `note`); unique `(currency_id, face_value, kind)` |
