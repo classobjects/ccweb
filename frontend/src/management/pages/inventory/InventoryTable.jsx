@@ -169,18 +169,18 @@ export default function InventoryTable({
                       shown = cell(row, key, kind)
                     }
                     // A long value scrolls in its cell rather than widening
-                    // the table; an amount is short and stays as it is.
+                    // the table; an amount or the item's code is short, read
+                    // whole, and stays as it is.
+                    const whole = kind === 'money' || key === 'item_code'
                     return (
                       <td
                         key={key}
-                        className={kind === 'money' ? undefined : kind}
+                        className={
+                          key === 'item_code' ? 'item-code' : whole ? undefined : kind
+                        }
                         data-label={label}
                       >
-                        {kind === 'money' ? (
-                          shown
-                        ) : (
-                          <div className="cell-scroll">{shown}</div>
-                        )}
+                        {whole ? shown : <div className="cell-scroll">{shown}</div>}
                       </td>
                     )
                   })}

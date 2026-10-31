@@ -402,7 +402,7 @@ export default function Lots() {
               <tbody>
                 {lot.members.map((member) => (
                   <tr key={member.inventory_item_id}>
-                    <td className="mono" data-label="Item">
+                    <td className="mono item-code" data-label="Item">
                       {member.item_code}
                     </td>
                     <td data-label="Title">

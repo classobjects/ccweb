@@ -601,7 +601,7 @@ export default function NewPurchase() {
               <tbody>
                 {(purchase.lines ?? []).map((line) => (
                   <tr key={line.id}>
-                    <td data-label="Item code" className="mono">
+                    <td data-label="Item code" className="mono item-code">
                       <button
                         type="button"
                         className="link mono"
