@@ -299,7 +299,13 @@ describe('Reports page', () => {
     expect(
       await screen.findByRole('heading', { name: 'Not yet arrived', level: 2 }),
     ).toBeInTheDocument()
-    expect(api.runReport).toHaveBeenCalledWith('pr_outstanding', { overdue_days: '30' })
+    // The run is asked for in an effect after the render that shows the
+    // report, so it is waited for rather than read off that render.
+    await waitFor(() =>
+      expect(api.runReport).toHaveBeenCalledWith('pr_outstanding', {
+        overdue_days: '30',
+      }),
+    )
     expect(screen.getByLabelText('Overdue after (days)')).toHaveValue(30)
     expect(screen.getByText('Purchases with something still to arrive.')).toBeVisible()
     expect(await screen.findByRole('cell', { name: 'Order-0012' })).toBeInTheDocument()
@@ -319,9 +325,13 @@ describe('Reports page', () => {
         '?report=pr_outstanding&overdue_days=45',
       ),
     )
-    expect(api.runReport).toHaveBeenLastCalledWith('pr_outstanding', {
-      overdue_days: '45',
-    })
+    // The run is asked for in an effect after the render that shows the
+    // report, so it is waited for rather than read off that render.
+    await waitFor(() =>
+      expect(api.runReport).toHaveBeenLastCalledWith('pr_outstanding', {
+        overdue_days: '45',
+      }),
+    )
 
     // The form starts again from the new address, holding what was run.
     box = screen.getByLabelText('Overdue after (days)')
@@ -333,6 +343,10 @@ describe('Reports page', () => {
     await user.click(screen.getByRole('button', { name: 'Run' }))
     await waitFor(() =>
       expect(screen.getByTestId('address').textContent).toBe('?report=pr_outstanding'),
+    )
+    // Waited for, so this test's last run is not left to land in the next.
+    await waitFor(() =>
+      expect(api.runReport).toHaveBeenLastCalledWith('pr_outstanding', {}),
     )
   })
 
@@ -729,9 +743,13 @@ describe('Reports page', () => {
         '?report=test_date_range&date_from=2026-01-15',
       ),
     )
-    expect(api.runReport).toHaveBeenLastCalledWith('test_date_range', {
-      date_from: '2026-01-15',
-    })
+    // The run is asked for in an effect after the render that shows the
+    // report, so it is waited for rather than read off that render.
+    await waitFor(() =>
+      expect(api.runReport).toHaveBeenLastCalledWith('test_date_range', {
+        date_from: '2026-01-15',
+      }),
+    )
 
     // Filling To and then clearing From again drops only date_from.
     const to = screen.getByLabelText('To')
@@ -750,9 +768,13 @@ describe('Reports page', () => {
         '?report=test_date_range&date_to=2026-01-31',
       ),
     )
-    expect(api.runReport).toHaveBeenLastCalledWith('test_date_range', {
-      date_to: '2026-01-31',
-    })
+    // The run is asked for in an effect after the render that shows the
+    // report, so it is waited for rather than read off that render.
+    await waitFor(() =>
+      expect(api.runReport).toHaveBeenLastCalledWith('test_date_range', {
+        date_to: '2026-01-31',
+      }),
+    )
   })
 
   it('still refuses an emptied non-date field alongside an empty date', async () => {
@@ -820,7 +842,11 @@ describe('Reports page', () => {
     await waitFor(() =>
       expect(screen.getByTestId('address').textContent).toBe('?report=cb_holdings'),
     )
-    expect(api.runReport).toHaveBeenLastCalledWith('cb_holdings', {})
+    // The run is asked for in an effect after the render that shows the
+    // report, so it is waited for rather than read off that render.
+    await waitFor(() =>
+      expect(api.runReport).toHaveBeenLastCalledWith('cb_holdings', {}),
+    )
     expect(await screen.findByRole('cell', { name: 'Order-0012' })).toBeInTheDocument()
   })
 
