@@ -9,8 +9,8 @@ import ItemEditDialog from '../inventory/ItemEditDialog'
 
 //: What the next piece of one purchase shares with the last, copied by "Add
 //: another like it". The pieces entered one after another usually came from
-//: one listing, at one price and one shipping charge, and are put away in one
-//: place, and are mostly of one grade and strike; what varies piece to
+//: one listing, at one price and one shipping charge, are packed alike and put
+//: away in one place, and are mostly of one grade and strike; what varies piece to
 //: piece -- the grade designation (but a set's, see `SET_ONLY`), serial,
 //: certificate, the years, the description -- is left for the editor.
 const SHARED_ON_REPEAT = [
@@ -22,6 +22,9 @@ const SHARED_ON_REPEAT = [
   'listing_url',
   'status',
   'storage_location_id',
+  // A run of rolls or straps, packed alike: Roll of 50 after Roll of 50.
+  'storage_form',
+  'piece_count',
   'country',
   'denomination',
   'series',

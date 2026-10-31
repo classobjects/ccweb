@@ -317,6 +317,31 @@ describe('AddItem', () => {
     )
   })
 
+  it('copies how the pieces are packed, and how many, to the next', async () => {
+    const user = userEvent.setup()
+    renderRow({ items: ENTERED })
+    api.getInventoryItem.mockResolvedValue({
+      id: 30,
+      item_kind: 'coin',
+      source_title: 'Lincoln cent rolls',
+      storage_form: 'roll',
+      piece_count: 50,
+    })
+    await user.click(screen.getByRole('button', { name: 'Add another like CC-000030' }))
+
+    await waitFor(() =>
+      expect(api.createInventoryItem).toHaveBeenLastCalledWith({
+        purchase_order_id: 22,
+        item_kind: 'coin',
+        source_title: 'Lincoln cent rolls',
+        storage_form: 'roll',
+        piece_count: 50,
+        tax_rate: '0.0635',
+        tax_includes_shipping: true,
+      }),
+    )
+  })
+
   it("copies a note's grade but never a strike, which a note does not have", async () => {
     const user = userEvent.setup()
     renderRow({ items: ENTERED })
