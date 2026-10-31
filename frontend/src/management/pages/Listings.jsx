@@ -13,6 +13,7 @@ import Pager from '../Pager'
 import { accel, useSaveShortcut } from '../shortcuts'
 import { isMoney } from '../../shared/cents'
 import { FORMATS, STATUSES, UNKNOWN, labelFor, subjectOf } from './listing-labels'
+import SubjectCell from './SubjectCell'
 import { marginPercent } from './platform-rates'
 import { date } from '../../shared/format'
 import { useGuardedSave } from '../useGuardedSave'
@@ -396,9 +397,7 @@ export default function Listings() {
                 </td>
                 {/* The item's code, or the lot by name and size: a lot
                     listing has no code of its own. */}
-                <td data-label="Item or lot">
-                  <div className="cell-scroll">{subjectOf(l)}</div>
-                </td>
+                <SubjectCell listing={l} />
                 <td data-label="Title">
                   <div className="cell-scroll">{l.title}</div>
                 </td>

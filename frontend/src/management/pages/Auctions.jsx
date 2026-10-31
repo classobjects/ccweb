@@ -11,6 +11,7 @@ import SettlementGrid from './SettlementGrid'
 import { RESULT_LABEL } from './auction-labels'
 import { accel, useSaveShortcut } from '../shortcuts'
 import { subjectOf, UNKNOWN } from './listing-labels'
+import SubjectCell from './SubjectCell'
 import { date } from '../../shared/format'
 import { useGuardedSave } from '../useGuardedSave'
 import { useMounted } from '../useMounted'
@@ -709,9 +710,7 @@ function AuctionDetail({ auction, venues, onChanged }) {
                       onChange={(e) => setDraft(lot, 'lot_number', e.target.value)}
                     />
                   </td>
-                  <td data-label="Item">
-                    <div className="cell-scroll">{subject}</div>
-                  </td>
+                  <SubjectCell listing={lot.listing} label="Item" />
                   <td data-label="Reserve">
                     <input
                       inputMode="decimal"

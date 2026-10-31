@@ -447,9 +447,16 @@ export default function OfferDialog({
             const margin = netMarginPercent(price, subject.cost, chosen)
             return (
               <tr key={subject.key}>
-                <td className="mono" data-label={lot ? 'Lot' : 'Item'}>
-                  <div className="cell-scroll">{subject.label}</div>
-                </td>
+                {/* An item's code read whole; a lot's title scrolls. */}
+                {lot ? (
+                  <td className="mono" data-label="Lot">
+                    <div className="cell-scroll">{subject.label}</div>
+                  </td>
+                ) : (
+                  <td className="mono item-code" data-label="Item">
+                    {subject.label}
+                  </td>
+                )}
                 <td data-help="offer_price" data-label="Price">
                   {/* Text, not number: money crosses the API as a decimal
                       string and a number input hands back a float. */}

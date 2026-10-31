@@ -8,7 +8,8 @@ import ConfirmDialog from '../ConfirmDialog'
 import LocationSelect from '../LocationSelect'
 import { RESULTS } from './auction-labels'
 import { centsOrZero, signedFromCents } from '../../shared/cents'
-import { subjectOf, UNKNOWN } from './listing-labels'
+import { UNKNOWN } from './listing-labels'
+import SubjectCell from './SubjectCell'
 import { useReference } from '../../shared/reference-context'
 import { orNull } from '../../shared/text'
 import { useMounted } from '../useMounted'
@@ -356,9 +357,7 @@ export default function SettlementGrid({ auction, isAuctionHouse, onSettled }) {
                 <td className="mono" data-label="Lot">
                   {lot.lot_number}
                 </td>
-                <td data-label="Item">
-                  <div className="cell-scroll">{subjectOf(lot.listing)}</div>
-                </td>
+                <SubjectCell listing={lot.listing} label="Item" />
                 <td data-label="Reserve">{lot.reserve ?? UNKNOWN}</td>
                 <td data-label="Result">
                   <select

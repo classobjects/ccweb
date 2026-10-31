@@ -7,6 +7,7 @@ import { Link } from 'react-router-dom'
 import { api } from '../../api'
 import { dateTime } from '../../../shared/format'
 import {
+  ITEM_CODE_KEYS,
   NUMERIC_KINDS,
   cellText,
   compareValues,
@@ -199,14 +200,16 @@ function ReportTable({ result, onOpenItem }) {
                 />
               )
               // A long name scrolls in its cell rather than widening the
-              // table; a number is short and stays as it is.
+              // table; a number or an item's code is short, read whole, and
+              // stays as it is.
+              const code = ITEM_CODE_KEYS.has(column.key)
               return (
                 <td
                   key={column.key}
-                  className={alignment(column)}
+                  className={code ? 'item-code' : alignment(column)}
                   data-label={column.label}
                 >
-                  {NUMERIC_KINDS.has(column.kind) ? (
+                  {code || NUMERIC_KINDS.has(column.kind) ? (
                     cell
                   ) : (
                     <div className="cell-scroll">{cell}</div>
