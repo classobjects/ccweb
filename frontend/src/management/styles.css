@@ -18,6 +18,12 @@
   font-size: 13px;
 }
 
+/* An item code in a table is short and read whole: its column keeps the
+   whole code, never broken at its hyphen or scrolled in a squeezed cell. */
+td.item-code {
+  white-space: nowrap;
+}
+
 /* --- forms -------------------------------------------------------------- */
 .admin-form {
   background: var(--surface);
