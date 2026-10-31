@@ -35,6 +35,11 @@ const KINDS = [
   { code: 'coin', label: 'Coin', source: 'seeded', extra: {} },
   { code: 'currency', label: 'Currency', source: 'seeded', extra: {} },
 ]
+const FORMS = [
+  { code: 'single', label: 'Single', source: 'seeded', extra: { default_quantity: 1 } },
+  { code: 'roll', label: 'Roll', source: 'seeded', extra: { default_quantity: 50 } },
+  { code: 'box', label: 'Box', source: 'seeded', extra: {} },
+]
 const DEFAULTS = { tax_rate: '0.0635', tax_includes_shipping: true }
 
 // The purchase's lines once the item these tests add is on it.
@@ -54,7 +59,9 @@ function renderRow(props = {}) {
       onEntered={onEntered}
       {...props}
     />,
-    { reference: emptyReference({ tables: { item_kind: KINDS } }) },
+    {
+      reference: emptyReference({ tables: { item_kind: KINDS, storage_form: FORMS } }),
+    },
   )
 }
 
@@ -102,6 +109,43 @@ describe('AddItem', () => {
     // The title is spent, and a second item waits for the first.
     expect(screen.getByRole('textbox', { name: 'Title' })).toHaveValue('')
     expect(onChanged).toHaveBeenCalled()
+  })
+
+  it('makes the item in the storage form chosen, with its usual count', async () => {
+    const user = userEvent.setup()
+    renderRow()
+    const form = screen.getByRole('combobox', { name: 'storage_form' })
+    // One piece kept singly, which the server gives an item naming no form.
+    expect(form).toHaveValue('single')
+
+    await user.selectOptions(form, 'roll')
+    await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Wheat cents')
+    await user.click(screen.getByRole('button', { name: 'Add item' }))
+
+    expect(api.createInventoryItem).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source_title: 'Wheat cents',
+        storage_form: 'roll',
+        piece_count: 50,
+      }),
+    )
+    // Kept for the next item, as the kind is: rolls come one after another.
+    expect(form).toHaveValue('roll')
+  })
+
+  it('sends a form with no usual count without a count', async () => {
+    const user = userEvent.setup()
+    renderRow()
+    await user.selectOptions(
+      screen.getByRole('combobox', { name: 'storage_form' }),
+      'box',
+    )
+    await user.type(screen.getByRole('textbox', { name: 'Title' }), 'A box of coins')
+    await user.click(screen.getByRole('button', { name: 'Add item' }))
+
+    const sent = api.createInventoryItem.mock.calls.at(-1)[0]
+    expect(sent.storage_form).toBe('box')
+    expect(sent).not.toHaveProperty('piece_count')
   })
 
   it('starts at a coin when the server names no kind', () => {
