@@ -427,42 +427,43 @@ export default function Listings() {
                   )}
                 </td>
                 <td>
-                  {/* No Edit on a paused row: it is a store listing set aside
+                  <div className="row-actions">
+                    {/* No Edit on a paused row: it is a store listing set aside
                       for an offer elsewhere, and editing its price while it is
                       out of the shop edits something nobody can see. No Edit
                       or End on an ended one either -- it is history. */}
-                  {l.status === 'active' && (
-                    <button
-                      className="link"
-                      onClick={() => {
-                        setNotice('')
-                        setOpen(l)
-                      }}
-                    >
-                      Edit
-                    </button>
-                  )}
-                  {/* An auction's lot is ended and sold only through its
+                    {l.status === 'active' && (
+                      <button
+                        className="link"
+                        onClick={() => {
+                          setNotice('')
+                          setOpen(l)
+                        }}
+                      >
+                        Edit
+                      </button>
+                    )}
+                    {/* An auction's lot is ended and sold only through its
                       auction -- the API refuses End and Record sale on it --
                       so the row points there instead of offering either. */}
-                  {l.auction_id != null && l.status !== 'ended' && (
-                    <Link to="/auctions">Auction #{l.auction_id}</Link>
-                  )}
-                  {/* Ending is permanent: the question comes first, and it
+                    {l.auction_id != null && l.status !== 'ended' && (
+                      <Link to="/auctions">Auction #{l.auction_id}</Link>
+                    )}
+                    {/* Ending is permanent: the question comes first, and it
                       names the listing and its platform. */}
-                  {l.status !== 'ended' && l.auction_id == null && (
-                    <button
-                      className="link"
-                      disabled={ending !== null}
-                      onClick={() => {
-                        setNotice('')
-                        setConfirming(l)
-                      }}
-                    >
-                      End
-                    </button>
-                  )}
-                  {/* Only an active row: `record_sale` itself refuses a
+                    {l.status !== 'ended' && l.auction_id == null && (
+                      <button
+                        className="link"
+                        disabled={ending !== null}
+                        onClick={() => {
+                          setNotice('')
+                          setConfirming(l)
+                        }}
+                      >
+                        End
+                      </button>
+                    )}
+                    {/* Only an active row: `record_sale` itself refuses a
                       paused or ended listing with "not on offer", and a
                       paused row is a store listing set aside for an offer
                       elsewhere, not something that just sold there.
@@ -480,17 +481,18 @@ export default function Listings() {
                       reads an unmatched one as "not an auction house":
                       guessing the other way would hide the button on every
                       row that legitimately has one. */}
-                  {l.status === 'active' && !isStore(l) && l.auction_id == null && (
-                    <button
-                      className="link"
-                      onClick={() => {
-                        setNotice('')
-                        setSelling(l)
-                      }}
-                    >
-                      Record sale…
-                    </button>
-                  )}
+                    {l.status === 'active' && !isStore(l) && l.auction_id == null && (
+                      <button
+                        className="link"
+                        onClick={() => {
+                          setNotice('')
+                          setSelling(l)
+                        }}
+                      >
+                        Record sale…
+                      </button>
+                    )}
+                  </div>
                 </td>
               </tr>
             )

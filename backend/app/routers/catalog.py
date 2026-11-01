@@ -164,6 +164,7 @@ def _describe(item: InventoryItem) -> dict[str, Any]:
         "item_kind": id_to_code(item.item_kind),
         "country": id_to_code(item.country),
         "denomination": id_to_code(item.denomination),
+        "denomination_label": item.denomination.label if item.denomination else None,
         "bullion_form": id_to_code(item.bullion_form),
         "grade": id_to_code(item.grade),
         "strike_type": id_to_code(item.strike_type),

@@ -340,6 +340,9 @@ class CatalogDescription(BaseModel):
     item_kind: str | None = None
     country: str | None = None
     denomination: str | None = None
+    #: What a buyer reads: Dollar, where `denomination` is usd_coin_1_00. The
+    #: shop may not read the vocabulary, so the label comes with the code.
+    denomination_label: str | None = None
     bullion_form: str | None = None
     grade: str | None = None
     strike_type: str | None = None

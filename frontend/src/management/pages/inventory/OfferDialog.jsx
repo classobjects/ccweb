@@ -423,7 +423,7 @@ export default function OfferDialog({
         {filled && <output className="notice">{filled}</output>}
       </div>
       {/* On a phone each row stacks into a card, a line per labelled cell. */}
-      <table className="stacks">
+      <table className="stacks offer-rows">
         <thead>
           <tr>
             <th>{lot ? 'Lot' : 'Item'}</th>
@@ -521,7 +521,7 @@ export default function OfferDialog({
   )
 
   return (
-    <ModalDialog label={label} onClose={onClose}>
+    <ModalDialog label={label} onClose={onClose} wide>
       <HelpScope>{body}</HelpScope>
     </ModalDialog>
   )

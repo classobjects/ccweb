@@ -90,7 +90,12 @@ export function summarize(entry) {
 
 /** One coin of a lot, in a few words: country, year, denomination and grade. */
 export function describeMember(member) {
-  return [member.country, member.year_start, member.denomination, member.grade_display]
+  return [
+    member.country,
+    member.year_start,
+    member.denomination_label,
+    member.grade_display,
+  ]
     .filter(Boolean)
     .join(' - ')
 }

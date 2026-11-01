@@ -10,8 +10,8 @@ behind them, [system-administration.md](system-administration.md).
 
 **The pictures hold made-up data.** The shop, the people, the orders and the
 prices are invented, and the coin and note pictures are drawings marked "DEMO
-IMAGE". Screens that scroll are shown whole, so some are taller here than in a
-browser window.
+IMAGE". A long screen is shown as a series of pictures, scrolling down it, each
+one overlapping the last a little.
 
 ## Contents
 
@@ -48,7 +48,13 @@ Most work starts on these two pages, which find items. Coins lists everything
 that is not a banknote: coins, bullion, sets, medals and tokens. Currency lists
 notes, with the columns that matter for them, such as serial, seal and district.
 
-![The Coins page: search, filters, checks and the item table](images/ui-guide/coins.png)
+![The Coins page: search, filters, checks and the item table, part 1 of 4](images/ui-guide/coins_1.png)
+
+![The Coins page: search, filters, checks and the item table, part 2 of 4](images/ui-guide/coins_2.png)
+
+![The Coins page: search, filters, checks and the item table, part 3 of 4](images/ui-guide/coins_3.png)
+
+![The Coins page: search, filters, checks and the item table, part 4 of 4](images/ui-guide/coins_4.png)
 
 ![The Currency page](images/ui-guide/currency.png)
 
@@ -66,12 +72,20 @@ The rounded chips are data-quality checks, each with the number of items it
 finds. Click one to list those items, and click it again to go back. This one
 shows the items with no grade:
 
-![Coins narrowed to the items with no grade](images/ui-guide/coins_issue.png)
+![Coins narrowed to the items with no grade, part 1 of 2](images/ui-guide/coins_issue_1.png)
+
+![Coins narrowed to the items with no grade, part 2 of 2](images/ui-guide/coins_issue_2.png)
 
 Tick rows to get the bulk bar, which sets what the selected items share, offers
 them for sale or groups them into a sales lot:
 
-![Three coins selected, with the bulk bar above the table](images/ui-guide/coins_bulk.png)
+![Three coins selected, with the bulk bar above the table, part 1 of 4](images/ui-guide/coins_bulk_1.png)
+
+![Three coins selected, with the bulk bar above the table, part 2 of 4](images/ui-guide/coins_bulk_2.png)
+
+![Three coins selected, with the bulk bar above the table, part 3 of 4](images/ui-guide/coins_bulk_3.png)
+
+![Three coins selected, with the bulk bar above the table, part 4 of 4](images/ui-guide/coins_bulk_4.png)
 
 **Review these** walks through the current result one item at a time, in the
 editor. The list is frozen when you start, so fixing an item does not skip the
@@ -93,12 +107,28 @@ Everything recorded about one item is here. Changes are held until **Save**.
 - A banner warns when the item is for sale, because buyers see a change at once.
   Tick **Change it anyway** to save.
 
-![The item editor for a coin](images/ui-guide/editor_coin.png)
+![The item editor for a coin, part 1 of 5](images/ui-guide/editor_coin_1.png)
+
+![The item editor for a coin, part 2 of 5](images/ui-guide/editor_coin_2.png)
+
+![The item editor for a coin, part 3 of 5](images/ui-guide/editor_coin_3.png)
+
+![The item editor for a coin, part 4 of 5](images/ui-guide/editor_coin_4.png)
+
+![The item editor for a coin, part 5 of 5](images/ui-guide/editor_coin_5.png)
 
 A note has its own fields, such as series, serial, plates, seal, signatures and
 district, and most of them follow from the series and serial:
 
-![The item editor for a note](images/ui-guide/editor_note.png)
+![The item editor for a note, part 1 of 5](images/ui-guide/editor_note_1.png)
+
+![The item editor for a note, part 2 of 5](images/ui-guide/editor_note_2.png)
+
+![The item editor for a note, part 3 of 5](images/ui-guide/editor_note_3.png)
+
+![The item editor for a note, part 4 of 5](images/ui-guide/editor_note_4.png)
+
+![The item editor for a note, part 5 of 5](images/ui-guide/editor_note_5.png)
 
 **Split into pieces...** turns a lot bought as one item into one item per
 piece, each with its share of the cost. It cannot be undone.
@@ -274,7 +304,9 @@ Some of the reports worth knowing first:
 
 **Open issues** counts every data-quality check across coins and currency.
 
-![The Open issues report](images/ui-guide/report_dq_issues.png)
+![The Open issues report, part 1 of 2](images/ui-guide/report_dq_issues_1.png)
+
+![The Open issues report, part 2 of 2](images/ui-guide/report_dq_issues_2.png)
 
 **Not yet arrived** lists purchases still waiting, oldest first, and marks the
 overdue ones.
@@ -337,11 +369,15 @@ costs or where an item came from. `SHOP_OPEN=false` closes it to the public
 
 The catalog shows what is offered in the web store, with search and a filter by type:
 
-![The shop's catalog](images/ui-guide/shop_catalog.png)
+![The shop's catalog, part 1 of 2](images/ui-guide/shop_catalog_1.png)
+
+![The shop's catalog, part 2 of 2](images/ui-guide/shop_catalog_2.png)
 
 An item's page shows its primary photograph, price, description and details:
 
-![An item's page in the shop](images/ui-guide/shop_detail.png)
+![An item's page in the shop, part 1 of 2](images/ui-guide/shop_detail_1.png)
+
+![An item's page in the shop, part 2 of 2](images/ui-guide/shop_detail_2.png)
 
 The cart holds what a customer means to buy. **Place order** records the order, and
 payment is arranged outside the system.
