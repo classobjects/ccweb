@@ -1,0 +1,33 @@
+<!--
+  (c) Copyright 2026 Nathaniel Mills
+  Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+  SPDX-License-Identifier: Apache-2.0
+
+  The API as a Windows service, read by WinSW (docs/deployment-windows.md,
+  step 6). OWNER is the account that installed the system.
+
+  "& exit 1": the script's own exit code is its log writer's, 0 even when the
+  API has died, and the service manager restarts only a service that failed.
+  The service stopping on request never reaches that line.
+-->
+<service>
+  <id>ccwebdb-api</id>
+  <name>ccwebdb API</name>
+  <description>The ccweb API (uvicorn behind Caddy). Runs scripts\ccweb_api.cmd from the checkout.</description>
+  <executable>%ComSpec%</executable>
+  <arguments>/d /c ""C:\Users\OWNER\dev\ccweb\scripts\ccweb_api.cmd" &amp; exit 1"</arguments>
+  <workingdirectory>C:\Users\OWNER\dev\ccweb\backend</workingdirectory>
+  <env name="CCWEB_CONDA_ROOT" value="C:\Users\OWNER\miniforge3"/>
+  <startmode>Automatic</startmode>
+  <depend>ccwebdb-postgres</depend>
+  <onfailure action="restart" delay="10 sec"/>
+  <onfailure action="restart" delay="30 sec"/>
+  <onfailure action="restart" delay="60 sec"/>
+  <resetfailure>1 hour</resetfailure>
+  <stoptimeout>5 sec</stoptimeout>
+  <logpath>C:\ccwebdb-api\logs</logpath>
+  <log mode="roll-by-size">
+    <sizeThreshold>1024</sizeThreshold>
+    <keepFiles>3</keepFiles>
+  </log>
+</service>

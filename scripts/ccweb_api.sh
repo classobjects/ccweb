@@ -7,7 +7,7 @@
 #
 #    ./scripts/ccweb_api.sh
 #
-#  The bash twin of ccweb_api.cmd, which the Windows start-up task runs. A
+#  The bash twin of ccweb_api.cmd, which the Windows service runs. A
 #  Linux host normally runs the API as the systemd unit
 #  deploy/linux/ccwebdb-api.service instead, which logs to the journal and
 #  is hardened by systemd (docs/deployment-linux.md); this script is for a

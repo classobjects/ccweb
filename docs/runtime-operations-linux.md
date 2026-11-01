@@ -180,7 +180,7 @@ It starts PostgreSQL when it is not running, as the Windows twin does.
   auto-fixes first. See [code-quality.md](code-quality.md).
 - **`ccweb_testdb.sh`** is the test cluster (below).
 - **`ccweb_api.sh`** runs the API alone in the foreground, as the Windows
-  start-up task runs `ccweb_api.cmd`. A Linux server runs the systemd unit
+  service runs `ccweb_api.cmd`. A Linux server runs the systemd unit
   instead ([deployment-linux.md](deployment-linux.md)). Use the script on a
   host without systemd. Development uses `ccweb_startup.sh` instead.
 - **Sourced helpers:** `ccweb_env.sh`, `ccweb_settings.sh`,

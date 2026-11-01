@@ -368,14 +368,15 @@ Build again after every update.
 
 ## 6. Run the API at start-up
 
-The API is started by a scheduled task that runs
-`scripts\ccweb_api.cmd` at boot, whether or not anyone is signed in. The
-script is part of the repository, so an update to how the API starts
-arrives with the code. It takes everything from the settings:
+The API runs as the Windows service `ccwebdb-api`, which runs
+`scripts\ccweb_api.cmd` at boot, whether or not anyone is signed in, and
+starts it again if it dies. The script is part of the repository, so an
+update to how the API starts arrives with the code. It takes everything from
+the settings:
 - it listens on `CCWEB_API_HOST` and `CCWEB_API_PORT`;
 - its output goes through `backend\app\logpipe.py` into `backend.log` in
   the log folder, as `ccweb_startup.cmd` sends it on the development
-  machine. So `backend.log` starts afresh each time the task starts and
+  machine. So `backend.log` starts afresh each time the service starts and
   never grows past `CCWEB_LOG_MAX_BYTES`, with `CCWEB_LOG_KEEP` files kept
   ([logs/README.md](../logs/README.md)).
 
@@ -385,30 +386,74 @@ Control blocks unsigned `.exe` wrappers on some machines.
 makes the API see the visitor's address and `https` from Caddy's headers,
 and trust those headers from Caddy alone.
 
-Register it from an administrator cmd, signed in as the account that
-installed the system in step 2, which can read the repository and
-`MEDIA_ROOT`. The command asks for that account's password, so it is
-given alone -- pasted with others, the next line would be taken as the
-password. `/f` replaces a task of that name that is already there:
+A service needs a program that speaks to the service manager, and a `.cmd`
+does not, so [WinSW](https://github.com/winsw/winsw) runs it. The service's
+account is `NT SERVICE\ccwebdb-api`, which has no password to store and can
+reach only the folders granted below: the API takes requests from the
+internet, so it holds no administrator rights and cannot read the database's
+files. WinSW writes its own log to `C:\ccwebdb-api\logs`.
+
+From an administrator cmd, make the service's folder, closed to other
+accounts' changes, and download WinSW into it:
 
 ```console
-schtasks /create /tn "ccwebdb api" /sc onstart /ru "%USERDOMAIN%\%USERNAME%" /rp * /tr "\"%USERPROFILE%\dev\ccweb\scripts\ccweb_api.cmd\"" /f
+mkdir C:\ccwebdb-api\logs
+icacls C:\ccwebdb-api /inheritance:r /grant:r "*S-1-5-32-544:(OI)(CI)F" "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-545:(OI)(CI)RX"
+curl -L -o C:\ccwebdb-api\ccwebdb-api-service.exe https://github.com/winsw/winsw/releases/download/v2.12.0/WinSW-x64.exe
+copy "%USERPROFILE%\dev\ccweb\deploy\windows\ccwebdb-api.xml" C:\ccwebdb-api\ccwebdb-api-service.xml
 ```
 
-The task stores that password. After the account's password changes, run
-this command again, or the API does not start at the next boot.
+Open the copy and replace `OWNER` with this account's folder name under
+`C:\Users`:
+
+```console
+notepad C:\ccwebdb-api\ccwebdb-api-service.xml
+```
+
+Install the service, give it its account and tell the service manager to
+restart it when it fails:
+
+```console
+C:\ccwebdb-api\ccwebdb-api-service.exe install
+sc config ccwebdb-api obj= "NT SERVICE\ccwebdb-api"
+sc failure ccwebdb-api reset= 3600 actions= restart/10000/restart/30000/restart/60000
+```
+
+Grant the account what the API uses. The checkout's own folder is granted
+without inheritance, so nothing new at its top level, `.pgdata` above all,
+becomes readable. Keep `MEDIA_ROOT` in the grant if `.env` moves it:
+
+```console
+icacls C:\ccwebdb-api\logs /grant "NT SERVICE\ccwebdb-api:(OI)(CI)M"
+icacls "%USERPROFILE%\miniforge3" /grant "NT SERVICE\ccwebdb-api:(OI)(CI)RX" /Q
+icacls "%USERPROFILE%\dev\ccweb" /grant "NT SERVICE\ccwebdb-api:RX" /Q
+icacls "%USERPROFILE%\dev\ccweb\backend" /grant "NT SERVICE\ccwebdb-api:(OI)(CI)RX" /Q
+icacls "%USERPROFILE%\dev\ccweb\scripts" /grant "NT SERVICE\ccwebdb-api:(OI)(CI)RX" /Q
+icacls "%USERPROFILE%\dev\ccweb\frontend" /grant "NT SERVICE\ccwebdb-api:(OI)(CI)RX" /Q
+icacls "%USERPROFILE%\dev\ccweb\.env" /grant "NT SERVICE\ccwebdb-api:R" /Q
+icacls "%USERPROFILE%\dev\ccweb\logs" /grant "NT SERVICE\ccwebdb-api:(OI)(CI)M" /Q
+icacls "%USERPROFILE%\dev\ccweb\media" /grant "NT SERVICE\ccwebdb-api:(OI)(CI)M" /Q
+```
+
+A program that replaces `.env` rather than saving over it drops that file's
+grant, and the API then stops at start-up saying it cannot read its settings:
+run the `.env` line again.
 
 Then start it and check it answers (at the default address; use
 `CCWEB_API_HOST` and `CCWEB_API_PORT` if `.env` sets them):
 
 ```console
-schtasks /run /tn "ccwebdb api"
+net start ccwebdb-api
 curl -s -f -o nul http://127.0.0.1:8000/docs
 if errorlevel 1 echo The API is not answering: read logs\backend.log
 ```
 
-To restart it after an update:
-`schtasks /end /tn "ccwebdb api"`, then `schtasks /run /tn "ccwebdb api"`.
+It can take a few seconds to answer. To restart it after an update:
+
+```console
+net stop ccwebdb-api
+net start ccwebdb-api
+```
 
 ## 7. Caddy
 
@@ -659,7 +704,7 @@ From an administrator
 cmd, stop the site, API first:
 
 ```console
-schtasks /end /tn "ccwebdb api"
+net stop ccwebdb-api
 sc stop caddy
 sc stop ccwebdb-postgres
 ```
@@ -668,7 +713,7 @@ Start it again, database first:
 
 ```console
 sc start ccwebdb-postgres
-schtasks /run /tn "ccwebdb api"
+net start ccwebdb-api
 sc start caddy
 ```
 

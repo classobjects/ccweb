@@ -2139,7 +2139,7 @@ every release is schema first, reference data second.
    ([deployment-windows.md](deployment-windows.md), step 6):
 
    ```console
-   schtasks /end /tn "ccwebdb api"
+   net stop ccwebdb-api
    ```
 
    Linux ([deployment-linux.md](deployment-linux.md), step 6):
@@ -2191,7 +2191,7 @@ every release is schema first, reference data second.
    administrator cmd:
 
    ```console
-   schtasks /run /tn "ccwebdb api"
+   net start ccwebdb-api
    ```
 
    Linux:

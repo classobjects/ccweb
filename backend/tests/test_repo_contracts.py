@@ -645,7 +645,7 @@ _API_REFUSED = "api FAILED - a setting in .env was refused; the API was not star
 
 @windows_only
 def test_api_cmd_starts_nothing_on_a_refused_setting(tmp_path: Path) -> None:
-    """The start-up task's script stops with 2 before uvicorn ever runs."""
+    """The service's script stops with 2 before uvicorn ever runs."""
     shown = _run_cmd_probe(
         tmp_path,
         f'call "{SCRIPTS}\\ccweb_api.cmd"\necho rc=%errorlevel%\n',
@@ -673,12 +673,14 @@ def test_api_sh_starts_nothing_on_a_refused_setting() -> None:
     assert shown.returncode == 2
 
 
-def test_the_windows_start_up_task_runs_the_repository_script() -> None:
-    """The deployment guide registers ccweb_api.cmd, not a copy made by hand."""
+def test_the_windows_service_runs_the_repository_script() -> None:
+    """The service runs ccweb_api.cmd, and any end of it reads as a failure."""
+    template = REPO_ROOT / "deploy" / "windows" / "ccwebdb-api.xml"
+    service = template.read_text(encoding="utf-8")
+    assert 'scripts\\ccweb_api.cmd" &amp; exit 1' in service
     guide = (REPO_ROOT / "docs" / "deployment-windows.md").read_text(encoding="utf-8")
-    created = re.findall(r'schtasks /create /tn "ccwebdb api"[^\n]*', guide)
-    assert created, "no task registration in the guide"
-    assert all("scripts\\ccweb_api.cmd" in line for line in created), created
+    assert "deploy\\windows\\ccwebdb-api.xml" in guide
+    assert 'schtasks /create /tn "ccwebdb api"' not in guide
     assert "ccwebdb-run" not in guide
 
 
