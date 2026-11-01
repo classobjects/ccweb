@@ -89,3 +89,4 @@ new finding is a real one.
   travels through them.
 - [workflow-new-collection.md](workflow-new-collection.md) -- an item's
   path from purchase to sale in the console.
+- [ui-guide.md](ui-guide.md) -- a tour of the screens, with pictures.
