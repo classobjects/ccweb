@@ -153,7 +153,7 @@ def upload_image(
 
     if item is not None:
         try:
-            link = image_links.attach(
+            image_links.attach(
                 db,
                 image=image,
                 item=item,
@@ -161,48 +161,59 @@ def upload_image(
                 is_primary=is_primary,
             )
         except image_links.LinkRefused as exc:
-            # Re-uploading a photograph the item already has updates how it is
-            # filed rather than refusing: the caller is a file picker, not a
-            # filing decision, and picking a file again must not be an
-            # error. Both writes still go through `image_links`, which is
-            # what keeps the primary swap in one place.
-            existing = db.scalar(
-                select(ItemImage).where(
-                    ItemImage.inventory_item_id == item.id,
-                    ItemImage.image_id == image.id,
-                )
-            )
-            if existing is None:
-                # `LinkRefused` says the link is there, so not finding it
-                # means it was removed between the refusal and this read.
-                # A real check, not a bare `assert`: an assert vanishes
-                # under `python -O` and this branch would then go on to
-                # call `set_role` on None.
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT, detail=str(exc)
-                ) from exc
-            link = existing
-            # Only when the form actually carried a role. A file picker
-            # re-picking the same file sends no `image_role`, and an
-            # unconditional `set_role` would clear whatever the operator had
-            # just set -- the same omitted-versus-explicit-null distinction
-            # `routers.image_links.update_link` draws.
-            if image_role is not None:
-                image_links.set_role(db, link, image_role)
-            if is_primary:
-                try:
-                    image_links.make_primary(db, link)
-                except image_links.LinkRefused as moved:
-                    # Moved or unfiled since it was read: 409, as
-                    # `routers.image_links.update_link` answers.
-                    db.rollback()
-                    raise HTTPException(
-                        status_code=status.HTTP_409_CONFLICT, detail=str(moved)
-                    ) from moved
+            _refile_existing_link(db, item, image, image_role, is_primary, exc)
 
     db.commit()
     db.refresh(image)
     return to_image_out(image)
+
+
+def _refile_existing_link(
+    db: Session,
+    item: InventoryItem,
+    image: Image,
+    image_role: str | None,
+    is_primary: bool,
+    refused: image_links.LinkRefused,
+) -> None:
+    """Update how a photograph the item already has is filed, instead of refusing.
+
+    The caller is a file picker, not a filing decision, and picking a file
+    again must not be an error. Both writes still go through `image_links`,
+    which is what keeps the primary swap in one place.
+    """
+    link = db.scalar(
+        select(ItemImage).where(
+            ItemImage.inventory_item_id == item.id,
+            ItemImage.image_id == image.id,
+        )
+    )
+    if link is None:
+        # `LinkRefused` says the link is there, so not finding it
+        # means it was removed between the refusal and this read.
+        # A real check, not a bare `assert`: an assert vanishes
+        # under `python -O` and this branch would then go on to
+        # call `set_role` on None.
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=str(refused)
+        ) from refused
+    # Only when the form actually carried a role. A file picker
+    # re-picking the same file sends no `image_role`, and an
+    # unconditional `set_role` would clear whatever the operator had
+    # just set -- the same omitted-versus-explicit-null distinction
+    # `routers.image_links.update_link` draws.
+    if image_role is not None:
+        image_links.set_role(db, link, image_role)
+    if is_primary:
+        try:
+            image_links.make_primary(db, link)
+        except image_links.LinkRefused as moved:
+            # Moved or unfiled since it was read: 409, as
+            # `routers.image_links.update_link` answers.
+            db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail=str(moved)
+            ) from moved
 
 
 def _filing_checks(db: Session, payload: ImageFromUrl) -> InventoryItem:

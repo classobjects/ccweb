@@ -152,27 +152,23 @@ def test_both_money_tables_refuse_a_negative_amount(db: Session) -> None:
     # would then try to query an aborted transaction in teardown and report an
     # error on this test that has nothing to do with it. The savepoint rolls
     # back just the failed statement.
-    with (
-        pytest.raises(IntegrityError, match="ck_sales_order_item_share_non_negative"),
-        db.begin_nested(),
-    ):
-        db.execute(
-            text(
-                "INSERT INTO sales_order_item_share "
-                "(sales_order_item_id, inventory_item_id, amount, fee_amount) "
-                "VALUES (1, 1, -0.01, 0)"
-            )
-        )
+    negative_share = text(
+        "INSERT INTO sales_order_item_share "
+        "(sales_order_item_id, inventory_item_id, amount, fee_amount) "
+        "VALUES (1, 1, -0.01, 0)"
+    )
+    savepoint = db.begin_nested()
+    with pytest.raises(IntegrityError, match="ck_sales_order_item_share_non_negative"):
+        db.execute(negative_share)
+    savepoint.rollback()
     # The fee's predicate, not only its name: a constraint that admitted a
     # negative amount would pass the name check above.
-    with (
-        pytest.raises(IntegrityError, match="ck_sales_order_fee_non_negative"),
-        db.begin_nested(),
-    ):
-        db.execute(
-            text(
-                "INSERT INTO sales_order_fee "
-                "(sales_order_id, sales_fee_kind_id, amount) "
-                "VALUES (1, 1, -0.01)"
-            )
-        )
+    negative_fee = text(
+        "INSERT INTO sales_order_fee "
+        "(sales_order_id, sales_fee_kind_id, amount) "
+        "VALUES (1, 1, -0.01)"
+    )
+    savepoint = db.begin_nested()
+    with pytest.raises(IntegrityError, match="ck_sales_order_fee_non_negative"):
+        db.execute(negative_fee)
+    savepoint.rollback()

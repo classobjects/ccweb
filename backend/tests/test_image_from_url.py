@@ -78,10 +78,10 @@ def test_an_image_is_fetched() -> None:
     ],
 )
 def test_only_web_addresses_are_fetched(url: str) -> None:
+    client = _client(lambda _r: httpx.Response(200))
+    resolve = _resolver({})
     with pytest.raises(ImageFetchRefused):
-        fetch_image(
-            url, client=_client(lambda _r: httpx.Response(200)), resolve=_resolver({})
-        )
+        fetch_image(url, client=client, resolve=resolve)
 
 
 @pytest.mark.parametrize(
@@ -96,12 +96,10 @@ def test_an_address_inside_the_network_is_refused(address: str) -> None:
         calls.append(request)
         return httpx.Response(200, content=b"x")
 
+    client = _client(handler)
+    resolve = _resolver({"inside.example": address})
     with pytest.raises(ImageFetchRefused, match="not a public"):
-        fetch_image(
-            "http://inside.example/a.jpg",
-            client=_client(handler),
-            resolve=_resolver({"inside.example": address}),
-        )
+        fetch_image("http://inside.example/a.jpg", client=client, resolve=resolve)
     assert calls == []
 
 
@@ -121,10 +119,9 @@ def test_a_host_with_any_address_inside_the_network_is_refused() -> None:
         calls.append(request)
         return httpx.Response(200, content=b"x")
 
+    client = _client(handler)
     with pytest.raises(ImageFetchRefused, match="not a public"):
-        fetch_image(
-            "http://mixed.example/a.jpg", client=_client(handler), resolve=resolve
-        )
+        fetch_image("http://mixed.example/a.jpg", client=client, resolve=resolve)
     assert calls == []
 
 
@@ -137,14 +134,12 @@ def test_a_redirect_is_checked_as_it_is_followed() -> None:
             )
         return httpx.Response(200, content=b"never")
 
+    client = _client(handler)
+    resolve = _resolver(
+        {"public.example": "93.184.216.34", "inside.example": "10.1.1.1"}
+    )
     with pytest.raises(ImageFetchRefused, match="not a public"):
-        fetch_image(
-            "https://public.example/a.jpg",
-            client=_client(handler),
-            resolve=_resolver(
-                {"public.example": "93.184.216.34", "inside.example": "10.1.1.1"}
-            ),
-        )
+        fetch_image("https://public.example/a.jpg", client=client, resolve=resolve)
 
 
 def test_the_address_checked_is_the_address_connected_to() -> None:
@@ -181,31 +176,25 @@ def test_too_many_redirects_are_refused() -> None:
         """Redirect every request onward, without end."""
         return httpx.Response(302, headers={"location": "https://public.example/again"})
 
+    client = _client(handler)
+    resolve = _resolver({"public.example": "93.184.216.34"})
     with pytest.raises(ImageFetchRefused, match="redirect"):
-        fetch_image(
-            "https://public.example/a.jpg",
-            client=_client(handler),
-            resolve=_resolver({"public.example": "93.184.216.34"}),
-        )
+        fetch_image("https://public.example/a.jpg", client=client, resolve=resolve)
 
 
 def test_a_failed_fetch_names_the_status() -> None:
+    client = _client(lambda _r: httpx.Response(404))
+    resolve = _resolver({"public.example": "93.184.216.34"})
     with pytest.raises(ImageFetchRefused, match="404"):
-        fetch_image(
-            "https://public.example/gone.jpg",
-            client=_client(lambda _r: httpx.Response(404)),
-            resolve=_resolver({"public.example": "93.184.216.34"}),
-        )
+        fetch_image("https://public.example/gone.jpg", client=client, resolve=resolve)
 
 
 def test_a_file_over_the_limit_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(image_fetch.settings, "max_upload_bytes", 10)
+    client = _client(lambda _r: httpx.Response(200, content=b"x" * 11))
+    resolve = _resolver({"public.example": "93.184.216.34"})
     with pytest.raises(ImageFetchRefused, match="larger"):
-        fetch_image(
-            "https://public.example/big.jpg",
-            client=_client(lambda _r: httpx.Response(200, content=b"x" * 11)),
-            resolve=_resolver({"public.example": "93.184.216.34"}),
-        )
+        fetch_image("https://public.example/big.jpg", client=client, resolve=resolve)
 
 
 @pytest.mark.parametrize(
@@ -245,12 +234,10 @@ def test_a_fetch_that_outlasts_its_time_is_refused(
     late.
     """
     monkeypatch.setattr(image_fetch, "_MAX_SECONDS", -1.0, raising=False)
+    client = _client(lambda _r: httpx.Response(200, content=b"x" * 64))
+    resolve = _resolver({"public.example": "93.184.216.34"})
     with pytest.raises(ImageFetchRefused, match="took longer"):
-        fetch_image(
-            "https://public.example/slow.jpg",
-            client=_client(lambda _r: httpx.Response(200, content=b"x" * 64)),
-            resolve=_resolver({"public.example": "93.184.216.34"}),
-        )
+        fetch_image("https://public.example/slow.jpg", client=client, resolve=resolve)
 
 
 # -- the endpoint ------------------------------------------------------------

@@ -173,7 +173,8 @@ def test_kinds_are_ordered_by_item_kind_sort_order_not_by_label(db: Session) -> 
     kinds = [cast(str, r["kind"]) for r in result.rows]
     coin_positions = [i for i, k in enumerate(kinds) if k == "Coin"]
     bullion_positions = [i for i, k in enumerate(kinds) if k == "Bullion"]
-    assert coin_positions and bullion_positions
+    assert coin_positions
+    assert bullion_positions
     # Every Coin row (its denomination rows and its own subtotal) precedes
     # every Bullion row -- not just "Coin's label appears first" -- which is
     # what the subtotal loop's contiguity assumption actually depends on.

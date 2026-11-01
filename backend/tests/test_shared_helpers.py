@@ -157,5 +157,6 @@ def test_the_lock_re_reads_a_row_the_session_already_holds(db: Session) -> None:
 
     held_item = db.get(InventoryItem, item.id)
     held_lot = db.get(SalesLot, lot.id)
-    assert held_item is item and held_lot is lot
+    assert held_item is item
+    assert held_lot is lot
     assert (item.source_title, lot.title) == ("Changed since", "Changed since")

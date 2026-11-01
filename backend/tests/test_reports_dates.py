@@ -86,8 +86,9 @@ def test_date_range_titles_are_from_and_to() -> None:
 
 def test_date_from_after_date_to_is_refused() -> None:
     """A `date_from` later than `date_to` makes an empty range -- refused."""
+    later, earlier = date(2026, 2, 1), date(2026, 1, 1)
     with pytest.raises(ValidationError):
-        DateRange(date_from=date(2026, 2, 1), date_to=date(2026, 1, 1))
+        DateRange(date_from=later, date_to=earlier)
 
 
 def test_an_equal_date_from_and_date_to_is_allowed() -> None:

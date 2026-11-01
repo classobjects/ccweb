@@ -54,6 +54,7 @@ from sqlalchemy.orm import Session
 
 from . import grades, item_attributes
 from .models import (
+    CurrencyDetail,
     ErrorType,
     InventoryItem,
     ItemError,
@@ -190,13 +191,7 @@ def _note(db: Session, item: InventoryItem, given: Features | None) -> list[str]
     if grade := _grade(item):
         first.append(grade)
     first.extend(_features(db, item, given))
-    # `series_designation` is computed by the database; an unsaved note has
-    # none yet, so it is written the way the column writes it: 1935A.
-    designation = detail.series_designation or (
-        f"{detail.series_year}{detail.series_letter or ''}"
-        if detail.series_year is not None
-        else None
-    )
+    designation = _designation(detail)
     year = designation or (
         str(item.year_start) if item.year_start is not None else None
     )
@@ -216,6 +211,34 @@ def _note(db: Session, item: InventoryItem, given: Features | None) -> list[str]
         else None
     )
     design = _design(db, item, designation, note_type)
+    _add_face_and_design(first, face, design)
+    if detail.serial_number:
+        first.append(f"S/N {detail.serial_number}")
+
+    second = _class_and_seal(db, detail, note_type)
+    sentences = [" ".join(part) for part in (first, second) if part]
+    if (packed := _packaging(db, item, sentences)) is not None:
+        sentences.append(packed)
+    return sentences
+
+
+def _designation(detail: CurrencyDetail) -> str | None:
+    """A note's series as written: 1935A.
+
+    `series_designation` is computed by the database; an unsaved note has
+    none yet, so it is written the way the column writes it.
+    """
+    return detail.series_designation or (
+        f"{detail.series_year}{detail.series_letter or ''}"
+        if detail.series_year is not None
+        else None
+    )
+
+
+def _add_face_and_design(
+    first: list[str], face: str | None, design: str | None
+) -> None:
+    """Add a note's face value and its design's name to the words so far."""
     # A series named for the face value's own unit takes the unit's place:
     # "1/2 Goldback" of the Florida Goldback is a "1/2 Florida Goldback".
     amount, unit = _amount_and_unit(face)
@@ -227,20 +250,20 @@ def _note(db: Session, item: InventoryItem, given: Features | None) -> list[str]
     # An attribute of the same name has said it already: a Limey.
     if design and _plain(design) not in {_plain(part) for part in first}:
         first.append(design)
-    if detail.serial_number:
-        first.append(f"S/N {detail.serial_number}")
 
-    second: list[str] = []
+
+def _class_and_seal(
+    db: Session, detail: CurrencyDetail, note_type: NoteType | None
+) -> list[str]:
+    """A note's type and its seal's color, as far as they are known."""
+    words: list[str] = []
     if note_type is not None:
-        second.append(note_type.label)
+        words.append(note_type.label)
     if detail.seal_color_id is not None:
         seal = db.get(SealColor, detail.seal_color_id)
         if seal is not None:
-            second.append(seal.label)
-    sentences = [" ".join(part) for part in (first, second) if part]
-    if (packed := _packaging(db, item, sentences)) is not None:
-        sentences.append(packed)
-    return sentences
+            words.append(seal.label)
+    return words
 
 
 def _design(

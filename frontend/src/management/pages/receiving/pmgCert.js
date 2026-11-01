@@ -26,5 +26,6 @@ export function pmgCertUrl(item) {
     .find(Boolean)
   if (!cert) return null
   const grade = /\d+/.exec(item.grade ?? '')?.[0]
-  return `${CERT_LOOKUP}${cert[1]}-${cert[2]}/${grade ? `${grade}/` : ''}`
+  const gradePath = grade ? `${grade}/` : ''
+  return `${CERT_LOOKUP}${cert[1]}-${cert[2]}/${gradePath}`
 }

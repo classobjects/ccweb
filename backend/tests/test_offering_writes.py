@@ -398,13 +398,14 @@ def test_a_second_offer_elsewhere_is_refused(
     )
     db.commit()
 
+    price = Decimal("10.00")
     with pytest.raises(offering_writes.OfferRefused, match="end it first"):
         offering_writes.offer(
             db,
             item=item,
             venue=second,
             listing_format=ListingFormat.fixed_price,
-            price=Decimal("10.00"),
+            price=price,
             title="",
             description="",
             external_id=None,
@@ -417,6 +418,7 @@ def test_a_second_offer_in_the_shop_is_refused(db: Session, listing: Listing) ->
     store = db.get(SalesVenue, listing.sales_venue_id)
     assert store is not None
 
+    price = Decimal("10.00")
     with pytest.raises(
         offering_writes.OfferRefused, match="already offered in the shop"
     ):
@@ -425,7 +427,7 @@ def test_a_second_offer_in_the_shop_is_refused(db: Session, listing: Listing) ->
             item=listing.inventory_item,
             venue=store,
             listing_format=ListingFormat.fixed_price,
-            price=Decimal("10.00"),
+            price=price,
             title="",
             description="",
             external_id=None,
@@ -445,13 +447,14 @@ def test_an_unreceived_item_cannot_be_offered(
     db.flush()
     venue = _venue(db, "ebay-unreceived")
 
+    price = Decimal("10.00")
     with pytest.raises(offering_writes.OfferRefused, match="not received"):
         offering_writes.offer(
             db,
             item=item,
             venue=venue,
             listing_format=ListingFormat.fixed_price,
-            price=Decimal("10.00"),
+            price=price,
             title="",
             description="",
             external_id=None,
@@ -467,13 +470,14 @@ def test_a_retired_platform_cannot_be_offered_on(
     venue.is_active = False
     db.flush()
 
+    price = Decimal("10.00")
     with pytest.raises(offering_writes.OfferRefused, match="retired"):
         offering_writes.offer(
             db,
             item=item,
             venue=venue,
             listing_format=ListingFormat.fixed_price,
-            price=Decimal("10.00"),
+            price=price,
             title="",
             description="",
             external_id=None,
@@ -1149,13 +1153,14 @@ def test_offering_a_lot_twice_is_refused_by_name(
         external_id=None,
     )
 
+    price = Decimal("900.00")
     with pytest.raises(lot_writes.LotRefused, match="cannot be offered") as excinfo:
         offering_writes.offer(
             db,
             lot=lot_of_three,
             venue=whatnot_venue,
             listing_format=ListingFormat.fixed_price,
-            price=Decimal("900.00"),
+            price=price,
             title="Three Morgan Dollars",
             description="",
             external_id=None,
@@ -1300,13 +1305,14 @@ def test_a_member_offered_elsewhere_refuses_the_whole_lot(
     lot_writes.add_member(db, lot, free)
     lot_writes.add_member(db, lot, busy)
 
+    price = Decimal("50.00")
     with pytest.raises(OfferRefused) as excinfo:
         offering_writes.offer(
             db,
             lot=lot,
             venue=ebay_venue,
             listing_format=ListingFormat.fixed_price,
-            price=Decimal("50.00"),
+            price=price,
             title="One busy member",
             description="",
             external_id=None,
@@ -1328,13 +1334,14 @@ def test_offering_an_empty_lot_is_bad_input(
 ) -> None:
     """The spec's *Errors* list says 422 for an empty lot, not 409."""
     empty = lot_writes.create_lot(db, title="Nothing in it", description="")
+    price = Decimal("10.00")
     with pytest.raises(lot_writes.EmptyLot):
         offering_writes.offer(
             db,
             lot=empty,
             venue=ebay_venue,
             listing_format=ListingFormat.fixed_price,
-            price=Decimal("10.00"),
+            price=price,
             title="Nothing in it",
             description="",
             external_id=None,
@@ -1351,12 +1358,13 @@ def test_offering_neither_an_item_nor_a_lot_is_a_programming_error(
     HTTP boundary. A caller that passed neither has a bug; the request
     schema (`OfferIn`) makes it unreachable from outside.
     """
+    price = Decimal("10.00")
     with pytest.raises(ValueError, match="exactly one"):
         offering_writes.offer(
             db,
             venue=ebay_venue,
             listing_format=ListingFormat.fixed_price,
-            price=Decimal("10.00"),
+            price=price,
             title="",
             description="",
             external_id=None,
@@ -1370,6 +1378,7 @@ def test_offering_both_an_item_and_a_lot_is_a_programming_error(
     ebay_venue: SalesVenue,
 ) -> None:
     """Same reason, the other way round."""
+    price = Decimal("10.00")
     with pytest.raises(ValueError, match="exactly one"):
         offering_writes.offer(
             db,
@@ -1377,7 +1386,7 @@ def test_offering_both_an_item_and_a_lot_is_a_programming_error(
             lot=lot_of_three,
             venue=ebay_venue,
             listing_format=ListingFormat.fixed_price,
-            price=Decimal("10.00"),
+            price=price,
             title="",
             description="",
             external_id=None,

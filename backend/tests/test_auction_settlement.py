@@ -775,16 +775,15 @@ def test_a_consigned_settlement_with_something_to_return_needs_a_location(
     leaves it green until the lot number is in the pattern.
     """
     lots = lots_of(db, consigned_closed_auction)
+    lines = [
+        SettlementLine(lots[0].id, AuctionLotResult.sold, Decimal("100.00"), None),
+        SettlementLine(lots[1].id, AuctionLotResult.unsold),
+    ]
     with pytest.raises(AuctionRefused, match=r"returned_to_location_id .* lot\(s\) 2"):
         settle(
             db,
             consigned_closed_auction,
-            lines=[
-                SettlementLine(
-                    lots[0].id, AuctionLotResult.sold, Decimal("100.00"), None
-                ),
-                SettlementLine(lots[1].id, AuctionLotResult.unsold),
-            ],
+            lines=lines,
             fees={None: []},
             settled_by=admin_user,
         )
@@ -986,11 +985,12 @@ def test_a_marketplace_lot_must_name_its_buyer(
     it, so a blank there is a half-filled grid rather than a real fact.
     """
     lots = lots_of(db, closed_ebay_auction)
+    lines = [SettlementLine(lots[0].id, AuctionLotResult.sold, Decimal("50.00"))]
     with pytest.raises(AuctionRefused, match="buyer"):
         settle(
             db,
             closed_ebay_auction,
-            lines=[SettlementLine(lots[0].id, AuctionLotResult.sold, Decimal("50.00"))],
+            lines=lines,
             fees={},
             settled_by=admin_user,
         )
@@ -1006,14 +1006,14 @@ def test_a_negative_fee_refuses_the_whole_settlement(
     this is a subclass of it.
     """
     before = db.scalar(select(func.count()).select_from(SalesOrder))
+    lines = sold_everything(db, closed_auction, price=Decimal("100.00"), buyer="amy")
+    commission = FeeLine("commission", Decimal("-1.00"))
     with pytest.raises(SettlementInputInvalid, match="negative"):
         settle(
             db,
             closed_auction,
-            lines=sold_everything(
-                db, closed_auction, price=Decimal("100.00"), buyer="amy"
-            ),
-            fees={"amy": [FeeLine("commission", Decimal("-1.00"))]},
+            lines=lines,
+            fees={"amy": [commission]},
             settled_by=admin_user,
         )
     db.expire_all()
@@ -1037,13 +1037,12 @@ def test_a_sub_cent_hammer_price_is_refused(
     ever collapsed -- `pytest.raises(AuctionRefused)` would keep passing,
     since the narrower one is a subclass.
     """
+    lines = sold_everything(db, closed_auction, price=Decimal("100.005"), buyer="amy")
     with pytest.raises(SettlementInputInvalid, match="cent"):
         settle(
             db,
             closed_auction,
-            lines=sold_everything(
-                db, closed_auction, price=Decimal("100.005"), buyer="amy"
-            ),
+            lines=lines,
             fees={"amy": []},
             settled_by=admin_user,
         )
@@ -1058,19 +1057,16 @@ def test_a_refusal_lists_every_problem_lot_not_just_the_first(
     all of them by lot number.
     """
     lots = lots_of(db, closed_auction)
+    lines = [
+        SettlementLine(lots[0].id, AuctionLotResult.sold, None, "amy"),
+        SettlementLine(lots[1].id, AuctionLotResult.sold, Decimal("-5.00"), "amy"),
+        SettlementLine(lots[2].id, AuctionLotResult.sold, Decimal("1.005"), "amy"),
+    ]
     with pytest.raises(AuctionRefused) as caught:
         settle(
             db,
             closed_auction,
-            lines=[
-                SettlementLine(lots[0].id, AuctionLotResult.sold, None, "amy"),
-                SettlementLine(
-                    lots[1].id, AuctionLotResult.sold, Decimal("-5.00"), "amy"
-                ),
-                SettlementLine(
-                    lots[2].id, AuctionLotResult.sold, Decimal("1.005"), "amy"
-                ),
-            ],
+            lines=lines,
             fees={"amy": []},
             settled_by=admin_user,
         )
@@ -1093,11 +1089,12 @@ def test_settling_an_auction_that_is_not_closed_is_refused(
         reserve=None,
         price=Decimal("10.00"),
     )
+    lines = sold_everything(db, auction, price=Decimal("10.00"), buyer=None)
     with pytest.raises(AuctionRefused, match="cannot be settled"):
         settle(
             db,
             auction,
-            lines=sold_everything(db, auction, price=Decimal("10.00"), buyer=None),
+            lines=lines,
             fees={},
             settled_by=admin_user,
         )
@@ -1147,16 +1144,18 @@ def test_fees_for_a_buyer_who_bought_nothing_are_refused(
     folding does not widen the comparison into matching everything: `ghost`
     casefolds to itself and still bought nothing.
     """
+    lines = sold_everything(
+        db, closed_auction, price=Decimal("100.00"), buyer="CoinFan88"
+    )
+    commission = FeeLine("commission", Decimal("10.00"))
     with pytest.raises(AuctionRefused, match="bought nothing"):
         settle(
             db,
             closed_auction,
-            lines=sold_everything(
-                db, closed_auction, price=Decimal("100.00"), buyer="CoinFan88"
-            ),
+            lines=lines,
             fees={
                 "coinfan88": [],
-                "ghost": [FeeLine("commission", Decimal("10.00"))],
+                "ghost": [commission],
             },
             settled_by=admin_user,
         )
@@ -1234,25 +1233,19 @@ def test_a_failure_part_way_through_leaves_nothing_written(
 
     monkeypatch.setattr(sales_writes, "record_sale_lines", flaky)
 
+    lines = [
+        SettlementLine(lots[0].id, AuctionLotResult.sold, Decimal("100.00"), "amy"),
+        SettlementLine(lots[1].id, AuctionLotResult.sold, Decimal("200.00"), "amy"),
+        SettlementLine(lots[2].id, AuctionLotResult.sold, Decimal("300.00"), "bo"),
+        SettlementLine(lots[3].id, AuctionLotResult.sold, Decimal("400.00"), "bo"),
+    ]
+    commission = FeeLine("commission", Decimal("30.00"))
     with pytest.raises(RuntimeError, match="second buyer"):
         settle(
             db,
             closed_auction,
-            lines=[
-                SettlementLine(
-                    lots[0].id, AuctionLotResult.sold, Decimal("100.00"), "amy"
-                ),
-                SettlementLine(
-                    lots[1].id, AuctionLotResult.sold, Decimal("200.00"), "amy"
-                ),
-                SettlementLine(
-                    lots[2].id, AuctionLotResult.sold, Decimal("300.00"), "bo"
-                ),
-                SettlementLine(
-                    lots[3].id, AuctionLotResult.sold, Decimal("400.00"), "bo"
-                ),
-            ],
-            fees={"amy": [FeeLine("commission", Decimal("30.00"))], "bo": []},
+            lines=lines,
+            fees={"amy": [commission], "bo": []},
             settled_by=admin_user,
         )
 
@@ -1298,13 +1291,14 @@ def test_a_lot_listing_can_never_be_paused_by_another_offer(
     only outcome, and no lot listing can ever be paused by anything.
     """
     member = lot_of_three.members[0].item
+    price = Decimal("50.00")
     with pytest.raises(offering_writes.OfferRefused, match="which is offered"):
         offering_writes.offer(
             db,
             item=member,
             venue=ebay_venue,
             listing_format=ListingFormat.fixed_price,
-            price=Decimal("50.00"),
+            price=price,
             title="One Morgan Dollar",
             description="",
             external_id=None,
@@ -1385,21 +1379,23 @@ def test_bad_money_and_a_conflict_are_different_refusals(
     lots = lots_of(db, closed_auction)
     sold = sold_everything(db, closed_auction, price=Decimal("100.00"), buyer="amy")
 
+    commission = FeeLine("commission", Decimal("-1.00"))
     with pytest.raises(AuctionRefused) as bad_money:
         settle(
             db,
             closed_auction,
             lines=sold,
-            fees={"amy": [FeeLine("commission", Decimal("-1.00"))]},
+            fees={"amy": [commission]},
             settled_by=admin_user,
         )
     assert isinstance(bad_money.value, SettlementInputInvalid)
 
+    unsold = [SettlementLine(lots[0].id, AuctionLotResult.unsold)]
     with pytest.raises(AuctionRefused) as conflict:
         settle(
             db,
             closed_auction,
-            lines=[SettlementLine(lots[0].id, AuctionLotResult.unsold)],
+            lines=unsold,
             fees={},
             settled_by=admin_user,
         )
@@ -1416,15 +1412,12 @@ def test_a_grid_with_both_kinds_of_problem_refuses_as_the_wider_one(
     looking only at the numbers.
     """
     lots = lots_of(db, closed_auction)
+    lines = [SettlementLine(lots[0].id, AuctionLotResult.sold, Decimal("-1.00"), "amy")]
     with pytest.raises(AuctionRefused) as caught:
         settle(
             db,
             closed_auction,
-            lines=[
-                SettlementLine(
-                    lots[0].id, AuctionLotResult.sold, Decimal("-1.00"), "amy"
-                )
-            ],
+            lines=lines,
             fees={"amy": []},
             settled_by=admin_user,
         )
@@ -1529,16 +1522,19 @@ def test_one_buyer_given_two_fee_keys_that_fold_together_is_refused(
     the second spelling would overwrite the first and a real fee would vanish
     from the order.
     """
+    lines = sold_everything(
+        db, closed_auction, price=Decimal("100.00"), buyer="CoinFan88"
+    )
+    commission = FeeLine("commission", Decimal("10.00"))
+    processing = FeeLine("processing", Decimal("5.00"))
     with pytest.raises(AuctionRefused, match="given twice"):
         settle(
             db,
             closed_auction,
-            lines=sold_everything(
-                db, closed_auction, price=Decimal("100.00"), buyer="CoinFan88"
-            ),
+            lines=lines,
             fees={
-                "CoinFan88": [FeeLine("commission", Decimal("10.00"))],
-                "coinfan88": [FeeLine("processing", Decimal("5.00"))],
+                "CoinFan88": [commission],
+                "coinfan88": [processing],
             },
             settled_by=admin_user,
         )

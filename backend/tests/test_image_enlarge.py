@@ -147,7 +147,8 @@ def test_a_dry_run_counts_them_and_fetches_nothing(db: Session) -> None:
     assert fetch.asked == []  # type: ignore[attr-defined]
     assert not report.outcomes
     db.refresh(held)
-    assert (held.sha256, held.source_url) == before
+    assert held.sha256 == before[0]
+    assert held.source_url == before[1]
 
 
 # --------------------------------------------------------------------------
@@ -179,7 +180,8 @@ def test_the_full_size_picture_takes_the_place_of_the_one_held(
     db.expire_all()
     now = db.get_one(Image, was[0])
     # The same row, holding the larger picture and saying where it came from.
-    assert (now.width, now.height) == LARGE
+    assert now.width == LARGE[0]
+    assert now.height == LARGE[1]
     assert now.sha256 != was[1]
     assert now.byte_size > was[2]
     assert now.source_url == f"{G}/aaa/s-l1600.jpg"
@@ -521,8 +523,9 @@ def test_an_address_with_no_larger_form_is_fetched_once_and_its_refusal_raised()
 
 
 def test_both_refused_raises_the_refusal_of_the_address_as_given() -> None:
+    fetch = _fetcher({})
     with pytest.raises(ImageFetchRefused, match=r"s-l140\.webp answered 404"):
-        fetch_full_size(f"{G}/aaa/s-l140.webp", fetch=_fetcher({}))
+        fetch_full_size(f"{G}/aaa/s-l140.webp", fetch=fetch)
 
 
 def test_the_console_s_add_by_address_stores_the_full_size_and_says_so(
@@ -552,4 +555,5 @@ def test_the_console_s_add_by_address_stores_the_full_size_and_says_so(
         .join(ItemImage, ItemImage.image_id == Image.id)
         .where(ItemImage.inventory_item_id == item.id)
     ).one()
-    assert (stored.width, stored.height) == LARGE
+    assert stored.width == LARGE[0]
+    assert stored.height == LARGE[1]

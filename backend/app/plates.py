@@ -40,8 +40,8 @@ FACILITIES: dict[str, str] = {"dc": "Washington, DC", "fw": "Fort Worth, TX"}
 #: match and only one way to match it. Digits are `0` to `9` only -- another
 #: script's look like a plate number and are not -- while the space between
 #: the parts stays any script's.
-_FACE = re.compile(r"^(FW)?\s*(?:([A-Z])\s*)?([0-9]{1,5})$")
-_BACK = re.compile(r"^[0-9]{1,5}$")
+_FACE = re.compile(r"^(FW)?\s*(?:([A-Z])\s*)?((?a:\d{1,5}))$")
+_BACK = re.compile(r"^\d{1,5}$", re.ASCII)
 
 
 def face_plate(text: str | None) -> str | None:

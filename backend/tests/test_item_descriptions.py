@@ -424,7 +424,8 @@ def test_the_route_writes_nothing(
     db.expire_all()
     item = db.get(InventoryItem, item_id)
     assert item is not None
-    assert (item.version, item.description) == before
+    assert item.version == before[0]
+    assert item.description == before[1]
 
 
 @pytest.mark.parametrize(

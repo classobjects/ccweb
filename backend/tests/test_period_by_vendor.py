@@ -177,6 +177,7 @@ def test_the_two_reports_built_on_it_are_one_table_with_different_measures(
         tuple(r[k] for k in shared) for r in tax.rows
     ]
     assert len(tax.rows) == 5
-    assert tax.totals is not None and spend.totals is not None
+    assert tax.totals is not None
+    assert spend.totals is not None
     assert tax.totals["sales_tax"] == spend.totals["sales_tax"] == Decimal("18.25")
     assert list(tax.rows[0]) == list(shared)

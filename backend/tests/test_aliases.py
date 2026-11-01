@@ -158,10 +158,9 @@ def test_an_added_alias_is_manual_and_works_at_once(db: Session) -> None:
 def test_an_alias_that_could_never_be_reached_is_refused(
     db: Session, alias: str, reason: str
 ) -> None:
+    dcam = code_id(db, GradeDesignation, "DCAM")
     with pytest.raises(aliases.AliasError, match=re.escape(reason)):
-        aliases.add_alias(
-            db, GradeDesignation, code_id(db, GradeDesignation, "DCAM"), alias
-        )
+        aliases.add_alias(db, GradeDesignation, dcam, alias)
 
 
 def test_the_same_alias_twice_on_one_value_is_refused(db: Session) -> None:

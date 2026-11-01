@@ -1358,13 +1358,9 @@ def test_marking_a_coin_missing_first_refuses_the_checkout_of_its_lot(
     with committed() as session:
         buyer = session.get_one(Customer, customer_id)
         operator = session.get_one(User, admin_id)
+        wanted = [order_writes.Line(listing_id=listing_id, quantity=1)]
         with pytest.raises(HTTPException) as excinfo:
-            order_writes.place_order(
-                session,
-                buyer,
-                [order_writes.Line(listing_id=listing_id, quantity=1)],
-                operator,
-            )
+            order_writes.place_order(session, buyer, wanted, operator)
         session.rollback()
     assert excinfo.value.status_code == 409
     assert "not currently for sale" in excinfo.value.detail

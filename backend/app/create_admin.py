@@ -22,6 +22,7 @@ import argparse
 import getpass
 import sys
 from collections.abc import Callable, Sequence
+from typing import NoReturn
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -34,6 +35,25 @@ from .seed import weak_admin_password_problem
 
 #: Exit codes.
 OK, REFUSED, USAGE = 0, 1, 2
+
+
+class _ParserStopped(Exception):
+    """The parser has finished the run: it helped, or refused the arguments."""
+
+    def __init__(self, status: int) -> None:
+        """Keep the status the parser would have exited with."""
+        super().__init__(status)
+        self.status = status
+
+
+class _Parser(argparse.ArgumentParser):
+    """A parser that hands its exit to `main`, which returns the exit code."""
+
+    def exit(self, status: int = 0, message: str | None = None) -> NoReturn:
+        """Print as `ArgumentParser.exit` does, and stop without leaving Python."""
+        if message:
+            self._print_message(message, sys.stderr)
+        raise _ParserStopped(status)
 
 
 def _password(ask: Callable[[str], str]) -> str | None:
@@ -97,7 +117,7 @@ def main(
     tests, which must never let this open the live database -- passes it.
     `ask` reads a password without echoing it.
     """
-    parser = argparse.ArgumentParser(
+    parser = _Parser(
         prog="python -m app.create_admin",
         description="Open a manager's account in a database, with no demo data.",
     )
@@ -112,8 +132,8 @@ def main(
     )
     try:
         args = parser.parse_args(argv)
-    except SystemExit as stop:
-        return USAGE if stop.code else OK
+    except _ParserStopped as stop:
+        return USAGE if stop.status else OK
     try:
         email = normalize_email(args.email)
     except ValueError:

@@ -3,7 +3,21 @@
 // SPDX-License-Identifier: Apache-2.0
 import { describe, expect, it } from 'vitest'
 
-import { orNull } from './text'
+import { orNull, withoutTrailing } from './text'
+
+describe('withoutTrailing', () => {
+  it.each([
+    ['', ''],
+    ['/', ''],
+    ['///', ''],
+    ['/usr/coinhound', '/usr/coinhound'],
+    ['/usr/coinhound/', '/usr/coinhound'],
+    ['/usr//coinhound//', '/usr//coinhound'],
+    ['/usr/\n', '/usr/\n'],
+  ])('takes the ending slashes off %j', (text, expected) => {
+    expect(withoutTrailing(text, '/')).toBe(expected)
+  })
+})
 
 describe('orNull', () => {
   it('sends typed text trimmed', () => {

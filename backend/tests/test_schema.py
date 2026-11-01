@@ -186,8 +186,11 @@ def test_a_check_constraint_refuses_the_row_it_names(
     Inside a savepoint, so the failed statement leaves the session usable for
     the invariant checks run after every test.
     """
-    with pytest.raises(IntegrityError, match=constraint), db.begin_nested():
-        db.execute(text(statement))
+    sql = text(statement)
+    savepoint = db.begin_nested()
+    with pytest.raises(IntegrityError, match=constraint):
+        db.execute(sql)
+    savepoint.rollback()
 
 
 def test_a_classifier_in_use_cannot_be_deleted(db: Session) -> None:

@@ -408,8 +408,9 @@ def test_half_a_certificate_is_refused_naming_both(
 ) -> None:
     """A certificate without its key is neither Caddy's own nor the owner's."""
     bare.setenv(which, "/certs/x.pem")
+    settings = defaults()
     with pytest.raises(HalfATlsPair) as refused:
-        render_values(defaults(), "someone")
+        render_values(settings, "someone")
     assert "CCWEB_TLS_CERT" in str(refused.value)
     assert "CCWEB_TLS_KEY" in str(refused.value)
 

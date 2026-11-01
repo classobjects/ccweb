@@ -112,7 +112,8 @@ def test_a_new_item_can_be_entered_with_no_date(
     created = client.post("/api/inventory", json=body, headers=admin_headers)
     assert created.status_code == 201, created.text
     item = db.get(InventoryItem, created.json()["id"])
-    assert item is not None and item.no_date is True
+    assert item is not None
+    assert item.no_date is True
 
     refused = client.post(
         "/api/inventory", json={**body, "year_start": 2020}, headers=admin_headers

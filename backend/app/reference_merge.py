@@ -347,27 +347,34 @@ def _history_before(
     """
     before: dict[int, dict[str, Any]] = {}
     for column in _references(model.__table__):
-        owner = column.table.name
-        if owner not in RECORD_TABLES:
-            continue
-        item_column = column.table.c[RECORD_TABLES[owner]]
-        holding = select(item_column).where(column == source.id)
-        if owner in _FIELD_TABLES:
-            name = column.name.removesuffix("_id")
-            for item_id in db.scalars(holding):
-                before.setdefault(item_id, {})[name] = source.code
-        elif owner == "item_attribute_link":
-            in_force = holding.where(column.table.c.removed_at.is_(None))
-            for item_id in db.scalars(in_force):
-                before.setdefault(item_id, {})["attributes"] = _attribute_codes(
-                    db, item_id
-                )
-        elif owner == "item_error":
-            for item_id in db.scalars(holding):
-                before.setdefault(item_id, {})["errors"] = field_changes.error_set(
-                    db, item_id
-                )
+        if column.table.name in RECORD_TABLES:
+            _note_fields_of_column(db, before, column, source)
     return before
+
+
+def _note_fields_of_column(
+    db: Session,
+    before: dict[int, dict[str, Any]],
+    column: Column,
+    source: ReferenceMixin,
+) -> None:
+    """Add to `before` the fields of the items this column holds `source` for."""
+    owner = column.table.name
+    item_column = column.table.c[RECORD_TABLES[owner]]
+    holding = select(item_column).where(column == source.id)
+    if owner in _FIELD_TABLES:
+        name = column.name.removesuffix("_id")
+        for item_id in db.scalars(holding):
+            before.setdefault(item_id, {})[name] = source.code
+    elif owner == "item_attribute_link":
+        in_force = holding.where(column.table.c.removed_at.is_(None))
+        for item_id in db.scalars(in_force):
+            before.setdefault(item_id, {})["attributes"] = _attribute_codes(db, item_id)
+    elif owner == "item_error":
+        for item_id in db.scalars(holding):
+            before.setdefault(item_id, {})["errors"] = field_changes.error_set(
+                db, item_id
+            )
 
 
 def _log_history(

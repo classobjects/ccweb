@@ -22,9 +22,11 @@ from tests.builders import code_id
 
 def _refused(db: Session, row: object) -> None:
     """Insert `row` in a savepoint and expect the database to refuse it."""
-    with pytest.raises(IntegrityError), db.begin_nested():
-        db.add(row)
+    savepoint = db.begin_nested()
+    db.add(row)
+    with pytest.raises(IntegrityError):
         db.flush()
+    savepoint.rollback()
 
 
 def test_a_vendor_name_in_another_case_is_refused(db: Session) -> None:

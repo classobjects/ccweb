@@ -242,7 +242,7 @@ const EXPIRY_SKEW_MS = 30_000
 function expiresAt(token) {
   try {
     const payload = token.split('.')[1]
-    const base64 = payload.replace(/-/g, '+').replace(/_/g, '/')
+    const base64 = payload.replaceAll('-', '+').replaceAll('_', '/')
     const { exp } = JSON.parse(atob(base64))
     return typeof exp === 'number' ? exp * 1000 : null
   } catch {

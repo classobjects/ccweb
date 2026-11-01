@@ -439,6 +439,34 @@ def _sync_shares(
         )
 
 
+def _refuse_line_not_placeable(
+    db: Session, listing: Listing, line: Line, *, in_shop: bool
+) -> None:
+    """Refuse a line its listing, already locked, cannot fill: `place_order`'s checks.
+
+    Being on sale and at the price shown are only asked of a shop line.
+    """
+    if in_shop:
+        _refuse_unless_on_sale_in_shop(db, listing)
+        # Read under the row lock: a price changed after the buyer's page
+        # loaded would otherwise be charged without their having seen it.
+        if line.expected_price is not None and listing.price != line.expected_price:
+            _refuse(
+                db,
+                status.HTTP_409_CONFLICT,
+                f"The price of listing {listing.id} is now "
+                f"{money(listing.price)}, not the {money(line.expected_price)} "
+                "you were shown. Review your cart and order again.",
+            )
+    if listing.quantity_available < line.quantity:
+        _refuse(
+            db,
+            status.HTTP_409_CONFLICT,
+            f"Only {listing.quantity_available} of listing {listing.id} remain "
+            f"(requested {line.quantity})",
+        )
+
+
 def place_order(
     db: Session,
     customer: Customer,
@@ -491,26 +519,9 @@ def place_order(
     """
     listings = _lock_listings(db, {line.listing_id for line in lines})
     for line in sorted(lines, key=lambda line: line.listing_id):
-        listing = listings[line.listing_id]
-        if venue is None:
-            _refuse_unless_on_sale_in_shop(db, listing)
-            # Read under the row lock: a price changed after the buyer's page
-            # loaded would otherwise be charged without their having seen it.
-            if line.expected_price is not None and listing.price != line.expected_price:
-                _refuse(
-                    db,
-                    status.HTTP_409_CONFLICT,
-                    f"The price of listing {listing.id} is now "
-                    f"{money(listing.price)}, not the {money(line.expected_price)} "
-                    "you were shown. Review your cart and order again.",
-                )
-        if listing.quantity_available < line.quantity:
-            _refuse(
-                db,
-                status.HTTP_409_CONFLICT,
-                f"Only {listing.quantity_available} of listing {listing.id} remain "
-                f"(requested {line.quantity})",
-            )
+        _refuse_line_not_placeable(
+            db, listings[line.listing_id], line, in_shop=venue is None
+        )
 
     # Priced in its own pass, before the order exists: `SalesOrder` is
     # version-tracked (`version_id_col`), and a share needs a later flush to

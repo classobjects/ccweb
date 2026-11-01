@@ -2275,25 +2275,36 @@ def _set_notes_and_detail(
     remain. The second call leaves a banknote made by the first as it is.
     """
     if kind_changed:
-        currency_id = item_kinds.currency_kind_id(db)
-        for item in items:
-            if item.item_kind_id == currency_id:
-                _match_detail(db, item)
+        _match_detail_of_banknotes(db, items)
     _apply_note_changes(items, changes)
     if "seal_color_id" in changes:
-        # A seal must agree with the shade of the number the note holds;
-        # refused, the seal already set is rolled back, as `_match_detail`'s
-        # refusal is.
-        try:
-            for item in items:
-                if item.currency_detail is not None:
-                    refuse_seal_against_number(db, item.currency_detail)
-        except HTTPException:
-            db.rollback()
-            raise
+        _refuse_seals_against_numbers(db, items)
     if kind_changed:
         for item in items:
             _match_detail(db, item)
+
+
+def _match_detail_of_banknotes(db: Session, items: list[InventoryItem]) -> None:
+    """Swap the detail row of the items that are now banknotes, and only those."""
+    currency_id = item_kinds.currency_kind_id(db)
+    for item in items:
+        if item.item_kind_id == currency_id:
+            _match_detail(db, item)
+
+
+def _refuse_seals_against_numbers(db: Session, items: list[InventoryItem]) -> None:
+    """Refuse a seal that does not agree with the shade of the number the note holds.
+
+    Refused, the seal already set is rolled back, as `_match_detail`'s
+    refusal is.
+    """
+    try:
+        for item in items:
+            if item.currency_detail is not None:
+                refuse_seal_against_number(db, item.currency_detail)
+    except HTTPException:
+        db.rollback()
+        raise
 
 
 def _match_detail(db: Session, item: InventoryItem) -> None:
@@ -2441,20 +2452,10 @@ def _refuse_coin_detail_on_a_note(
         )
 
 
-def _set_coin_detail(
-    db: Session, item: InventoryItem, changes: dict[str, object]
-) -> None:
-    """Write a coin's mint, variety and a bullion serial, creating its row.
-
-    A banknote holds its own detail row and never a coin's: a blank sent
-    for one changes nothing (`_refuse_coin_detail_on_a_note` refuses a
-    value). Values sent as they are stored change nothing either, so the
-    edit may call this both before a kind change swaps the rows and after.
-    """
-    if item.currency_detail is not None:
-        return
-    # The relationship first: a row a kind change just made is not flushed.
-    detail = item.coin_detail or db.get(CoinDetail, item.id)
+def _coin_detail_after(
+    db: Session, detail: CoinDetail | None, changes: dict[str, object]
+) -> tuple[int | None, str | None, str | None]:
+    """The mint, variety and serial a coin's row holds once these changes are made."""
     mint_id = detail.mint_id if detail is not None else None
     variety = detail.variety if detail is not None else None
     serial = detail.serial_number if detail is not None else None
@@ -2469,7 +2470,25 @@ def _set_coin_detail(
     if "serial_number" in changes:
         sent = changes["serial_number"]
         serial = _serial_or_none(sent if isinstance(sent, str) else None)
-    now = (mint_id, variety, serial)
+    return mint_id, variety, serial
+
+
+def _set_coin_detail(
+    db: Session, item: InventoryItem, changes: dict[str, object]
+) -> None:
+    """Write a coin's mint, variety and a bullion serial, creating its row.
+
+    A banknote holds its own detail row and never a coin's: a blank sent
+    for one changes nothing (`_refuse_coin_detail_on_a_note` refuses a
+    value). Values sent as they are stored change nothing either, so the
+    edit may call this both before a kind change swaps the rows and after.
+    """
+    if item.currency_detail is not None:
+        return
+    # The relationship first: a row a kind change just made is not flushed.
+    detail = item.coin_detail or db.get(CoinDetail, item.id)
+    now = _coin_detail_after(db, detail, changes)
+    mint_id, variety, serial = now
     if (
         detail is not None
         and (detail.mint_id, detail.variety, detail.serial_number) == now
@@ -2547,6 +2566,27 @@ def _refuse_mismatched_designation(
         )
 
 
+def _series_of_the_other_kind(
+    sent: object,
+    sides: dict[str, str],
+    data: dict[str, object],
+    item: InventoryItem,
+    currency_id: int | None,
+) -> str | None:
+    """How the series an item holds after the edit does not fit it, or None if it does.
+
+    `sent` is the code it holds then. A blank clears it, and an unknown code
+    is `code_to_id`'s 422 to raise, not a mismatch.
+    """
+    side = sides.get(sent) if isinstance(sent, str) and sent else None
+    if side is None:
+        return None
+    if (side == "currency") == _effective_is_currency(data, item, currency_id):
+        return None
+    owner = "banknotes" if side == "currency" else "coins"
+    return f"{item.item_code} ({sent} belongs to {owner})"
+
+
 def _refuse_mismatched_series(
     data: dict[str, object], items: Sequence[InventoryItem], db: Session
 ) -> None:
@@ -2568,13 +2608,15 @@ def _refuse_mismatched_series(
         codes[series_id] = series_code
     wrong: list[str] = []
     for item in items:
-        sent = data.get("series", codes.get(item.series_id or 0))
-        side = sides.get(sent) if isinstance(sent, str) and sent else None
-        if side is None:
-            continue
-        if (side == "currency") != _effective_is_currency(data, item, currency_id):
-            owner = "banknotes" if side == "currency" else "coins"
-            wrong.append(f"{item.item_code} ({sent} belongs to {owner})")
+        mismatch = _series_of_the_other_kind(
+            data.get("series", codes.get(item.series_id or 0)),
+            sides,
+            data,
+            item,
+            currency_id,
+        )
+        if mismatch is not None:
+            wrong.append(mismatch)
     if wrong:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -3451,40 +3493,60 @@ def update_item(
             _end_offers_holding(
                 db, [item.id], locked, lambda _live: standing, "edited to"
             )
-
-        forget(db, [item.id], [_column(field) for field in data])
-        hold(db, [item.id], _emptied(data))
-        refresh_items(db, [item.id])
-        # A note saved at no cost is a gift: the fields that moves are logged
-        # with the ones sent.
-        db.flush()
-        by_the_gift_rule = gift_rule.apply(db, item)
-        if by_the_gift_rule:
-            # The link is another table: touching the item moves its version.
-            item.updated_at = datetime.now(UTC)
-        db.flush()
-        # Who changed what, in the same transaction as the change: one row
-        # per field whose value actually moved -- those sent, and those the
-        # edit moves without being sent them (`_MOVED_UNSENT`). The "after"
-        # read sees this edit's own writes (attribute links included) under
-        # production's autoflush=False because `refresh_items` above has
-        # flushed -- measured: an extra flush here changed nothing.
-        # A move is kept in the location history already, not again here.
-        field_changes.record(
-            db,
-            item.id,
-            before,
-            field_values(db, item),
-            _logged_fields(
-                dict.fromkeys(
-                    [f for f in sent if f != "storage_location_id"] + by_the_gift_rule
-                )
-            ),
-            user_id=admin.id,
-        )
+        _finish_edit(db, item, data, sent, before, admin.id)
 
     db.refresh(item)
     return item
+
+
+def _finish_edit(
+    db: Session,
+    item: InventoryItem,
+    data: dict[str, Any],
+    sent: dict[str, Any],
+    before: dict[str, Any],
+    user_id: int,
+) -> None:
+    """Derive what an edit's writes decide, and log them: the edit's last flushes."""
+    forget(db, [item.id], [_column(field) for field in data])
+    hold(db, [item.id], _emptied(data))
+    refresh_items(db, [item.id])
+    # A note saved at no cost is a gift: the fields that moves are logged
+    # with the ones sent.
+    db.flush()
+    by_the_gift_rule = gift_rule.apply(db, item)
+    if by_the_gift_rule:
+        # The link is another table: touching the item moves its version.
+        item.updated_at = datetime.now(UTC)
+    db.flush()
+    # Who changed what, in the same transaction as the change: one row
+    # per field whose value actually moved -- those sent, and those the
+    # edit moves without being sent them (`_MOVED_UNSENT`). The "after"
+    # read sees this edit's own writes (attribute links included) under
+    # production's autoflush=False because `refresh_items` above has
+    # flushed -- measured: an extra flush here changed nothing.
+    # A move is kept in the location history already, not again here.
+    field_changes.record(
+        db,
+        item.id,
+        before,
+        field_values(db, item),
+        _logged_fields(
+            dict.fromkeys(
+                [f for f in sent if f != "storage_location_id"] + by_the_gift_rule
+            )
+        ),
+        user_id=user_id,
+    )
+
+
+def _denomination_misfit(db: Session, code: str, is_currency: bool) -> str | None:
+    """Why a denomination does not fit a piece of this kind, or None if it does."""
+    kind = db.scalar(select(Denomination.kind).where(Denomination.code == code))
+    if kind is None or (kind == DenominationKind.note) == is_currency:
+        return None
+    side = "banknotes" if kind == DenominationKind.note else "coins"
+    return f"denomination {code} belongs to {side}"
 
 
 def _refuse_pieces_that_do_not_fit(
@@ -3505,12 +3567,9 @@ def _refuse_pieces_that_do_not_fit(
         if is_currency and spec.metal is not None:
             wrong.add("metal belongs to coins, not banknotes")
         if spec.denomination:
-            kind = db.scalar(
-                select(Denomination.kind).where(Denomination.code == spec.denomination)
-            )
-            if kind is not None and (kind == DenominationKind.note) != is_currency:
-                side = "banknotes" if kind == DenominationKind.note else "coins"
-                wrong.add(f"denomination {spec.denomination} belongs to {side}")
+            misfit = _denomination_misfit(db, spec.denomination, is_currency)
+            if misfit is not None:
+                wrong.add(misfit)
     if wrong:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,

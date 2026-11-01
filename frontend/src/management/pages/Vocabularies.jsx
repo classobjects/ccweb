@@ -45,6 +45,12 @@ import VocabularyDetailsForm from './VocabularyDetailsForm'
 //: Opened first: the vocabulary whose aliases matter most for search.
 const FIRST_TABLE = 'series'
 
+/** Compares table names as `.sort()` would: by UTF-16 code unit, not locale. */
+function byCodeUnit(a, b) {
+  if (a < b) return -1
+  return a > b ? 1 : 0
+}
+
 /** How many values in the table carry each alias, by lower-cased alias. */
 function aliasCounts(values) {
   const counts = new Map()
@@ -225,16 +231,36 @@ function ValueRow({
   const toggle = useRef(null)
   const list = useRef(null)
 
-  // Opened: focus on the first action, and a click anywhere else closes it.
+  // Opened: focus on the first action, a click anywhere else closes it, and so
+  // does Escape, which puts focus back on the toggle.
   useEffect(() => {
     if (!menu) return undefined
-    list.current?.querySelector('button')?.focus()
+    const actions = list.current
+    actions?.querySelector('button')?.focus()
     const away = (e) => {
       if (!list.current?.contains(e.target) && !toggle.current?.contains(e.target))
         setMenu(false)
     }
+    // A click inside closes the list once its action has run. React hears a
+    // click at its root, above this list and below the document: closing from
+    // the list itself would remove the button before its onClick is reached.
+    // Noted on the way down, since an action can remove the list on the way up.
+    const closeAfterAction = () =>
+      document.addEventListener('click', () => setMenu(false), { once: true })
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        setMenu(false)
+        toggle.current?.focus()
+      }
+    }
     document.addEventListener('mousedown', away)
-    return () => document.removeEventListener('mousedown', away)
+    actions?.addEventListener('click', closeAfterAction, true)
+    actions?.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', away)
+      actions?.removeEventListener('click', closeAfterAction, true)
+      actions?.removeEventListener('keydown', onKeyDown)
+    }
   }, [menu])
 
   async function run(call) {
@@ -287,18 +313,7 @@ function ValueRow({
               </div>
             </div>
             {menu && (
-              // A click on an action closes the list once the action has run.
-              <div
-                className="value-actions"
-                ref={list}
-                onClick={() => setMenu(false)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Escape') {
-                    setMenu(false)
-                    toggle.current?.focus()
-                  }
-                }}
-              >
+              <div className="value-actions" ref={list}>
                 <button
                   type="button"
                   className="link"
@@ -652,7 +667,7 @@ export default function Vocabularies() {
             >
               {/* By name: the server lists them in the order they depend on
                   one another, which no one reading the list can predict. */}
-              {(tables.length ? [...tables].sort() : [table]).map((name) => (
+              {(tables.length ? [...tables].sort(byCodeUnit) : [table]).map((name) => (
                 <option key={name} value={name}>
                   {name}
                 </option>

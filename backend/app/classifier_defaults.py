@@ -479,11 +479,9 @@ def note_outcome(
     known = facts.issues.get((note.denomination_id, note.series_year, letter), [])
     if not known:
         out.count = "note: series not in the facts"
-        # Only a face value the facts cover has a series they could be
-        # missing: a Goldback has no issue to look up at all.
-        covered = any(key[0] == note.denomination_id for key in facts.issues)
-        if covered and note.series_year >= facts.first_issue_year:
-            out.cases.append(("unknown issue", series))
+        _report_unknown_issue(
+            out, facts, note.denomination_id, note.series_year, series
+        )
         _retract(out, current, derived, NOTE_FILLED)
         return out
 
@@ -528,6 +526,19 @@ def note_outcome(
     _prefix_case(out, note.serial_number, series, series_letter, matches)
     _bank_outcome(out, facts, note, bank, derived, held)
     return out
+
+
+def _report_unknown_issue(
+    out: Outcome, facts: Facts, denomination_id: int, series_year: int, series: str
+) -> None:
+    """Report a series the facts could have and do not.
+
+    Only a face value the facts cover has a series they could be missing: a
+    Goldback has no issue to look up at all.
+    """
+    covered = any(key[0] == denomination_id for key in facts.issues)
+    if covered and series_year >= facts.first_issue_year:
+        out.cases.append(("unknown issue", series))
 
 
 def _named_by_rating(

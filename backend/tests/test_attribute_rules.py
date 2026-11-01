@@ -272,7 +272,8 @@ def test_a_removed_no_motto_stays_removed(
     run(db, commit=True)
 
     link = _link(db, note)
-    assert link is not None and link.removed_at is not None
+    assert link is not None
+    assert link.removed_at is not None
 
 
 def test_correcting_the_series_takes_the_rules_link_back(
@@ -335,7 +336,8 @@ def test_a_link_someone_else_made_is_never_taken_back(
     db.commit()
     run(db, commit=True)
     link = _link(db, note)
-    assert link is not None and link.removed_at is None
+    assert link is not None
+    assert link.removed_at is None
 
 
 def test_a_class_taken_back_takes_no_motto_with_it(
@@ -390,5 +392,6 @@ def test_no_motto_a_person_set_again_is_not_the_rules_to_take_back(
     assert response.status_code == 200, response.text
     db.expire_all()
     link = _link(db, note)
-    assert link is not None and link.removed_at is None
+    assert link is not None
+    assert link.removed_at is None
     assert (link.source, link.derived_by) == (ProvenanceSource.manual, None)

@@ -191,14 +191,8 @@ def analyse(serial: str) -> set[str]:
 WELL_FORMED = re.compile(r"^(?:\*|[A-Z]{1,2})\d{8}[*A-Z]$")
 
 
-def run(db: Session, *, commit: bool) -> tuple[Counter, list[tuple[str, str]]]:
-    """Report, and optionally record, the designations every serial earns.
-
-    A designation this module added, still in force, that the serial no
-    longer earns -- the serial was corrected -- is taken back with it. One a
-    person set, or removed, is never touched. A retired designation is not
-    added anywhere, and the links it already has are left as they are.
-    """
+def _attributes(db: Session) -> tuple[dict[str, int], set[str]]:
+    """Every attribute's id by code, and the codes of those retired."""
     attribute_ids: dict[str, int] = {}
     retired: set[str] = set()
     for ident, code, active in db.execute(
@@ -207,9 +201,11 @@ def run(db: Session, *, commit: bool) -> tuple[Counter, list[tuple[str, str]]]:
         attribute_ids[code] = ident
         if not active:
             retired.add(code)
-    codes = {ident: code for code, ident in attribute_ids.items()}
-    # The links in force that this module added, by item: the only ones it
-    # may take back.
+    return attribute_ids, retired
+
+
+def _links_in_force_from_this_rule(db: Session) -> dict[int, set[int]]:
+    """The links in force this module added, by item: the only ones it may take back."""
     mine: dict[int, set[int]] = {}
     for item_id, derived_id in db.execute(
         select(
@@ -221,6 +217,20 @@ def run(db: Session, *, commit: bool) -> tuple[Counter, list[tuple[str, str]]]:
         )
     ).tuples():
         mine.setdefault(item_id, set()).add(derived_id)
+    return mine
+
+
+def run(db: Session, *, commit: bool) -> tuple[Counter, list[tuple[str, str]]]:
+    """Report, and optionally record, the designations every serial earns.
+
+    A designation this module added, still in force, that the serial no
+    longer earns -- the serial was corrected -- is taken back with it. One a
+    person set, or removed, is never touched. A retired designation is not
+    added anywhere, and the links it already has are left as they are.
+    """
+    attribute_ids, retired = _attributes(db)
+    codes = {ident: code for code, ident in attribute_ids.items()}
+    mine = _links_in_force_from_this_rule(db)
     # Every link, removed ones included: a designation a person took away
     # is not put back.
     existing: set[tuple[int, int]] = set(

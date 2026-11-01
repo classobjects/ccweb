@@ -180,7 +180,8 @@ def test_a_person_sets_a_coins_attributes(
     assert _codes(body) == ["first_strike", "cac"]
     assert {a["source"] for a in body["attributes"]} == {"manual"}
     link = _link(db, coin, "cac")
-    assert link is not None and link.noted_by_id == admin_user.id  # type: ignore[attr-defined]
+    assert link is not None
+    assert link.noted_by_id == admin_user.id  # type: ignore[attr-defined]
     # Only the links changed, and the item's version still moved.
     assert body["version"] == before + 1
 
@@ -225,7 +226,8 @@ def test_a_removed_derived_attribute_stays_removed(
     assert "written" not in stats
     assert _codes(_detail(client, admin_headers, note)) == []
     link = _link(db, note, "star")
-    assert link is not None and link.removed_at is not None
+    assert link is not None
+    assert link.removed_at is not None
     rows, _ = search(db, CURRENCY_VIEW, params={}, query="star note")
     assert note.item_code not in {r["item_code"] for r in rows}
     rows, _ = search(db, CURRENCY_VIEW, params={"attribute": "star"})

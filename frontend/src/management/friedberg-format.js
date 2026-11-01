@@ -11,6 +11,8 @@
  * note (`docs/reference-data.md`).
  */
 
+import { withoutTrailing } from '../shared/text'
+
 // `Fr.`, `Fr#`, `FR-`, `Fr. #` -- a label, not part of the number -- taken
 // off only where digits follow, or an MPC's M and digits.
 const PREFIX = /^fr[\s.#-]*(?=m?\d)/i
@@ -94,10 +96,7 @@ function normalizeBase(raw) {
  * any star and seal shade. `fr_traits` in `fr_format.py`, the mule half.
  */
 export function isMuleNumber(number) {
-  return number
-    .replace(/ (?:LGS|DGS)$/, '')
-    .replace(/\*+$/, '')
-    .endsWith('m')
+  return withoutTrailing(number.replace(/ (?:LGS|DGS)$/, ''), '*').endsWith('m')
 }
 
 /** Why `number` (already normalized) is not a Friedberg number, or null. */

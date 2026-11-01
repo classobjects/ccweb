@@ -368,13 +368,9 @@ def test_a_purchase_source_gone_before_the_commit_is_not_called_linked(
     created = _create(client, admin_headers)
     monkeypatch.setattr(sales_venues_router, "_check_vendor", lambda *_args: None)
 
+    update = SalesVenueUpdate(vendor_id=999999, version=created["version"])
     with pytest.raises(HTTPException) as refused:
-        sales_venues_router.update_sales_venue(
-            "ebay",
-            SalesVenueUpdate(vendor_id=999999, version=created["version"]),
-            db,
-            admin_user,
-        )
+        sales_venues_router.update_sales_venue("ebay", update, db, admin_user)
     assert refused.value.status_code == 422
     assert refused.value.detail == "No purchase source with id 999999"
 

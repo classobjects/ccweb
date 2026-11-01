@@ -177,11 +177,11 @@ def composition_of(
             set_form_id=None if set_unknown else set_form_id,
         )
         if reaching and not set_unknown:
-            return covering[0] if len(covering) == 1 else None
+            return _the_only(covering)
         if reaching:
             if metal_id is None:
                 return None
-            every_coins = composition_of(
+            every_coins = _outside_any_set(
                 compositions,
                 denomination_id=denomination_id,
                 series_id=series_id,
@@ -189,12 +189,56 @@ def composition_of(
                 first=first,
                 last=last,
             )
-            agreeing = {
-                c.id: c
-                for c in (*covering, every_coins)
-                if c is not None and c.metal_id == metal_id
-            }
-            return next(iter(agreeing.values())) if len(agreeing) == 1 else None
+            return _the_only_of_metal((*covering, every_coins), metal_id)
+    return _outside_any_set(
+        compositions,
+        denomination_id=denomination_id,
+        series_id=series_id,
+        country_id=country_id,
+        first=first,
+        last=last,
+    )
+
+
+def _the_only(rows: Sequence[Composition]) -> Composition | None:
+    """The row, where there is exactly one; none is chosen from several."""
+    return rows[0] if len(rows) == 1 else None
+
+
+def _the_only_of_metal(
+    rows: Sequence[Composition | None], metal_id: int
+) -> Composition | None:
+    """The one distinct row in this metal, or None for none or several."""
+    agreeing = {c.id: c for c in rows if c is not None and c.metal_id == metal_id}
+    return next(iter(agreeing.values())) if len(agreeing) == 1 else None
+
+
+def _series_own_rows(
+    covering: Sequence[Composition], series_id: int, denomination_id: int | None
+) -> list[Composition]:
+    """The rows naming this series, at this denomination where both name one."""
+    return [
+        c
+        for c in covering
+        if c.series_id == series_id
+        and (
+            c.denomination_id is None
+            or denomination_id is None
+            or c.denomination_id == denomination_id
+        )
+    ]
+
+
+def _outside_any_set(
+    compositions: Sequence[Composition],
+    *,
+    denomination_id: int | None,
+    series_id: int | None,
+    country_id: int,
+    first: int,
+    last: int | None,
+) -> Composition | None:
+    """`composition_of` for a coin read as one outside any set."""
     covering = [
         c
         for c in compositions
@@ -204,18 +248,9 @@ def composition_of(
         and (c.year_to is None or (last is not None and c.year_to >= last))
     ]
     if series_id is not None:
-        own = [
-            c
-            for c in covering
-            if c.series_id == series_id
-            and (
-                c.denomination_id is None
-                or denomination_id is None
-                or c.denomination_id == denomination_id
-            )
-        ]
+        own = _series_own_rows(covering, series_id, denomination_id)
         if own:
-            return own[0] if len(own) == 1 else None
+            return _the_only(own)
     if denomination_id is None:
         return None
     return next(

@@ -122,7 +122,8 @@ def test_certificate_numbers_are_edited_as_a_set(
     rows = _certs(db, item.id)
     assert [r.cert_number for r in rows] == ["111", "8061234-005"]
     # Kept as it was, not re-created; the new one graded by the item's service.
-    assert rows[0].id == kept_id and rows[0].grading_service_id is None
+    assert rows[0].id == kept_id
+    assert rows[0].grading_service_id is None
     assert rows[1].grading_service_id == pmg
     detail = client.get(f"/api/inventory/{item.id}", headers=admin_headers).json()
     assert detail["cert_numbers"] == ["111", "8061234-005"]

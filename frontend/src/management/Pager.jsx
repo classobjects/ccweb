@@ -27,10 +27,11 @@ export default function Pager({
   later = 'Older',
 }) {
   const count = total ?? offset + shown
+  const first = shown === 0 ? 0 : offset + 1
   const counted =
     offset === 0 && shown === count
       ? `${count} of ${count}`
-      : `${shown === 0 ? 0 : offset + 1}-${offset + shown} of ${count}`
+      : `${first}-${offset + shown} of ${count}`
 
   return (
     <>

@@ -72,8 +72,11 @@ def test_the_millionth_item_code_is_not_cut_to_six_digits(
 
 def _refused(db: Session, constraint: str, statement: str) -> None:
     """`statement` fails on `constraint`, and only that statement rolls back."""
-    with pytest.raises(IntegrityError, match=constraint), db.begin_nested():
-        db.execute(text(statement))
+    sql = text(statement)
+    savepoint = db.begin_nested()
+    with pytest.raises(IntegrityError, match=constraint):
+        db.execute(sql)
+    savepoint.rollback()
 
 
 def test_a_share_fee_is_never_negative(db: Session) -> None:

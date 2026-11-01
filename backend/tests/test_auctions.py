@@ -317,6 +317,7 @@ def test_lots_cannot_be_added_after_closing(
     db: Session, closed_auction: Auction, assembled_lot: SalesLot
 ) -> None:
     """The sale has happened."""
+    price = Decimal("10.00")
     with pytest.raises(AuctionRefused, match="closed"):
         add_lot(
             db,
@@ -324,7 +325,7 @@ def test_lots_cannot_be_added_after_closing(
             assembled_lot,
             lot_number="1",
             reserve=None,
-            price=Decimal("10.00"),
+            price=price,
         )
 
 
@@ -863,8 +864,9 @@ def test_consigning_a_marketplace_auction_is_refused(
     db: Session, ebay_auction: Auction
 ) -> None:
     """Nothing leaves the premises for an eBay auction."""
+    on_date = date(2026, 10, 1)
     with pytest.raises(AuctionRefused, match="auction house"):
-        consign(db, ebay_auction, on_date=date(2026, 10, 1))
+        consign(db, ebay_auction, on_date=on_date)
 
 
 def test_consigning_an_unscheduled_auction_is_refused(
@@ -873,8 +875,9 @@ def test_consigning_an_unscheduled_auction_is_refused(
     """A draft auction has not been sent to the house yet."""
     house_auction.status = AuctionStatus.draft
     db.flush()
+    on_date = date(2026, 10, 1)
     with pytest.raises(AuctionRefused, match="draft"):
-        consign(db, house_auction, on_date=date(2026, 10, 1))
+        consign(db, house_auction, on_date=on_date)
 
 
 def test_consign_fails_loudly_if_the_consigned_kind_is_missing(
@@ -890,8 +893,9 @@ def test_consign_fails_loudly_if_the_consigned_kind_is_missing(
         delete(StorageLocationKind).where(StorageLocationKind.code == "consigned")
     )
     db.flush()
+    on_date = date(2026, 10, 1)
     with pytest.raises(RuntimeError, match=r"consigned.*app\.seeding load"):
-        consign(db, house_auction, on_date=date(2026, 10, 1))
+        consign(db, house_auction, on_date=on_date)
 
 
 def test_consigning_twice_reuses_the_same_location(
@@ -1026,16 +1030,13 @@ def test_marking_one_member_of_an_auction_lot_missing_is_refused(
     ]
 
     db.commit()
+    request = ReceiveRequest(
+        item_ids=[plain_item.id],
+        outcome="missing",
+        acknowledge_for_sale=True,
+    )
     with pytest.raises(HTTPException) as refused:
-        receive_items(
-            ReceiveRequest(
-                item_ids=[plain_item.id],
-                outcome="missing",
-                acknowledge_for_sale=True,
-            ),
-            db,
-            admin_user,
-        )
+        receive_items(request, db, admin_user)
 
     assert refused.value.status_code == 409
     detail = str(refused.value.detail)

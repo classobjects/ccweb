@@ -156,12 +156,13 @@ def test_a_stale_read_is_refused_not_a_lost_update(
             session_b.commit()
 
         admin = _present(session_a.get(User, admin_id))
+        revised = [Line(listing_id, 2)]
         with pytest.raises(HTTPException) as excinfo:
             revise_order(
                 session_a,
                 order,
                 customer=order.customer,
-                lines=[Line(listing_id, 2)],
+                lines=revised,
                 notes=None,
                 version=version,
                 by=admin,
@@ -603,12 +604,13 @@ def test_a_stale_data_error_inside_revise_order_is_a_409_not_a_500(
         admin = _present(session.get(User, admin_id))
         customer = order.customer
         monkeypatch.setattr(session, "flush", _stale_on_first_real_flush(session))
+        revised = [Line(listing_id, 2)]
         with pytest.raises(HTTPException) as excinfo:
             revise_order(
                 session,
                 order,
                 customer=customer,
-                lines=[Line(listing_id, 2)],
+                lines=revised,
                 notes=None,
                 version=version,
                 by=admin,
@@ -663,13 +665,9 @@ def test_a_stale_data_error_inside_a_cancellation_is_a_409_not_a_500(
 
         admin = _present(session.get(User, admin_id))
         monkeypatch.setattr(session, "flush", _stale_on_first_real_flush(session))
+        cancel = OrderStatusUpdate(status="cancelled", version=version)
         with pytest.raises(HTTPException) as excinfo:
-            update_order_status(
-                order_id,
-                OrderStatusUpdate(status="cancelled", version=version),
-                session,
-                admin,
-            )
+            update_order_status(order_id, cancel, session, admin)
         monkeypatch.undo()
 
     assert excinfo.value.status_code == 409

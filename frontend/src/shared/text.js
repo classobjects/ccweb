@@ -13,3 +13,10 @@ export function orNull(text) {
   const trimmed = String(text ?? '').trim()
   return trimmed === '' ? null : trimmed
 }
+
+/** `text` with every `char` that ends it taken off; its time grows with its length. */
+export function withoutTrailing(text, char) {
+  let end = text.length
+  while (end > 0 && text[end - 1] === char) end -= 1
+  return text.slice(0, end)
+}
