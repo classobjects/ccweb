@@ -165,7 +165,8 @@ const LOT = {
       description: 'Blast white.',
       country: 'US',
       year_start: 1881,
-      denomination: 'dollar',
+      denomination: 'usd_coin_1_00',
+      denomination_label: 'Dollar',
       grade_display: 'MS64',
       piece_count: 1,
       thumbnail_url: '/media/thumb/aaa.jpg',
@@ -178,7 +179,8 @@ const LOT = {
       description: '',
       country: 'US',
       year_start: 1882,
-      denomination: 'dollar',
+      denomination: 'usd_coin_1_00',
+      denomination_label: 'Dollar',
       grade_display: 'MS63',
       piece_count: 1,
       thumbnail_url: null,
@@ -191,7 +193,8 @@ const LOT = {
       description: '',
       country: 'US',
       year_start: 1883,
-      denomination: 'dollar',
+      denomination: 'usd_coin_1_00',
+      denomination_label: 'Dollar',
       grade_display: 'MS62',
       piece_count: 1,
       thumbnail_url: null,
@@ -211,7 +214,7 @@ describe('a lot in the shop', () => {
     expect(await screen.findByText('1881-S Morgan Dollar')).toBeInTheDocument()
     expect(screen.getByText('1882-S Morgan Dollar')).toBeInTheDocument()
     expect(screen.getByText('1883-O Morgan Dollar')).toBeInTheDocument()
-    expect(screen.getByText('US - 1881 - dollar - MS64')).toBeInTheDocument()
+    expect(screen.getByText('US - 1881 - Dollar - MS64')).toBeInTheDocument()
   })
 
   it('says how many coins are in it, so the price is not read as one coin’s', async () => {

@@ -37,11 +37,15 @@ import { HelpContext } from './help-context'
  * `help={false}` leaves the band out, for a dialog with no field to explain
  * (a question, an enlarged photograph): there the band could only ever say
  * "Click in a field", with no field to click in.
+ *
+ * `wide` is for a dialog holding a table of boxes, which the form's width
+ * would squeeze until what is typed in them cannot be read.
  */
 export default function ModalDialog({
   label,
   onClose,
   help: withHelp = true,
+  wide = false,
   children,
 }) {
   const ref = useRef(null)
@@ -57,7 +61,7 @@ export default function ModalDialog({
   return (
     <dialog
       ref={ref}
-      className="edit-dialog"
+      className={wide ? 'edit-dialog edit-dialog-wide' : 'edit-dialog'}
       aria-label={label}
       onCancel={(e) => {
         // A dialog opened from inside this one is its child in React's tree,

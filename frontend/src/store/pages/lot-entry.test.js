@@ -127,10 +127,11 @@ describe('describeMember', () => {
       describeMember({
         country: 'US',
         year_start: 1881,
-        denomination: 'dollar',
+        denomination: 'usd_coin_1_00',
+        denomination_label: 'Dollar',
         grade_display: 'MS64',
       }),
-    ).toBe('US - 1881 - dollar - MS64')
+    ).toBe('US - 1881 - Dollar - MS64')
   })
 
   it('leaves out what is not known rather than printing a gap', () => {

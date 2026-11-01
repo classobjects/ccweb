@@ -325,6 +325,44 @@ td.item-code {
   padding: 0.6rem 0.8rem;
   margin-bottom: 1rem;
 }
+/* A row's actions, apart from one another; they wrap when the column is
+   narrow rather than widening the table. */
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem 0.75rem;
+}
+/* An item's photographs, and those waiting to be filed: pictures and their
+   controls as cards side by side, not a bulleted column. */
+.photo-list,
+.photo-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 20rem), 1fr));
+  list-style: none;
+  margin: 0.6rem 0;
+  padding: 0;
+}
+.photo-list > li,
+.photo-grid > li {
+  align-content: flex-start;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.6rem;
+}
+.photo-list > li > .image-enlarge,
+.photo-grid > li > .image-enlarge {
+  flex: 0 1 auto;
+  max-width: 100%;
+}
+.photo-list > li > select,
+.photo-grid > li > .item-picker {
+  flex: 1 1 100%;
+}
 /* The photo picker's own drop target (PhotosPanel, ReceiptPanel) -- dragging
    an image onto it, or pasting one with Ctrl+V while it has focus, adds it
    exactly as choosing it from the file box does. */
@@ -377,6 +415,20 @@ td.item-code {
   overflow: hidden;
   padding: 0;
   width: 100%;
+}
+.edit-dialog-wide {
+  max-width: min(96rem, 95vw);
+}
+/* The offer's table: the boxes people type words into get the room. On a
+   phone the table stacks, and a stacked cell takes the width it is given. */
+.offer-rows td[data-help='offer_title'] {
+  width: 26%;
+}
+.offer-rows td[data-help='offer_description'] {
+  width: 30%;
+}
+.offer-rows td[data-help='offer_listing_number'] {
+  width: 14%;
 }
 /* Open only: a closed <dialog> must stay hidden. The body scrolls and the
    help band stays at the bottom, as in the console itself. */
