@@ -7,7 +7,7 @@ rem  ccweb_api.cmd - run the API in the foreground, as a production host does.
 rem
 rem    .\scripts\ccweb_api.cmd
 rem
-rem  What the scheduled task "ccwebdb api" runs at start-up on a Windows host
+rem  What the service ccwebdb-api runs at start-up on a Windows host
 rem  (docs\deployment-windows.md, step 6). It returns only when the API
 rem  stops. A development machine uses ccweb_startup.cmd instead, which also
 rem  starts PostgreSQL and the frontend, each in a console of its own.

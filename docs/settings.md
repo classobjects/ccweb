@@ -35,8 +35,8 @@ computer's zone).
 - *API restart*: read once when the API starts. On a development machine
   `.\scripts\ccweb_shutdown.cmd /keepdb` then `.\scripts\ccweb_startup.cmd`
   (Linux: `./scripts/ccweb_shutdown.sh --keepdb`, then
-  `./scripts/ccweb_startup.sh`); on a server `schtasks /end /tn "ccwebdb
-  api"` then `schtasks /run /tn "ccwebdb api"` from an administrator cmd
+  `./scripts/ccweb_startup.sh`); on a server `net stop ccwebdb-api` then
+  `net start ccwebdb-api` from an administrator cmd
   (Linux: `sudo systemctl restart ccwebdb-api`).
 - *Next script run*: each script reads it as it starts.
 - *Frontend build*: written into the pages when they are built, so

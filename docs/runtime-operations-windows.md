@@ -367,7 +367,7 @@ connection dies.
 - **`ccweb_testdb.cmd`** creates and starts a cluster for the tests alone
   (`stop`, `status`); see *A cluster for the tests*.
 - **`ccweb_api.cmd`** runs the API alone in the foreground, as a production
-  server's start-up task does
+  server's service does
   ([deployment-windows.md](deployment-windows.md), step 6). Development
   uses `ccweb_startup.cmd` instead.
 - **Helpers**, called by the scripts above rather than run directly:
