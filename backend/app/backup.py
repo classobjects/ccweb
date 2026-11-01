@@ -117,7 +117,7 @@ HIGHEST_ITEM_CODE = (
 _JSON_PARAMETER = "json_"
 
 #: A database name a copy may be given.
-_DATABASE_NAME = re.compile(r"[A-Za-z0-9_]{1,63}")
+_DATABASE_NAME = re.compile(r"\w{1,63}", re.ASCII)
 
 
 def generated_columns(table: Table) -> list[Column[Any]]:

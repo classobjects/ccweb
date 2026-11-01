@@ -641,6 +641,15 @@ def check_auction_invariant(db: Session) -> None:
         raise AuctionInvariantViolation("; ".join(wrong))
 
 
+def _auction_invariant_disagrees(db: Session) -> bool:
+    """Whether the auction check refuses `db`; any other error still propagates."""
+    try:
+        check_auction_invariant(db)
+    except AuctionInvariantViolation:
+        return True
+    return False
+
+
 def check_all_invariants(db: Session) -> None:
     """Run all five suite-wide invariant checks, with no waiver.
 
@@ -817,11 +826,7 @@ def _claim_invariant(request: pytest.FixtureRequest) -> Iterator[None]:
     if auction_waiver is None:
         check_auction_invariant(db)
     else:
-        try:
-            check_auction_invariant(db)
-        except AuctionInvariantViolation:
-            pass
-        else:
+        if not _auction_invariant_disagrees(db):
             pytest.fail(
                 f"{request.node.name} is marked auction_invariant_waiver "
                 f"({auction_waiver.kwargs['reason']!r}) but the auction "

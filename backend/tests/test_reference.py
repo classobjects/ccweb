@@ -158,13 +158,10 @@ def test_a_constraints_own_words_are_logged_not_returned(
         def rollback(self) -> None:
             """Nothing to undo."""
 
-    with (
-        caplog.at_level(logging.WARNING, logger=reference_router.__name__),
-        pytest.raises(HTTPException) as refused,
-    ):
-        reference_router._flush_or_refuse(
-            cast(Session, _Refusing()), "grade", Grade, "the value"
-        )
+    caplog.set_level(logging.WARNING, logger=reference_router.__name__)
+    session = cast(Session, _Refusing())
+    with pytest.raises(HTTPException) as refused:
+        reference_router._flush_or_refuse(session, "grade", Grade, "the value")
 
     assert refused.value.status_code == 422
     assert "ck_secret_rule" not in str(refused.value.detail)

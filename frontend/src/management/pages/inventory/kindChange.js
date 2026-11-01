@@ -68,6 +68,36 @@ const SIDED_VALUES = [
 /** Whether a field holds anything to give up: not null, undefined or blank. */
 const isSet = (value) => value !== null && value !== undefined && value !== ''
 
+/** The fields that belong to the other side from `kind`, whatever they hold. */
+function offSideFields(kind, current) {
+  const fields = {}
+  for (const key of SIDED_CLASSIFIERS) {
+    if (!fieldFitsKind(key, kind) && isSet(current(key))) fields[key] = current(key)
+  }
+  for (const key of isCurrencyKind(kind) ? COIN_MEASURES : NOTE_SCALARS) {
+    // Bullion holds a serial of its own: a note made bullion keeps it.
+    if (key === 'serial_number' && kind === 'bullion') continue
+    if (isSet(current(key))) fields[key] = current(key)
+  }
+  return fields
+}
+
+/** The fields whose loaded vocabulary entry says their value does not fit `kind`. */
+function misfitValues(kind, current, vocab) {
+  const fields = {}
+  for (const [key, table] of SIDED_VALUES) {
+    const code = current(key)
+    const entry = vocab[table]?.find((candidate) => candidate.code === code)
+    if (isSet(code) && entry && !fitsKind(entry, kind)) fields[key] = code
+  }
+  const grade = current('grade')
+  const graded = vocab.grade?.find((candidate) => candidate.code === grade)
+  if (isSet(grade) && graded && !gradeFitsKind(graded, kind)) {
+    fields.grade = grade
+  }
+  return fields
+}
+
 /**
  * The fields a change to `kind` empties, and the attributes it drops.
  *
@@ -81,26 +111,9 @@ const isSet = (value) => value !== null && value !== undefined && value !== ''
  * else null.
  */
 export function clearedByKind(kind, current, vocab) {
-  const fields = {}
-  const toNote = isCurrencyKind(kind)
-
-  for (const key of SIDED_CLASSIFIERS) {
-    if (!fieldFitsKind(key, kind) && isSet(current(key))) fields[key] = current(key)
-  }
-  for (const key of toNote ? COIN_MEASURES : NOTE_SCALARS) {
-    // Bullion holds a serial of its own: a note made bullion keeps it.
-    if (key === 'serial_number' && kind === 'bullion') continue
-    if (isSet(current(key))) fields[key] = current(key)
-  }
-  for (const [key, table] of SIDED_VALUES) {
-    const code = current(key)
-    const entry = vocab[table]?.find((candidate) => candidate.code === code)
-    if (isSet(code) && entry && !fitsKind(entry, kind)) fields[key] = code
-  }
-  const grade = current('grade')
-  const graded = vocab.grade?.find((candidate) => candidate.code === grade)
-  if (isSet(grade) && graded && !gradeFitsKind(graded, kind)) {
-    fields.grade = grade
+  const fields = {
+    ...offSideFields(kind, current),
+    ...misfitValues(kind, current, vocab),
   }
 
   const codes = current('attributes') ?? []

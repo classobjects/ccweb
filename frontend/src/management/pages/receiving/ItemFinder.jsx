@@ -417,16 +417,14 @@ export default function ItemFinder({
             </>
           )}
           {kind === 'currency' && (
-            <>
-              <label data-help="series_year">
-                Series year{/* */}
-                <input
-                  type="text"
-                  value={filters.seriesYear}
-                  onChange={(e) => setField('seriesYear', e.target.value)}
-                />
-              </label>
-            </>
+            <label data-help="series_year">
+              Series year{/* */}
+              <input
+                type="text"
+                value={filters.seriesYear}
+                onChange={(e) => setField('seriesYear', e.target.value)}
+              />
+            </label>
           )}
         </div>
 

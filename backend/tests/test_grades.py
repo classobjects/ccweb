@@ -184,7 +184,9 @@ def test_a_plus_ranks_between_its_number_and_the_next(db: Session) -> None:
     rank = dict(db.execute(select(Grade.code, Grade.grade_rank)).tuples().all())
     plain, plus, next_up = rank["64"], rank["64+"], rank["65"]
     # grade_rank is computed from numeric_value, which a Sheldon number has.
-    assert plain is not None and plus is not None and next_up is not None
+    assert plain is not None
+    assert plus is not None
+    assert next_up is not None
     assert plain < plus < next_up
     assert plus == Decimal("64.5")
 

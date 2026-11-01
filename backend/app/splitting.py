@@ -153,6 +153,25 @@ def _weights(pieces: list[SplitPiece], mode: str) -> list[Decimal]:
     return weights
 
 
+def _refuse_lot_or_pieces(parent: InventoryItem, pieces: list[SplitPiece]) -> None:
+    """Raise `SplitError` for a lot, as locked, or pieces no split can go ahead with."""
+    if parent.deleted_at is not None:
+        # A deleted row is one that should never have existed; its pieces
+        # would come out live, and every view that excludes it would count
+        # them.
+        raise SplitError(f"{parent.item_code} has been deleted and cannot be split")
+    if parent.split_at is not None:
+        raise SplitError(f"{parent.item_code} has already been split")
+    if parent.parent_item_id is not None:
+        # Allowing this would make cost basis a tree to walk rather than a
+        # single hop, for no case that has come up.
+        raise SplitError(
+            f"{parent.item_code} is itself a piece of a lot; split the lot"
+        )
+    if any(count < 1 for count in (p.piece_count for p in pieces)):
+        raise SplitError("every piece must hold at least one item")
+
+
 def split_item(
     db: Session,
     parent: InventoryItem,
@@ -206,21 +225,7 @@ def split_item(
     # session loaded before waiting for it -- which is precisely the race.
     db.refresh(parent, with_for_update=True)
 
-    if parent.deleted_at is not None:
-        # A deleted row is one that should never have existed; its pieces
-        # would come out live, and every view that excludes it would count
-        # them.
-        raise SplitError(f"{parent.item_code} has been deleted and cannot be split")
-    if parent.split_at is not None:
-        raise SplitError(f"{parent.item_code} has already been split")
-    if parent.parent_item_id is not None:
-        # Allowing this would make cost basis a tree to walk rather than a
-        # single hop, for no case that has come up.
-        raise SplitError(
-            f"{parent.item_code} is itself a piece of a lot; split the lot"
-        )
-    if any(count < 1 for count in (p.piece_count for p in pieces)):
-        raise SplitError("every piece must hold at least one item")
+    _refuse_lot_or_pieces(parent, pieces)
 
     sold = db.scalar(
         select(SalesOrderItem.id)

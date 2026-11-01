@@ -126,7 +126,8 @@ def test_an_unnumbered_purchase_takes_its_listings_order(
     _run(db, path)
 
     refreshed = db.get(PurchaseOrder, order.id)
-    assert refreshed is not None and refreshed.order_number == "11-11111-11111"
+    assert refreshed is not None
+    assert refreshed.order_number == "11-11111-11111"
     items = db.scalars(
         select(InventoryItem).where(InventoryItem.purchase_order_id == order.id)
     ).all()
@@ -160,7 +161,8 @@ def test_an_order_of_several_listings_becomes_one_purchase(
     assert todo.orders["22-22222-22222"] == (first.id, [second.id])
 
     survivor = db.get(PurchaseOrder, first.id)
-    assert survivor is not None and survivor.order_number == "22-22222-22222"
+    assert survivor is not None
+    assert survivor.order_number == "22-22222-22222"
     assert survivor.source_url == ebay_orders.ORDER_PAGE.format("22-22222-22222")
     assert db.get(PurchaseOrder, second.id) is None
     items = db.scalars(
@@ -326,7 +328,8 @@ def test_a_listing_bought_twice_goes_to_the_order_of_the_purchases_date(
 
     assert todo.unmatched == []
     refreshed = db.get(PurchaseOrder, order.id)
-    assert refreshed is not None and refreshed.order_number == "25-25252-00002"
+    assert refreshed is not None
+    assert refreshed.order_number == "25-25252-00002"
 
 
 def test_an_empty_order_date_is_filled_from_the_history_and_a_set_one_kept(
@@ -383,7 +386,8 @@ def test_a_deleted_item_and_a_split_lot_say_nothing_about_the_order(
 
     assert todo.unmatched == []
     refreshed = db.get(PurchaseOrder, order.id)
-    assert refreshed is not None and refreshed.order_number == "27-27272-00001"
+    assert refreshed is not None
+    assert refreshed.order_number == "27-27272-00001"
     for item in (gone, lot):
         assert item.id not in todo.listing_ids
         assert db.get_one(InventoryItem, item.id).sellers_item_id is None
@@ -418,7 +422,8 @@ def test_ebay_is_known_by_its_host_name_whatever_the_vendor_is_called(
     _run(db, path)
 
     refreshed = db.get(PurchaseOrder, order.id)
-    assert refreshed is not None and refreshed.order_number == "28-28282-82828"
+    assert refreshed is not None
+    assert refreshed.order_number == "28-28282-82828"
 
 
 def test_with_no_ebay_vendor_the_pass_refuses_rather_than_reporting_nothing(
@@ -588,9 +593,11 @@ def test_what_cannot_be_decided_is_left_and_listed(db: Session, tmp_path: Path) 
     assert (wrong.id, "44-00000-00000", "44-44444-44443") in todo.disagreements
     for purchase in (twice, absent):
         kept = db.get(PurchaseOrder, purchase.id)
-        assert kept is not None and kept.order_number is None
+        assert kept is not None
+        assert kept.order_number is None
     kept = db.get(PurchaseOrder, wrong.id)
-    assert kept is not None and kept.order_number == "44-00000-00000"
+    assert kept is not None
+    assert kept.order_number == "44-00000-00000"
 
 
 def test_a_plan_writes_nothing_and_a_second_run_finds_nothing(
@@ -602,7 +609,8 @@ def test_a_plan_writes_nothing_and_a_second_run_finds_nothing(
     ebay_orders.plan(db, lines)
     db.expire_all()
     fresh = db.get(PurchaseOrder, order.id)
-    assert fresh is not None and fresh.order_number is None
+    assert fresh is not None
+    assert fresh.order_number is None
 
     _run(db, path)
     again = ebay_orders.plan(db, lines)

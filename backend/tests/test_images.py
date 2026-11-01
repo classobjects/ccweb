@@ -188,8 +188,9 @@ def test_surviving_gps_is_reported_as_gps(
         return buffer.getvalue(), "image/jpeg"
 
     monkeypatch.setattr(imaging, "_encode", leaks_gps)
+    jpeg = make_jpeg()
     with pytest.raises(MetadataRemainsError, match="GPS"):
-        imaging.cleanse(make_jpeg())
+        imaging.cleanse(jpeg)
 
 
 # ---------------------------------------------------------------------------
@@ -310,8 +311,9 @@ def test_a_damaged_picture_is_refused_whatever_its_decoder_raises(
         raise failure
 
     monkeypatch.setattr(ImageFile.ImageFile, "load", fail)
+    png = _encoded("PNG")
     with pytest.raises(ImageRejected, match="not a readable image"):
-        cleanse(_encoded("PNG"))
+        cleanse(png)
 
 
 def test_a_file_over_the_upload_limit_is_refused(
@@ -340,8 +342,9 @@ def test_a_picture_over_the_pixel_limit_is_refused(
 
     over = io.BytesIO()
     PILImage.new("RGB", (15, 10), "navy").save(over, format="PNG")
+    oversized = over.getvalue()
     with pytest.raises(ImageRejected, match="implausibly large"):
-        cleanse(over.getvalue())
+        cleanse(oversized)
 
 
 # ---------------------------------------------------------------------------
@@ -947,6 +950,7 @@ def test_a_deletion_that_fails_to_commit_keeps_the_bytes(
         raise RuntimeError("the commit failed")
 
     monkeypatch.setattr(db, "commit", refuse)
+    image_id = uploaded.json()["id"]
     with pytest.raises(RuntimeError, match="the commit failed"):
-        client.delete(f"/api/images/{uploaded.json()['id']}", headers=admin_headers)
+        client.delete(f"/api/images/{image_id}", headers=admin_headers)
     assert _stored(media_root) == stored

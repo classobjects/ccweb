@@ -123,6 +123,41 @@ function muleKeyOf(facts) {
   return JSON.stringify(params)
 }
 
+/**
+ * Whether a typed series year is not a whole number ("19x"). Blank is not
+ * unreadable: it is no year entered.
+ */
+function yearIsUnreadable(seriesYear) {
+  return seriesYear !== '' && !Number.isInteger(Number(seriesYear))
+}
+
+/**
+ * The signature question's key for `useRequest`, or null when no year names a
+ * series to ask about: nothing entered, or a year the server would refuse.
+ */
+function narrowKeyOf(facts) {
+  if (!facts.seriesYear || yearIsUnreadable(facts.seriesYear)) return null
+  return JSON.stringify({
+    denomination: facts.denomination,
+    note_type: facts.noteType,
+    seal_color: facts.sealColor,
+    series_year: Number(facts.seriesYear),
+    series_letter: facts.seriesLetter,
+  })
+}
+
+/**
+ * The pairs the pulldown offers: every pair while no series year is entered,
+ * and none for a year that names no series -- not read as "no year entered",
+ * which would offer every pair -- or when the narrowed list could not be read.
+ */
+function signatureOptionsOf(yearUnreadable, narrowKey, narrowed, allSignatures) {
+  if (yearUnreadable) return []
+  if (narrowKey === null) return allSignatures
+  if (narrowed.error) return []
+  return narrowed.data?.values ?? []
+}
+
 /** Text in capitals, as a series letter and a plate number are printed. */
 const upper = (text) => text.toUpperCase()
 
@@ -322,38 +357,23 @@ export default function FriedbergLookup({
   // A choice the narrowed list leaves out is **kept**, never cleared: it is
   // usually what the note itself records, and clearing it silently would
   // lose a right answer. The pulldown shows it marked instead.
-  //
-  // A year that is not a whole number ("19x") names no series: nothing is
-  // asked, since the server would refuse it, and no pair is offered. It is
-  // not read as "no year entered", which would offer every pair.
-  const yearNumber = Number(seriesYear)
-  const yearUnreadable = seriesYear !== '' && !Number.isInteger(yearNumber)
+  const yearUnreadable = yearIsUnreadable(seriesYear)
   // Said when Look up or a Save is pressed, which stay live. Sent on, the
   // year would reach the catalog as no year at all: a type recorded without
   // one is not found by its year again.
   const yearRefusal = yearUnreadable
     ? `"${seriesYear}" is not a series year. Correct it, or clear the box, first.`
     : ''
-  const narrowKey = useDebounced(
-    seriesYear && !yearUnreadable
-      ? JSON.stringify({
-          denomination,
-          note_type: noteType,
-          seal_color: sealColor,
-          series_year: yearNumber,
-          series_letter: seriesLetter,
-        })
-      : null,
-    NARROW_DELAY_MS,
-  )
+  const narrowKey = useDebounced(narrowKeyOf(facts), NARROW_DELAY_MS)
   const narrowed = useRequest(narrowKey, () =>
     api.getSignatureChoices(JSON.parse(narrowKey)),
   )
-  let signatureOptions
-  if (yearUnreadable) signatureOptions = []
-  else if (narrowKey === null) signatureOptions = allSignatures
-  else if (narrowed.error) signatureOptions = []
-  else signatureOptions = narrowed.data?.values ?? []
+  const signatureOptions = signatureOptionsOf(
+    yearUnreadable,
+    narrowKey,
+    narrowed,
+    allSignatures,
+  )
 
   const denominations = useReference('denomination')
   const noteTypes = useReference('note_type')

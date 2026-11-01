@@ -77,7 +77,8 @@ class Limit:
 
         The caller holds the lock.
         """
-        for key in list(self._seen):
+        # Over a copy: `_recent` drops the keys it finds empty.
+        for key in self._seen.copy():
             self._recent(key, now)
         excess = len(self._seen) - self.max_keys
         if excess > 0:

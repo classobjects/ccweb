@@ -153,8 +153,9 @@ def test_a_mail_address_typed_alone_is_stored_as_mailto(
 
 def test_a_listing_address_is_never_a_mailto() -> None:
     """Only a seller's store may be a mail address; a listing is a page."""
+    adapter: TypeAdapter[str] = TypeAdapter(ListingUrl)
     with pytest.raises(ValidationError):
-        TypeAdapter(ListingUrl).validate_python("mailto:coins@example.com")
+        adapter.validate_python("mailto:coins@example.com")
 
 
 def test_a_seller_is_added_with_a_contact(

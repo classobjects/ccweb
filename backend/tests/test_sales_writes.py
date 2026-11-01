@@ -218,14 +218,16 @@ def test_a_negative_fee_is_refused(
     db: Session, ebay_listing: Listing, admin_user: User
 ) -> None:
     """A refund is not a negative fee; it is a separate thing not built yet."""
+    price = Decimal("120.00")
+    fees = [FeeLine("commission", Decimal("-1.00"))]
     with pytest.raises(SaleRefused, match="negative"):
         record_sale(
             db,
             ebay_listing,
-            price=Decimal("120.00"),
+            price=price,
             buyer_username="coinfan88",
             external_order_id=None,
-            fees=[FeeLine("commission", Decimal("-1.00"))],
+            fees=fees,
             recorded_by=admin_user,
         )
 
@@ -239,11 +241,12 @@ def test_a_negative_price_is_refused(
     without the API's schema in front of it -- so it has to hold on its own,
     not merely agree with a guard that sits in front of one caller.
     """
+    price = Decimal("-1.00")
     with pytest.raises(SaleRefused, match="negative"):
         record_sale(
             db,
             ebay_listing,
-            price=Decimal("-1.00"),
+            price=price,
             buyer_username="coinfan88",
             external_order_id=None,
             fees=[],
@@ -261,14 +264,16 @@ def test_a_sub_cent_fee_is_refused(
     precision up front is what keeps the stored fee and its shares from
     ever disagreeing by that cent.
     """
+    price = Decimal("120.00")
+    fees = [FeeLine("commission", Decimal("15.905"))]
     with pytest.raises(SaleRefused, match="cent"):
         record_sale(
             db,
             ebay_listing,
-            price=Decimal("120.00"),
+            price=price,
             buyer_username="coinfan88",
             external_order_id=None,
-            fees=[FeeLine("commission", Decimal("15.905"))],
+            fees=fees,
             recorded_by=admin_user,
         )
     assert ebay_listing.status is ListingStatus.active
@@ -288,11 +293,12 @@ def test_a_sub_cent_price_is_refused(
     half to even to 120.00), and a message distinguishable from the fee
     one so a caller knows which field is wrong.
     """
+    price = Decimal("120.005")
     with pytest.raises(SaleRefused, match="Price"):
         record_sale(
             db,
             ebay_listing,
-            price=Decimal("120.005"),
+            price=price,
             buyer_username="coinfan88",
             external_order_id=None,
             fees=[],
@@ -332,11 +338,12 @@ def test_an_unmapped_venue_kind_is_refused(
         external_id=None,
     )
 
+    price = Decimal("50.00")
     with pytest.raises(SaleRefused, match="dealer_network"):
         record_sale(
             db,
             listing,
-            price=Decimal("50.00"),
+            price=price,
             buyer_username=None,
             external_order_id=None,
             fees=[],
@@ -363,11 +370,12 @@ def test_an_unknown_explicit_status_code_is_refused_before_writing(
     distinguishes "refused before anything is written" from "refused
     eventually, by someone else, after a write already happened."
     """
+    price = Decimal("120.00")
     with pytest.raises(HTTPException):
         record_sale(
             db,
             ebay_listing,
-            price=Decimal("120.00"),
+            price=price,
             buyer_username="coinfan88",
             external_order_id=None,
             fees=[],
@@ -383,11 +391,12 @@ def test_an_already_ended_listing_cannot_be_sold(
 ) -> None:
     """Recording the same sale twice would sell one coin twice."""
     offering_writes.end_offer(db, ebay_listing)
+    price = Decimal("120.00")
     with pytest.raises(SaleRefused, match="not on offer"):
         record_sale(
             db,
             ebay_listing,
-            price=Decimal("120.00"),
+            price=price,
             buyer_username="coinfan88",
             external_order_id=None,
             fees=[],
@@ -403,11 +412,12 @@ def test_recording_a_sale_on_a_store_listing_is_refused(
     Refused before anything is written, naming the path that does exist --
     an order on the customer's behalf -- so an in-person sale still has one.
     """
+    price = Decimal("50.00")
     with pytest.raises(SaleRefused, match="on the customer's behalf"):
         record_sale(
             db,
             listing,
-            price=Decimal("50.00"),
+            price=price,
             buyer_username=None,
             external_order_id=None,
             fees=[],
@@ -445,11 +455,12 @@ def test_recording_a_manual_sale_against_an_auction_lot_is_refused(
     )
     db.flush()
 
+    price = Decimal("50.00")
     with pytest.raises(SaleRefused, match=f"auction #{auction.id}"):
         record_sale(
             db,
             auction_lot.listing,
-            price=Decimal("50.00"),
+            price=price,
             buyer_username="coinfan88",
             external_order_id=None,
             fees=[],
@@ -600,14 +611,16 @@ def test_a_second_sale_of_the_same_listing_is_refused_as_not_on_offer(
     # The stale read a decision must not rest on: still `active` in Python.
     assert ebay_listing.status is ListingStatus.active
 
+    price = Decimal("131.50")
+    fees = [FeeLine("commission", Decimal("17.40"))]
     with pytest.raises(SaleRefused, match="not on offer"):
         record_sale(
             db,
             ebay_listing,
-            price=Decimal("131.50"),
+            price=price,
             buyer_username="secondbidder",
             external_order_id="04-99999-11111",
-            fees=[FeeLine("commission", Decimal("17.40"))],
+            fees=fees,
             recorded_by=admin_user,
         )
     # Refused before the first write, so the race's loser left nothing behind.
@@ -631,11 +644,12 @@ def test_a_refusal_names_the_platform_as_well_as_the_listing(
     41 is not on offer" alone.
     """
     offering_writes.end_offer(db, ebay_listing)
+    price = Decimal("142.25")
     with pytest.raises(SaleRefused, match=r"Listing \d+ on eBay is not on offer"):
         record_sale(
             db,
             ebay_listing,
-            price=Decimal("142.25"),
+            price=price,
             buyer_username="latecomer",
             external_order_id=None,
             fees=[],
@@ -880,14 +894,16 @@ def test_a_missing_share_is_an_internal_error_not_a_refusal(
         db_.flush()
 
     monkeypatch.setattr(order_writes, "_sync_shares", _drop_one)
+    price = Decimal("1000.00")
+    fees = [FeeLine("commission", Decimal("10.00"))]
     with pytest.raises(ShareMissing) as excinfo:
         record_sale(
             db,
             offered_lot_listing,
-            price=Decimal("1000.00"),
+            price=price,
             buyer_username="coinfan88",
             external_order_id="EB-1",
-            fees=[FeeLine("commission", Decimal("10.00"))],
+            fees=fees,
             recorded_by=admin_user,
         )
     assert f"listing {offered_lot_listing.id}" in str(excinfo.value)
@@ -1050,13 +1066,14 @@ def test_one_order_cannot_span_two_platforms(
         description="",
         external_id=None,
     )
+    lines = [
+        SaleLine(listing_id=ebay_listing.id, price=Decimal("120.00")),
+        SaleLine(listing_id=at_heritage.id, price=Decimal("500.00")),
+    ]
     with pytest.raises(SaleRefused, match="two platforms") as caught:
         record_sale_lines(
             db,
-            [
-                SaleLine(listing_id=ebay_listing.id, price=Decimal("120.00")),
-                SaleLine(listing_id=at_heritage.id, price=Decimal("500.00")),
-            ],
+            lines,
             buyer_username="coinfan88",
             external_order_id=None,
             fees=[],
@@ -1069,13 +1086,14 @@ def test_the_same_listing_twice_on_one_order_is_refused(
     db: Session, ebay_listing: Listing, admin_user: User
 ) -> None:
     """Both lines would end the same offer and split its coins' money twice."""
+    lines = [
+        SaleLine(listing_id=ebay_listing.id, price=Decimal("120.00")),
+        SaleLine(listing_id=ebay_listing.id, price=Decimal("130.00")),
+    ]
     with pytest.raises(SaleInputInvalid, match="twice"):
         record_sale_lines(
             db,
-            [
-                SaleLine(listing_id=ebay_listing.id, price=Decimal("120.00")),
-                SaleLine(listing_id=ebay_listing.id, price=Decimal("130.00")),
-            ],
+            lines,
             buyer_username="coinfan88",
             external_order_id=None,
             fees=[],

@@ -70,17 +70,19 @@ def test_a_large_size_pair_has_a_register_in_place_of_a_secretary(
 def test_a_pair_has_a_secretary_or_a_register_never_both(db: Session) -> None:
     """Two cosigners, or none, is no pair a note was signed by."""
     for secretary, register in (("A. Secretary", "A. Register"), (None, None)):
-        with pytest.raises(IntegrityError), db.begin_nested():
-            db.add(
-                SignatureCombination(
-                    code=f"test_pair_{secretary is None}",
-                    label="Test / Pair",
-                    treasurer="A. Treasurer",
-                    secretary=secretary,
-                    register=register,
-                )
+        savepoint = db.begin_nested()
+        db.add(
+            SignatureCombination(
+                code=f"test_pair_{secretary is None}",
+                label="Test / Pair",
+                treasurer="A. Treasurer",
+                secretary=secretary,
+                register=register,
             )
+        )
+        with pytest.raises(IntegrityError):
             db.flush()
+        savepoint.rollback()
 
 
 def test_a_year_narrows_to_the_possible_pairs(

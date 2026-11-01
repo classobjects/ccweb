@@ -83,7 +83,8 @@ def test_a_moved_photograph_keeps_its_role_and_goes_after_the_targets(
     assert image is not None
     assert image.source_ref == f"{target.item_code}_02.jpg"
     role = db.get(ImageRole, moving.image_role_id)
-    assert role is not None and role.code == "obverse"
+    assert role is not None
+    assert role.code == "obverse"
 
 
 def test_a_photograph_moved_to_an_item_without_one_becomes_its_primary(

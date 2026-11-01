@@ -5,6 +5,7 @@ import { useRef, useState } from 'react'
 
 import { api } from '../api'
 import { ADD, useAddOption } from '../../shared/add-option'
+import { withoutTrailing } from '../../shared/text'
 import { useRequest } from '../../shared/useRequest'
 import { PHONE_DEFAULT_CC, phoneTyped } from '../phone'
 import { siteName, withScheme } from '../site-name'
@@ -46,7 +47,7 @@ function storeKey(text) {
   try {
     const url = new URL(address)
     const site = url.hostname.toLowerCase().replace(/^www\./, '')
-    return `${site}${url.pathname.replace(/\/+$/, '')}`.toLowerCase()
+    return `${site}${withoutTrailing(url.pathname, '/')}`.toLowerCase()
   } catch {
     return null
   }

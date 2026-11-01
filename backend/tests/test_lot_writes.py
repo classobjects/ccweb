@@ -65,16 +65,18 @@ def test_an_item_with_stock_above_one_cannot_join(
     """
     item = listing.inventory_item
     assert item is not None
+    lot = _lot(db)
     with pytest.raises(LotRefused, match="quantity"):
-        add_member(db, _lot(db), item)
+        add_member(db, lot, item)
 
 
 def test_a_split_item_cannot_join(db: Session, received_item: InventoryItem) -> None:
     """Offer the pieces, the same refusal `offering_writes` gives."""
     received_item.split_at = utcnow()
     db.flush()
+    lot = _lot(db)
     with pytest.raises(LotRefused, match="split"):
-        add_member(db, _lot(db), received_item)
+        add_member(db, lot, received_item)
 
 
 def test_an_item_already_in_an_open_lot_cannot_join_another(
@@ -300,8 +302,9 @@ def test_a_member_sold_inside_a_lot_cannot_be_grouped_again(
     )
 
     assert member.disposition.code == "sold"
+    second = _lot(db, title="A second lot")
     with pytest.raises(LotRefused, match="has already been sold"):
-        add_member(db, _lot(db, title="A second lot"), member)
+        add_member(db, second, member)
 
 
 def test_a_returned_item_can_still_be_grouped(

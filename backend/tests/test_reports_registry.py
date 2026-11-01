@@ -63,8 +63,9 @@ def test_a_duplicate_id_is_refused() -> None:
     report = _make_report("test_dup")
     register(report)
     try:
+        duplicate = _make_report("test_dup")
         with pytest.raises(ValueError, match="test_dup"):
-            register(_make_report("test_dup"))
+            register(duplicate)
     finally:
         del REPORTS["test_dup"]
 
@@ -99,25 +100,26 @@ def test_a_report_registered_late_still_sits_in_its_own_group() -> None:
 
 
 def test_a_group_not_in_the_stated_order_is_refused() -> None:
+    report = _make_report("test_nogroup", group="Elsewhere")
     with pytest.raises(ValueError, match="GROUP_ORDER"):
-        register(_make_report("test_nogroup", group="Elsewhere"))
+        register(report)
     assert "test_nogroup" not in REPORTS
 
 
 def test_a_result_with_mismatched_drills_is_refused() -> None:
+    columns = [Column("n", "Count", "count")]
     with pytest.raises(ValueError, match="drills"):
         ReportResult(
-            columns=[Column("n", "Count", "count")],
+            columns=columns,
             rows=[{"n": 1}],
             drills=[],
         )
 
 
 def test_a_link_column_naming_no_column_is_refused() -> None:
+    columns = [Column("n", "Count", "count")]
     with pytest.raises(ValueError, match="link_column 'nope'"):
-        ReportResult(
-            columns=[Column("n", "Count", "count")], rows=[], link_column="nope"
-        )
+        ReportResult(columns=columns, rows=[], link_column="nope")
 
 
 def test_the_linked_column_is_the_named_one_or_else_the_first() -> None:

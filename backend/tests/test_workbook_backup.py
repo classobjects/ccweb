@@ -246,7 +246,8 @@ def test_the_workbook_is_readable_and_marks_what_it_cannot_hold(
     row = dict(zip(header, sheet[3], strict=True))  # id 2
     assert row["name"].value == wb.EMPTY_STRING
     formula = dict(zip(header, sheet[4], strict=True))["name"]
-    assert formula.value == "=SUM(A1:A2)" and formula.data_type == "s"
+    assert formula.value == "=SUM(A1:A2)"
+    assert formula.data_type == "s"
     about = {
         r[0]: r[1] for r in book[wb.ABOUT].iter_rows(values_only=True) if r and r[0]
     }
@@ -1172,5 +1173,6 @@ def test_a_cell_is_read_as_its_column_stores_it(
 
 
 def test_a_bad_cell_names_where_it_is() -> None:
+    integer = Integer()
     with pytest.raises(wb.WorkbookError, match="inventory_item row 7, piece_count"):
-        wb.from_cell(2.5, Integer(), "inventory_item row 7, piece_count")
+        wb.from_cell(2.5, integer, "inventory_item row 7, piece_count")

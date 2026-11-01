@@ -55,8 +55,9 @@ def test_a_folder_holding_none_of_them_is_refused_by_name(
         _store(tmp_path / "media", _image(db, n))
     wrong = tmp_path / "backend"
     wrong.mkdir()
+    storage = LocalStorage(wrong)
     with pytest.raises(media_check.MediaRootMismatch) as refused:
-        media_check.check_media_root(db, LocalStorage(wrong), wrong)
+        media_check.check_media_root(db, storage, wrong)
     message = str(refused.value)
     assert str(wrong) in message
     assert "originals/3.jpg" in message  # the newest, by id
@@ -79,8 +80,9 @@ def test_an_old_copy_without_the_newest_photographs_is_refused(
     _store(tmp_path, old)
     for n in range(2, 2 + media_check.SAMPLE_SIZE):
         _image(db, n)
+    storage = LocalStorage(tmp_path)
     with pytest.raises(media_check.MediaRootMismatch):
-        media_check.check_media_root(db, LocalStorage(tmp_path), tmp_path)
+        media_check.check_media_root(db, storage, tmp_path)
 
 
 def test_a_key_escaping_the_folder_counts_as_missing(
@@ -89,8 +91,9 @@ def test_a_key_escaping_the_folder_counts_as_missing(
     image = _image(db, 1)
     image.storage_key = "../outside.jpg"
     db.flush()
+    storage = LocalStorage(tmp_path)
     with pytest.raises(media_check.MediaRootMismatch):
-        media_check.check_media_root(db, LocalStorage(tmp_path), tmp_path)
+        media_check.check_media_root(db, storage, tmp_path)
 
 
 def test_an_unreachable_database_logs_and_lets_the_api_start(

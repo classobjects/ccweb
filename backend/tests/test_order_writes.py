@@ -76,7 +76,8 @@ def test_an_order_records_its_placer_version_and_changes(
     db.refresh(order)
 
     assert order.version == 1
-    assert order.placed_by is not None and order.placed_by.email == admin_user.email
+    assert order.placed_by is not None
+    assert order.placed_by.email == admin_user.email
     assert [c.change for c in order.changes] == [SalesOrderChangeKind.placed]
     assert order.total_amount == Decimal("0.00")
 
@@ -444,14 +445,10 @@ def test_checkout_still_refuses_a_listing_from_another_platform(
     `venue` keyword must not open it.
     """
     customer = _new_customer(db)
+    wanted = [Line(listing_id=ebay_listing.id, quantity=1)]
 
     with pytest.raises(HTTPException) as caught:
-        place_order(
-            db,
-            customer,
-            [Line(listing_id=ebay_listing.id, quantity=1)],
-            admin_user,
-        )
+        place_order(db, customer, wanted, admin_user)
     assert caught.value.status_code == 409
     assert "not sold in this shop" in caught.value.detail
 
@@ -1297,16 +1294,17 @@ def test_a_sale_recorded_from_another_platform_cannot_be_given_store_lines(
     )
     db.commit()
     order_id, sold_listing_id, store_listing_id = order.id, ebay_listing.id, listing.id
+    revised = [
+        Line(sold_listing_id, 1, Decimal("120.00")),
+        Line(store_listing_id, 1),
+    ]
 
     with pytest.raises(HTTPException) as refused:
         revise_order(
             db,
             order,
             customer=order.customer,
-            lines=[
-                Line(sold_listing_id, 1, Decimal("120.00")),
-                Line(store_listing_id, 1),
-            ],
+            lines=revised,
             notes=None,
             version=order.version,
             by=admin_user,

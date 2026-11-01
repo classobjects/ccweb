@@ -34,7 +34,8 @@ def test_an_unknown_kind_is_refused_naming_the_kinds_there_are(db: Session) -> N
         default_kind_check.check_default_kind(db, "banknote")
     message = str(refused.value)
     assert "'banknote'" in message
-    assert "coin" in message and "currency" in message
+    assert "coin" in message
+    assert "currency" in message
 
 
 def test_a_retired_kind_is_refused(db: Session) -> None:

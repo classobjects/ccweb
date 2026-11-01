@@ -96,6 +96,16 @@ function GroupIntoLot({ ids, codes, onGrouped, onClose }) {
   // while a write is still in flight.
   const mounted = useMounted()
 
+  /** The new lot called `wanted`: the one already started so, else a new one. */
+  async function newLot(wanted) {
+    const lot =
+      started?.title === wanted
+        ? started
+        : await api.createLot({ title: wanted, description: '' })
+    if (mounted.current) setStarted(lot)
+    return lot
+  }
+
   async function group() {
     const wanted = title.trim()
     if (target === 'new' && wanted === '') {
@@ -108,13 +118,7 @@ function GroupIntoLot({ ids, codes, onGrouped, onClose }) {
     setGroupError('')
     let lot = lots?.find((row) => String(row.id) === target) ?? null
     try {
-      if (target === 'new') {
-        lot =
-          started?.title === wanted
-            ? started
-            : await api.createLot({ title: wanted, description: '' })
-        if (mounted.current) setStarted(lot)
-      }
+      if (target === 'new') lot = await newLot(wanted)
       await api.updateLot(lot.id, { add_item_ids: ids, version: lot.version })
       if (!mounted.current) return
       onGrouped(lot.title)

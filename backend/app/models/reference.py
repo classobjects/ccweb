@@ -86,8 +86,9 @@ __all__ = [
     "VendorKind",
 ]
 
-# A foreign-key target named by several tables here.
+# Foreign-key targets named by several tables here.
 _FK_DENOMINATION = "denomination.id"
+_FK_SEAL_COLOR = "seal_color.id"
 
 
 class AppliesTo(enum.StrEnum):
@@ -245,7 +246,7 @@ class Series(ReferenceMixin, Base):
     #: The seal color that is evidence for this design: brown for Hawaii,
     #: yellow for North Africa.
     seal_color_id: Mapped[int | None] = mapped_column(
-        ForeignKey("seal_color.id", ondelete="RESTRICT"), nullable=True
+        ForeignKey(_FK_SEAL_COLOR, ondelete="RESTRICT"), nullable=True
     )
     #: The note class every note of this design is. A design that names one
     #: is never assigned to a note recorded as another class, and a note
@@ -517,7 +518,7 @@ class NoteIssue(Base):
         ForeignKey("note_type.id", ondelete="RESTRICT"), nullable=False
     )
     seal_color_id: Mapped[int] = mapped_column(
-        ForeignKey("seal_color.id", ondelete="RESTRICT"), nullable=False
+        ForeignKey(_FK_SEAL_COLOR, ondelete="RESTRICT"), nullable=False
     )
     #: Null where the issue was not signed by a Treasurer and Secretary pair
     #: (the Series 1929 bank notes carry bank officers' signatures).
@@ -662,7 +663,7 @@ class SealColor(ReferenceMixin, Base):
     #: light green seal is a green one. Empty for a color that is itself
     #: (`app.classifier_defaults`).
     base_seal_color_id: Mapped[int | None] = mapped_column(
-        ForeignKey("seal_color.id", ondelete="RESTRICT"), index=True, nullable=True
+        ForeignKey(_FK_SEAL_COLOR, ondelete="RESTRICT"), index=True, nullable=True
     )
 
     extra_table_args = (

@@ -199,7 +199,8 @@ def test_two_classes_in_one_series_are_left_for_a_person(
     assert _detail(db, unknown).note_type_id is None
     reason, detail = review_cases(db, unknown)[0]
     assert reason == "ambiguous"
-    assert "Silver Certificate" in detail and "United States Note" in detail
+    assert "Silver Certificate" in detail
+    assert "United States Note" in detail
 
 
 def test_a_deleted_note_is_not_left_for_a_person(

@@ -98,13 +98,14 @@ def test_small_size_pairs_keep_their_secretary_and_a_register_can_be_added(
                 " 0, true, 'manual')"
             )
         )
-    with pytest.raises(IntegrityError), engine.begin() as conn:
-        conn.execute(
-            text(
-                "insert into signature_combination (code, label, treasurer,"
-                " secretary, register, sort_order, is_active, source) values"
-                " ('both', 'Both', 'A. Treasurer', 'A. Secretary',"
-                " 'A. Register', 0, true, 'manual')"
-            )
-        )
+    both = text(
+        "insert into signature_combination (code, label, treasurer,"
+        " secretary, register, sort_order, is_active, source) values"
+        " ('both', 'Both', 'A. Treasurer', 'A. Secretary',"
+        " 'A. Register', 0, true, 'manual')"
+    )
+    with engine.connect() as conn:
+        with pytest.raises(IntegrityError):
+            conn.execute(both)
+        conn.rollback()
     engine.dispose()

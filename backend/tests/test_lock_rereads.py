@@ -303,7 +303,8 @@ def test_replacing_an_item_s_errors_holds_the_item_before_its_errors(
         for n, s in enumerate(seen)
         if s.startswith(("DELETE FROM item_error ", "INSERT INTO item_error "))
     ]
-    assert held and errors, seen
+    assert held, seen
+    assert errors, seen
     assert held[0] < errors[0], seen
 
 
@@ -326,7 +327,8 @@ def test_setting_only_an_item_s_attributes_holds_the_item_before_its_links(
     held = [n for n, s in enumerate(seen) if _holds_item(s)]
     writes_link = ("INSERT INTO item_attribute_link ", "UPDATE item_attribute_link ")
     links = [n for n, s in enumerate(seen) if s.startswith(writes_link)]
-    assert held and links, seen
+    assert held, seen
+    assert links, seen
     assert held[0] < links[0], seen
 
 

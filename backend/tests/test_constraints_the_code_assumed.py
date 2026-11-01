@@ -41,9 +41,11 @@ BEFORE = "a3d6f8b2c4e7"
 
 def _refused(db: Session, row: object) -> None:
     """Assert the database refuses `row`, leaving the session usable."""
-    with pytest.raises(IntegrityError), db.begin_nested():
-        db.add(row)
+    savepoint = db.begin_nested()
+    db.add(row)
+    with pytest.raises(IntegrityError):
         db.flush()
+    savepoint.rollback()
 
 
 def test_a_second_spelling_of_an_address_is_refused_by_the_database(
@@ -234,8 +236,9 @@ def test_the_upgrade_names_every_row_a_new_rule_refuses_and_changes_nothing(
 ) -> None:
     _record_rows_that_break_each_rule(before_url)
 
+    config = _config(before_url)
     with pytest.raises(RuntimeError) as refused:
-        upgrade(_config(before_url), "head")
+        upgrade(config, "head")
 
     message = str(refused.value)
     assert "Dave@Example.com" in message
