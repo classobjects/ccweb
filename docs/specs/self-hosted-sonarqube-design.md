@@ -62,13 +62,19 @@ Named volumes: `sonar-db-data`, `sonarqube-data`, `sonarqube-extensions`,
 | `ccweb_sonar_scan.cmd` | Fails fast if the server is not responding (it never starts it: an implicit start would make a stale dashboard look current) or `SONAR_TOKEN` is unset. Then, with the ccwebdb conda environment's Python and Node (`ccweb_env.cmd`), runs the backend tests with coverage, the frontend tests with coverage, and the scanner with the repository mounted at `/usr/src`; refuses to publish if any step fails. |
 | `ccweb_sonar_mcp.cmd` | Launches the MCP server for the MCP client over stdio, on `sonar-net`, with the project key `ccweb` and the repository mounted read-only. Checks only `SONAR_TOKEN` (errors to stderr) and writes nothing else to stdout, which would corrupt the protocol stream. |
 
-**Why a separate MCP launcher.** The CLI's own `sonar run mcp` starts its
-container on the default bridge network with `SONARQUBE_URL=http://localhost:9000`
-and no `--network` flag, so `localhost` is the container itself and it dies
-with `Connection refused`. `ccweb_sonar_mcp.cmd` joins `sonar-net` instead,
-and `.mcp.json` (gitignored, hand-edited) points at it.
-`sonar integrate claude` overwrites `.mcp.json` with the `sonar run mcp`
-launcher and breaks MCP again; the file's contents, to restore it, are in
+**Why a separate MCP launcher.** Left to its defaults, the CLI's own
+`sonar run mcp` starts its container on the default bridge network with
+`SONARQUBE_URL=http://localhost:9000`, so `localhost` is the container itself
+and it dies with `Connection refused`. sonarqube-cli 1.10 and later can be told
+otherwise, but only in each user's own CLI configuration
+(`mcp.container.network` set to `sonar-net`, `mcp.container.serverUrl` to
+`http://sonarqube:9000`), which a clone does not carry. `ccweb_sonar_mcp.cmd` holds the same choices in the
+repository -- `sonar-net`, the server by container name, the project key
+`ccweb`, the repository mounted read-only, the token passed by name so it never
+appears on a command line -- and `.mcp.json` (gitignored, hand-edited) points
+at it. `sonar integrate claude` overwrites `.mcp.json` with the `sonar run mcp`
+launcher, which works only where those two settings are made; the file's
+contents, to restore it, are in
 [runtime-operations-windows.md](../runtime-operations-windows.md) (*SonarQube (local
 server)*).
 

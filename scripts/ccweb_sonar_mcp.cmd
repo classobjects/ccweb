@@ -6,11 +6,13 @@ rem ---------------------------------------------------------------------------
 rem  Launch the SonarQube MCP server so that it can actually reach the local
 rem  SonarQube.
 rem
-rem  `sonar run mcp` starts the container on the default bridge network with
-rem  SONARQUBE_URL=http://localhost:9000. Inside that container, localhost is
-rem  the container itself, so it dies at startup with "Connection refused".
-rem  The CLI exposes no --network flag. Joining sonar-net and addressing the
-rem  server by container name is exactly what ccweb_sonar_scan.cmd already does.
+rem  By default `sonar run mcp` starts the container on the default bridge
+rem  network with SONARQUBE_URL=http://localhost:9000. Inside that container,
+rem  localhost is the container itself, so it dies at startup with "Connection
+rem  refused". The CLI can be configured to do better, but only per user, and
+rem  a clone carries no such configuration. This script holds the choices in
+rem  the repository: join sonar-net and address the server by container name,
+rem  exactly as ccweb_sonar_scan.cmd already does.
 rem
 rem  The MCP client runs this over stdio; do not echo anything to stdout here, or
 rem  it will corrupt the protocol stream.

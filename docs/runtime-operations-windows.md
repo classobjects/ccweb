@@ -454,7 +454,8 @@ than `sonar run mcp` is in
 [specs/self-hosted-sonarqube-design.md](specs/self-hosted-sonarqube-design.md).
 `.mcp.json` at the repo root points the MCP client at it; it is
 gitignored and hand-managed. **Re-running `sonar integrate claude` overwrites
-it** with the broken invocation; restore it to:
+it** with `sonar run mcp`, which cannot reach the server unless this user's CLI
+configuration names `sonar-net` and `http://sonarqube:9000`; restore it to:
 
 ```json
 {
