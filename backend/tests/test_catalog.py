@@ -27,9 +27,12 @@ import pytest
 from app import offering_writes
 from app.config import settings
 from app.models import (
+    Denomination,
     InventoryItem,
     Listing,
     ListingFormat,
+    Metal,
+    ReferenceMixin,
     SalesLot,
     SalesLotItem,
     SalesLotStatus,
@@ -62,6 +65,39 @@ def test_detail_is_public(client: TestClient, listing: Listing) -> None:
     item = listing.inventory_item
     assert item is not None
     assert response.json()["title"] == item.source_title
+
+
+@pytest.mark.parametrize(
+    ("model", "code", "field"),
+    [
+        (Metal, "manganese_brass", "metal"),
+        (Denomination, "usd_coin_1_00", "denomination"),
+    ],
+)
+def test_a_classifier_a_buyer_reads_comes_with_its_label(
+    client: TestClient,
+    db: Session,
+    listing: Listing,
+    model: type[ReferenceMixin],
+    code: str,
+    field: str,
+) -> None:
+    """The code stays the contract; the label is what the shop shows.
+
+    The seeded label must differ from its code, or sending the code by
+    mistake would pass.
+    """
+    row = db.scalars(select(model).where(model.code == code)).one()
+    assert row.label != row.code
+    item = listing.inventory_item
+    assert item is not None
+    setattr(item, f"{field}_id", row.id)
+    db.commit()
+    detail = client.get(f"/api/catalog/{listing.id}").json()
+    entry = _entry(client, listing.id)
+    for body in (detail, entry):
+        assert body[field] == code
+        assert body[f"{field}_label"] == row.label
 
 
 @pytest.fixture
@@ -408,6 +444,7 @@ EXPECTED_PUBLIC_FIELDS = {
     "grade_display",
     "grading_service",
     "metal",
+    "metal_label",
     "year_start",
     "year_end",
     "fineness",
@@ -443,6 +480,7 @@ EXPECTED_MEMBER_FIELDS = {
     "grade_display",
     "grading_service",
     "metal",
+    "metal_label",
     "year_start",
     "year_end",
     "fineness",

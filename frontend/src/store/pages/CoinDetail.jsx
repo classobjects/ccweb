@@ -12,8 +12,8 @@ import { coverImage, describeMember, isLot, summarize } from './lot-entry'
 
 // Classifier values arrive as codes -- 'bullion', 'MS64', 'US' -- because
 // codes are the stable contract across installations. The type is shown by
-// its label from the `item_kind` vocabulary, the denomination by the label the
-// API sends with it; the rest are shown as sent.
+// its label from the `item_kind` vocabulary, the denomination and metal by the
+// labels the API sends with them; the rest are shown as sent.
 const FIELDS = [
   ['Item code', 'item_code'],
   ['Type', 'item_kind'],
@@ -23,7 +23,7 @@ const FIELDS = [
   // MS65, not the stored 65 and business strike.
   ['Grade', 'grade_display'],
   ['Graded by', 'grading_service'],
-  ['Metal', 'metal'],
+  ['Metal', 'metal_label'],
   ['Fineness', 'fineness'],
   ['Weight (ozt)', 'gross_weight_ozt'],
 ]

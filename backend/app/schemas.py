@@ -350,6 +350,10 @@ class CatalogDescription(BaseModel):
     grade_display: str | None = None
     grading_service: str | None = None
     metal: str | None = None
+    #: What a buyer reads: Silver, where `metal` is silver -- and Manganese
+    #: Brass where it is manganese_brass. Sent for the same reason as
+    #: `denomination_label`.
+    metal_label: str | None = None
 
     year_start: int | None = None
     year_end: int | None = None
