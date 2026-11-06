@@ -171,6 +171,7 @@ def _describe(item: InventoryItem) -> dict[str, Any]:
         "grade_display": grades.display_item(item),
         "grading_service": id_to_code(item.grading_service),
         "metal": id_to_code(item.metal),
+        "metal_label": item.metal.label if item.metal else None,
         "year_start": year_start,
         "year_end": year_end,
         "fineness": item.fineness,

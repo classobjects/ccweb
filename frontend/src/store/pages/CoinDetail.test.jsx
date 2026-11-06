@@ -105,6 +105,21 @@ describe('CoinDetail', () => {
     expect(screen.queryByText('bullion')).toBeNull()
   })
 
+  it('names the metal and denomination by the labels the API sends', async () => {
+    api.getCatalogItem.mockResolvedValue({
+      ...COIN,
+      metal: 'manganese_brass',
+      metal_label: 'Manganese Brass',
+      denomination: 'usd_coin_1_00',
+      denomination_label: 'Dollar',
+    })
+    show()
+    expect(await screen.findByText('Manganese Brass')).toBeInTheDocument()
+    expect(screen.getByText('Dollar')).toBeInTheDocument()
+    expect(screen.queryByText('manganese_brass')).toBeNull()
+    expect(screen.queryByText('usd_coin_1_00')).toBeNull()
+  })
+
   it('never shows the previous entry while the next one loads', async () => {
     // A link from one entry to another changes the id without remounting
     // the page; the first coin must not stay on screen, under the second's
