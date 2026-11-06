@@ -6,7 +6,8 @@
 #  ccweb_sonar_mcp.sh - the SonarQube MCP server, over stdio.
 #
 #  The bash twin of ccweb_sonar_mcp.cmd, named as the command in a Linux
-#  machine's .mcp.json. It joins sonar-net so the server is reached by name.
+#  machine's .mcp.json. It joins sonar-net so the server is reached by name,
+#  which `sonar run mcp` does only where a user's own CLI configuration says so.
 #  It prints nothing of its own on stdout -- the MCP client reads it -- and
 #  so activates no conda environment.
 # ---------------------------------------------------------------------------
