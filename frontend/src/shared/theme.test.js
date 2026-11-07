@@ -13,6 +13,7 @@ const read = (relative) =>
 
 afterEach(() => {
   document.documentElement.removeAttribute('data-theme')
+  document.documentElement.style.colorScheme = ''
   window.localStorage.clear()
 })
 
@@ -34,6 +35,18 @@ describe('applyTheme', () => {
     expect(storedTheme()).toBe('auto')
   })
 
+  it("tells the browser the page's color scheme, so its own canvas matches", () => {
+    // Before a stylesheet loads the browser paints its default canvas: white,
+    // unless `color-scheme` on <html> says dark. Without this a dark page
+    // reloads through one white frame.
+    applyTheme('dark')
+    expect(document.documentElement.style.colorScheme).toBe('dark')
+    applyTheme('light')
+    expect(document.documentElement.style.colorScheme).toBe('light')
+    applyTheme('auto')
+    expect(document.documentElement.style.colorScheme).toBe('')
+  })
+
   it('reads anything it does not know as Automatic', () => {
     expect(normalTheme('purple')).toBe('auto')
     expect(normalTheme(undefined)).toBe('auto')
@@ -49,13 +62,33 @@ describe('the pieces that must agree', () => {
     expect(early).toContain("theme === 'light' || theme === 'dark'")
   })
 
-  it('loads the early script in the head of both pages', () => {
+  it('loads the early script in the head of both pages, after the scheme it may narrow', () => {
     for (const page of ['../../index.html', '../../management.html']) {
       const html = read(page)
       const head = html.slice(0, html.indexOf('</head>'))
-      expect(head, page).toContain('<script src="/theme-init.js"></script>')
+      const meta = head.indexOf('<meta name="color-scheme" content="light dark" />')
+      const script = head.indexOf('<script src="/theme-init.js"></script>')
+      expect(meta, page).toBeGreaterThan(-1)
+      expect(script, page).toBeGreaterThan(meta)
     }
   })
+
+  it.each([
+    ['dark', 'dark', 'dark'],
+    ['light', 'light', 'light'],
+    [null, null, ''],
+    ['purple', null, ''],
+  ])(
+    'early script: remembered %s gives data-theme %s and color-scheme "%s"',
+    (stored, attribute, scheme) => {
+      if (stored) window.localStorage.setItem(THEME_KEY, stored)
+      document.documentElement.style.colorScheme = ''
+      // Run the shipped file as the page would.
+      new Function(read('../../public/theme-init.js'))()
+      expect(document.documentElement.getAttribute('data-theme')).toBe(attribute)
+      expect(document.documentElement.style.colorScheme).toBe(scheme)
+    },
+  )
 
   it('gives the chosen dark and the device-asked dark the same colors', () => {
     // shared.css repeats the dark set: once for `data-theme="dark"`, once

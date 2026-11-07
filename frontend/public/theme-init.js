@@ -12,6 +12,9 @@
     var theme = window.localStorage.getItem('ccwebdb.theme')
     if (theme === 'light' || theme === 'dark') {
       document.documentElement.setAttribute('data-theme', theme)
+      // The browser's own canvas, painted before the stylesheet arrives,
+      // follows this; without it a dark page reloads through a white frame.
+      document.documentElement.style.colorScheme = theme
     }
   } catch {
     // No storage (a private window, blocked site data): the device decides.
