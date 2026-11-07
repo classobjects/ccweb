@@ -12,6 +12,17 @@ import PurchaseHeading from '../PurchaseHeading'
 import ReceiptPanel from './receiving/ReceiptPanel'
 import { useRequest } from '../../shared/useRequest'
 
+/**
+ * The one purchase every row found is on, or null: nothing found, an item
+ * with no purchase, or rows from two purchases.
+ */
+function onePurchaseOf(rows) {
+  if (!rows?.length) return null
+  const ids = new Set(rows.map((row) => row.purchase_order_id))
+  const [only] = ids
+  return ids.size === 1 && only != null ? only : null
+}
+
 /** A positive integer `order` query parameter, or null when absent or bad. */
 function orderIdFromParams(params) {
   const raw = params.get('order')
@@ -49,6 +60,13 @@ function orderIdFromParams(params) {
  * The order is read again after every receipt (`epoch` is in its key), so
  * the count never offers a line that has just arrived; the server's 409 on
  * an already-received item is the backstop.
+ *
+ * **Receive all from a search**: with no order linked, when every item a
+ * search finds is on one purchase -- an order number typed and found -- that
+ * purchase is read and offered the same way, named by its order number. The
+ * lines come from the purchase, not from the rows shown, so a search showing
+ * part of the order still receives all of it; items from two purchases, or
+ * one with none, offer nothing.
  */
 export default function Receiving() {
   const [params] = useSearchParams()
@@ -73,12 +91,31 @@ export default function Receiving() {
   const linkError = link.error
   const order = orderId != null && !waitingForOrder && !linkError ? link.data : null
 
+  // With no order linked, the one purchase a search found, read as a link's
+  // is: again after every receipt, offered only from a settled read.
+  const [foundRows, setFoundRows] = useState(null)
+  const foundId = orderId == null ? onePurchaseOf(foundRows) : null
+  const found = useRequest(foundId == null ? null : `found:${foundId}:${epoch}`, () =>
+    api.getPurchaseOrder(foundId),
+  )
+  const foundOrder =
+    foundId != null && !found.busy && found.data?.id === foundId ? found.data : null
+
   const scope = `order:${orderId}`
   const openLine = receiving?.scope === scope ? receiving.line : null
   // Offered only from a settled read, never from the previous one.
-  const stillOrdered =
-    order && !link.busy ? order.lines.filter((line) => line.status === 'ordered') : []
+  const allOf = order && !link.busy ? order : foundOrder
+  const stillOrdered = allOf
+    ? allOf.lines.filter((line) => line.status === 'ordered')
+    : []
   const openAll = receiving?.scope === scope && receiving.all ? receiving.all : null
+  // A linked order is named by the heading above; one found is named here.
+  const allLabel =
+    allOf === foundOrder && foundOrder
+      ? `Receive all ${stillOrdered.length} still ordered on ${
+          foundOrder.order_number || purchaseNumber(foundOrder.id)
+        }`
+      : `Receive all ${stillOrdered.length} still ordered`
 
   function handleReceiptDone(used) {
     if (used) setLastReceipt(used)
@@ -107,9 +144,15 @@ export default function Receiving() {
         <p>
           <button
             type="button"
-            onClick={() => setReceiving({ scope, all: stillOrdered.map((l) => l.id) })}
+            onClick={() =>
+              setReceiving({
+                scope,
+                all: stillOrdered.map((l) => l.id),
+                purchaseId: allOf.id,
+              })
+            }
           >
-            Receive all {stillOrdered.length} still ordered
+            {allLabel}
           </button>
         </p>
       )}
@@ -121,6 +164,7 @@ export default function Receiving() {
             initialOrderNumber={order?.order_number ?? ''}
             epoch={epoch}
             onPick={(line) => setReceiving({ scope, line })}
+            onResults={setFoundRows}
           />
         </div>
       )}
@@ -144,11 +188,12 @@ export default function Receiving() {
 
       {openAll && (
         <ModalDialog
-          label={`Receive ${openAll.length} items on ${purchaseNumber(orderId)}`}
+          label={`Receive ${openAll.length} items on ${purchaseNumber(receiving.purchaseId)}`}
           onClose={closeReceipt}
         >
           <h2>
-            All {openAll.length} items still ordered on {purchaseNumber(orderId)}
+            All {openAll.length} items still ordered on{' '}
+            {purchaseNumber(receiving.purchaseId)}
           </h2>
           <ReceiptPanel
             itemIds={openAll}

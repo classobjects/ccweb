@@ -273,7 +273,12 @@ receipt and the dialog open.
   more lines still `ordered`, **Receive all N still ordered** opens the same
   dialog over all of them: one date, one location, one all-or-nothing
   request, with no photograph or Friedberg lookup, which belong to one
-  object. A split shipment is still received line by line.
+  object. With no order linked, a search whose rows all carry one
+  `purchase_order_id` reads that purchase and offers the same button, named
+  by its order number ("... still ordered on 49573"); the lines come from
+  the purchase, not the rows shown, so a search showing part of the order
+  still receives all of it. Rows from two purchases, or one with none, offer
+  nothing. A split shipment is still received line by line.
 - **Each search request returns one page of 200 rows** per view and status.
   More than that is reported with its count; a larger order is narrowed with
   the other fields.
