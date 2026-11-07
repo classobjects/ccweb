@@ -124,7 +124,7 @@ class Report:
 
 
 def load_designs(db: Session) -> list[Design]:
-    """Every design with facts to classify by.
+    """Every active design with facts to classify by.
 
     A design with range rows is matched on them, each falling back to the
     design's own denomination. One with none is matched on its own span. A
@@ -136,7 +136,10 @@ def load_designs(db: Session) -> list[Design]:
         ranges.setdefault(record.series_id, []).append(record)
 
     designs = []
-    for series in db.execute(select(Series).order_by(Series.sort_order)).scalars():
+    # Active designs only, as in `series_match.build_rules`: a retired one
+    # is never assigned.
+    active = select(Series).where(Series.is_active.is_(True))
+    for series in db.execute(active.order_by(Series.sort_order)).scalars():
         if series.id in ranges:
             given: list[tuple[int | None, int, int | None, str | None]] = [
                 (

@@ -52,6 +52,19 @@ def test_a_commit_writes_the_series(db: Session, make_item: ItemFactory) -> None
     assert item.series_id == _series_id(db, "morgan_dollar")
 
 
+def test_a_retired_series_is_never_matched(db: Session, make_item: ItemFactory) -> None:
+    # Retiring a design takes it off every picker; the matcher is a picker
+    # too, so text naming a retired design leaves the item unclassified.
+    db.get_one(Series, _series_id(db, "morgan_dollar")).is_active = False
+    db.flush()
+    item = make_item(title="1881-S Morgan Silver Dollar", description="Nice strike.")
+
+    run(db, commit=True)
+
+    db.refresh(item)
+    assert item.series_id is None
+
+
 def test_a_nickname_covering_two_series_is_left_alone(
     db: Session, make_item: ItemFactory
 ) -> None:

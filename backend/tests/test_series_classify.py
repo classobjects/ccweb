@@ -109,6 +109,23 @@ def test_a_single_candidate_is_assigned(db: Session, make_item: ItemFactory) -> 
     assert _series_code(db, dime) == "winged_liberty_head_dime"
 
 
+def test_a_retired_design_is_never_assigned(
+    db: Session, make_item: ItemFactory
+) -> None:
+    # The same dime as above, its only candidate retired: nothing is left
+    # to assign, rather than a design no picker offers any more.
+    retired = db.scalars(
+        select(Series).where(Series.code == "winged_liberty_head_dime")
+    ).one()
+    retired.is_active = False
+    db.flush()
+    dime = _coin(db, make_item, DIME, 1942, description="10C MS65")
+
+    run(db, commit=True)
+
+    assert _series_code(db, dime) is None
+
+
 def test_a_dry_run_writes_nothing(db: Session, make_item: ItemFactory) -> None:
     dime = _coin(db, make_item, DIME, 1942)
 
