@@ -6,6 +6,7 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import { useAuth } from '../shared/auth-context'
 import RequireSignIn from '../shared/RequireSignIn'
 import { sideFor } from '../shared/kinds'
+import SiteLogo from '../shared/SiteLogo'
 import { SHOP_NAME } from '../shared/site'
 import { useRequest } from '../shared/useRequest'
 import { api } from './api'
@@ -82,8 +83,11 @@ function Console() {
       <div className="app console-app">
         <header className="topbar">
           <span className="brand">
-            {SHOP_NAME}
-            <span className="brand-sub">Console</span>
+            <SiteLogo />
+            <span className="brand-text">
+              {SHOP_NAME}
+              <span className="brand-sub">Console</span>
+            </span>
           </span>
 
           <ConsoleMenu />
