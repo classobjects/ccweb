@@ -7,6 +7,7 @@ import { useAuth } from '../shared/auth-context'
 import RequireSignIn from '../shared/RequireSignIn'
 import { sideFor } from '../shared/kinds'
 import SiteLogo from '../shared/SiteLogo'
+import ThemeSwitch from '../shared/ThemeSwitch'
 import { SHOP_NAME } from '../shared/site'
 import { useRequest } from '../shared/useRequest'
 import { api } from './api'
@@ -93,6 +94,7 @@ function Console() {
           <ConsoleMenu />
 
           <div className="account">
+            <ThemeSwitch />
             <span className="muted">{user.email}</span>
             <button className="link" onClick={logout}>
               Sign out

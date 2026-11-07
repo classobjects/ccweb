@@ -135,7 +135,7 @@ from .sales import (
     SalesVenue,
     Shipment,
 )
-from .scaffold import User, UserRole
+from .scaffold import Theme, User, UserRole
 from .valuation import Composition, MetalPrice, ValuationSnapshot
 
 #: Reference tables, in dependency order. Seeding, export **and the reference
@@ -279,6 +279,7 @@ __all__ = [
     "StorageLocation",
     "StorageLocationKind",
     "StrikeType",
+    "Theme",
     "TimestampMixin",
     "User",
     "UserRole",

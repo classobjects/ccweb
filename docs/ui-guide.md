@@ -33,6 +33,11 @@ The menu across the top groups the pages by what the work is for: **Inventory**,
 **Procurement**, **Selling**, **Reports** and **Settings**. The group holding the
 page you are on is underlined.
 
+**Theme**, beside your sign-in name at the right of the header (here and in
+the shop), shows the pages light or dark, or **Automatic** to follow the
+device's own setting. The choice is saved to your account, so every computer
+and phone you sign in on shows the same.
+
 The band at the bottom of the window explains whichever field has focus, on
 every page. Each form below is followed by its fields and that explanation,
 word for word; a field explained once is referred back to after that. Underlined letters in labels are keyboard shortcuts: Alt plus the

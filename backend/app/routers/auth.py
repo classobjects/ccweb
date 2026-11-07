@@ -15,7 +15,7 @@ from .. import throttle
 from ..config import settings
 from ..deps import SHOP_CLOSED, CurrentUser, DbSession
 from ..models import User, UserRole
-from ..schemas import RefreshRequest, TokenPair, UserCreate, UserOut
+from ..schemas import RefreshRequest, TokenPair, UserCreate, UserOut, UserPreferences
 from ..security import (
     UNKNOWN_ACCOUNT_HASH,
     account_by_email,
@@ -216,4 +216,16 @@ def logout(user: CurrentUser, db: DbSession) -> None:
 @router.get("/me", response_model=UserOut)
 def me(user: CurrentUser) -> User:
     """The signed-in user."""
+    return user
+
+
+@router.patch("/me", response_model=UserOut)
+def update_me(body: UserPreferences, user: CurrentUser, db: DbSession) -> User:
+    """Save the signed-in account's own preferences: its light/dark choice.
+
+    Only what `UserPreferences` names; a role, an email or a password is
+    changed elsewhere, by whoever may change it.
+    """
+    user.theme = body.theme
+    db.commit()
     return user

@@ -384,6 +384,7 @@ export const api = {
   register: (payload) =>
     send('/api/auth/register', { method: 'POST', body: payload, auth: false }),
   me: () => send('/api/auth/me'),
+  updateMe: (changes) => send('/api/auth/me', { method: 'PATCH', body: changes }),
   // Retires every token of the account on the server, not just this tab's.
   logout: () => send('/api/auth/logout', { method: 'POST' }),
 

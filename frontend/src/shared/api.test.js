@@ -42,7 +42,27 @@ describe("the shop's api object", () => {
       'logout',
       'me',
       'register',
+      // The light/dark choice, which a shopper makes in the shop's header.
+      'updateMe',
     ])
+  })
+
+  it("saves the account's own preferences with a PATCH of /api/auth/me", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      status: 200,
+      ok: true,
+      text: () => Promise.resolve('{"theme":"dark"}'),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    try {
+      await expect(api.updateMe({ theme: 'dark' })).resolves.toEqual({ theme: 'dark' })
+      const [path, init] = fetchMock.mock.calls[0]
+      expect(path).toMatch(/\/api\/auth\/me$/)
+      expect(init.method).toBe('PATCH')
+      expect(JSON.parse(init.body)).toEqual({ theme: 'dark' })
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 
   it("asks for the caller's own orders, which for an admin is not every order", async () => {

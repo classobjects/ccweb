@@ -36,7 +36,7 @@ from pydantic import (
 
 from . import plates
 from .fr_format import fr_district, fr_problem, normalize_fr
-from .models import AddressKind, UserRole
+from .models import AddressKind, Theme, UserRole
 
 #: A price, cost, fee or reserve in dollars and cents. Never negative, and
 #: held to the `NUMERIC(12,2)` columns it is stored in: `decimal_places` must
@@ -159,7 +159,16 @@ class UserOut(BaseModel):
     full_name: str
     role: UserRole
     is_active: bool
+    theme: Theme
     created_at: datetime
+
+
+class UserPreferences(BaseModel):
+    """What an account may change about itself: its light/dark choice."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    theme: Theme
 
 
 class TokenPair(BaseModel):

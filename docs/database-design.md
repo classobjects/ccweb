@@ -1106,7 +1106,9 @@ Seed files hold facts only, never a catalog publisher's numbering or prices
 `users` is the login table (`models/scaffold.py`): `email` (unique
 whatever its case, `uq_users_email` on `lower(email)`),
 `full_name`, `hashed_password`, `role` (`manager` \| `customer`),
-`is_active`, `token_version`, `created_at`. Managers run the console and see
+`is_active`, `theme` (`auto` \| `light` \| `dark`, the account's light/dark
+choice, `docs/specs/theme-preference-design.md`), `token_version`,
+`created_at`. Managers run the console and see
 cost basis; customers do not. Tokens are stateless JWTs carrying
 `token_version`, which is bumped on every password change so that a reset
 revokes every token issued before it.

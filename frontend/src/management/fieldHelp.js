@@ -958,6 +958,10 @@ export const FIELD_HELP = {
     title: 'Position',
     text: "Where the value sits in a list kept in a meaningful order: a number between its neighbors' positions, shown in the Position column. Lower comes first.",
   },
+  theme: {
+    title: 'Theme',
+    text: 'Light or dark pages, or Automatic to follow this device’s own setting. Saved to your account, so every computer and phone you sign in on shows the same.',
+  },
   vocabulary_rename: {
     title: 'Rename',
     text: 'Changes the label only. The code stays, so every item that holds the value shows the new wording at once.',
