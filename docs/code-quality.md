@@ -261,3 +261,14 @@ modules import nothing but React, so there are no cycles. Constants and
 helpers that pages and their tests share go in a plain `.js` module beside
 them for the same reason (`management/pages/listing-labels.js`,
 `store/pages/lot-entry.js`).
+
+---
+
+## Dependency overrides
+
+`frontend/package.json` forces one transitive package, since the file cannot
+say why itself:
+
+| Override | Why |
+|---|---|
+| `minimatch` `^11.0.1` | Advisory GHSA-g3hv-75wg-m249 (denial of service from a crafted glob) affects 7.0.0 to 11.0.0. It reaches the tree only through eslint, whose newest release still asks for `^10`; npm's own fix is going back to eslint 9. With 11, eslint lints the same files under the same resolved config. Drop the override once eslint asks for 11 itself. |
