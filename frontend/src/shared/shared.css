@@ -132,6 +132,14 @@ body {
 
 .account {
   margin-left: auto;
+  flex-wrap: wrap;
+}
+
+/* On a phone the header wraps between its controls, never inside one:
+   "Sign out" stays one line and the Theme box shows its whole word. */
+.account > * {
+  flex: none;
+  white-space: nowrap;
 }
 
 /* The light/dark choice beside the account name: a small dropdown, its

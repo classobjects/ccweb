@@ -6,6 +6,9 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Light and dark both offered, so the browser's canvas follows the
+         device until theme-init.js narrows it to the chosen one. -->
+    <meta name="color-scheme" content="light dark" />
     <!-- The light/dark choice, applied before anything is drawn. -->
     <script src="/theme-init.js"></script>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />

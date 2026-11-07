@@ -41,6 +41,10 @@ export function applyTheme(theme) {
   const root = document.documentElement
   if (chosen === 'auto') root.removeAttribute('data-theme')
   else root.setAttribute('data-theme', chosen)
+  // The browser's own canvas follows `color-scheme`; on Automatic the
+  // pages' <meta name="color-scheme" content="light dark"> leaves it to
+  // the device, as public/theme-init.js does on the next load.
+  root.style.colorScheme = chosen === 'auto' ? '' : chosen
   try {
     if (chosen === 'auto') window.localStorage.removeItem(THEME_KEY)
     else window.localStorage.setItem(THEME_KEY, chosen)
