@@ -561,7 +561,7 @@ describe('BulkEditBar', () => {
 
     await user.selectOptions(
       screen.getByRole('combobox', { name: 'Field to change' }),
-      'Location',
+      'Storage location',
     )
     // A picker of the places there are, not a box to type an id into.
     expect(screen.queryByPlaceholderText('New value')).toBeNull()
@@ -591,7 +591,7 @@ describe('BulkEditBar', () => {
 
     await user.type(screen.getByPlaceholderText('New value'), '1964')
     const field = screen.getByRole('combobox', { name: 'Field to change' })
-    await user.selectOptions(field, 'Location')
+    await user.selectOptions(field, 'Storage location')
     // 1964 is a year, not location number 1964: nothing is chosen yet.
     await user.click(screen.getByRole('button', { name: 'Apply to 1' }))
     expect(screen.getByText('Choose the location first.')).toBeVisible()

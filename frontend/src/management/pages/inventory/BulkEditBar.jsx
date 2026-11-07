@@ -56,7 +56,7 @@ const BULK_FIELDS = [
   ['Metal', 'metal', 'text', 'coins'],
   //: Where the selection is kept: a storage location picked, or added, from
   //: the same picker the item editor uses. Each item's move is recorded.
-  ['Location', 'storage_location_id', 'location'],
+  ['Storage location', 'storage_location_id', 'location'],
 ]
 
 /**

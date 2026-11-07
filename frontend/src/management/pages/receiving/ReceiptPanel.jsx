@@ -8,6 +8,7 @@ import { identifyChanges, identifyValues } from '../../identify'
 import ErrorsPanel from '../inventory/ErrorsPanel'
 import ReviewPane from '../inventory/ReviewPane'
 import ForSaleConfirm from '../ForSaleConfirm'
+import HelpScope from '../../HelpScope'
 import FriedbergLookup from './FriedbergLookup'
 import IdentifySection from './IdentifySection'
 import LocationSelect from '../../LocationSelect'
@@ -299,168 +300,172 @@ export default function ReceiptPanel({ itemIds, onDone, initial = {} }) {
     }
   }
 
+  // The scope makes the fields here explain themselves in the dialog's band:
+  // the dialog provides the band, but only a HelpScope reads `data-help`.
   return (
-    <div className="receipt-panel">
-      {/* Hidden while the full editor is open: it edits the same fields. */}
-      {identify.baseline && singleItemId != null && reviewIds === null && (
-        <>
-          <IdentifySection
-            item={identify.baseline}
-            values={identify.values}
-            onChange={(values) => setIdentify((current) => ({ ...current, values }))}
-            disabled={disabled}
-          />
-          {identifyDirty && (
-            <p className="muted">
-              Identify changes are saved only with Receive: Missing, Returned and
-              Cancelled leave the item as it was.
-            </p>
-          )}
-        </>
-      )}
-
-      <div className="filter-grid">
-        <label>
-          Arrived{/* */}
-          <input
-            type="date"
-            value={arrivedOn}
-            disabled={disabled}
-            onChange={(e) => setArrivedOn(e.target.value)}
-          />
-        </label>
-
-        <label>
-          Storage location
-          <LocationSelect
-            value={storageLocationId}
-            disabled={disabled}
-            onChange={setStorageLocationId}
-          />
-        </label>
-
-        <label>
-          Note{/* */}
-          <input
-            type="text"
-            value={note}
-            disabled={disabled}
-            onChange={(e) => setNote(e.target.value)}
-          />
-        </label>
-
-        <div
-          className={`photo-drop${drop.dragActive ? ' photo-drop-active' : ''}`}
-          tabIndex={photoDisabled ? -1 : 0}
-          aria-label="Add an image: drag one here, or paste one with Ctrl+V"
-          {...drop.target}
-        >
-          <label>
-            Photo{/* */}
-            <input
-              key={photoInputKey}
-              type="file"
-              accept="image/*"
-              multiple
-              disabled={photoDisabled}
-              onChange={drop.onFileInput}
+    <HelpScope>
+      <div className="receipt-panel">
+        {/* Hidden while the full editor is open: it edits the same fields. */}
+        {identify.baseline && singleItemId != null && reviewIds === null && (
+          <>
+            <IdentifySection
+              item={identify.baseline}
+              values={identify.values}
+              onChange={(values) => setIdentify((current) => ({ ...current, values }))}
+              disabled={disabled}
             />
-            {itemIds.length > 1 && pendingPhotoNames.length === 0 && (
-              <span className="muted">
-                Photographs attach to a single item -- receive this one on its own to
-                add one.
-              </span>
+            {identifyDirty && (
+              <p className="muted">
+                Identify changes are saved only with Receive: Missing, Returned and
+                Cancelled leave the item as it was.
+              </p>
             )}
-            {itemIds.length > 1 && pendingPhotoNames.length > 0 && (
-              <span className="muted">
-                {pendingPhotoNames.join(', ')} will not be uploaded -- receive this item
-                on its own to attach {pendingPhotoNames.length > 1 ? 'them' : 'it'}.
-              </span>
-            )}
+          </>
+        )}
+
+        <div className="filter-grid">
+          <label data-help="arrived_on">
+            Arrived{/* */}
+            <input
+              type="date"
+              value={arrivedOn}
+              disabled={disabled}
+              onChange={(e) => setArrivedOn(e.target.value)}
+            />
           </label>
-          <p className="muted">
-            Choose a file, drag one here, or paste an image (Ctrl+V).
-          </p>
-          {drop.pickError && <p className="error">{drop.pickError}</p>}
-          {/* Shown whenever anything is staged, single item or several --
+
+          <label data-help="storage_location_id">
+            Storage location
+            <LocationSelect
+              value={storageLocationId}
+              disabled={disabled}
+              onChange={setStorageLocationId}
+            />
+          </label>
+
+          <label data-help="receipt_note">
+            Note{/* */}
+            <input
+              type="text"
+              value={note}
+              disabled={disabled}
+              onChange={(e) => setNote(e.target.value)}
+            />
+          </label>
+
+          <div
+            className={`photo-drop${drop.dragActive ? ' photo-drop-active' : ''}`}
+            tabIndex={photoDisabled ? -1 : 0}
+            aria-label="Add an image: drag one here, or paste one with Ctrl+V"
+            {...drop.target}
+          >
+            <label data-help="receipt_photo">
+              Photo{/* */}
+              <input
+                key={photoInputKey}
+                type="file"
+                accept="image/*"
+                multiple
+                disabled={photoDisabled}
+                onChange={drop.onFileInput}
+              />
+              {itemIds.length > 1 && pendingPhotoNames.length === 0 && (
+                <span className="muted">
+                  Photographs attach to a single item -- receive this one on its own to
+                  add one.
+                </span>
+              )}
+              {itemIds.length > 1 && pendingPhotoNames.length > 0 && (
+                <span className="muted">
+                  {pendingPhotoNames.join(', ')} will not be uploaded -- receive this
+                  item on its own to attach{' '}
+                  {pendingPhotoNames.length > 1 ? 'them' : 'it'}.
+                </span>
+              )}
+            </label>
+            <p className="muted">
+              Choose a file, drag one here, or paste an image (Ctrl+V).
+            </p>
+            {drop.pickError && <p className="error">{drop.pickError}</p>}
+            {/* Shown whenever anything is staged, single item or several --
               the file box replacing what it showed was never the batch
               itself, and a drop or a paste has no other trace on screen.
               Without this a dropped photo could sit staged, invisible, and
               be silently discarded the next time the file box was used. */}
-          {photos.length > 0 && (
-            <ul className="photo-staged" aria-label="Staged photographs">
-              {photos.map((file, index) => (
-                <li key={`${file.name}-${index}`}>
-                  <span>{file.name}</span>
-                  <button
-                    type="button"
-                    className="link"
-                    onClick={() => removePhoto(index)}
-                  >
-                    Remove
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
+            {photos.length > 0 && (
+              <ul className="photo-staged" aria-label="Staged photographs">
+                {photos.map((file, index) => (
+                  <li key={`${file.name}-${index}`}>
+                    <span>{file.name}</span>
+                    <button
+                      type="button"
+                      className="link"
+                      onClick={() => removePhoto(index)}
+                    >
+                      Remove
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </div>
-      </div>
 
-      <div className="receipt-actions">
-        {OUTCOMES.map(([outcome, label]) => (
-          <button key={outcome} disabled={busy} onClick={() => submit(outcome)}>
-            {label}
-          </button>
-        ))}
-      </div>
+        <div className="receipt-actions">
+          {OUTCOMES.map(([outcome, label]) => (
+            <button key={outcome} disabled={busy} onClick={() => submit(outcome)}>
+              {label}
+            </button>
+          ))}
+        </div>
 
-      {error && <p className="error">{error}</p>}
-      {uploadError && <p className="error">{uploadError}</p>}
+        {error && <p className="error">{error}</p>}
+        {uploadError && <p className="error">{uploadError}</p>}
 
-      {/* Collapsed by default -- expanding shows the item's fields,
+        {/* Collapsed by default -- expanding shows the item's fields,
           composed from the same ReviewPane/ItemEditForm the inventory
           page uses, so this never drifts from that page's editor. */}
-      <div className="review-toggle">
-        {reviewIds === null && (
-          <>
-            {/* The editor would open over Identify values it cannot see:
+        <div className="review-toggle">
+          {reviewIds === null && (
+            <>
+              {/* The editor would open over Identify values it cannot see:
                 while they are unsaved a press opens nothing, and the
                 reason is printed beside the button. */}
-            <button
-              type="button"
-              onClick={() => {
-                if (!identifyDirty) setReviewIds(itemIds)
+              <button
+                type="button"
+                onClick={() => {
+                  if (!identifyDirty) setReviewIds(itemIds)
+                }}
+              >
+                Confirm or correct fields
+              </button>
+              {identifyDirty && (
+                <span className="muted">
+                  {' '}
+                  Receive or undo the Identify changes first.
+                </span>
+              )}
+            </>
+          )}
+          {reviewIds !== null && (
+            <ReviewPane
+              ids={reviewIds}
+              onClose={(deleted = []) => {
+                setReviewIds(null)
+                // An item deleted in the review cannot be read or received:
+                // hand back to the page, which closes this and searches again.
+                if (itemIds.some((id) => deleted.includes(id))) {
+                  onDone?.()
+                  return
+                }
+                // Whatever the editor saved is the item's now: Identify reads it.
+                selected.reload()
               }}
-            >
-              Confirm or correct fields
-            </button>
-            {identifyDirty && (
-              <span className="muted">
-                {' '}
-                Receive or undo the Identify changes first.
-              </span>
-            )}
-          </>
-        )}
-        {reviewIds !== null && (
-          <ReviewPane
-            ids={reviewIds}
-            onClose={(deleted = []) => {
-              setReviewIds(null)
-              // An item deleted in the review cannot be read or received:
-              // hand back to the page, which closes this and searches again.
-              if (itemIds.some((id) => deleted.includes(id))) {
-                onDone?.()
-                return
-              }
-              // Whatever the editor saved is the item's now: Identify reads it.
-              selected.reload()
-            }}
-          />
-        )}
-      </div>
+            />
+          )}
+        </div>
 
-      {/* One item's id only -- `PUT /api/inventory/{id}/errors` replaces a
+        {/* One item's id only -- `PUT /api/inventory/{id}/errors` replaces a
           single item's set, so over the several items of Receive all there
           is no bulk semantic to show this against; it is offered in the
           one-item dialog only. Unlike the Friedberg section this is not gated on
@@ -485,56 +490,57 @@ export default function ReceiptPanel({ itemIds, onDone, initial = {} }) {
           vanishes from the picker that created it (`fitsKind`). On a failed
           fetch that is the steady state, not one render. Better to offer
           nothing than to offer the wrong half. */}
-      {singleItemId != null && itemKind != null && reviewIds === null && (
-        <ErrorsPanel
-          key={singleItemId}
-          itemId={singleItemId}
-          kind={itemKind}
-          saleState={itemSaleState}
-        />
-      )}
+        {singleItemId != null && itemKind != null && reviewIds === null && (
+          <ErrorsPanel
+            key={singleItemId}
+            itemId={singleItemId}
+            kind={itemKind}
+            saleState={itemSaleState}
+          />
+        )}
 
-      {/* Offered only for currency -- a coin has no Friedberg number, and
+        {/* Offered only for currency -- a coin has no Friedberg number, and
           this section never even mounts to ask the question for one.
           Collapsed by default: the owner asks for a lookup explicitly,
           nothing here runs on its own. */}
-      {isCurrency && (
-        <div className="friedberg-toggle">
-          {!friedbergOpen && (
-            <button type="button" onClick={() => setFriedbergOpen(true)}>
-              Look up Friedberg number
-            </button>
-          )}
-          {/* A number known already -- off a graded note's holder -- is
+        {isCurrency && (
+          <div className="friedberg-toggle">
+            {!friedbergOpen && (
+              <button type="button" onClick={() => setFriedbergOpen(true)}>
+                Look up Friedberg number
+              </button>
+            )}
+            {/* A number known already -- off a graded note's holder -- is
               typed straight in and attached, with no lookup. */}
-          {!friedbergOpen && itemDetail && (
-            <FriedbergLookup
-              key={`entry-${singleItemId}`}
-              itemId={singleItemId}
-              item={itemDetail}
-              entryOnly
-            />
-          )}
-          {friedbergOpen && (
-            <FriedbergLookup
-              key={singleItemId}
-              itemId={singleItemId}
-              item={itemDetail}
-              onClose={() => setFriedbergOpen(false)}
-            />
-          )}
-        </div>
-      )}
+            {!friedbergOpen && itemDetail && (
+              <FriedbergLookup
+                key={`entry-${singleItemId}`}
+                itemId={singleItemId}
+                item={itemDetail}
+                entryOnly
+              />
+            )}
+            {friedbergOpen && (
+              <FriedbergLookup
+                key={singleItemId}
+                itemId={singleItemId}
+                item={itemDetail}
+                onClose={() => setFriedbergOpen(false)}
+              />
+            )}
+          </div>
+        )}
 
-      {forSaleRefusal && (
-        <ForSaleConfirm
-          detail={forSaleRefusal.detail}
-          outcome={forSaleRefusal.outcome}
-          busy={busy}
-          onConfirm={() => submit(forSaleRefusal.outcome, true)}
-          onCancel={() => setForSaleRefusal(null)}
-        />
-      )}
-    </div>
+        {forSaleRefusal && (
+          <ForSaleConfirm
+            detail={forSaleRefusal.detail}
+            outcome={forSaleRefusal.outcome}
+            busy={busy}
+            onConfirm={() => submit(forSaleRefusal.outcome, true)}
+            onCancel={() => setForSaleRefusal(null)}
+          />
+        )}
+      </div>
+    </HelpScope>
   )
 }

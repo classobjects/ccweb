@@ -407,6 +407,17 @@ describe('ReceiptPanel', () => {
     expect(api.searchFriedberg).not.toHaveBeenCalled()
   })
 
+  it('explains its fields when they have focus', async () => {
+    // The dialog this panel opens in provides a help band, but only a
+    // HelpScope reads `data-help`: without one every field here was silent.
+    renderWithProviders(<ReceiptPanel itemIds={[412]} onDone={vi.fn()} />)
+
+    fireEvent.focus(await screen.findByLabelText('Arrived'))
+    expect(await screen.findByText(/The day the parcel came/)).toBeInTheDocument()
+    fireEvent.focus(screen.getByLabelText('Note'))
+    expect(await screen.findByText(/kept with the status change/)).toBeInTheDocument()
+  })
+
   it('offers the errors panel for the one selected item', async () => {
     renderWithProviders(<ReceiptPanel itemIds={[412]} onDone={vi.fn()} />)
 

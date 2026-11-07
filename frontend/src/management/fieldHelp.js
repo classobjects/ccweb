@@ -421,26 +421,50 @@ export const FIELD_HELP = {
   status: {
     title: 'Status',
     text:
-      'Where the item is: ordered (bought, not yet arrived), received, missing ' +
-      '(written off as lost in the post), and so on. "Not yet arrived" means ' +
-      'ordered or missing -- a missing parcel sometimes turns up. "Any status" ' +
-      'shows everything, which is how to see a whole order including what ' +
-      'already came.',
+      'Where the item stands in buying: ordered (bought, not yet arrived), ' +
+      'received (in hand), canceled (the order was called off), returned (sent ' +
+      'back to the seller), missing (paid for, never arrived) or unknown. "Not ' +
+      'yet arrived" means ordered or missing -- a missing parcel sometimes turns ' +
+      'up. "Any status" shows everything, which is how to see a whole order ' +
+      'including what already came.',
   },
   item_status: {
     title: 'Status',
     text:
-      'How the item came in: ordered (bought, not yet arrived), received, ' +
-      'canceled, returned (sent back to the seller), missing (paid for, never ' +
-      'arrived) or unknown. Receiving moves an item forward; this is where a ' +
+      'Where the item stands in buying: ordered (bought, not yet arrived), ' +
+      'received (in hand), canceled (the order was called off), returned (sent ' +
+      'back to the seller), missing (paid for, never arrived) or unknown. ' +
+      'Receiving moves an item forward; this is where a ' +
       'status recorded in error is put back, and the change is kept in the ' +
       "item's history. Whether it is held, listed or sold is a separate question.",
+  },
+  arrived_on: {
+    title: 'Arrived',
+    text:
+      'The day the parcel came, today unless you change it. Recorded only when ' +
+      'the item is received; the next item you open starts with the same day, ' +
+      'since one parcel usually holds several.',
+  },
+  receipt_note: {
+    title: 'Note',
+    text:
+      'Anything worth saying about this piece as it arrived: "corner bent", ' +
+      '"wrong coin sent". It is kept with the status change in the item\'s ' +
+      'history, and is not carried to the next item, since it describes this one.',
+  },
+  receipt_photo: {
+    title: 'Photo',
+    text:
+      'Pictures of the piece as it arrived: choose files, drag them onto the ' +
+      'box, or paste one with Ctrl+V. They are added to the item after the ' +
+      'receipt is recorded, and only when one item is being received.',
   },
   status_filter: {
     title: 'Status',
     text:
-      'Shows only the items with this status: ordered (bought, not yet arrived), ' +
-      'received, canceled, returned, missing (paid for, never arrived) or ' +
+      'Shows only the items at this point in buying: ordered (bought, not yet ' +
+      'arrived), received (in hand), canceled (the order was called off), ' +
+      'returned (sent back to the seller), missing (paid for, never arrived) or ' +
       'unknown. Any shows every status.',
   },
   year: {
@@ -803,8 +827,10 @@ export const FIELD_HELP = {
   report_status: {
     title: 'Status',
     text:
-      'Which items to count by where they are in buying: received (in hand) by ' +
-      'default, or ordered, canceled, returned, missing, unknown -- or all of them.',
+      'Which items to count by where they stand in buying: received (in hand) by ' +
+      'default, or ordered (bought, not yet arrived), canceled (the order was ' +
+      'called off), returned (sent back to the seller), missing (paid for, never ' +
+      'arrived), unknown -- or all of them.',
   },
   report_disposition: {
     title: 'Disposition',
