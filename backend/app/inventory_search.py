@@ -268,6 +268,7 @@ _J_DISTRICT = "LEFT JOIN fed_district fd ON fd.id = cud.fed_district_id"
 _J_FRIEDBERG = "LEFT JOIN friedberg_number fr ON fr.id = cud.friedberg_id"
 _J_PURCHASE_ORDER = "LEFT JOIN purchase_order po ON po.id = i.purchase_order_id"
 _J_VENDOR = "LEFT JOIN vendor v ON v.id = po.vendor_id"
+_J_SELLER = "LEFT JOIN seller sel ON sel.id = po.seller_id"
 
 # Column references used by more than one view spec. Same idea as the _J_*
 # join clauses above: name it once so a rename is a single edit. Only the
@@ -370,6 +371,10 @@ _SHARED_FILTERS: dict[str, Filt] = {
     # Partial and case-insensitive, like item code: Receiving finds a parcel
     # by an order number typed in part, read off a packing slip.
     "order_number": Filt("po.order_number", "ilike", (_J_PURCHASE_ORDER,)),
+    # Who a parcel came from, typed in part in the same way: the vendor
+    # (ebay.com, an auction house) or the seller on that marketplace.
+    "vendor": Filt("v.name", "ilike", (_J_PURCHASE_ORDER, _J_VENDOR)),
+    "seller": Filt("sel.name", "ilike", (_J_PURCHASE_ORDER, _J_SELLER)),
     # Exact: a link naming one order. Its number is neither unique across
     # vendors nor always recorded, so a number match cannot stand in for it.
     "purchase_order_id": Filt("i.purchase_order_id", integer=True),
