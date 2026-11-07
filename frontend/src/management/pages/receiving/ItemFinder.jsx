@@ -35,6 +35,8 @@ const EMPTY_FILTERS = {
   status: '',
   denomination: '',
   orderNumber: '',
+  vendor: '',
+  seller: '',
   year: '',
   mint: '',
   serialNumber: '',
@@ -64,14 +66,16 @@ function nothingMatches(status) {
  * The filters every request of one search carries, whichever view it asks:
  * the denomination, part of a serial (a note's on the currency view, a
  * bar's, round's or Goldback's on the coins view), orders placed since a
- * date, and the order -- by id for a linked order, else by the part of a
- * number typed.
+ * date, part of the vendor's or the seller's name, and the order -- by id
+ * for a linked order, else by the part of a number typed.
  */
 function sharedParams(filters, orderId) {
   const shared = {}
   if (filters.denomination) shared.denomination = filters.denomination
   if (filters.serialNumber.trim()) shared.serial_number = filters.serialNumber.trim()
   if (filters.orderedSince) shared.ordered_since = filters.orderedSince
+  if (filters.vendor.trim()) shared.vendor = filters.vendor.trim()
+  if (filters.seller.trim()) shared.seller = filters.seller.trim()
   if (orderId != null) shared.purchase_order_id = orderId
   else if (filters.orderNumber.trim()) shared.order_number = filters.orderNumber.trim()
   return shared
@@ -341,6 +345,28 @@ export default function ItemFinder({
               type="text"
               value={filters.orderNumber}
               onChange={(e) => setField('orderNumber', e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') find()
+              }}
+            />
+          </label>
+          <label data-help="vendor_filter">
+            Vendor{/* */}
+            <input
+              type="text"
+              value={filters.vendor}
+              onChange={(e) => setField('vendor', e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') find()
+              }}
+            />
+          </label>
+          <label data-help="seller_filter">
+            Seller{/* */}
+            <input
+              type="text"
+              value={filters.seller}
+              onChange={(e) => setField('seller', e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') find()
               }}

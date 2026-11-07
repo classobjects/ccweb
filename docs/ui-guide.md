@@ -328,7 +328,8 @@ The fields of a purchase and of its New item form:
 #### Receive
 
 Records what actually arrived and where it is kept. Only a received item can be
-offered for sale. By default the search finds everything not yet arrived:
+offered for sale. A parcel is found by its order number, its vendor or seller,
+or what is in it. By default the search finds everything not yet arrived:
 
 ![Receiving, listing what has not arrived](images/ui-guide/receive_found.png)
 
@@ -336,8 +337,10 @@ The search's fields:
 
 | Field | Shown | What it is |
 |---|---|---|
-| **Search for: Any, Coins or Currency** |  | Any: coins and notes together -- one parcel can hold both. Coins: adds a search by year and mint. Currency: adds a search by serial number and series year. |
+| **Search for: Any, Coins or Currency** |  | Any: coins and notes together -- one parcel can hold both. Coins: adds a search by year and mint. Currency: adds a search by series year. The serial number box is there for all three: a note's serial, or a bar's, round's or Goldback's. |
 | **Order number** |  | As under *Search and filters (Coins and Currency)*. |
+| **Vendor** |  | Only items bought from this vendor -- the website, auction house or dealer the purchase was made at. Part of the name is enough, upper or lower case alike: "apmex" finds apmex.com. |
+| **Seller** |  | Only items from this seller -- the account or shop on the vendor's marketplace, such as an eBay seller. Part of the name is enough, upper or lower case alike. |
 | **Status** |  | Where the item stands in buying: ordered (bought, not yet arrived), received (in hand), canceled (the order was called off), returned (sent back to the seller), missing (paid for, never arrived) or unknown. "Not yet arrived" means ordered or missing -- a missing parcel sometimes turns up. "Any status" shows everything, which is how to see a whole order including what already came. |
 | **Denomination** |  | As under *Search and filters (Coins and Currency)*. |
 | **Serial number** |  | As under *Search and filters (Coins and Currency)*. |

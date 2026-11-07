@@ -82,6 +82,27 @@ describe('ItemFinder', () => {
     expect(await screen.findByText(/114-4452-X · ebay\.com/)).toBeInTheDocument()
   })
 
+  it('finds a parcel by part of its vendor or seller, in both views', async () => {
+    renderWithProviders(<ItemFinder onPick={vi.fn()} />)
+    await userEvent.type(screen.getByLabelText('Vendor'), ' apmex ')
+    await userEvent.type(screen.getByLabelText('Seller'), ' Gold Coast ')
+    await find(4)
+    expect(
+      calls().every(
+        ([, params]) => params.vendor === 'apmex' && params.seller === 'Gold Coast',
+      ),
+    ).toBe(true)
+    expect(calls().some(([view]) => view === 'currency')).toBe(true)
+  })
+
+  it('sends no vendor or seller when they are left empty', async () => {
+    renderWithProviders(<ItemFinder onPick={vi.fn()} />)
+    await find(4)
+    expect(calls().some(([, params]) => 'vendor' in params || 'seller' in params)).toBe(
+      false,
+    )
+  })
+
   it('shows a whole order, received lines included, under Any status', async () => {
     renderWithProviders(<ItemFinder onPick={vi.fn()} />, { reference: vocabularies })
     await userEvent.selectOptions(

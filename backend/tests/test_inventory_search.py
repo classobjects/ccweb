@@ -27,6 +27,7 @@ from app.models import (
     ProvenanceSource,
     PurchaseOrder,
     SealColor,
+    Seller,
 )
 from fastapi.testclient import TestClient
 from httpx import Response
@@ -166,6 +167,53 @@ def test_part_of_an_order_number_finds_that_order_s_items(
     for fragment in ("4452", "114-4", "x"):
         body = search(client, "coins", admin_headers, order_number=fragment).json()
         assert {r["id"] for r in body["rows"]} == {mine.id}, fragment
+
+
+def test_part_of_a_vendor_s_name_finds_what_was_bought_there(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    """Receiving finds a parcel by who it came from, typed in part, any case."""
+    wanted = _order(
+        db, number="A-1", vendor_name="apmex.com", ordered_on=date(2025, 5, 1)
+    )
+    other = _order(
+        db, number="B-1", vendor_name="ebay.com", ordered_on=date(2025, 5, 2)
+    )
+    mine = coin(db, purchase_order_id=wanted.id)
+    coin(db, purchase_order_id=other.id)
+    coin(db)
+
+    for fragment in ("apmex", "PME", "x.c"):
+        body = search(client, "coins", admin_headers, vendor=fragment).json()
+        assert {r["id"] for r in body["rows"]} == {mine.id}, fragment
+
+
+def test_part_of_a_seller_s_name_finds_what_they_sold(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    """The seller on the marketplace, not the marketplace: two sellers, one vendor."""
+    coin_shop = Seller(name="Gold Coast Coins")
+    other_seller = Seller(name="Silverado Numismatics")
+    db.add_all([coin_shop, other_seller])
+    db.flush()
+    wanted = build_purchase_order(
+        db, vendor_name="ebay.com", order_number="S-1", seller_id=coin_shop.id
+    )
+    unwanted = PurchaseOrder(
+        vendor_id=wanted.vendor_id, order_number="S-2", seller_id=other_seller.id
+    )
+    db.add(unwanted)
+    db.commit()
+    mine = coin(db, purchase_order_id=wanted.id)
+    coin(db, purchase_order_id=unwanted.id)
+    mine_note = note(db, source_title="Also from them", serial="B33333333A")
+    mine_note.purchase_order_id = wanted.id
+    db.commit()
+
+    body = search(client, "coins", admin_headers, seller="coast").json()
+    assert {r["id"] for r in body["rows"]} == {mine.id}
+    body = search(client, "currency", admin_headers, seller="GOLD COAST").json()
+    assert {r["id"] for r in body["rows"]} == {mine_note.id}
 
 
 def test_a_purchase_order_id_finds_exactly_that_order(

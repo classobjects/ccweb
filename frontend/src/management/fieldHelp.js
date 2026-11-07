@@ -408,8 +408,9 @@ export const FIELD_HELP = {
     title: 'Search for',
     text:
       'Any: coins and notes together -- one parcel can hold both. Coins: adds a ' +
-      'search by year and mint. Currency: adds a search by serial number and ' +
-      'series year.',
+      'search by year and mint. Currency: adds a search by series year. The ' +
+      "serial number box is there for all three: a note's serial, or a bar's, " +
+      "round's or Goldback's.",
   },
   order_number: {
     title: 'Order number',
@@ -437,6 +438,20 @@ export const FIELD_HELP = {
       'Receiving moves an item forward; this is where a ' +
       'status recorded in error is put back, and the change is kept in the ' +
       "item's history. Whether it is held, listed or sold is a separate question.",
+  },
+  vendor_filter: {
+    title: 'Vendor',
+    text:
+      'Only items bought from this vendor -- the website, auction house or dealer ' +
+      'the purchase was made at. Part of the name is enough, upper or lower case ' +
+      'alike: "apmex" finds apmex.com.',
+  },
+  seller_filter: {
+    title: 'Seller',
+    text:
+      "Only items from this seller -- the account or shop on the vendor's " +
+      'marketplace, such as an eBay seller. Part of the name is enough, upper or ' +
+      'lower case alike.',
   },
   arrived_on: {
     title: 'Arrived',
