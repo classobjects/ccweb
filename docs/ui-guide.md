@@ -312,9 +312,11 @@ The fields of a purchase and of its New item form:
 
 Records what actually arrived and where it is kept. Only a received item can be
 offered for sale. A parcel is found by its order number, its vendor or seller,
-or what is in it. By default the search finds everything not yet arrived:
+or what is in it, and by default only what has not arrived yet. Searched by an
+order number, everything still to come on that purchase is listed, with
+**Receive all** above it for the whole parcel:
 
-![Receiving, listing what has not arrived](images/ui-guide/receive_found.png)
+![Receiving searched by order number: what has not arrived on it, with Receive all above the search](images/ui-guide/receive_found.png)
 
 The search's fields:
 
