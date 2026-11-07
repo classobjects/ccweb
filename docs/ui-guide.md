@@ -10,8 +10,8 @@ behind them, [system-administration.md](system-administration.md).
 
 **The pictures hold made-up data.** The shop, the people, the orders and the
 prices are invented, and the coin and note pictures are drawings marked "DEMO
-IMAGE". A long screen is shown as a series of pictures, scrolling down it, each
-one overlapping the last a little.
+IMAGE". A long form is shown whole, in one tall picture; a long table or list
+is shown by its first rows and its last.
 
 ## Contents
 
@@ -49,15 +49,13 @@ Most work starts on these two pages, which find items. Coins lists everything
 that is not a banknote: coins, bullion, sets, medals and tokens. Currency lists
 notes, with the columns that matter for them, such as serial, seal and district.
 
-![The Coins page: search, filters, checks and the item table, part 1 of 4](images/ui-guide/coins_1.png)
+![The Coins page: search, filters, checks and the item table, first rows](images/ui-guide/coins_1.png)
 
-![The Coins page: search, filters, checks and the item table, part 2 of 4](images/ui-guide/coins_2.png)
+![The Coins page: search, filters, checks and the item table, last rows](images/ui-guide/coins_2.png)
 
-![The Coins page: search, filters, checks and the item table, part 3 of 4](images/ui-guide/coins_3.png)
+![The Currency page, first rows](images/ui-guide/currency_1.png)
 
-![The Coins page: search, filters, checks and the item table, part 4 of 4](images/ui-guide/coins_4.png)
-
-![The Currency page](images/ui-guide/currency.png)
+![The Currency page, last rows](images/ui-guide/currency_2.png)
 
 - **Search** matches a title, description, rating, item code or order number,
   and also the names of what an item is: `mercury` finds Winged Liberty Head
@@ -106,20 +104,16 @@ The rounded chips are data-quality checks, each with the number of items it
 finds. Click one to list those items, and click it again to go back. This one
 shows the items with no grade:
 
-![Coins narrowed to the items with no grade, part 1 of 2](images/ui-guide/coins_issue_1.png)
+![Coins narrowed to the items with no grade, first rows](images/ui-guide/coins_issue_1.png)
 
-![Coins narrowed to the items with no grade, part 2 of 2](images/ui-guide/coins_issue_2.png)
+![Coins narrowed to the items with no grade, last rows](images/ui-guide/coins_issue_2.png)
 
 Tick rows to get the bulk bar, which sets what the selected items share, offers
 them for sale or groups them into a sales lot:
 
-![Three coins selected, with the bulk bar above the table, part 1 of 4](images/ui-guide/coins_bulk_1.png)
+![Three coins selected, with the bulk bar above the table, first rows](images/ui-guide/coins_bulk_1.png)
 
-![Three coins selected, with the bulk bar above the table, part 2 of 4](images/ui-guide/coins_bulk_2.png)
-
-![Three coins selected, with the bulk bar above the table, part 3 of 4](images/ui-guide/coins_bulk_3.png)
-
-![Three coins selected, with the bulk bar above the table, part 4 of 4](images/ui-guide/coins_bulk_4.png)
+![Three coins selected, with the bulk bar above the table, last rows](images/ui-guide/coins_bulk_2.png)
 
 The bulk bar's fields:
 
@@ -155,28 +149,12 @@ Everything recorded about one item is here. Changes are held until **Save**.
 - A banner warns when the item is for sale, because buyers see a change at once.
   Tick **Change it anyway** to save.
 
-![The item editor for a coin, part 1 of 5](images/ui-guide/editor_coin_1.png)
-
-![The item editor for a coin, part 2 of 5](images/ui-guide/editor_coin_2.png)
-
-![The item editor for a coin, part 3 of 5](images/ui-guide/editor_coin_3.png)
-
-![The item editor for a coin, part 4 of 5](images/ui-guide/editor_coin_4.png)
-
-![The item editor for a coin, part 5 of 5](images/ui-guide/editor_coin_5.png)
+![The item editor for a coin](images/ui-guide/editor_coin.png)
 
 A note has its own fields, such as series, serial, plates, seal, signatures and
 district, and most of them follow from the series and serial:
 
-![The item editor for a note, part 1 of 5](images/ui-guide/editor_note_1.png)
-
-![The item editor for a note, part 2 of 5](images/ui-guide/editor_note_2.png)
-
-![The item editor for a note, part 3 of 5](images/ui-guide/editor_note_3.png)
-
-![The item editor for a note, part 4 of 5](images/ui-guide/editor_note_4.png)
-
-![The item editor for a note, part 5 of 5](images/ui-guide/editor_note_5.png)
+![The item editor for a note](images/ui-guide/editor_note.png)
 
 The editor's fields, top to bottom. Which appear depends on the kind: a note has its own, and a coin, bullion, a set, a medal or a token share the rest, in an order suited to each.
 
@@ -394,7 +372,9 @@ Every offer, in the web store and elsewhere, with its price, cost and margin.
 **Edit** changes the wording or price and **End** withdraws the offer.
 **Record sale...** enters a sale made on another platform.
 
-![Listings across the web store, eBay and an auction house](images/ui-guide/listings.png)
+![Listings across the web store, eBay and an auction house, first rows](images/ui-guide/listings_1.png)
+
+![Listings across the web store, eBay and an auction house, last rows](images/ui-guide/listings_2.png)
 
 An offer is made with **Offer for sale...**, from the Coins or Currency bulk bar
 or the item editor. Choose a platform and format, then give each item a price,
@@ -428,7 +408,9 @@ owned, costed and reportable. Select them on Coins or Currency and choose **Grou
 into lot...**, and they appear here to be worded and offered. Offering freezes
 the lot. Ending the offer dissolves it, and **Re-offer as a lot** starts it again.
 
-![An assembling lot, and the lots already offered, sold or dissolved](images/ui-guide/lots.png)
+![An assembling lot, and the lots already offered, sold or dissolved, first rows](images/ui-guide/lots_1.png)
+
+![An assembling lot, and the lots already offered, sold or dissolved, last rows](images/ui-guide/lots_2.png)
 
 #### Auctions
 
@@ -494,12 +476,16 @@ Reports answer questions over the whole collection, and only read. Choose one fr
 the list on the left, which is grouped as Collection, Data quality, Purchasing and
 receiving, Selling and Money.
 
-![The Reports page before a report is chosen](images/ui-guide/reports.png)
+![The Reports page before a report is chosen, first rows](images/ui-guide/reports_1.png)
+
+![The Reports page before a report is chosen, last rows](images/ui-guide/reports_2.png)
 
 Set any parameters and press **Run**. **Export workbook** downloads the same result
 as a spreadsheet, and **Print** prints it. A linked cell opens the items it counts.
 
-![Holdings: what the collection is made of](images/ui-guide/report_cb_holdings.png)
+![Holdings: what the collection is made of, first rows](images/ui-guide/report_cb_holdings_1.png)
+
+![Holdings: what the collection is made of, last rows](images/ui-guide/report_cb_holdings_2.png)
 
 The parameters and controls, each report showing only its own:
 
@@ -531,9 +517,9 @@ Some of the reports worth knowing first:
 
 **Open issues** counts every data-quality check across coins and currency.
 
-![The Open issues report, part 1 of 2](images/ui-guide/report_dq_issues_1.png)
+![The Open issues report, first rows](images/ui-guide/report_dq_issues_1.png)
 
-![The Open issues report, part 2 of 2](images/ui-guide/report_dq_issues_2.png)
+![The Open issues report, last rows](images/ui-guide/report_dq_issues_2.png)
 
 **Not yet arrived** lists purchases still waiting, oldest first, and marks the
 overdue ones.
@@ -568,7 +554,9 @@ rest. Choose a vocabulary to add a value or give one another name (an alias, whi
 search and the pickers then recognise). The ⋮ menu on a row renames, retires, merges
 or edits it.
 
-![The storage form vocabulary with a row's menu open](images/ui-guide/vocab_storage_form.png)
+![The storage form vocabulary with a row's menu open, first rows](images/ui-guide/vocab_storage_form_1.png)
+
+![The storage form vocabulary with a row's menu open, last rows](images/ui-guide/vocab_storage_form_2.png)
 
 Its fields and a row's actions:
 
@@ -613,15 +601,13 @@ costs or where an item came from. `SHOP_OPEN=false` closes it to the public
 
 The catalog shows what is offered in the web store, with search and a filter by type:
 
-![The shop's catalog, part 1 of 2](images/ui-guide/shop_catalog_1.png)
+![The shop's catalog, first rows](images/ui-guide/shop_catalog_1.png)
 
-![The shop's catalog, part 2 of 2](images/ui-guide/shop_catalog_2.png)
+![The shop's catalog, last rows](images/ui-guide/shop_catalog_2.png)
 
 An item's page shows its primary photograph, price, description and details:
 
-![An item's page in the shop, part 1 of 2](images/ui-guide/shop_detail_1.png)
-
-![An item's page in the shop, part 2 of 2](images/ui-guide/shop_detail_2.png)
+![An item's page in the shop](images/ui-guide/shop_detail.png)
 
 The cart holds what a customer means to buy. **Place order** records the order, and
 payment is arranged outside the system.
