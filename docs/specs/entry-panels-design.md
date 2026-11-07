@@ -322,9 +322,15 @@ keyed by the field's API name, so every form explains a field the same way.
 Nothing is placed inside a label: a control in a label with no `for` takes
 the label from its field. The last field explained stays shown when focus
 moves to one with none; scopes nest, and the innermost one with help for the
-focused field shows it. The same mechanism serves the item editor,
-Receiving's search form and the Friedberg lookup. A test scans the console
-source and fails on any `data-help` key with no text.
+focused field shows it. The same mechanism serves every console form that
+takes input -- buying, receiving, the item editor, selling, auctions, the
+Sales page, Platforms, People, Lists and Photos. A modal has a band of its
+own (`ModalDialog`); a `ConfirmDialog` that asks for something, such as
+where returned items go, passes `help` to get one. A test scans the console
+source and fails on any `data-help` key with no text, and each page's test
+renders its forms open and asserts `uncovered` (`src/test/helpCoverage.js`)
+is empty: every input, dropdown and text box shown sits under a `HelpScope`
+and a `data-help` topic with a title and text.
 
 Help text is public numismatic fact only -- what is printed where on a note
 and what it means -- never a catalog's numbering or a price guide's values.

@@ -43,7 +43,7 @@ export default function ForSaleNotice({
       ) : (
         '.'
       )}
-      <label className="checkbox">
+      <label className="checkbox" data-help="for_sale_confirm">
         <input
           type="checkbox"
           checked={checked}

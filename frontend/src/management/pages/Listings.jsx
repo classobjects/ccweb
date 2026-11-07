@@ -7,6 +7,7 @@ import { Link } from 'react-router-dom'
 import { AccessLabel } from '../AccessLabel'
 import { api } from '../api'
 import EndOfferConfirm from './EndOfferConfirm'
+import HelpScope from '../HelpScope'
 import ModalDialog from '../ModalDialog'
 import RecordSaleDialog from './RecordSaleDialog'
 import Pager from '../Pager'
@@ -114,41 +115,43 @@ function ListingForm({ listing, onSaved, onLateSaved, onClose }) {
     <ModalDialog label={label} onClose={onClose}>
       <h2>{label}</h2>
       {error && <p className="error">{error}</p>}
-      <div className="filter-grid">
-        <label>
-          <AccessLabel text="Price" accessKey={KEYS.price} />
-          {/* Text, not number: money crosses the API as a decimal string and
+      <HelpScope>
+        <div className="filter-grid">
+          <label data-help="listing_price">
+            <AccessLabel text="Price" accessKey={KEYS.price} />
+            {/* Text, not number: money crosses the API as a decimal string and
               a number input hands back a float. */}
-          <input
-            inputMode="decimal"
-            value={form.price}
-            onChange={set('price')}
-            {...accel(KEYS.price)}
-          />
-        </label>
-        <label>
-          <AccessLabel text="Title" accessKey={KEYS.title} />
-          <input value={form.title} onChange={set('title')} {...accel(KEYS.title)} />
-        </label>
-        <label>
-          <AccessLabel text="Description" accessKey={KEYS.description} />
-          <textarea
-            rows={3}
-            value={form.description}
-            onChange={set('description')}
-            {...accel(KEYS.description)}
-          />
-        </label>
-        <label>
-          <AccessLabel text="Listing number" accessKey={KEYS.externalId} />
-          <input
-            value={form.external_id}
-            onChange={set('external_id')}
-            placeholder="the platform's own number"
-            {...accel(KEYS.externalId)}
-          />
-        </label>
-      </div>
+            <input
+              inputMode="decimal"
+              value={form.price}
+              onChange={set('price')}
+              {...accel(KEYS.price)}
+            />
+          </label>
+          <label data-help="listing_title">
+            <AccessLabel text="Title" accessKey={KEYS.title} />
+            <input value={form.title} onChange={set('title')} {...accel(KEYS.title)} />
+          </label>
+          <label data-help="listing_description">
+            <AccessLabel text="Description" accessKey={KEYS.description} />
+            <textarea
+              rows={3}
+              value={form.description}
+              onChange={set('description')}
+              {...accel(KEYS.description)}
+            />
+          </label>
+          <label data-help="listing_number">
+            <AccessLabel text="Listing number" accessKey={KEYS.externalId} />
+            <input
+              value={form.external_id}
+              onChange={set('external_id')}
+              placeholder="the platform's own number"
+              {...accel(KEYS.externalId)}
+            />
+          </label>
+        </div>
+      </HelpScope>
       <div className="row">
         <SaveButton saving={saving} disabled={saving} onClick={save} />
         <button className="link" onClick={onClose}>
@@ -319,44 +322,46 @@ export default function Listings() {
       {error && <p className="error">{error}</p>}
       {refusal && <p className="error">{refusal}</p>}
       {notice && <p className="notice">{notice}</p>}
-      <div className="filter-grid">
-        <label>
-          Platform{/* */}
-          <select value={filters.venue} onChange={filter('venue')}>
-            <option value="">All platforms</option>
-            {venues.map((v) => (
-              <option key={v.code} value={v.code}>
-                {v.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Format{/* */}
-          <select value={filters.format} onChange={filter('format')}>
-            <option value="">Any format</option>
-            {FORMATS.map(([value, text]) => (
-              <option key={value} value={value}>
-                {text}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Status
-          {/* Blank is the API's own default: active and paused, which is what
+      <HelpScope>
+        <div className="filter-grid">
+          <label data-help="listing_platform_filter">
+            Platform{/* */}
+            <select value={filters.venue} onChange={filter('venue')}>
+              <option value="">All platforms</option>
+              {venues.map((v) => (
+                <option key={v.code} value={v.code}>
+                  {v.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label data-help="listing_format_filter">
+            Format{/* */}
+            <select value={filters.format} onChange={filter('format')}>
+              <option value="">Any format</option>
+              {FORMATS.map(([value, text]) => (
+                <option key={value} value={value}>
+                  {text}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label data-help="listing_status_filter">
+            Status
+            {/* Blank is the API's own default: active and paused, which is what
               "on offer" means. `all` is the only way to see ended offers. */}
-          <select value={filters.status} onChange={filter('status')}>
-            <option value="">On offer</option>
-            {STATUSES.map(([value, text]) => (
-              <option key={value} value={value}>
-                {text}
-              </option>
-            ))}
-            <option value="all">All, including ended</option>
-          </select>
-        </label>
-      </div>
+            <select value={filters.status} onChange={filter('status')}>
+              <option value="">On offer</option>
+              {STATUSES.map(([value, text]) => (
+                <option key={value} value={value}>
+                  {text}
+                </option>
+              ))}
+              <option value="all">All, including ended</option>
+            </select>
+          </label>
+        </div>
+      </HelpScope>
       <div className="row">
         {/* The server sends listings oldest first (by id), so the pages are
             Previous and Next, not Newer and Older. */}

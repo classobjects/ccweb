@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react'
 import { api } from '../api'
 import { date, money, orderStatusText } from '../../shared/format'
 import ModalDialog from '../ModalDialog'
+import HelpScope from '../HelpScope'
 import Pager from '../Pager'
 import OrderEditor from './orders/OrderEditor'
 import OrderHistory from './orders/OrderHistory'
@@ -191,117 +192,121 @@ export default function Orders() {
         <button onClick={() => setEditing('new')}>New order</button>
       </div>
 
-      <div className="row">
-        <label>
-          Show{/* */}
-          <select
-            value={show}
-            onChange={(e) => {
-              setShow(e.target.value)
-              setOffset(0)
-            }}
-          >
-            <option value="">every status</option>
-            {STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {orderStatusText(s)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <Pager
-          offset={offset}
-          shown={shown.length}
-          total={page.total}
-          pageSize={PAGE_SIZE}
-          onOffset={setOffset}
-        />
-      </div>
+      <HelpScope>
+        <div className="row">
+          <label data-help="order_status_filter">
+            Show{/* */}
+            <select
+              value={show}
+              onChange={(e) => {
+                setShow(e.target.value)
+                setOffset(0)
+              }}
+            >
+              <option value="">every status</option>
+              {STATUSES.map((s) => (
+                <option key={s} value={s}>
+                  {orderStatusText(s)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <Pager
+            offset={offset}
+            shown={shown.length}
+            total={page.total}
+            pageSize={PAGE_SIZE}
+            onOffset={setOffset}
+          />
+        </div>
 
-      {error && <p className="error">{error}</p>}
-      {shown.length === 0 && <p className="muted">No orders to show.</p>}
+        {error && <p className="error">{error}</p>}
+        {shown.length === 0 && <p className="muted">No orders to show.</p>}
 
-      {shown.length > 0 && (
-        // On a phone each row stacks into a card, a line per labelled cell.
-        <table className="table stacks">
-          <thead>
-            <tr>
-              <th>Order</th>
-              <th>Placed</th>
-              <th>Customer</th>
-              <th>Items</th>
-              <th>Total</th>
-              <th>Status</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {shown.map((order) => (
-              <tr key={order.id}>
-                <td data-label="Order" className="mono">
-                  #{order.id}
-                </td>
-                <td data-label="Placed">{date(order.placed_at)}</td>
-                <td data-label="Customer">
-                  <div className="cell-scroll">
-                    {order.customer_name}
-                    {order.customer_email && (
-                      <div className="muted">{order.customer_email}</div>
-                    )}
-                    {order.placed_by_email &&
-                      order.placed_by_email !== order.customer_email && (
-                        <div className="muted">entered by {order.placed_by_email}</div>
-                      )}
-                  </div>
-                </td>
-                <td data-label="Items">
-                  <div className="cell-scroll">
-                    {order.items.map((line) => (
-                      <div key={line.id}>
-                        {line.title} x {line.quantity}{' '}
-                        <span className="muted">@ {money(line.unit_price)}</span>
-                      </div>
-                    ))}
-                  </div>
-                </td>
-                <td data-label="Total">
-                  {money(order.total_amount)}
-                  {order.payment_adjustment_due && (
-                    <span className="badge">payment adjustment due</span>
-                  )}
-                </td>
-                <td data-label="Status">
-                  <select
-                    aria-label={`Status of order ${order.id}`}
-                    value={order.status}
-                    onChange={(e) => changeStatus(order, e.target.value)}
-                  >
-                    {/* Every status stays live: one the server would refuse
-                        is answered with its reason when chosen (`refusal`). */}
-                    {STATUSES.map((s) => (
-                      <option key={s} value={s}>
-                        {orderStatusText(s)}
-                      </option>
-                    ))}
-                  </select>
-                </td>
-                <td>
-                  <div className="row-actions">
-                    {['pending', 'paid'].includes(order.status) && (
-                      <button className="link" onClick={() => setEditing(order)}>
-                        Edit
-                      </button>
-                    )}
-                    <button className="link" onClick={() => setHistoryOf(order)}>
-                      History
-                    </button>
-                  </div>
-                </td>
+        {shown.length > 0 && (
+          // On a phone each row stacks into a card, a line per labelled cell.
+          <table className="table stacks">
+            <thead>
+              <tr>
+                <th>Order</th>
+                <th>Placed</th>
+                <th>Customer</th>
+                <th>Items</th>
+                <th>Total</th>
+                <th>Status</th>
+                <th />
               </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+            </thead>
+            <tbody>
+              {shown.map((order) => (
+                <tr key={order.id}>
+                  <td data-label="Order" className="mono">
+                    #{order.id}
+                  </td>
+                  <td data-label="Placed">{date(order.placed_at)}</td>
+                  <td data-label="Customer">
+                    <div className="cell-scroll">
+                      {order.customer_name}
+                      {order.customer_email && (
+                        <div className="muted">{order.customer_email}</div>
+                      )}
+                      {order.placed_by_email &&
+                        order.placed_by_email !== order.customer_email && (
+                          <div className="muted">
+                            entered by {order.placed_by_email}
+                          </div>
+                        )}
+                    </div>
+                  </td>
+                  <td data-label="Items">
+                    <div className="cell-scroll">
+                      {order.items.map((line) => (
+                        <div key={line.id}>
+                          {line.title} x {line.quantity}{' '}
+                          <span className="muted">@ {money(line.unit_price)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </td>
+                  <td data-label="Total">
+                    {money(order.total_amount)}
+                    {order.payment_adjustment_due && (
+                      <span className="badge">payment adjustment due</span>
+                    )}
+                  </td>
+                  <td data-label="Status" data-help="order_status">
+                    <select
+                      aria-label={`Status of order ${order.id}`}
+                      value={order.status}
+                      onChange={(e) => changeStatus(order, e.target.value)}
+                    >
+                      {/* Every status stays live: one the server would refuse
+                        is answered with its reason when chosen (`refusal`). */}
+                      {STATUSES.map((s) => (
+                        <option key={s} value={s}>
+                          {orderStatusText(s)}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  <td>
+                    <div className="row-actions">
+                      {['pending', 'paid'].includes(order.status) && (
+                        <button className="link" onClick={() => setEditing(order)}>
+                          Edit
+                        </button>
+                      )}
+                      <button className="link" onClick={() => setHistoryOf(order)}>
+                        History
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </HelpScope>
 
       {editing && (
         <ModalDialog label="Order" onClose={() => setEditing(null)}>

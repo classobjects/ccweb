@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react'
 
 import { AccessLabel } from '../AccessLabel'
 import { api } from '../api'
+import HelpScope from '../HelpScope'
 import ModalDialog from '../ModalDialog'
 import { accel, useSaveShortcut } from '../shortcuts'
 import { fractionToPercent, percentToFraction } from './platform-rates'
@@ -209,129 +210,134 @@ function PlatformForm({
     <ModalDialog label={label} onClose={onClose}>
       <h2>{label}</h2>
       {error && <p className="error">{error}</p>}
-      <div className="filter-grid">
-        <label>
-          <AccessLabel text="Name" accessKey={KEYS.name} />
-          <input value={form.name} onChange={set('name')} {...accel(KEYS.name)} />
-        </label>
-        {adding && (
-          <label>
-            <AccessLabel text="Code" accessKey={KEYS.code} />
-            <input
-              value={form.code}
-              onChange={set('code')}
-              placeholder="lower-case, e.g. ebay"
-              {...accel(KEYS.code)}
+      <HelpScope>
+        <div className="filter-grid">
+          <label data-help="platform_name">
+            <AccessLabel text="Name" accessKey={KEYS.name} />
+            <input value={form.name} onChange={set('name')} {...accel(KEYS.name)} />
+          </label>
+          {adding && (
+            <label data-help="platform_code">
+              <AccessLabel text="Code" accessKey={KEYS.code} />
+              <input
+                value={form.code}
+                onChange={set('code')}
+                placeholder="lower-case, e.g. ebay"
+                {...accel(KEYS.code)}
+              />
+            </label>
+          )}
+          {!isStore && (
+            <label data-help="platform_kind">
+              <AccessLabel text="Kind" accessKey={KEYS.kind} />
+              <select value={form.kind} onChange={set('kind')} {...accel(KEYS.kind)}>
+                <option value="">(choose)</option>
+                {kinds
+                  .filter((k) => k.code !== 'own_store')
+                  .map((k) => (
+                    <option key={k.code} value={k.code}>
+                      {k.label}
+                    </option>
+                  ))}
+              </select>
+            </label>
+          )}
+          <label data-help="platform_vendor">
+            <AccessLabel text="Purchase source" accessKey={KEYS.vendor} />
+            <VendorField
+              vendors={sources}
+              value={form.vendor_id}
+              onChange={(id) =>
+                setForm((current) => ({ ...current, vendor_id: id ?? '' }))
+              }
+              onVendorAdded={onVendorAdded}
+              blankLabel="(none)"
+              label="Purchase source"
+              {...accel(KEYS.vendor)}
             />
           </label>
-        )}
-        {!isStore && (
-          <label>
-            <AccessLabel text="Kind" accessKey={KEYS.kind} />
-            <select value={form.kind} onChange={set('kind')} {...accel(KEYS.kind)}>
-              <option value="">(choose)</option>
-              {kinds
-                .filter((k) => k.code !== 'own_store')
-                .map((k) => (
-                  <option key={k.code} value={k.code}>
-                    {k.label}
-                  </option>
-                ))}
-            </select>
-          </label>
-        )}
-        <label>
-          <AccessLabel text="Purchase source" accessKey={KEYS.vendor} />
-          <VendorField
-            vendors={sources}
-            value={form.vendor_id}
-            onChange={(id) =>
-              setForm((current) => ({ ...current, vendor_id: id ?? '' }))
-            }
-            onVendorAdded={onVendorAdded}
-            blankLabel="(none)"
-            label="Purchase source"
-            {...accel(KEYS.vendor)}
-          />
-        </label>
-        <label>
-          <AccessLabel text="Account" accessKey={KEYS.account} />
-          <input
-            value={form.account_handle}
-            onChange={set('account_handle')}
-            {...accel(KEYS.account)}
-          />
-        </label>
-        <label>
-          <AccessLabel text="Listing link" accessKey={KEYS.template} />
-          <input
-            value={form.listing_url_template}
-            onChange={set('listing_url_template')}
-            placeholder="https://.../{external_id}"
-            {...accel(KEYS.template)}
-          />
-        </label>
-        <label>
-          <AccessLabel text="Commission %" accessKey={KEYS.commission} />
-          <input
-            inputMode="decimal"
-            value={form.commission_pct}
-            onChange={set('commission_pct')}
-            {...accel(KEYS.commission)}
-          />
-        </label>
-        <label>
-          <AccessLabel text="Processing %" accessKey={KEYS.processing} />
-          <input
-            inputMode="decimal"
-            value={form.processing_pct}
-            onChange={set('processing_pct')}
-            {...accel(KEYS.processing)}
-          />
-        </label>
-        <label>
-          <AccessLabel text="Processing $ per sale" accessKey={KEYS.processingFixed} />
-          <input
-            inputMode="decimal"
-            value={form.processing_fixed}
-            onChange={set('processing_fixed')}
-            {...accel(KEYS.processingFixed)}
-          />
-        </label>
-        <label>
-          <AccessLabel text="Fee $ per listing" accessKey={KEYS.listingFee} />
-          <input
-            inputMode="decimal"
-            value={form.listing_fee}
-            onChange={set('listing_fee')}
-            {...accel(KEYS.listingFee)}
-          />
-        </label>
-        <label>
-          <AccessLabel text="Fees as of" accessKey={KEYS.termsAsOf} />
-          <input
-            type="date"
-            value={form.terms_as_of}
-            onChange={set('terms_as_of')}
-            {...accel(KEYS.termsAsOf)}
-          />
-        </label>
-        <label>
-          <AccessLabel text="Notes" accessKey={KEYS.notes} />
-          <input value={form.notes} onChange={set('notes')} {...accel(KEYS.notes)} />
-        </label>
-        {!isStore && !adding && (
-          <label>
+          <label data-help="platform_account">
+            <AccessLabel text="Account" accessKey={KEYS.account} />
             <input
-              type="checkbox"
-              checked={!form.is_active}
-              onChange={set('is_active')}
-              {...accel(KEYS.retired)}
+              value={form.account_handle}
+              onChange={set('account_handle')}
+              {...accel(KEYS.account)}
             />
-            <AccessLabel text="Retired" accessKey={KEYS.retired} />
           </label>
-        )}
-      </div>
+          <label data-help="platform_listing_link">
+            <AccessLabel text="Listing link" accessKey={KEYS.template} />
+            <input
+              value={form.listing_url_template}
+              onChange={set('listing_url_template')}
+              placeholder="https://.../{external_id}"
+              {...accel(KEYS.template)}
+            />
+          </label>
+          <label data-help="platform_commission">
+            <AccessLabel text="Commission %" accessKey={KEYS.commission} />
+            <input
+              inputMode="decimal"
+              value={form.commission_pct}
+              onChange={set('commission_pct')}
+              {...accel(KEYS.commission)}
+            />
+          </label>
+          <label data-help="platform_processing">
+            <AccessLabel text="Processing %" accessKey={KEYS.processing} />
+            <input
+              inputMode="decimal"
+              value={form.processing_pct}
+              onChange={set('processing_pct')}
+              {...accel(KEYS.processing)}
+            />
+          </label>
+          <label data-help="platform_processing_fixed">
+            <AccessLabel
+              text="Processing $ per sale"
+              accessKey={KEYS.processingFixed}
+            />
+            <input
+              inputMode="decimal"
+              value={form.processing_fixed}
+              onChange={set('processing_fixed')}
+              {...accel(KEYS.processingFixed)}
+            />
+          </label>
+          <label data-help="platform_listing_fee">
+            <AccessLabel text="Fee $ per listing" accessKey={KEYS.listingFee} />
+            <input
+              inputMode="decimal"
+              value={form.listing_fee}
+              onChange={set('listing_fee')}
+              {...accel(KEYS.listingFee)}
+            />
+          </label>
+          <label data-help="platform_fees_as_of">
+            <AccessLabel text="Fees as of" accessKey={KEYS.termsAsOf} />
+            <input
+              type="date"
+              value={form.terms_as_of}
+              onChange={set('terms_as_of')}
+              {...accel(KEYS.termsAsOf)}
+            />
+          </label>
+          <label data-help="platform_notes">
+            <AccessLabel text="Notes" accessKey={KEYS.notes} />
+            <input value={form.notes} onChange={set('notes')} {...accel(KEYS.notes)} />
+          </label>
+          {!isStore && !adding && (
+            <label data-help="platform_retired">
+              <input
+                type="checkbox"
+                checked={!form.is_active}
+                onChange={set('is_active')}
+                {...accel(KEYS.retired)}
+              />
+              <AccessLabel text="Retired" accessKey={KEYS.retired} />
+            </label>
+          )}
+        </div>
+      </HelpScope>
       {sample && (
         <p className="muted">
           Example link: <span>{sample}</span>

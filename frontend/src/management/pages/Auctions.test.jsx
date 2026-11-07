@@ -27,7 +27,8 @@ vi.mock('../api', () => ({
 import { api } from '../api'
 import Auctions from './Auctions'
 import { ApiError } from '../../shared/api'
-import { renderWithProviders } from '../../test/helpers'
+import { emptyReference, renderWithProviders } from '../../test/helpers'
+import { uncovered } from '../../test/helpCoverage'
 
 const HERITAGE = { code: 'heritage', name: 'Heritage Auctions', kind: 'auction_house' }
 const EBAY = { code: 'ebay', name: 'Weekly eBay', kind: 'marketplace' }
@@ -535,5 +536,71 @@ describe('Auctions', () => {
 
     await userEvent.setup().click(await screen.findByRole('button', { name: 'View' }))
     expect(screen.queryByRole('button', { name: /^settle/i })).toBeNull()
+  })
+})
+
+describe('Every field on the Auctions page has help', () => {
+  const FEE_KINDS = [
+    { code: 'commission', label: 'Commission', source: 'seeded', extra: {} },
+  ]
+  const reference = emptyReference({ tables: { sales_fee_kind: FEE_KINDS } })
+
+  async function open(shown) {
+    api.listAuctions.mockResolvedValue({ auctions: [shown] })
+    const view = renderWithProviders(<Auctions />, { reference })
+    await userEvent.setup().click(await screen.findByRole('button', { name: 'View' }))
+    return view
+  }
+
+  it('in the new-auction form', async () => {
+    const user = userEvent.setup()
+    api.listAuctions.mockResolvedValue({ auctions: [] })
+    renderWithProviders(<Auctions />, { reference })
+    await user.click(await screen.findByRole('button', { name: 'New auction...' }))
+    expect(screen.getByRole('dialog')).toBeVisible()
+    expect(uncovered(document.body)).toEqual([])
+  })
+
+  it("in a draft's lot table and both kinds of Add lot", async () => {
+    const user = userEvent.setup()
+    await open(auction({ lots: [auctionLot()] }))
+    expect(screen.getByRole('textbox', { name: /Lot number for/ })).toBeVisible()
+    expect(uncovered(document.body)).toEqual([])
+    await user.click(screen.getByRole('button', { name: 'Add lot...' }))
+    expect(uncovered(document.body)).toEqual([])
+    await user.click(screen.getByRole('radio', { name: 'Assembled lot' }))
+    expect(uncovered(document.body)).toEqual([])
+  })
+
+  it('in Mark consigned, and in Cancel once the house holds the items', async () => {
+    const user = userEvent.setup()
+    const scheduled = await open(auction({ status: 'scheduled' }))
+    await user.click(await screen.findByRole('button', { name: 'Mark consigned...' }))
+    expect(screen.getByLabelText('Consigned on')).toBeVisible()
+    expect(uncovered(document.body)).toEqual([])
+    scheduled.unmount()
+
+    await open(auction({ status: 'consigned', consigned_on: '2026-09-02' }))
+    await user.click(screen.getByRole('button', { name: 'Cancel...' }))
+    expect(
+      await screen.findByRole('combobox', { name: 'Return items to' }),
+    ).toBeVisible()
+    expect(uncovered(document.body)).toEqual([])
+  })
+
+  it('in the settlement grid, fees and return location included', async () => {
+    const user = userEvent.setup()
+    await open(
+      auction({ status: 'closed', consigned_on: '2026-09-02', lots: [auctionLot()] }),
+    )
+    await user.selectOptions(
+      screen.getByRole('combobox', { name: 'Result for lot 1' }),
+      'sold',
+    )
+    await user.type(screen.getByRole('textbox', { name: 'Buyer for lot 1' }), 'amy')
+    expect(
+      screen.getByRole('textbox', { name: 'Commission fee for amy' }),
+    ).toBeVisible()
+    expect(uncovered(document.body)).toEqual([])
   })
 })

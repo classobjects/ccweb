@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react'
 import { AccessLabel } from '../AccessLabel'
 import { api } from '../api'
 import ConfirmDialog from '../ConfirmDialog'
+import HelpScope from '../HelpScope'
 import ModalDialog from '../ModalDialog'
 import SettlementGrid from './SettlementGrid'
 import { RESULT_LABEL } from './auction-labels'
@@ -127,64 +128,66 @@ function AuctionForm({ venues, onSaved, onLateSaved, onClose }) {
     <ModalDialog label="Start a new auction" onClose={onClose}>
       <h2>Start a new auction</h2>
       {error && <p className="error">{error}</p>}
-      <div className="filter-grid">
-        <label>
-          <AccessLabel text="Platform" accessKey={CREATE_KEYS.venue} />
-          <select
-            value={form.venue}
-            onChange={set('venue')}
-            {...accel(CREATE_KEYS.venue)}
-          >
-            <option value="">Choose a platform</option>
-            {/* The web store runs no auction, and a retired platform runs
+      <HelpScope>
+        <div className="filter-grid">
+          <label data-help="auction_platform">
+            <AccessLabel text="Platform" accessKey={CREATE_KEYS.venue} />
+            <select
+              value={form.venue}
+              onChange={set('venue')}
+              {...accel(CREATE_KEYS.venue)}
+            >
+              <option value="">Choose a platform</option>
+              {/* The web store runs no auction, and a retired platform runs
                 nothing: neither is offered. */}
-            {venues
-              .filter((v) => !v.is_own_store && v.is_active !== false)
-              .map((v) => (
-                <option key={v.code} value={v.code}>
-                  {v.name}
-                </option>
-              ))}
-          </select>
-        </label>
-        <label>
-          <AccessLabel text="Title" accessKey={CREATE_KEYS.title} />
-          <input
-            value={form.title}
-            onChange={set('title')}
-            {...accel(CREATE_KEYS.title)}
-          />
-        </label>
-        <label>
-          <AccessLabel text="Sale number" accessKey={CREATE_KEYS.externalId} />
-          <input
-            value={form.external_id}
-            onChange={set('external_id')}
-            placeholder="the house's number"
-            {...accel(CREATE_KEYS.externalId)}
-          />
-        </label>
-        <label>
-          Starts{/* */}
-          <input
-            value={form.starts_at}
-            onChange={set('starts_at')}
-            placeholder="date and time"
-          />
-        </label>
-        <label>
-          Ends{/* */}
-          <input
-            value={form.ends_at}
-            onChange={set('ends_at')}
-            placeholder="date and time"
-          />
-        </label>
-        <label>
-          Notes{/* */}
-          <textarea rows={2} value={form.notes} onChange={set('notes')} />
-        </label>
-      </div>
+              {venues
+                .filter((v) => !v.is_own_store && v.is_active !== false)
+                .map((v) => (
+                  <option key={v.code} value={v.code}>
+                    {v.name}
+                  </option>
+                ))}
+            </select>
+          </label>
+          <label data-help="auction_title">
+            <AccessLabel text="Title" accessKey={CREATE_KEYS.title} />
+            <input
+              value={form.title}
+              onChange={set('title')}
+              {...accel(CREATE_KEYS.title)}
+            />
+          </label>
+          <label data-help="auction_sale_number">
+            <AccessLabel text="Sale number" accessKey={CREATE_KEYS.externalId} />
+            <input
+              value={form.external_id}
+              onChange={set('external_id')}
+              placeholder="the house's number"
+              {...accel(CREATE_KEYS.externalId)}
+            />
+          </label>
+          <label data-help="auction_starts">
+            Starts{/* */}
+            <input
+              value={form.starts_at}
+              onChange={set('starts_at')}
+              placeholder="date and time"
+            />
+          </label>
+          <label data-help="auction_ends">
+            Ends{/* */}
+            <input
+              value={form.ends_at}
+              onChange={set('ends_at')}
+              placeholder="date and time"
+            />
+          </label>
+          <label data-help="auction_notes">
+            Notes{/* */}
+            <textarea rows={2} value={form.notes} onChange={set('notes')} />
+          </label>
+        </div>
+      </HelpScope>
       {/* Under the boxes, where it is read in full: a placeholder longer
           than its box is cut off. */}
       <p className="muted">
@@ -291,78 +294,80 @@ function AddLotDialog({ auction, onSaved, onLateSaved, onClose }) {
     <ModalDialog label={label} onClose={onClose}>
       <h2>{label}</h2>
       {error && <p className="error">{error}</p>}
-      <div className="row">
-        <label className="checkbox">
-          <input
-            type="radio"
-            name="lot-subject"
-            value="item"
-            checked={mode === 'item'}
-            onChange={() => setMode('item')}
-          />
-          {/* */}
-          Single item
-        </label>
-        <label className="checkbox">
-          <input
-            type="radio"
-            name="lot-subject"
-            value="lot"
-            checked={mode === 'lot'}
-            onChange={() => setMode('lot')}
-          />
-          {/* */}
-          Assembled lot
-        </label>
-      </div>
-      <div className="filter-grid">
-        <label>
-          <AccessLabel text="Lot number" accessKey={ADD_LOT_KEYS.lotNumber} />
-          <input
-            value={lotNumber}
-            onChange={(e) => setLotNumber(e.target.value)}
-            {...accel(ADD_LOT_KEYS.lotNumber)}
-          />
-        </label>
-        {mode === 'item' ? (
-          <label>
-            Item code{/* */}
+      <HelpScope>
+        <div className="row" data-help="lot_subject">
+          <label className="checkbox">
             <input
-              value={itemCode}
-              onChange={(e) => setItemCode(e.target.value)}
-              placeholder="the code on the item"
+              type="radio"
+              name="lot-subject"
+              value="item"
+              checked={mode === 'item'}
+              onChange={() => setMode('item')}
+            />
+            {/* */}
+            Single item
+          </label>
+          <label className="checkbox">
+            <input
+              type="radio"
+              name="lot-subject"
+              value="lot"
+              checked={mode === 'lot'}
+              onChange={() => setMode('lot')}
+            />
+            {/* */}
+            Assembled lot
+          </label>
+        </div>
+        <div className="filter-grid">
+          <label data-help="lot_number">
+            <AccessLabel text="Lot number" accessKey={ADD_LOT_KEYS.lotNumber} />
+            <input
+              value={lotNumber}
+              onChange={(e) => setLotNumber(e.target.value)}
+              {...accel(ADD_LOT_KEYS.lotNumber)}
             />
           </label>
-        ) : (
-          <label>
-            Lot{/* */}
-            <select value={lotId} onChange={(e) => setLotId(e.target.value)}>
-              <option value="">Choose a lot</option>
-              {assemblingLots.map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.title}
-                </option>
-              ))}
-            </select>
+          {mode === 'item' ? (
+            <label data-help="lot_item_code">
+              Item code{/* */}
+              <input
+                value={itemCode}
+                onChange={(e) => setItemCode(e.target.value)}
+                placeholder="the code on the item"
+              />
+            </label>
+          ) : (
+            <label data-help="lot_choice">
+              Lot{/* */}
+              <select value={lotId} onChange={(e) => setLotId(e.target.value)}>
+                <option value="">Choose a lot</option>
+                {assemblingLots.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <label data-help="reserve">
+            Reserve{/* */}
+            <input
+              inputMode="decimal"
+              value={reserve}
+              onChange={(e) => setReserve(e.target.value)}
+            />
           </label>
-        )}
-        <label>
-          Reserve{/* */}
-          <input
-            inputMode="decimal"
-            value={reserve}
-            onChange={(e) => setReserve(e.target.value)}
-          />
-        </label>
-        <label>
-          Starting bid{/* */}
-          <input
-            inputMode="decimal"
-            value={price}
-            onChange={(e) => setPrice(e.target.value)}
-          />
-        </label>
-      </div>
+          <label data-help="starting_bid">
+            Starting bid{/* */}
+            <input
+              inputMode="decimal"
+              value={price}
+              onChange={(e) => setPrice(e.target.value)}
+            />
+          </label>
+        </div>
+      </HelpScope>
       <div className="row">
         <button disabled={saving} onClick={save}>
           {saving ? 'Adding...' : 'Add lot'}
@@ -401,10 +406,16 @@ function ConsignDialog({ auction, onSaved, onLateSaved, onClose }) {
     <ModalDialog label={label} onClose={onClose}>
       <h2>{label}</h2>
       {error && <p className="error">{error}</p>}
-      <label>
-        Consigned on{/* */}
-        <input type="date" value={onDate} onChange={(e) => setOnDate(e.target.value)} />
-      </label>
+      <HelpScope>
+        <label data-help="consigned_on">
+          Consigned on{/* */}
+          <input
+            type="date"
+            value={onDate}
+            onChange={(e) => setOnDate(e.target.value)}
+          />
+        </label>
+      </HelpScope>
       <div className="row">
         <button disabled={saving} onClick={save}>
           {saving ? 'Saving...' : 'Mark consigned'}
@@ -460,13 +471,14 @@ function ReturnLocationConfirm({
       confirmLabel={confirmLabel}
       busyLabel={busyLabel}
       cancelLabel="Keep it"
+      help={needsLocation}
       busy={busy}
       onConfirm={confirm}
       onCancel={onCancel}
     >
       {children}
       {needsLocation && (
-        <label>
+        <label data-help="return_location">
           Return items to{/* */}
           <LocationSelect
             label="Return items to"
@@ -684,74 +696,76 @@ function AuctionDetail({ auction, venues, onChanged }) {
       {auction.lots.length === 0 && <p className="muted">No lot has been added yet.</p>}
       {auction.lots.length > 0 && (
         // On a phone each row stacks into a card, a line per labelled cell.
-        <table className="table stacks">
-          <thead>
-            <tr>
-              <th>Lot #</th>
-              <th>Item</th>
-              <th>Reserve</th>
-              <th>Result</th>
-              <th>Hammer price</th>
-              <th>Buyer</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {auction.lots.map((lot) => {
-              const draft = draftFor(lot)
-              const subject = subjectOf(lot.listing)
-              return (
-                <tr key={lot.id}>
-                  <td data-label="Lot #">
-                    <input
-                      aria-label={`Lot number for ${subject}`}
-                      value={draft.lot_number}
-                      disabled={!editable}
-                      onChange={(e) => setDraft(lot, 'lot_number', e.target.value)}
-                    />
-                  </td>
-                  <SubjectCell listing={lot.listing} label="Item" />
-                  <td data-label="Reserve">
-                    <input
-                      inputMode="decimal"
-                      aria-label={`Reserve for ${subject}`}
-                      value={draft.reserve}
-                      disabled={!editable}
-                      onChange={(e) => setDraft(lot, 'reserve', e.target.value)}
-                    />
-                  </td>
-                  <td data-label="Result">
-                    {lot.result ? RESULT_LABEL[lot.result] : UNKNOWN}
-                  </td>
-                  <td data-label="Hammer price">{lot.hammer_price ?? UNKNOWN}</td>
-                  <td data-label="Buyer">
-                    <div className="cell-scroll">{lot.buyer ?? UNKNOWN}</div>
-                  </td>
-                  <td>
-                    {editable && (
-                      <div className="row-actions">
-                        <button
-                          className="link"
-                          disabled={busy}
-                          onClick={() => saveLot(lot)}
-                        >
-                          Save
-                        </button>
-                        <button
-                          className="link"
-                          disabled={busy}
-                          onClick={() => setRemoving(lot)}
-                        >
-                          Remove...
-                        </button>
-                      </div>
-                    )}
-                  </td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
+        <HelpScope>
+          <table className="table stacks">
+            <thead>
+              <tr>
+                <th>Lot #</th>
+                <th>Item</th>
+                <th>Reserve</th>
+                <th>Result</th>
+                <th>Hammer price</th>
+                <th>Buyer</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {auction.lots.map((lot) => {
+                const draft = draftFor(lot)
+                const subject = subjectOf(lot.listing)
+                return (
+                  <tr key={lot.id}>
+                    <td data-label="Lot #" data-help="lot_number">
+                      <input
+                        aria-label={`Lot number for ${subject}`}
+                        value={draft.lot_number}
+                        disabled={!editable}
+                        onChange={(e) => setDraft(lot, 'lot_number', e.target.value)}
+                      />
+                    </td>
+                    <SubjectCell listing={lot.listing} label="Item" />
+                    <td data-label="Reserve" data-help="reserve">
+                      <input
+                        inputMode="decimal"
+                        aria-label={`Reserve for ${subject}`}
+                        value={draft.reserve}
+                        disabled={!editable}
+                        onChange={(e) => setDraft(lot, 'reserve', e.target.value)}
+                      />
+                    </td>
+                    <td data-label="Result">
+                      {lot.result ? RESULT_LABEL[lot.result] : UNKNOWN}
+                    </td>
+                    <td data-label="Hammer price">{lot.hammer_price ?? UNKNOWN}</td>
+                    <td data-label="Buyer">
+                      <div className="cell-scroll">{lot.buyer ?? UNKNOWN}</div>
+                    </td>
+                    <td>
+                      {editable && (
+                        <div className="row-actions">
+                          <button
+                            className="link"
+                            disabled={busy}
+                            onClick={() => saveLot(lot)}
+                          >
+                            Save
+                          </button>
+                          <button
+                            className="link"
+                            disabled={busy}
+                            onClick={() => setRemoving(lot)}
+                          >
+                            Remove...
+                          </button>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </HelpScope>
       )}
 
       {auction.status === 'closed' && (

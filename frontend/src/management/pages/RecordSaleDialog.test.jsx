@@ -15,6 +15,7 @@ import { api } from '../api'
 import { ApiError } from '../../shared/api'
 import RecordSaleDialog from './RecordSaleDialog'
 import { adminAuth, emptyReference, renderWithProviders } from '../../test/helpers'
+import { uncovered } from '../../test/helpCoverage'
 
 // An active eBay listing. Its cost basis (120.00) is a fourth number,
 // distinct from every price and fee used below, so a margin assertion can
@@ -268,5 +269,13 @@ describe('RecordSaleDialog', () => {
       )
     }
     expect(letters.filter((l) => 'def'.includes(l))).toEqual([])
+  })
+})
+
+describe('Every field in Record sale has help', () => {
+  it('the price, buyer, order number and each fee', () => {
+    renderDialog()
+    expect(screen.getAllByRole('textbox').length).toBeGreaterThan(3)
+    expect(uncovered(document.body)).toEqual([])
   })
 })

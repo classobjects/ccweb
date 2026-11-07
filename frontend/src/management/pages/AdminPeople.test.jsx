@@ -20,6 +20,7 @@ vi.mock('../api', () => ({
 import { api } from '../api'
 import AdminPeople from './AdminPeople'
 import { adminAuth, renderWithProviders } from '../../test/helpers'
+import { uncovered } from '../../test/helpCoverage'
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -319,5 +320,28 @@ describe('AdminPeople: Ctrl+S', () => {
 
     expect(api.updateCustomer).not.toHaveBeenCalled()
     expect(api.addCustomerAddress).not.toHaveBeenCalled()
+  })
+})
+
+describe('Every field on the People page has help', () => {
+  it('on the accounts tab: a new account, a role and a new password', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<AdminPeople />, { auth: adminAuth() })
+    await screen.findByText('staff@example.com')
+    await user.click(screen.getByRole('button', { name: 'New account' }))
+    await user.click(screen.getAllByRole('button', { name: 'Set password' })[0])
+    expect(screen.getByLabelText(/^New password for/)).toBeVisible()
+    expect(uncovered(document.body)).toEqual([])
+  })
+
+  it('on the customers tab: a row being edited and a new address', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<AdminPeople />, { auth: adminAuth() })
+    await screen.findByText('staff@example.com')
+    await user.click(screen.getByRole('button', { name: 'Customers' }))
+    await user.click(await screen.findByRole('button', { name: /new address/i }))
+    await user.click(screen.getAllByRole('button', { name: 'Edit' })[0])
+    expect(screen.getByLabelText(/^Phone of/)).toBeVisible()
+    expect(uncovered(document.body)).toEqual([])
   })
 })

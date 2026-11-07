@@ -24,6 +24,7 @@ import {
   percentToFraction,
 } from './platform-rates'
 import { adminAuth, emptyReference, renderWithProviders } from '../../test/helpers'
+import { uncovered } from '../../test/helpCoverage'
 
 const STORE = {
   code: 'store',
@@ -576,5 +577,21 @@ describe('rate conversion', () => {
     [null, ''],
   ])('fraction %s is percent %s', (fraction, percent) => {
     expect(fractionToPercent(fraction)).toBe(percent)
+  })
+})
+
+describe('Every field on the Platforms page has help', () => {
+  it('in the form adding a platform, and editing one with Retired', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await user.click(await screen.findByRole('button', { name: 'Add platform' }))
+    expect(screen.getByRole('dialog', { name: 'Add platform' })).toBeVisible()
+    expect(uncovered(document.body)).toEqual([])
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+
+    const row = (await screen.findAllByText('eBay'))[0].closest('tr')
+    await user.click(within(row).getByRole('button', { name: 'Edit' }))
+    expect(screen.getByRole('checkbox', { name: 'Retired' })).toBeVisible()
+    expect(uncovered(document.body)).toEqual([])
   })
 })

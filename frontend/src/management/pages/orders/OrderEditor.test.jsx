@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import userEvent from '@testing-library/user-event'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { uncovered } from '../../../test/helpCoverage'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../../api', () => ({
@@ -310,5 +311,13 @@ describe('OrderEditor', () => {
   it('asks for no listings for a new order', async () => {
     await setup()
     expect(api.listListings).not.toHaveBeenCalled()
+  })
+})
+
+describe('Every field in the order editor has help', () => {
+  it('the customer, each line, the item search and the notes', async () => {
+    const { container } = await setupIn(ORDER)
+    expect(screen.getAllByRole('spinbutton').length).toBeGreaterThan(0)
+    expect(uncovered(container)).toEqual([])
   })
 })

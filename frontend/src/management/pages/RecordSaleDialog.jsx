@@ -5,6 +5,7 @@ import { useState } from 'react'
 
 import { AccessLabel } from '../AccessLabel'
 import { api } from '../api'
+import HelpScope from '../HelpScope'
 import ModalDialog from '../ModalDialog'
 import { accel, useSaveShortcut } from '../shortcuts'
 import { centsOrZero, isMoney, signedFromCents, toCents } from '../../shared/cents'
@@ -163,64 +164,66 @@ export default function RecordSaleDialog({
     <ModalDialog label={label} onClose={onClose}>
       <h2>{label}</h2>
       {error && <p className="error">{error}</p>}
-      <div className="filter-grid">
-        <label>
-          <AccessLabel text="Sale price" accessKey={KEYS.price} />
-          {/* Text, not number: money crosses the API as a decimal string and
+      <HelpScope>
+        <div className="filter-grid">
+          <label data-help="sale_price">
+            <AccessLabel text="Sale price" accessKey={KEYS.price} />
+            {/* Text, not number: money crosses the API as a decimal string and
               a number input hands back a float. */}
-          <input
-            inputMode="decimal"
-            value={price}
-            onChange={(e) => setPrice(e.target.value)}
-            {...accel(KEYS.price)}
-          />
-        </label>
-        <label>
-          <AccessLabel text="Buyer username" accessKey={KEYS.buyer} />
-          <input
-            value={buyer}
-            onChange={(e) => setBuyer(e.target.value)}
-            {...accel(KEYS.buyer)}
-          />
-        </label>
-        <label>
-          <AccessLabel text="Order number" accessKey={KEYS.orderId} />
-          <input
-            value={orderId}
-            onChange={(e) => setOrderId(e.target.value)}
-            placeholder="the platform's own order or transaction number"
-            {...accel(KEYS.orderId)}
-          />
-        </label>
-      </div>
-      <p className="muted">
-        {isAuctionHouse
-          ? `Leave the buyer blank for ${listing.venue_name}'s undisclosed buyer -- the one used whenever this auction house does not name who bought a lot.`
-          : 'Leave the buyer blank if the platform does not name who bought it.'}
-      </p>
-      <table>
-        <thead>
-          <tr>
-            <th>Fee</th>
-            <th>Amount</th>
-          </tr>
-        </thead>
-        <tbody>
-          {feeKinds.map((kind) => (
-            <tr key={kind.code}>
-              <td>{kind.label}</td>
-              <td>
-                <input
-                  inputMode="decimal"
-                  aria-label={kind.label}
-                  value={feeAmounts[kind.code] ?? ''}
-                  onChange={setFee(kind.code)}
-                />
-              </td>
+            <input
+              inputMode="decimal"
+              value={price}
+              onChange={(e) => setPrice(e.target.value)}
+              {...accel(KEYS.price)}
+            />
+          </label>
+          <label data-help="buyer_username">
+            <AccessLabel text="Buyer username" accessKey={KEYS.buyer} />
+            <input
+              value={buyer}
+              onChange={(e) => setBuyer(e.target.value)}
+              {...accel(KEYS.buyer)}
+            />
+          </label>
+          <label data-help="external_order_id">
+            <AccessLabel text="Order number" accessKey={KEYS.orderId} />
+            <input
+              value={orderId}
+              onChange={(e) => setOrderId(e.target.value)}
+              placeholder="the platform's own order or transaction number"
+              {...accel(KEYS.orderId)}
+            />
+          </label>
+        </div>
+        <p className="muted">
+          {isAuctionHouse
+            ? `Leave the buyer blank for ${listing.venue_name}'s undisclosed buyer -- the one used whenever this auction house does not name who bought a lot.`
+            : 'Leave the buyer blank if the platform does not name who bought it.'}
+        </p>
+        <table>
+          <thead>
+            <tr>
+              <th>Fee</th>
+              <th>Amount</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {feeKinds.map((kind) => (
+              <tr key={kind.code}>
+                <td>{kind.label}</td>
+                <td data-help="sale_fee">
+                  <input
+                    inputMode="decimal"
+                    aria-label={kind.label}
+                    value={feeAmounts[kind.code] ?? ''}
+                    onChange={setFee(kind.code)}
+                  />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </HelpScope>
       <dl className="summary">
         <div>
           <dt>Gross</dt>

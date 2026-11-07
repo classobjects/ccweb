@@ -5,6 +5,7 @@ import { useState } from 'react'
 
 import { api } from '../api'
 import ConfirmDialog from '../ConfirmDialog'
+import HelpScope from '../HelpScope'
 import LocationSelect from '../LocationSelect'
 import { RESULTS } from './auction-labels'
 import { centsOrZero, signedFromCents } from '../../shared/cents'
@@ -335,146 +336,148 @@ export default function SettlementGrid({ auction, isAuctionHouse, onSettled }) {
           ))}
         </ul>
       )}
-      {/* On a phone each row stacks into a card, a line per labelled cell. */}
-      <table className="table stacks">
-        <thead>
-          <tr>
-            <th>Lot</th>
-            <th>Item</th>
-            <th>Reserve</th>
-            <th>Result</th>
-            <th>Hammer price</th>
-            <th>Buyer</th>
-            <th>Problem</th>
-          </tr>
-        </thead>
-        <tbody>
-          {auction.lots.map((lot) => {
-            const line = lineFor(lot)
-            const problem = problemsByLot[lot.lot_number]
-            return (
-              <tr key={lot.id} className={problem ? 'error' : ''}>
-                <td className="mono" data-label="Lot">
-                  {lot.lot_number}
-                </td>
-                <SubjectCell listing={lot.listing} label="Item" />
-                <td data-label="Reserve">{lot.reserve ?? UNKNOWN}</td>
-                <td data-label="Result">
-                  <select
-                    aria-label={`Result for lot ${lot.lot_number}`}
-                    value={line.result}
-                    onChange={(e) => setLine(lot, 'result', e.target.value)}
-                  >
-                    <option value="">Choose a result</option>
-                    {RESULTS.map(([value, text]) => (
-                      <option key={value} value={value}>
-                        {text}
-                      </option>
-                    ))}
-                  </select>
-                </td>
-                <td data-label="Hammer price">
-                  <input
-                    inputMode="decimal"
-                    aria-label={`Hammer price for lot ${lot.lot_number}`}
-                    value={line.hammer_price}
-                    disabled={line.result !== 'sold'}
-                    onChange={(e) => setLine(lot, 'hammer_price', e.target.value)}
-                  />
-                </td>
-                <td data-label="Buyer">
-                  <input
-                    aria-label={`Buyer for lot ${lot.lot_number}`}
-                    value={line.buyer_username}
-                    disabled={line.result !== 'sold'}
-                    placeholder={isAuctionHouse ? 'blank = undisclosed buyer' : ''}
-                    onChange={(e) => setLine(lot, 'buyer_username', e.target.value)}
-                  />
-                </td>
-                <td className="error" data-label="Problem">
-                  {problem ? problem.join('; ') : ''}
-                </td>
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
-
-      <h4>Fees</h4>
-      {buyers.length === 0 && <p className="muted">No lot is marked sold yet.</p>}
-      {buyers.map((buyer) => (
-        <fieldset key={buyer.key}>
-          <legend>{buyer.label}</legend>
-          <table>
-            <tbody>
-              {feeKinds.map((kind) => (
-                <tr key={kind.code}>
-                  <td>{kind.label}</td>
-                  <td>
+      <HelpScope>
+        {/* On a phone each row stacks into a card, a line per labelled cell. */}
+        <table className="table stacks">
+          <thead>
+            <tr>
+              <th>Lot</th>
+              <th>Item</th>
+              <th>Reserve</th>
+              <th>Result</th>
+              <th>Hammer price</th>
+              <th>Buyer</th>
+              <th>Problem</th>
+            </tr>
+          </thead>
+          <tbody>
+            {auction.lots.map((lot) => {
+              const line = lineFor(lot)
+              const problem = problemsByLot[lot.lot_number]
+              return (
+                <tr key={lot.id} className={problem ? 'error' : ''}>
+                  <td className="mono" data-label="Lot">
+                    {lot.lot_number}
+                  </td>
+                  <SubjectCell listing={lot.listing} label="Item" />
+                  <td data-label="Reserve">{lot.reserve ?? UNKNOWN}</td>
+                  <td data-label="Result" data-help="lot_result">
+                    <select
+                      aria-label={`Result for lot ${lot.lot_number}`}
+                      value={line.result}
+                      onChange={(e) => setLine(lot, 'result', e.target.value)}
+                    >
+                      <option value="">Choose a result</option>
+                      {RESULTS.map(([value, text]) => (
+                        <option key={value} value={value}>
+                          {text}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  <td data-label="Hammer price" data-help="hammer_price">
                     <input
                       inputMode="decimal"
-                      aria-label={`${kind.label} fee for ${buyer.label}`}
-                      value={feeAmounts[buyer.key]?.[kind.code] ?? ''}
-                      onChange={setFee(buyer.key, kind.code)}
+                      aria-label={`Hammer price for lot ${lot.lot_number}`}
+                      value={line.hammer_price}
+                      disabled={line.result !== 'sold'}
+                      onChange={(e) => setLine(lot, 'hammer_price', e.target.value)}
                     />
                   </td>
+                  <td data-label="Buyer" data-help="lot_buyer">
+                    <input
+                      aria-label={`Buyer for lot ${lot.lot_number}`}
+                      value={line.buyer_username}
+                      disabled={line.result !== 'sold'}
+                      placeholder={isAuctionHouse ? 'blank = undisclosed buyer' : ''}
+                      onChange={(e) => setLine(lot, 'buyer_username', e.target.value)}
+                    />
+                  </td>
+                  <td className="error" data-label="Problem">
+                    {problem ? problem.join('; ') : ''}
+                  </td>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </fieldset>
-      ))}
-      {strandedText && (
-        <div className="row">
-          <p className="error">{strandedText}</p>
-          <button type="button" onClick={discardStranded}>
-            Discard these fees
-          </button>
-        </div>
-      )}
+              )
+            })}
+          </tbody>
+        </table>
 
-      {/* Also wherever the house still holds something, which is what
+        <h4>Fees</h4>
+        {buyers.length === 0 && <p className="muted">No lot is marked sold yet.</p>}
+        {buyers.map((buyer) => (
+          <fieldset key={buyer.key}>
+            <legend>{buyer.label}</legend>
+            <table>
+              <tbody>
+                {feeKinds.map((kind) => (
+                  <tr key={kind.code}>
+                    <td>{kind.label}</td>
+                    <td data-help="settlement_fee">
+                      <input
+                        inputMode="decimal"
+                        aria-label={`${kind.label} fee for ${buyer.label}`}
+                        value={feeAmounts[buyer.key]?.[kind.code] ?? ''}
+                        onChange={setFee(buyer.key, kind.code)}
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </fieldset>
+        ))}
+        {strandedText && (
+          <div className="row">
+            <p className="error">{strandedText}</p>
+            <button type="button" onClick={discardStranded}>
+              Discard these fees
+            </button>
+          </div>
+        )}
+
+        {/* Also wherever the house still holds something, which is what
           `needsReturnLocation` asks: the venue may not have loaded, and
           Settle must not wait on a location there is nowhere to choose. */}
-      {(isAuctionHouse || auction.consigned_on != null) && (
-        <label>
-          Return unsold and withdrawn items to{/* */}
-          <LocationSelect
-            label="Return unsold and withdrawn items to"
-            blankLabel="Choose a location"
-            value={returnedToLocationId}
-            onChange={setReturnedToLocationId}
-          />
-        </label>
-      )}
-
-      <dl className="summary">
-        <div>
-          <dt>Gross</dt>
-          <dd>{signedFromCents(grossCents)}</dd>
-        </div>
-        <div>
-          <dt>Fees</dt>
-          <dd>{signedFromCents(feesCents)}</dd>
-        </div>
-        <div>
-          <dt>Net</dt>
-          <dd>{signedFromCents(netCents)}</dd>
-        </div>
-        <div>
-          <dt>Cost basis</dt>
-          <dd>{signedFromCents(costBasisCents)}</dd>
-        </div>
-      </dl>
-
-      <div className="row">
-        <button onClick={askToSettle}>Settle...</button>
-        {!canSettle && (
-          <span className="muted">
-            Choose where unsold and withdrawn items come back to first.
-          </span>
+        {(isAuctionHouse || auction.consigned_on != null) && (
+          <label data-help="settlement_return_location">
+            Return unsold and withdrawn items to{/* */}
+            <LocationSelect
+              label="Return unsold and withdrawn items to"
+              blankLabel="Choose a location"
+              value={returnedToLocationId}
+              onChange={setReturnedToLocationId}
+            />
+          </label>
         )}
-      </div>
+
+        <dl className="summary">
+          <div>
+            <dt>Gross</dt>
+            <dd>{signedFromCents(grossCents)}</dd>
+          </div>
+          <div>
+            <dt>Fees</dt>
+            <dd>{signedFromCents(feesCents)}</dd>
+          </div>
+          <div>
+            <dt>Net</dt>
+            <dd>{signedFromCents(netCents)}</dd>
+          </div>
+          <div>
+            <dt>Cost basis</dt>
+            <dd>{signedFromCents(costBasisCents)}</dd>
+          </div>
+        </dl>
+
+        <div className="row">
+          <button onClick={askToSettle}>Settle...</button>
+          {!canSettle && (
+            <span className="muted">
+              Choose where unsold and withdrawn items come back to first.
+            </span>
+          )}
+        </div>
+      </HelpScope>
 
       {confirming && (
         <SettleConfirm

@@ -323,7 +323,10 @@ export default function PhotosPanel({
                 {moving === row.link_id && !leaving(edit) && (
                   <div className="photo-move">
                     <span>Move to the item with code:</span>
-                    <ItemPicker onPick={(item) => moveTo(row, item)} />
+                    <ItemPicker
+                      onPick={(item) => moveTo(row, item)}
+                      help="photo_move_to"
+                    />
                     {moveError && <p className="error">{moveError}</p>}
                     <button
                       type="button"

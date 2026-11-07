@@ -4,6 +4,7 @@
 import { useEffect, useState } from 'react'
 
 import { api } from '../api'
+import HelpScope from '../HelpScope'
 import EnlargeableImage from '../EnlargeableImage'
 import ItemPicker from './ItemPicker'
 
@@ -138,7 +139,7 @@ function PhotoRow({ row, onLinked }) {
         sourceUrl={row.source_url}
         alt="Unattached photograph"
       />
-      <ItemPicker onPick={pickItem} />
+      <ItemPicker onPick={pickItem} help="photo_link_item" />
       {selected && (
         <p className="muted">
           Chosen: <span className="mono">{selected.item_code}</span>{' '}
@@ -218,11 +219,13 @@ export default function Photos() {
         <p className="muted">Nothing waiting to be filed.</p>
       )}
       {!loading && rows.length > 0 && (
-        <ul className="photo-grid">
-          {rows.map((row) => (
-            <PhotoRow key={row.image_id} row={row} onLinked={drop} />
-          ))}
-        </ul>
+        <HelpScope>
+          <ul className="photo-grid">
+            {rows.map((row) => (
+              <PhotoRow key={row.image_id} row={row} onLinked={drop} />
+            ))}
+          </ul>
+        </HelpScope>
       )}
     </div>
   )

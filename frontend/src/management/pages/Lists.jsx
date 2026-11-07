@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 
 import { api } from '../api'
+import HelpScope from '../HelpScope'
 import { frProblem, normalizeFr } from '../friedberg-format'
 import { PHONE_DEFAULT_CC, phoneTyped } from '../phone'
 import { withScheme } from '../site-name'
@@ -49,8 +50,13 @@ const FR_NUMBER = {
   clean: normalizeFr,
   check: frProblem,
   required: true,
+  help: 'list_fr_number',
 }
-const FR_DESCRIPTION = { key: 'description', label: 'Description' }
+const FR_DESCRIPTION = {
+  key: 'description',
+  label: 'Description',
+  help: 'list_fr_description',
+}
 
 /**
  * A link as the server takes it, on an add and on a correction alike: it
@@ -96,32 +102,59 @@ function typeOf(row) {
 function lists(vendorKinds, locationKinds) {
   // Every kind names a row; only the ones made by hand are offered.
   const offeredKinds = locationKinds.filter((entry) => !MADE_ELSEWHERE.has(entry.code))
-  const sellerName = { key: 'name', label: 'Name', required: true }
-  const storeLink = { key: 'store_url', label: 'Store link', clean: webLink }
+  // `help` is each field's topic in `fieldHelp.js`, on the add form and on
+  // a row opened for editing alike.
+  const sellerName = { key: 'name', label: 'Name', required: true, help: 'seller_name' }
+  const storeLink = {
+    key: 'store_url',
+    label: 'Store link',
+    clean: webLink,
+    help: 'seller_store_url',
+  }
   // The person behind a seller's account. The phone box starts with the
   // country code, which alone is no number (`phoneTyped`); the server holds
   // it to E.164 and says so when it is not.
-  const contactName = { key: 'contact_name', label: 'Contact' }
-  const contactEmail = { key: 'contact_email', label: 'Contact email', type: 'email' }
+  const contactName = { key: 'contact_name', label: 'Contact', help: 'seller_contact' }
+  const contactEmail = {
+    key: 'contact_email',
+    label: 'Contact email',
+    type: 'email',
+    help: 'seller_contact_email',
+  }
   const contactPhone = {
     key: 'contact_phone',
     label: 'Contact phone',
     type: 'tel',
     initial: PHONE_DEFAULT_CC,
     clean: phoneTyped,
+    help: 'seller_contact_phone',
   }
-  const vendorName = { key: 'name', label: 'Name', required: true }
-  const vendorLink = { key: 'url', label: 'Link', clean: webLink }
-  const vendorKind = { key: 'vendor_kind', label: 'Kind', options: vendorKinds }
+  const vendorName = { key: 'name', label: 'Name', required: true, help: 'vendor_name' }
+  const vendorLink = { key: 'url', label: 'Link', clean: webLink, help: 'vendor_url' }
+  const vendorKind = {
+    key: 'vendor_kind',
+    label: 'Kind',
+    options: vendorKinds,
+    help: 'vendor_kind',
+  }
   const locationKind = {
     key: 'kind',
     label: 'Kind',
     options: offeredKinds,
     required: true,
+    help: 'location_kind',
   }
-  const institution = { key: 'institution', label: 'Institution' }
-  const identifier = { key: 'identifier', label: 'Identifier' }
-  const notes = { key: 'notes', label: 'Notes' }
+  const institution = {
+    key: 'institution',
+    label: 'Institution',
+    help: 'location_institution',
+  }
+  const identifier = {
+    key: 'identifier',
+    label: 'Identifier',
+    help: 'location_identifier',
+  }
+  const notes = { key: 'notes', label: 'Notes', help: 'location_notes' }
   return {
     friedberg: {
       noun: 'number',
@@ -438,177 +471,186 @@ function CatalogTable({ config }) {
     : rows
 
   return (
-    <div className="catalog-table">
-      <label className="search-row">
-        Search{/* */}
-        <input
-          type="search"
-          aria-label="Search"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-      </label>
-      {adding === null ? (
-        <button
-          type="button"
-          onClick={() => {
-            setAdding({})
-            setEditing(null)
-            setDeleting(null)
-            setError('')
-          }}
-        >
-          Add {config.noun}
-        </button>
-      ) : (
-        <form className="row" aria-label={`New ${config.noun}`} onSubmit={add}>
-          {config.adds.map((field) => (
-            <label key={field.key}>
-              {field.label}
-              {/* */}
-              <Field
-                field={field}
-                value={adding[field.key] ?? field.initial ?? ''}
-                onChange={(value) => setAdding({ ...adding, [field.key]: value })}
-              />
-            </label>
-          ))}
-          <button type="submit">Add</button>
+    <HelpScope>
+      <div className="catalog-table">
+        <label className="search-row" data-help="list_search">
+          Search{/* */}
+          <input
+            type="search"
+            aria-label="Search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </label>
+        {adding === null ? (
           <button
             type="button"
-            className="link"
             onClick={() => {
-              setAdding(null)
+              setAdding({})
+              setEditing(null)
+              setDeleting(null)
               setError('')
             }}
           >
-            Cancel
+            Add {config.noun}
           </button>
-        </form>
-      )}
-      {error && <p className="error">{error}</p>}
-      {/* `!error` as well as the count: a failed load leaves `rows` at []
+        ) : (
+          <form className="row" aria-label={`New ${config.noun}`} onSubmit={add}>
+            {config.adds.map((field) => (
+              <label key={field.key} data-help={field.help}>
+                {field.label}
+                {/* */}
+                <Field
+                  field={field}
+                  value={adding[field.key] ?? field.initial ?? ''}
+                  onChange={(value) => setAdding({ ...adding, [field.key]: value })}
+                />
+              </label>
+            ))}
+            <button type="submit">Add</button>
+            <button
+              type="button"
+              className="link"
+              onClick={() => {
+                setAdding(null)
+                setError('')
+              }}
+            >
+              Cancel
+            </button>
+          </form>
+        )}
+        {error && <p className="error">{error}</p>}
+        {/* `!error` as well as the count: a failed load leaves `rows` at []
           so the page stays usable, and without the guard it would say both
           that the load failed and that there is nothing here. */}
-      {shown.length === 0 ? (
-        !error && (
-          <p className="muted">
-            {needle ? `Nothing matches ${search.trim()}.` : 'Nothing here yet.'}
-          </p>
-        )
-      ) : (
-        // On a phone each row stacks into a card, a line per labelled cell.
-        <table className="table stacks">
-          <thead>
-            <tr>
-              {config.columns.map((column) => (
-                <th key={column.label}>{column.label}</th>
-              ))}
-              <th>{config.usesLabel}</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {shown.map((row) => {
-              const isEditing = editing === row.id
-              const editable = config.editable ? config.editable(row) : true
-              const uses = config.uses(row)
-              return (
-                <tr key={row.id}>
-                  {config.columns.map((column) => (
-                    <td key={column.label} data-label={column.label}>
-                      {isEditing && column.field ? (
-                        <Field
-                          field={column.field}
-                          value={
-                            draft[column.field.key] ??
-                            row[column.field.key] ??
-                            column.field.initial ??
-                            ''
-                          }
-                          onChange={(value) =>
-                            setDraft({ ...draft, [column.field.key]: value })
-                          }
-                          // Edit opens the row ready to type in; Enter in any
-                          // of its boxes is its Save button, Escape its Cancel.
-                          autoFocus={column === firstEditable}
-                          onEnter={() => save(row)}
-                          onEscape={cancelEdit}
-                        />
+        {shown.length === 0 ? (
+          !error && (
+            <p className="muted">
+              {needle ? `Nothing matches ${search.trim()}.` : 'Nothing here yet.'}
+            </p>
+          )
+        ) : (
+          // On a phone each row stacks into a card, a line per labelled cell.
+          <table className="table stacks">
+            <thead>
+              <tr>
+                {config.columns.map((column) => (
+                  <th key={column.label}>{column.label}</th>
+                ))}
+                <th>{config.usesLabel}</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {shown.map((row) => {
+                const isEditing = editing === row.id
+                const editable = config.editable ? config.editable(row) : true
+                const uses = config.uses(row)
+                return (
+                  <tr key={row.id}>
+                    {config.columns.map((column) => (
+                      <td
+                        key={column.label}
+                        data-label={column.label}
+                        data-help={isEditing ? column.field?.help : undefined}
+                      >
+                        {isEditing && column.field ? (
+                          <Field
+                            field={column.field}
+                            value={
+                              draft[column.field.key] ??
+                              row[column.field.key] ??
+                              column.field.initial ??
+                              ''
+                            }
+                            onChange={(value) =>
+                              setDraft({ ...draft, [column.field.key]: value })
+                            }
+                            // Edit opens the row ready to type in; Enter in any
+                            // of its boxes is its Save button, Escape its Cancel.
+                            autoFocus={column === firstEditable}
+                            onEnter={() => save(row)}
+                            onEscape={cancelEdit}
+                          />
+                        ) : (
+                          // A long link or address scrolls in its cell rather
+                          // than widening the table.
+                          <div className="cell-scroll">
+                            {column.opensEdit && editable && deleting !== row.id ? (
+                              <button
+                                type="button"
+                                className="link"
+                                aria-label={`Edit ${config.name(row)}`}
+                                onClick={() => startEdit(row)}
+                              >
+                                {column.value(row)}
+                              </button>
+                            ) : (
+                              column.value(row)
+                            )}
+                          </div>
+                        )}
+                      </td>
+                    ))}
+                    <td data-label={config.usesLabel}>{uses}</td>
+                    <td className="row">
+                      {isEditing ? (
+                        <>
+                          <button type="button" onClick={() => save(row)}>
+                            Save
+                          </button>
+                          <button type="button" className="link" onClick={cancelEdit}>
+                            Cancel
+                          </button>
+                        </>
                       ) : (
-                        // A long link or address scrolls in its cell rather
-                        // than widening the table.
-                        <div className="cell-scroll">
-                          {column.opensEdit && editable && deleting !== row.id ? (
-                            <button
-                              type="button"
-                              className="link"
-                              aria-label={`Edit ${config.name(row)}`}
-                              onClick={() => startEdit(row)}
-                            >
-                              {column.value(row)}
-                            </button>
-                          ) : (
-                            column.value(row)
+                        <>
+                          {deleting === row.id && (
+                            <>
+                              <span>Delete {config.name(row)}?</span>
+                              <button
+                                type="button"
+                                onClick={() => write(() => config.remove(row.id))}
+                              >
+                                Yes, delete
+                              </button>
+                              <button
+                                type="button"
+                                className="link"
+                                onClick={() => setDeleting(null)}
+                              >
+                                No
+                              </button>
+                            </>
                           )}
-                        </div>
+                          {deleting !== row.id && editable && (
+                            <>
+                              <button type="button" onClick={() => startEdit(row)}>
+                                Edit
+                              </button>
+                              {config.actions?.(row, change)}
+                              {uses === 0 && (
+                                <button
+                                  type="button"
+                                  onClick={() => setDeleting(row.id)}
+                                >
+                                  Delete
+                                </button>
+                              )}
+                            </>
+                          )}
+                        </>
                       )}
                     </td>
-                  ))}
-                  <td data-label={config.usesLabel}>{uses}</td>
-                  <td className="row">
-                    {isEditing ? (
-                      <>
-                        <button type="button" onClick={() => save(row)}>
-                          Save
-                        </button>
-                        <button type="button" className="link" onClick={cancelEdit}>
-                          Cancel
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        {deleting === row.id && (
-                          <>
-                            <span>Delete {config.name(row)}?</span>
-                            <button
-                              type="button"
-                              onClick={() => write(() => config.remove(row.id))}
-                            >
-                              Yes, delete
-                            </button>
-                            <button
-                              type="button"
-                              className="link"
-                              onClick={() => setDeleting(null)}
-                            >
-                              No
-                            </button>
-                          </>
-                        )}
-                        {deleting !== row.id && editable && (
-                          <>
-                            <button type="button" onClick={() => startEdit(row)}>
-                              Edit
-                            </button>
-                            {config.actions?.(row, change)}
-                            {uses === 0 && (
-                              <button type="button" onClick={() => setDeleting(row.id)}>
-                                Delete
-                              </button>
-                            )}
-                          </>
-                        )}
-                      </>
-                    )}
-                  </td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      )}
-    </div>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </HelpScope>
   )
 }
 

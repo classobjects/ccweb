@@ -1,6 +1,7 @@
 // (c) Copyright 2026 Nathaniel Mills
 // Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
 // SPDX-License-Identifier: Apache-2.0
+import HelpScope from './HelpScope'
 import ModalDialog from './ModalDialog'
 
 /**
@@ -13,6 +14,10 @@ import ModalDialog from './ModalDialog'
  * the request is out, and is disabled only then; the other button,
  * `cancelLabel`, backs out. An answer that is not complete yet keeps the
  * button live: `onConfirm` says what is missing when it is pressed.
+ *
+ * `help` is for a question that asks for something -- where returned items
+ * are put away -- and gives the dialog its help band, with `children` in a
+ * `HelpScope`; a plain question has no field to explain and no band.
  */
 export default function ConfirmDialog({
   question,
@@ -20,14 +25,15 @@ export default function ConfirmDialog({
   busyLabel,
   cancelLabel,
   busy,
+  help = false,
   onConfirm,
   onCancel,
   children,
 }) {
   return (
-    <ModalDialog label={question} onClose={onCancel} help={false}>
+    <ModalDialog label={question} onClose={onCancel} help={help}>
       <h2>{question}</h2>
-      {children}
+      {help ? <HelpScope>{children}</HelpScope> : children}
       <div className="row">
         <button disabled={busy} onClick={onConfirm}>
           {busy ? busyLabel : confirmLabel}

@@ -37,6 +37,8 @@ import userEvent from '@testing-library/user-event'
 
 import { api } from '../../api'
 import { FIELD_HELP } from '../../fieldHelp'
+import HelpScope from '../../HelpScope'
+import { uncovered } from '../../../test/helpCoverage'
 import { emptyReference, renderWithProviders } from '../../../test/helpers'
 import BulkEditBar from './BulkEditBar'
 import FilterPanel from './FilterPanel'
@@ -44,28 +46,6 @@ import InventoryTable from './InventoryTable'
 import ItemEditForm from './ItemEditForm'
 import OfferDialog from './OfferDialog'
 import { COIN_VIEW, CURRENCY_VIEW } from './specs'
-
-/**
- * Every field a person can fill in explains itself.
- *
- * Walks every input, dropdown and text box actually rendered and requires a
- * `data-help` topic above it that has text. A literal-key scan of the source
- * cannot see a key built at runtime -- `data-help={helpFor(param)}` -- nor a
- * control added with no key at all, which is the gap this closes.
- */
-function uncovered(container) {
-  return [...container.querySelectorAll('input, select, textarea')]
-    .filter((control) => control.type !== 'hidden')
-    .map((control) => ({
-      control,
-      key: control.closest('[data-help]')?.dataset.help ?? null,
-    }))
-    .filter(({ key }) => !key || !FIELD_HELP[key]?.title || !FIELD_HELP[key]?.text)
-    .map(
-      ({ control, key }) =>
-        `${control.tagName.toLowerCase()} ${control.getAttribute('aria-label') ?? control.name ?? ''} (${key ?? 'no topic'})`,
-    )
-}
 
 const vocabularies = emptyReference({
   tables: {
@@ -217,7 +197,9 @@ describe('Every field has help', () => {
 
   it("names the bar's field picker by a topic of its own, not the field chosen", () => {
     renderWithProviders(
-      <BulkEditBar view="coins" ids={[1, 2]} onApplied={vi.fn()} onClear={vi.fn()} />,
+      <HelpScope>
+        <BulkEditBar view="coins" ids={[1, 2]} onApplied={vi.fn()} onClear={vi.fn()} />
+      </HelpScope>,
     )
     expect(screen.getByRole('combobox', { name: 'Field to change' })).toHaveAttribute(
       'data-help',
@@ -243,7 +225,9 @@ describe('Every field has help', () => {
     const user = userEvent.setup()
     api.listLots.mockResolvedValue({ lots: [] })
     const { container } = renderWithProviders(
-      <BulkEditBar view="coins" ids={[1, 2]} onApplied={vi.fn()} onClear={vi.fn()} />,
+      <HelpScope>
+        <BulkEditBar view="coins" ids={[1, 2]} onApplied={vi.fn()} onClear={vi.fn()} />
+      </HelpScope>,
     )
     await user.click(screen.getByRole('button', { name: 'Group into lot...' }))
     const dialog = container.querySelector('dialog')
@@ -257,7 +241,9 @@ describe('Every field has help', () => {
     async (view) => {
       const user = userEvent.setup()
       const { container } = renderWithProviders(
-        <BulkEditBar view={view} ids={[1, 2]} onApplied={vi.fn()} onClear={vi.fn()} />,
+        <HelpScope>
+          <BulkEditBar view={view} ids={[1, 2]} onApplied={vi.fn()} onClear={vi.fn()} />
+        </HelpScope>,
       )
       const field = screen.getByRole('combobox', { name: 'Field to change' })
       const offered = [...field.options].map((option) => option.value)

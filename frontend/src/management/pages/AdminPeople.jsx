@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useState } from 'react'
 
 import { api } from '../api'
+import HelpScope from '../HelpScope'
 import { useAuth } from '../../shared/auth-context'
 import { PHONE_DEFAULT_CC } from '../phone'
 import { SaveButton, SaveShortcut } from '../SaveButton'
@@ -77,22 +78,22 @@ function NewAccountForm({ onCreated, onCancel }) {
     <div className="search-panel">
       {error && <p className="error">{error}</p>}
       <div className="filter-grid">
-        <label>
+        <label data-help="account_email">
           Email{/* */}
           <input type="email" value={form.email} onChange={set('email')} />
         </label>
-        <label>
+        <label data-help="account_name">
           Name{/* */}
           <input value={form.full_name} onChange={set('full_name')} />
         </label>
-        <label>
+        <label data-help="account_role">
           Role{/* */}
           <select value={form.role} onChange={set('role')}>
             <option value="customer">customer</option>
             <option value="manager">manager</option>
           </select>
         </label>
-        <label>
+        <label data-help="account_password">
           Initial password{/* */}
           <input
             type="password"
@@ -223,7 +224,7 @@ function Accounts({ notify }) {
                   {u.full_name || <span className="muted">-</span>}
                 </div>
               </td>
-              <td data-label="Role">
+              <td data-label="Role" data-help="account_role">
                 <select
                   aria-label={`Role of ${u.email}`}
                   value={u.role}
@@ -253,7 +254,7 @@ function Accounts({ notify }) {
                   {u.is_active ? 'Active' : 'Disabled'}
                 </button>
               </td>
-              <td data-label="Password">
+              <td data-label="Password" data-help="account_new_password">
                 {pwFor === u.id ? (
                   <span className="row">
                     <input
@@ -328,27 +329,27 @@ function AddressForm({ customerId, onSaved, onCancel, notify, setError }) {
   return (
     <div className="search-panel">
       <div className="filter-grid">
-        <label>
+        <label data-help="address_line1">
           Address line 1{/* */}
           <input value={form.line1} onChange={set('line1')} />
         </label>
-        <label>
+        <label data-help="address_line2">
           Line 2{/* */}
           <input value={form.line2} onChange={set('line2')} />
         </label>
-        <label>
+        <label data-help="address_city">
           City{/* */}
           <input value={form.city} onChange={set('city')} />
         </label>
-        <label>
+        <label data-help="address_region">
           State / region{/* */}
           <input value={form.region} onChange={set('region')} />
         </label>
-        <label>
+        <label data-help="address_postal_code">
           Postal code{/* */}
           <input value={form.postal_code} onChange={set('postal_code')} />
         </label>
-        <label>
+        <label data-help="address_country">
           Country{/* */}
           <input
             value={form.country}
@@ -461,7 +462,7 @@ function Customers({ notify }) {
             const isEditing = editing === c.id
             return (
               <tr key={c.id}>
-                <td data-label="Name">
+                <td data-label="Name" data-help="customer_name">
                   {isEditing ? (
                     <input
                       aria-label={`Name of ${c.display_name}`}
@@ -474,7 +475,7 @@ function Customers({ notify }) {
                     <div className="cell-scroll">{c.display_name}</div>
                   )}
                 </td>
-                <td className="mono" data-label="Email">
+                <td className="mono" data-label="Email" data-help="customer_email">
                   {isEditing ? (
                     <input
                       aria-label={`Email of ${c.display_name}`}
@@ -487,7 +488,7 @@ function Customers({ notify }) {
                     </div>
                   )}
                 </td>
-                <td className="mono" data-label="Phone">
+                <td className="mono" data-label="Phone" data-help="customer_phone">
                   {isEditing ? (
                     <input
                       aria-label={`Phone of ${c.display_name}`}
@@ -571,11 +572,13 @@ export default function AdminPeople() {
       <h1>People</h1>
       <Tabs active={tab} onChange={setTab} />
       {message && <p className="notice">{message}</p>}
-      {tab === 'accounts' ? (
-        <Accounts notify={setMessage} />
-      ) : (
-        <Customers notify={setMessage} />
-      )}
+      <HelpScope>
+        {tab === 'accounts' ? (
+          <Accounts notify={setMessage} />
+        ) : (
+          <Customers notify={setMessage} />
+        )}
+      </HelpScope>
     </section>
   )
 }

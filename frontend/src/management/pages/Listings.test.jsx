@@ -21,6 +21,7 @@ import { marginPercent } from './platform-rates'
 import { subjectOf } from './listing-labels'
 import { date } from '../../shared/format'
 import { adminAuth, emptyReference, renderWithProviders } from '../../test/helpers'
+import { uncovered } from '../../test/helpCoverage'
 
 // The offer that holds the item: on eBay, active, with a listing number.
 const EBAY = {
@@ -406,7 +407,8 @@ describe('Listings', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Save' }))
 
     expect(api.updateListing).not.toHaveBeenCalled()
-    expect(within(dialog).getByText(/amount like 189\.00/)).toBeVisible()
+    // The error, not the help band below it, which explains Price the same way.
+    expect(within(dialog).getByText(/must be an amount like 189\.00/)).toBeVisible()
   })
 
   // Ending is permanent, and on a paused row it destroys a store listing
@@ -893,5 +895,15 @@ describe('margin', () => {
     ['0.00', '10.00', ''],
   ])('margin on %s costing %s is %s', (price, cost, expected) => {
     expect(marginPercent(price, cost)).toBe(expected)
+  })
+})
+
+describe('Every field on the Listings page has help', () => {
+  it('in the filters and the edit form', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    const dialog = await openEditor(user)
+    expect(dialog).toBeVisible()
+    expect(uncovered(document.body)).toEqual([])
   })
 })

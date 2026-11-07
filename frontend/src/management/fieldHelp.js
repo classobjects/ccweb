@@ -826,6 +826,501 @@ export const FIELD_HELP = {
       "The platform's own number for this listing, where it has one. Leave it " +
       'empty if there is none yet.',
   },
+  // -- the Listings page ------------------------------------------------------
+  listing_platform_filter: {
+    title: 'Platform',
+    text: 'Shows only the offers on one platform, or on all of them.',
+  },
+  listing_format_filter: {
+    title: 'Format',
+    text: 'Shows only fixed-price offers, or only auction listings, or both.',
+  },
+  listing_status_filter: {
+    title: 'Status',
+    text:
+      'On offer shows what is active or paused: a paused store listing is one ' +
+      'set aside while the item is offered elsewhere. Active, Paused and Ended ' +
+      'show only that status; All, including ended, shows every offer ever made.',
+  },
+  listing_price: {
+    title: 'Price',
+    text:
+      'What it is offered for, as an amount like 189.00. A change shows at once ' +
+      'where the offer is listed in the web store; on another platform, change ' +
+      'it there too.',
+  },
+  listing_title: {
+    title: 'Title',
+    text: 'What a buyer sees it called.',
+  },
+  listing_description: {
+    title: 'Description',
+    text: 'The wording that goes with the title. It may be left empty.',
+  },
+  listing_number: {
+    title: 'Listing number',
+    text:
+      "The platform's own number for this listing, where it has one: the eBay " +
+      'item number, the lot number on an auction site. Leave it empty if there ' +
+      'is none.',
+  },
+  for_sale_confirm: {
+    title: 'Change it anyway',
+    text:
+      'The item is offered for sale, as the notice above says. Tick ' +
+      'this to make the change all the same; a buyer sees it at once. A sale ' +
+      'already made keeps the item as it was sold.',
+  },
+  // -- recording a sale made elsewhere ----------------------------------------
+  sale_price: {
+    title: 'Sale price',
+    text:
+      'What the buyer paid for it, as an amount like 189.00, before the ' +
+      "platform's fees: the fees go in the table below, and the net is worked " +
+      'out from both.',
+  },
+  buyer_username: {
+    title: 'Buyer username',
+    text:
+      'The name the platform shows for the buyer: their eBay username, their ' +
+      'Whatnot handle. A buyer already recorded on this platform under that ' +
+      'name, in any capitals, is the same customer; a new name becomes a new ' +
+      'one. Leave it blank if the platform does not name the buyer.',
+  },
+  external_order_id: {
+    title: 'Order number',
+    text:
+      "The platform's own order or transaction number for this sale, to find " +
+      'it in their records. It is kept with the order.',
+  },
+  sale_fee: {
+    title: 'Fees',
+    text:
+      'What the platform actually charged on this sale, one line per kind of ' +
+      'fee, from its statement or invoice. Leave a kind blank if it was not ' +
+      'charged. These are what the sale records; the default fees on the ' +
+      'Platforms page are only for estimating a price.',
+  },
+  // -- the Sales lots page ----------------------------------------------------
+  lot_edit_title: {
+    title: 'Title',
+    text:
+      'What the lot is called: the Lots page lists it by this, and its offer ' +
+      'starts from it.',
+  },
+  lot_description: {
+    title: 'Description',
+    text:
+      'The wording for the lot as a whole -- what it holds, why it goes ' +
+      'together. Its offer starts from it, and it may be left empty.',
+  },
+  // -- the Auctions page ------------------------------------------------------
+  auction_platform: {
+    title: 'Platform',
+    text:
+      'Where the auction is run: an auction house, a live-auction site, or a ' +
+      'marketplace for a single timed auction. The web store runs no auction, ' +
+      'and a retired platform is not offered. Platforms are added on the ' +
+      'Platforms page.',
+  },
+  auction_title: {
+    title: 'Title',
+    text:
+      "The auction's name, as the platform gives it. The list of auctions and " +
+      'every question about this one name it by this.',
+  },
+  auction_sale_number: {
+    title: 'Sale number',
+    text:
+      "The house's or platform's own number for the sale, to find it in their " +
+      'catalog and statements. Leave it empty if there is none yet.',
+  },
+  auction_starts: {
+    title: 'Starts',
+    text:
+      'When bidding opens, written year-month-day hour:minute with the hour out ' +
+      'of 24: 2026-11-20 18:00. It may be left empty. It is a record only: the ' +
+      'platform opens and closes the bidding, never this page.',
+  },
+  auction_ends: {
+    title: 'Ends',
+    text:
+      'When bidding closes, written as Starts is. It may be left empty. Close ' +
+      'the auction here once the sale has actually happened.',
+  },
+  auction_notes: {
+    title: 'Notes',
+    text: 'Anything about the auction as a whole, kept with it here.',
+  },
+  lot_subject: {
+    title: 'Single item or assembled lot',
+    text:
+      'What this lot sells: one item on its own, found by its code, or a sales ' +
+      'lot still being assembled -- one grouped on Coins or Currency with Group ' +
+      'into lot. The lot number, reserve and starting bid are the same either ' +
+      'way.',
+  },
+  lot_number: {
+    title: 'Lot number',
+    text:
+      'The number the house or platform gives this lot in the sale: 1042, or ' +
+      '12A. Each lot in an auction has its own. It can be changed until the ' +
+      'auction closes.',
+  },
+  lot_item_code: {
+    title: 'Item code',
+    text:
+      'The code on the item, as CC-000123, to sell it on its own as a lot of ' +
+      'one. It is looked up when the lot is added; a code no coin or note has ' +
+      'is refused.',
+  },
+  lot_choice: {
+    title: 'Lot',
+    text:
+      'A sales lot still being assembled, to sell all its items together. A ' +
+      'lot already offered somewhere is not listed.',
+  },
+  reserve: {
+    title: 'Reserve',
+    text:
+      'The lowest price agreed for this lot, if there is one. It is kept here ' +
+      'as a record and shown when settling; the platform holds the sale to it. ' +
+      'It can be changed until the auction closes.',
+  },
+  starting_bid: {
+    title: 'Starting bid',
+    text: 'Where bidding opens, if the platform asks for one. It may be left empty.',
+  },
+  consigned_on: {
+    title: 'Consigned on',
+    text:
+      'The day the items went to the auction house. They are recorded as at ' +
+      'the house from then on, until they are sold or come back.',
+  },
+  return_location: {
+    title: 'Return items to',
+    text:
+      'Where the items are put away now they are back from the auction house. ' +
+      'Asked for because the auction was consigned: the items left the ' +
+      'premises, and something must say where they are now.',
+  },
+  lot_result: {
+    title: 'Result',
+    text:
+      'How the lot ended: Sold, Unsold, or Withdrawn before the sale. A lot left ' +
+      'on Choose a result stops the settlement, and its row says so. Unsold and ' +
+      'withdrawn items go back on hand.',
+  },
+  hammer_price: {
+    title: 'Hammer price',
+    text:
+      "The winning bid, as an amount like 189.00, before the buyer's premium " +
+      "and the house's fees. Only for a lot marked Sold.",
+  },
+  lot_buyer: {
+    title: 'Buyer',
+    text:
+      'The winning bidder as the platform names them. Lots with the same buyer, ' +
+      'in any capitals, become one order. At an auction house a blank buyer is ' +
+      'its undisclosed buyer, for a house that does not say who bought. Only for ' +
+      'a lot marked Sold.',
+  },
+  settlement_fee: {
+    title: 'Fees',
+    text:
+      "What the platform charged on this buyer's order, one box per kind of " +
+      'fee, from its statement. Leave a kind blank if it was not charged. Each ' +
+      'buyer of a sold lot has a table of their own.',
+  },
+  settlement_return_location: {
+    title: 'Return unsold and withdrawn items to',
+    text:
+      'Where the lots that did not sell are put away when they come back from ' +
+      'the house. Needed before settling when the auction was consigned and any ' +
+      'lot is unsold or withdrawn.',
+  },
+  // -- the Sales page ---------------------------------------------------------
+  order_status_filter: {
+    title: 'Show',
+    text: 'Shows only the orders in one status, or every order.',
+  },
+  order_status: {
+    title: 'Status',
+    text:
+      'Where the order stands: Pending, Paid, Packed, Shipped, Delivered, or ' +
+      'Canceled or Refunded. Choosing one saves it at once. Canceling or ' +
+      'refunding an order not yet shipped puts its items back on sale; a ' +
+      'canceled order cannot be moved on. A status the order cannot take says ' +
+      'why when chosen.',
+  },
+  order_customer_find: {
+    title: 'Find customer',
+    text:
+      'Type part of a name or email address to shorten the Customer list ' +
+      'beside it.',
+  },
+  order_customer: {
+    title: 'Customer',
+    text:
+      'Who the order is for: a customer already on record, or a shop account ' +
+      'that has not ordered yet ("account, no orders yet"), which becomes a ' +
+      'customer when the order is saved.',
+  },
+  order_quantity: {
+    title: 'Quantity',
+    text:
+      'How many of this listing the order takes, no more than are available. ' +
+      'Saving moves the stock by the difference.',
+  },
+  order_unit_price: {
+    title: 'Unit price',
+    text:
+      'What the customer pays for each, as an amount like 189.00. It starts at ' +
+      'the listing price, shown below the box when this differs. Changing the ' +
+      'total of a paid order flags a payment adjustment.',
+  },
+  order_item_find: {
+    title: 'Find item',
+    text:
+      'Words to find something in the web store that is in stock. Press ' +
+      'Search, then Add beside the one wanted; it joins the order at its ' +
+      'listing price.',
+  },
+  order_notes: {
+    title: 'Notes',
+    text: 'Anything about the order: how it was taken, what was agreed.',
+  },
+  // -- the Platforms page -----------------------------------------------------
+  platform_name: {
+    title: 'Name',
+    text: 'The platform as it is shown everywhere in the console: eBay, Whatnot, Heritage.',
+  },
+  platform_code: {
+    title: 'Code',
+    text:
+      'A short lower-case name the system keeps for the platform, as ebay or ' +
+      'heritage. It is set when the platform is added and cannot be changed.',
+  },
+  platform_kind: {
+    title: 'Kind',
+    text:
+      'How the platform sells: a marketplace (fixed-price listings, or a single ' +
+      'timed auction), a live-auction site, or an auction house, which holds ' +
+      'the items while they are consigned to it. A sale recorded from a ' +
+      'marketplace or live auction starts as paid; one from an auction house ' +
+      'as delivered, since the house ships it.',
+  },
+  platform_vendor: {
+    title: 'Purchase source',
+    text:
+      'The vendor of the same name, where items are also bought there, so ' +
+      'eBay is one partner whether buying or selling. Each vendor can be linked ' +
+      'to one platform. Leave it as (none) if nothing is bought there.',
+  },
+  platform_account: {
+    title: 'Account',
+    text: 'Your own username or seller id on the platform.',
+  },
+  platform_listing_link: {
+    title: 'Listing link',
+    text:
+      'The address of a listing on this platform, with {external_id} where the ' +
+      'listing number goes: https://www.ebay.com/itm/{external_id}. An example ' +
+      'link is shown below the form as you type.',
+  },
+  platform_commission: {
+    title: 'Commission %',
+    text:
+      "The platform's usual commission or final-value fee, as a percentage of " +
+      'the price: 13.25. Used only to estimate fees when pricing an offer.',
+  },
+  platform_processing: {
+    title: 'Processing %',
+    text:
+      'The payment-processing fee as a percentage of the price, if the platform ' +
+      'charges one apart from its commission. Used only to estimate fees.',
+  },
+  platform_processing_fixed: {
+    title: 'Processing $ per sale',
+    text:
+      'A fixed amount charged on every sale, as 0.30. Used only to estimate ' + 'fees.',
+  },
+  platform_listing_fee: {
+    title: 'Fee $ per listing',
+    text:
+      'What it costs to list one item, whether it sells or not. Used only to ' +
+      'estimate fees.',
+  },
+  platform_fees_as_of: {
+    title: 'Fees as of',
+    text:
+      'The day you read these fees from your account. Terms change, so the ' +
+      'Platforms page shows the date beside them.',
+  },
+  platform_notes: {
+    title: 'Notes',
+    text: 'Anything about the platform or the account there.',
+  },
+  platform_retired: {
+    title: 'Retired',
+    text:
+      'Tick when nothing more will be sold here. A retired platform is not ' +
+      'offered for new offers or auctions; everything sold there stays on ' +
+      'record. A platform is never deleted.',
+  },
+  // -- the People page --------------------------------------------------------
+  account_email: {
+    title: 'Email',
+    text: 'The address the person signs in with. Two accounts cannot share one.',
+  },
+  account_name: {
+    title: 'Name',
+    text: "The person's name, shown with the account.",
+  },
+  account_role: {
+    title: 'Role',
+    text:
+      'What the account may do. A customer signs in to the shop only. A manager ' +
+      'also signs in to this console and sees costs. The last manager cannot be ' +
+      'made a customer. A change in the table is saved as it is made.',
+  },
+  account_password: {
+    title: 'Initial password',
+    text: 'At least 8 characters: what the person first signs in with.',
+  },
+  account_new_password: {
+    title: 'New password',
+    text:
+      'At least 8 characters; press Set or Enter to save it. The account is ' +
+      'signed out everywhere it was signed in, and signs in again with this.',
+  },
+  customer_name: {
+    title: 'Name',
+    text: 'The customer as the Sales page and their orders show them.',
+  },
+  customer_email: {
+    title: 'Email',
+    text: "The customer's email address.",
+  },
+  customer_phone: {
+    title: 'Phone',
+    text:
+      'Country code first, then the number: +1 for the United States, so ' +
+      '+1 212 555 0100. It is kept whole, so it can be dialed from anywhere.',
+  },
+  address_line1: {
+    title: 'Address line 1',
+    text: 'The street address, or a post office box.',
+  },
+  address_line2: {
+    title: 'Line 2',
+    text: 'An apartment, suite or floor, if there is one.',
+  },
+  address_city: {
+    title: 'City',
+    text: 'The city or town.',
+  },
+  address_region: {
+    title: 'State / region',
+    text: 'The state, province or region, as NY.',
+  },
+  address_postal_code: {
+    title: 'Postal code',
+    text: 'The ZIP or postal code.',
+  },
+  address_country: {
+    title: 'Country',
+    text:
+      'The two-letter country code: US, CA, GB. Saving adds this as the ' +
+      'shipping address; the one before is retired and kept, not overwritten.',
+  },
+  // -- the Lists page ---------------------------------------------------------
+  list_search: {
+    title: 'Search',
+    text: 'Type part of any column to shorten the list. Clear it to see every row.',
+  },
+  list_fr_number: {
+    title: 'Number',
+    text:
+      'A Friedberg number in the form 9901-B: the type and, on a Federal ' +
+      'Reserve Note, the Reserve Bank letter. It is checked as one typed in ' +
+      'Receiving. A number can be added here ahead of the note that will use it.',
+  },
+  list_fr_description: {
+    title: 'Description',
+    text: 'Your own words for the type, to tell it apart in the list. It may be left empty.',
+  },
+  seller_name: {
+    title: 'Name',
+    text: 'The seller as purchases and Receiving show them: their store or username.',
+  },
+  seller_store_url: {
+    title: 'Store link',
+    text:
+      'The address of their store or profile page, as ebay.com/str/... ; a ' +
+      'link without https:// is taken as one with it.',
+  },
+  seller_contact: {
+    title: 'Contact',
+    text: 'The person behind the account, if known.',
+  },
+  seller_contact_email: {
+    title: 'Contact email',
+    text: "The contact's email address, if known.",
+  },
+  seller_contact_phone: {
+    title: 'Contact phone',
+    text:
+      'Country code first, then the number: +1 212 555 0100. Leave just the ' +
+      'country code if there is no number.',
+  },
+  vendor_name: {
+    title: 'Name',
+    text:
+      'Where purchases are made: the website, auction house, dealer or person, ' +
+      'as the New purchase form lists it.',
+  },
+  vendor_url: {
+    title: 'Link',
+    text: "The vendor's website, if it has one; https:// is added if left off.",
+  },
+  vendor_kind: {
+    title: 'Kind',
+    text: 'What sort of source it is: a marketplace, an auction, a mint, a dealer or a private seller.',
+  },
+  location_kind: {
+    title: 'Kind',
+    text:
+      'What sort of place: a safe deposit box, a safe, at home, in transit. The ' +
+      'places at an auction house and the place for sold items are made by the ' +
+      'system and not offered.',
+  },
+  location_institution: {
+    title: 'Institution',
+    text: 'Who holds it, for a box at a bank: the bank and branch.',
+  },
+  location_identifier: {
+    title: 'Identifier',
+    text: 'The box or container number. Kind, institution and identifier together name one place.',
+  },
+  location_notes: {
+    title: 'Notes',
+    text: 'Anything about the place: where the key is, what shelf.',
+  },
+  // -- the Photos page --------------------------------------------------------
+  photo_link_item: {
+    title: 'Item code',
+    text:
+      'The code of the item this photograph shows, as CC-000123. Type it and ' +
+      'press Find or Enter, choose the match, then Link.',
+  },
+  photo_move_to: {
+    title: 'Move to item',
+    text:
+      'The code of the item this photograph belongs on instead, as CC-000123. ' +
+      'Type it and press Find or Enter, then choose the match. The move is ' +
+      'made when the item is saved.',
+  },
   // -- the Reports page -------------------------------------------------------
   // A report's parameter is explained by `report_<name>`; one with no entry of
   // its own falls back to `report_param`.

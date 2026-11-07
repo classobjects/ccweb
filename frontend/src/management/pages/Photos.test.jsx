@@ -15,6 +15,7 @@ vi.mock('../api', () => ({
 
 import { api } from '../api'
 import { renderWithProviders } from '../../test/helpers'
+import { uncovered } from '../../test/helpCoverage'
 import Photos from './Photos'
 
 const unattached = (overrides) => ({
@@ -369,5 +370,14 @@ describe('Photos', () => {
 
     await waitFor(() => expect(screen.getAllByRole('img')).toHaveLength(1))
     expect(screen.getByRole('img')).toHaveAttribute('src', '/thumb/9')
+  })
+})
+
+describe('Every field on the Photos page has help', () => {
+  it("in each photograph's item code", async () => {
+    api.listUnattachedImages.mockResolvedValue([unattached({ image_id: 7 })])
+    renderWithProviders(<Photos />)
+    expect(await screen.findByRole('textbox', { name: 'Item code' })).toBeVisible()
+    expect(uncovered(document.body)).toEqual([])
   })
 })

@@ -215,6 +215,8 @@ The editor's fields, top to bottom. Which appear depends on the kind: a note has
 | **Rating** |  | Your own words about the piece: its condition, grade and what makes it special. Search reads it, and so do the rules that work out a design series or a note's class, so a word that is wrong here should be corrected here. A buyer never sees it. |
 | **Storage location** |  | As under *The bulk bar*. |
 | **Photographs** |  | The item's pictures. Choose a file, drag one onto the box, or paste one with Ctrl+V to add it; say what each one shows (obverse, reverse, slab ...), make one the primary -- the one the shop shows first -- remove one, or move one to another item by its code. Nothing is filed or changed until the form's Save. |
+| **Move to item (a photograph)** | moving a photograph | The code of the item this photograph belongs on instead, as CC-000123. Type it and press Find or Enter, then choose the match. The move is made when the item is saved. |
+| **Change it anyway** | the item is for sale | The item is offered for sale, as the notice above says. Tick this to make the change all the same; a buyer sees it at once. A sale already made keeps the item as it was sold. |
 | **Fr. number** | a note | The Friedberg catalog number for this type of note, in the form 9901-B: a number for the type and, on a Federal Reserve Note, the Reserve Bank letter. Read it off the slab or holder or a reference, or copy it from a match in your own catalog. |
 | **Web press (Friedberg lookup)** | a note | Printed on the Bureau of Engraving and Printing's experimental web press, from a roll of paper, instead of the usual sheet-fed press. Only some $1 notes of series 1988-A, 1993 and 1995 were. The two printings have different Friedberg numbers. Leave it as not known unless you can tell. |
 | **Star note (Friedberg lookup)** | a note | A replacement note: its serial carries a star in place of a letter. A star note has its own Friedberg number, ending in * (3007-B*), so the lookup offers only the kind this is. Filled from the note's serial; Not known offers both. |
@@ -244,6 +246,12 @@ whose file names could not be matched. Enter an item code, use **Find** to check
 it, then **Link**.
 
 ![Two unattached photographs waiting to be filed](images/ui-guide/photos.png)
+
+Its one field:
+
+| Field | What it is |
+|---|---|
+| **Item code (each photograph)** | The code of the item this photograph shows, as CC-000123. Type it and press Find or Enter, choose the match, then Link. |
 
 #### Order lookup
 
@@ -387,6 +395,18 @@ Every offer, in the web store and elsewhere, with its price, cost and margin.
 
 ![Listings across the web store, eBay and an auction house, last rows](images/ui-guide/listings_2.png)
 
+The filters above the list, and the fields of **Edit**:
+
+| Field | Shown | What it is |
+|---|---|---|
+| **Platform** | the filters | Shows only the offers on one platform, or on all of them. |
+| **Format** | the filters | Shows only fixed-price offers, or only auction listings, or both. |
+| **Status** | the filters | On offer shows what is active or paused: a paused store listing is one set aside while the item is offered elsewhere. Active, Paused and Ended show only that status; All, including ended, shows every offer ever made. |
+| **Price** | Edit | What it is offered for, as an amount like 189.00. A change shows at once where the offer is listed in the web store; on another platform, change it there too. |
+| **Title** | Edit | What a buyer sees it called. |
+| **Description** | Edit | The wording that goes with the title. It may be left empty. |
+| **Listing number** | Edit | The platform's own number for this listing, where it has one: the eBay item number, the lot number on an auction site. Leave it empty if there is none. |
+
 An offer is made with **Offer for sale...**, from the Coins or Currency bulk bar
 or the item editor. Choose a platform and format, then give each item a price,
 title and description. The dialog shows cost, estimated fees, net and margin as
@@ -412,6 +432,15 @@ and the fees it actually charged, and ends the listing:
 
 ![Recording a sale made on eBay](images/ui-guide/record_sale.png)
 
+Its fields:
+
+| Field | What it is |
+|---|---|
+| **Sale price** | What the buyer paid for it, as an amount like 189.00, before the platform's fees: the fees go in the table below, and the net is worked out from both. |
+| **Buyer username** | The name the platform shows for the buyer: their eBay username, their Whatnot handle. A buyer already recorded on this platform under that name, in any capitals, is the same customer; a new name becomes a new one. Leave it blank if the platform does not name the buyer. |
+| **Order number** | The platform's own order or transaction number for this sale, to find it in their records. It is kept with the order. |
+| **Fees (each kind)** | What the platform actually charged on this sale, one line per kind of fee, from its statement or invoice. Leave a kind blank if it was not charged. These are what the sale records; the default fees on the Platforms page are only for estimating a price. |
+
 #### Lots
 
 A sales lot is a group of items sold as one thing. The items stay individually
@@ -422,6 +451,13 @@ the lot. Ending the offer dissolves it, and **Re-offer as a lot** starts it agai
 ![An assembling lot, and the lots already offered, sold or dissolved, first rows](images/ui-guide/lots_1.png)
 
 ![An assembling lot, and the lots already offered, sold or dissolved, last rows](images/ui-guide/lots_2.png)
+
+**New lot...** and **Edit wording...** ask for the lot's wording:
+
+| Field | What it is |
+|---|---|
+| **Title** | What the lot is called: the Lots page lists it by this, and its offer starts from it. |
+| **Description** | The wording for the lot as a whole -- what it holds, why it goes together. Its offer starts from it, and it may be left empty. |
 
 #### Auctions
 
@@ -436,10 +472,39 @@ numbers and reserves can be edited:
 
 ![A draft auction with two lots](images/ui-guide/auction_draft.png)
 
+The fields of **New auction...**, **Add lot...**, the lot table, **Mark consigned...** and **Cancel...**:
+
+| Field | Shown | What it is |
+|---|---|---|
+| **Platform** | New auction | Where the auction is run: an auction house, a live-auction site, or a marketplace for a single timed auction. The web store runs no auction, and a retired platform is not offered. Platforms are added on the Platforms page. |
+| **Title** | New auction | The auction's name, as the platform gives it. The list of auctions and every question about this one name it by this. |
+| **Sale number** | New auction | The house's or platform's own number for the sale, to find it in their catalog and statements. Leave it empty if there is none yet. |
+| **Starts** | New auction | When bidding opens, written year-month-day hour:minute with the hour out of 24: 2026-11-20 18:00. It may be left empty. It is a record only: the platform opens and closes the bidding, never this page. |
+| **Ends** | New auction | When bidding closes, written as Starts is. It may be left empty. Close the auction here once the sale has actually happened. |
+| **Notes** | New auction | Anything about the auction as a whole, kept with it here. |
+| **Single item / Assembled lot** | Add lot | What this lot sells: one item on its own, found by its code, or a sales lot still being assembled -- one grouped on Coins or Currency with Group into lot. The lot number, reserve and starting bid are the same either way. |
+| **Lot number** | Add lot, the lot table | The number the house or platform gives this lot in the sale: 1042, or 12A. Each lot in an auction has its own. It can be changed until the auction closes. |
+| **Item code** | Add lot, a single item | The code on the item, as CC-000123, to sell it on its own as a lot of one. It is looked up when the lot is added; a code no coin or note has is refused. |
+| **Lot** | Add lot, an assembled lot | A sales lot still being assembled, to sell all its items together. A lot already offered somewhere is not listed. |
+| **Reserve** | Add lot, the lot table | The lowest price agreed for this lot, if there is one. It is kept here as a record and shown when settling; the platform holds the sale to it. It can be changed until the auction closes. |
+| **Starting bid** | Add lot | Where bidding opens, if the platform asks for one. It may be left empty. |
+| **Consigned on** | Mark consigned, an auction house | The day the items went to the auction house. They are recorded as at the house from then on, until they are sold or come back. |
+| **Return items to** | Cancel or Remove, once consigned | Where the items are put away now they are back from the auction house. Asked for because the auction was consigned: the items left the premises, and something must say where they are now. |
+
 Once closed, each lot's result, hammer price and buyer are entered, and **Settle**
 makes one order per buyer. Unsold lots come back:
 
 ![A settled auction: one lot sold, one unsold](images/ui-guide/auction_settled.png)
+
+The settlement grid, shown once the auction is closed:
+
+| Field | What it is |
+|---|---|
+| **Result (each lot)** | How the lot ended: Sold, Unsold, or Withdrawn before the sale. A lot left on Choose a result stops the settlement, and its row says so. Unsold and withdrawn items go back on hand. |
+| **Hammer price (each lot)** | The winning bid, as an amount like 189.00, before the buyer's premium and the house's fees. Only for a lot marked Sold. |
+| **Buyer (each lot)** | The winning bidder as the platform names them. Lots with the same buyer, in any capitals, become one order. At an auction house a blank buyer is its undisclosed buyer, for a house that does not say who bought. Only for a lot marked Sold. |
+| **Fees (each buyer)** | What the platform charged on this buyer's order, one box per kind of fee, from its statement. Leave a kind blank if it was not charged. Each buyer of a sold lot has a table of their own. |
+| **Return unsold and withdrawn items to** | Where the lots that did not sell are put away when they come back from the house. Needed before settling when the auction was consigned and any lot is unsold or withdrawn. |
 
 #### Sales
 
@@ -455,6 +520,19 @@ telephone:
 
 ![Placing an order for a customer](images/ui-guide/sales_new.png)
 
+The fields of the Sales page and of an order, new or edited:
+
+| Field | Shown | What it is |
+|---|---|---|
+| **Show** | the list | Shows only the orders in one status, or every order. |
+| **Status (each row)** | the list | Where the order stands: Pending, Paid, Packed, Shipped, Delivered, or Canceled or Refunded. Choosing one saves it at once. Canceling or refunding an order not yet shipped puts its items back on sale; a canceled order cannot be moved on. A status the order cannot take says why when chosen. |
+| **Find customer** | an order | Type part of a name or email address to shorten the Customer list beside it. |
+| **Customer** | an order | Who the order is for: a customer already on record, or a shop account that has not ordered yet ("account, no orders yet"), which becomes a customer when the order is saved. |
+| **Quantity (each line)** | an order | How many of this listing the order takes, no more than are available. Saving moves the stock by the difference. |
+| **Unit price (each line)** | an order | What the customer pays for each, as an amount like 189.00. It starts at the listing price, shown below the box when this differs. Changing the total of a paid order flags a payment adjustment. |
+| **Find item** | an order | Words to find something in the web store that is in stock. Press Search, then Add beside the one wanted; it joins the order at its listing price. |
+| **Notes** | an order | Anything about the order: how it was taken, what was agreed. |
+
 **History** shows who placed and changed an order:
 
 ![An order's history](images/ui-guide/sales_history.png)
@@ -466,6 +544,24 @@ estimating a price. Nothing is shipped for them, so enter them from your own
 account, with the date you read them.
 
 ![The Platforms page](images/ui-guide/platforms.png)
+
+The fields of **Add platform** and **Edit**:
+
+| Field | Shown | What it is |
+|---|---|---|
+| **Name** |  | The platform as it is shown everywhere in the console: eBay, Whatnot, Heritage. |
+| **Code** | adding | A short lower-case name the system keeps for the platform, as ebay or heritage. It is set when the platform is added and cannot be changed. |
+| **Kind** | not the web store | How the platform sells: a marketplace (fixed-price listings, or a single timed auction), a live-auction site, or an auction house, which holds the items while they are consigned to it. A sale recorded from a marketplace or live auction starts as paid; one from an auction house as delivered, since the house ships it. |
+| **Purchase source** |  | The vendor of the same name, where items are also bought there, so eBay is one partner whether buying or selling. Each vendor can be linked to one platform. Leave it as (none) if nothing is bought there. |
+| **Account** |  | Your own username or seller id on the platform. |
+| **Listing link** |  | The address of a listing on this platform, with {external_id} where the listing number goes: https://www.ebay.com/itm/{external_id}. An example link is shown below the form as you type. |
+| **Commission %** |  | The platform's usual commission or final-value fee, as a percentage of the price: 13.25. Used only to estimate fees when pricing an offer. |
+| **Processing %** |  | The payment-processing fee as a percentage of the price, if the platform charges one apart from its commission. Used only to estimate fees. |
+| **Processing $ per sale** |  | A fixed amount charged on every sale, as 0.30. Used only to estimate fees. |
+| **Fee $ per listing** |  | What it costs to list one item, whether it sells or not. Used only to estimate fees. |
+| **Fees as of** |  | The day you read these fees from your account. Terms change, so the Platforms page shows the date beside them. |
+| **Notes** |  | Anything about the platform or the account there. |
+| **Retired** | editing, not the web store | Tick when nothing more will be sold here. A retired platform is not offered for new offers or auctions; everything sold there stays on record. A platform is never deleted. |
 
 #### Spot prices
 
@@ -558,6 +654,25 @@ addresses, including buyers recorded from other platforms.
 
 ![People: customers](images/ui-guide/people_customers.png)
 
+The fields of both tabs:
+
+| Field | Shown | What it is |
+|---|---|---|
+| **Email** | New account | The address the person signs in with. Two accounts cannot share one. |
+| **Name** | New account | The person's name, shown with the account. |
+| **Role** | New account, each account | What the account may do. A customer signs in to the shop only. A manager also signs in to this console and sees costs. The last manager cannot be made a customer. A change in the table is saved as it is made. |
+| **Initial password** | New account | At least 8 characters: what the person first signs in with. |
+| **New password** | Set password | At least 8 characters; press Set or Enter to save it. The account is signed out everywhere it was signed in, and signs in again with this. |
+| **Name** | a customer being edited | The customer as the Sales page and their orders show them. |
+| **Email** | a customer being edited | The customer's email address. |
+| **Phone** | a customer being edited | Country code first, then the number: +1 for the United States, so +1 212 555 0100. It is kept whole, so it can be dialed from anywhere. |
+| **Address line 1** | New address | The street address, or a post office box. |
+| **Line 2** | New address | An apartment, suite or floor, if there is one. |
+| **City** | New address | The city or town. |
+| **State / region** | New address | The state, province or region, as NY. |
+| **Postal code** | New address | The ZIP or postal code. |
+| **Country** | New address | The two-letter country code: US, CA, GB. Saving adds this as the shipping address; the one before is retired and kept, not overwritten. |
+
 #### Vocabularies
 
 The values the pickers offer: grades, denominations, series, storage forms and the
@@ -603,6 +718,26 @@ each.
 ![Lists: vendors](images/ui-guide/lists_vendors.png)
 
 ![Lists: storage locations](images/ui-guide/lists_locations.png)
+
+Each list has a **Search** box, and its fields appear when a row is added or edited:
+
+| Field | Shown | What it is |
+|---|---|---|
+| **Search** | every list | Type part of any column to shorten the list. Clear it to see every row. |
+| **Number** | Friedberg numbers | A Friedberg number in the form 9901-B: the type and, on a Federal Reserve Note, the Reserve Bank letter. It is checked as one typed in Receiving. A number can be added here ahead of the note that will use it. |
+| **Description** | Friedberg numbers | Your own words for the type, to tell it apart in the list. It may be left empty. |
+| **Name** | Sellers | The seller as purchases and Receiving show them: their store or username. |
+| **Store link** | Sellers | The address of their store or profile page, as ebay.com/str/... ; a link without https:// is taken as one with it. |
+| **Contact** | Sellers | The person behind the account, if known. |
+| **Contact email** | Sellers | The contact's email address, if known. |
+| **Contact phone** | Sellers | Country code first, then the number: +1 212 555 0100. Leave just the country code if there is no number. |
+| **Name** | Vendors | Where purchases are made: the website, auction house, dealer or person, as the New purchase form lists it. |
+| **Link** | Vendors | The vendor's website, if it has one; https:// is added if left off. |
+| **Kind** | Vendors | What sort of source it is: a marketplace, an auction, a mint, a dealer or a private seller. |
+| **Kind** | Storage locations | What sort of place: a safe deposit box, a safe, at home, in transit. The places at an auction house and the place for sold items are made by the system and not offered. |
+| **Institution** | Storage locations | Who holds it, for a box at a bank: the bank and branch. |
+| **Identifier** | Storage locations | The box or container number. Kind, institution and identifier together name one place. |
+| **Notes** | Storage locations | Anything about the place: where the key is, what shelf. |
 
 ## The shop
 

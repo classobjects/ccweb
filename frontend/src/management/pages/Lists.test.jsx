@@ -28,6 +28,7 @@ vi.mock('../api', () => ({
 
 import { api } from '../api'
 import { emptyReference, renderWithProviders } from '../../test/helpers'
+import { uncovered } from '../../test/helpCoverage'
 import Lists from './Lists'
 
 const reference = emptyReference({
@@ -698,4 +699,24 @@ describe('Lists: adding', () => {
     expect(screen.queryByRole('form', { name: 'New vendor' })).toBeNull()
     expect(api.createVendor).toHaveBeenCalledTimes(1)
   })
+})
+
+describe('Every field on the Lists page has help', () => {
+  it.each([
+    ['friedberg', 'number', '9928-G'],
+    ['sellers', 'seller', 'busy_seller'],
+    ['vendors', 'vendor', 'ebay.com'],
+    ['locations', 'location', 'Test Bank'],
+  ])(
+    'on the %s tab: search, the add form and a row being edited',
+    async (tab, noun, shown) => {
+      const user = userEvent.setup()
+      open(tab)
+      const row = (await screen.findAllByText(shown))[0].closest('tr')
+      await user.click(screen.getByRole('button', { name: `Add ${noun}` }))
+      await user.click(within(row).getByRole('button', { name: 'Edit' }))
+      expect(within(row).getAllByRole('textbox').length).toBeGreaterThan(0)
+      expect(uncovered(document.body)).toEqual([])
+    },
+  )
 })

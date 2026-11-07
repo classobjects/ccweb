@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react'
 import { api } from '../../api'
 import { money } from '../../../shared/format'
 import { AccessLabel } from '../../AccessLabel'
+import HelpScope from '../../HelpScope'
 import { accel, useSaveShortcut } from '../../shortcuts'
 import { fromCents, isMoney, toCents } from '../../../shared/cents'
 import { totalCents } from './cents'
@@ -191,163 +192,165 @@ export default function OrderEditor({ order, onSaved, onClose }) {
   }
 
   return (
-    <div className="edit-form">
-      <div className="row">
-        <h2>{order ? `Order #${order.id}` : 'New order'}</h2>
-        <button className="link" onClick={onClose}>
-          Close
-        </button>
-      </div>
-
-      {order?.status === 'paid' && (
-        <p className="notice">
-          This order is paid. Changing its total will flag a payment adjustment.
-        </p>
-      )}
-      {error && <p className="error">{error}</p>}
-
-      <div className="row">
-        <label>
-          <AccessLabel text="Find customer" accessKey="n" />
-          <input
-            type="search"
-            value={find}
-            onChange={(e) => setFind(e.target.value)}
-            {...accel('n')}
-          />
-        </label>
-        <label>
-          <AccessLabel text="Customer" accessKey="c" />
-          <select
-            value={customerKey}
-            onChange={(e) => setCustomerKey(e.target.value)}
-            {...accel('c')}
-          >
-            <option value="">Choose a customer</option>
-            {shown.map((o) => (
-              <option key={o.key} value={o.key}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
-
-      {/* On a phone each row stacks into a card, a line per labelled cell. */}
-      <table className="table stacks">
-        <thead>
-          <tr>
-            <th>Item</th>
-            <th>Quantity</th>
-            <th>Unit price</th>
-            <th>Available</th>
-            <th />
-          </tr>
-        </thead>
-        <tbody>
-          {lines.map((line) => (
-            <tr key={line.listing_id}>
-              <td data-label="Item">
-                <div className="cell-scroll">{line.title}</div>
-              </td>
-              <td data-label="Quantity">
-                <input
-                  type="number"
-                  min="1"
-                  aria-label={`Quantity of ${line.title}`}
-                  value={line.quantity}
-                  onChange={setLine(line.listing_id, 'quantity')}
-                />
-              </td>
-              <td data-label="Unit price">
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  aria-label={`Price of ${line.title}`}
-                  value={line.unit_price}
-                  onChange={setLine(line.listing_id, 'unit_price')}
-                />
-                {line.listing_price !== null &&
-                  isMoney(line.unit_price) &&
-                  isMoney(line.listing_price) &&
-                  toCents(line.unit_price) !== toCents(line.listing_price) && (
-                    <div className="muted">
-                      listing price {money(line.listing_price)}
-                    </div>
-                  )}
-              </td>
-              <td data-label="Available" className="muted">
-                {line.available ??
-                  (line.unavailable ? `not known: ${line.unavailable}` : '-')}
-              </td>
-              <td>
-                <button
-                  className="link"
-                  aria-label={`Remove ${line.title}`}
-                  onClick={() =>
-                    setLines(lines.filter((l) => l.listing_id !== line.listing_id))
-                  }
-                >
-                  Remove
-                </button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-
-      <div className="row">
-        <label>
-          <AccessLabel text="Find item" accessKey="i" />
-          <input
-            type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            {...accel('i')}
-          />
-        </label>
-        <button onClick={search} {...accel('h')}>
-          <AccessLabel text="Search" accessKey="h" />
-        </button>
-      </div>
-      {catalog.error && <p className="error">{catalog.error}</p>}
-      {results.map((listing) => (
-        <div key={listing.id} className="row">
-          <span>
-            {listing.title}{' '}
-            <span className="muted">
-              {money(listing.price, listing.currency)}, {listing.quantity_available}{' '}
-              available
-            </span>
-          </span>
-          <button
-            className="link"
-            aria-label={`Add ${listing.title}`}
-            onClick={() => add(listing)}
-          >
-            Add
+    <HelpScope>
+      <div className="edit-form">
+        <div className="row">
+          <h2>{order ? `Order #${order.id}` : 'New order'}</h2>
+          <button className="link" onClick={onClose}>
+            Close
           </button>
         </div>
-      ))}
 
-      <label className="field">
-        <AccessLabel text="Notes" accessKey="o" />
-        <textarea
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          {...accel('o')}
-        />
-      </label>
+        {order?.status === 'paid' && (
+          <p className="notice">
+            This order is paid. Changing its total will flag a payment adjustment.
+          </p>
+        )}
+        {error && <p className="error">{error}</p>}
 
-      <div className="row">
-        <strong>Total {money(fromCents(totalCents(lines)))}</strong>
-        <SaveButton
-          label="Save order"
-          saving={saving}
-          disabled={saving}
-          onClick={save}
-        />
+        <div className="row">
+          <label data-help="order_customer_find">
+            <AccessLabel text="Find customer" accessKey="n" />
+            <input
+              type="search"
+              value={find}
+              onChange={(e) => setFind(e.target.value)}
+              {...accel('n')}
+            />
+          </label>
+          <label data-help="order_customer">
+            <AccessLabel text="Customer" accessKey="c" />
+            <select
+              value={customerKey}
+              onChange={(e) => setCustomerKey(e.target.value)}
+              {...accel('c')}
+            >
+              <option value="">Choose a customer</option>
+              {shown.map((o) => (
+                <option key={o.key} value={o.key}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        {/* On a phone each row stacks into a card, a line per labelled cell. */}
+        <table className="table stacks">
+          <thead>
+            <tr>
+              <th>Item</th>
+              <th>Quantity</th>
+              <th>Unit price</th>
+              <th>Available</th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            {lines.map((line) => (
+              <tr key={line.listing_id}>
+                <td data-label="Item">
+                  <div className="cell-scroll">{line.title}</div>
+                </td>
+                <td data-label="Quantity" data-help="order_quantity">
+                  <input
+                    type="number"
+                    min="1"
+                    aria-label={`Quantity of ${line.title}`}
+                    value={line.quantity}
+                    onChange={setLine(line.listing_id, 'quantity')}
+                  />
+                </td>
+                <td data-label="Unit price" data-help="order_unit_price">
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    aria-label={`Price of ${line.title}`}
+                    value={line.unit_price}
+                    onChange={setLine(line.listing_id, 'unit_price')}
+                  />
+                  {line.listing_price !== null &&
+                    isMoney(line.unit_price) &&
+                    isMoney(line.listing_price) &&
+                    toCents(line.unit_price) !== toCents(line.listing_price) && (
+                      <div className="muted">
+                        listing price {money(line.listing_price)}
+                      </div>
+                    )}
+                </td>
+                <td data-label="Available" className="muted">
+                  {line.available ??
+                    (line.unavailable ? `not known: ${line.unavailable}` : '-')}
+                </td>
+                <td>
+                  <button
+                    className="link"
+                    aria-label={`Remove ${line.title}`}
+                    onClick={() =>
+                      setLines(lines.filter((l) => l.listing_id !== line.listing_id))
+                    }
+                  >
+                    Remove
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        <div className="row">
+          <label data-help="order_item_find">
+            <AccessLabel text="Find item" accessKey="i" />
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              {...accel('i')}
+            />
+          </label>
+          <button onClick={search} {...accel('h')}>
+            <AccessLabel text="Search" accessKey="h" />
+          </button>
+        </div>
+        {catalog.error && <p className="error">{catalog.error}</p>}
+        {results.map((listing) => (
+          <div key={listing.id} className="row">
+            <span>
+              {listing.title}{' '}
+              <span className="muted">
+                {money(listing.price, listing.currency)}, {listing.quantity_available}{' '}
+                available
+              </span>
+            </span>
+            <button
+              className="link"
+              aria-label={`Add ${listing.title}`}
+              onClick={() => add(listing)}
+            >
+              Add
+            </button>
+          </div>
+        ))}
+
+        <label className="field" data-help="order_notes">
+          <AccessLabel text="Notes" accessKey="o" />
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            {...accel('o')}
+          />
+        </label>
+
+        <div className="row">
+          <strong>Total {money(fromCents(totalCents(lines)))}</strong>
+          <SaveButton
+            label="Save order"
+            saving={saving}
+            disabled={saving}
+            onClick={save}
+          />
+        </div>
       </div>
-    </div>
+    </HelpScope>
   )
 }

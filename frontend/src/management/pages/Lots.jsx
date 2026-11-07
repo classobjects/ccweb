@@ -7,6 +7,7 @@ import { Link } from 'react-router-dom'
 import { AccessLabel } from '../AccessLabel'
 import { api } from '../api'
 import ConfirmDialog from '../ConfirmDialog'
+import HelpScope from '../HelpScope'
 import ModalDialog from '../ModalDialog'
 import OfferDialog from './inventory/OfferDialog'
 import { accel, useSaveShortcut } from '../shortcuts'
@@ -117,21 +118,23 @@ function LotForm({ lot, onSaved, onLateSaved, onClose }) {
     <ModalDialog label={label} onClose={onClose}>
       <h2>{label}</h2>
       {error && <p className="error">{error}</p>}
-      <div className="filter-grid">
-        <label>
-          <AccessLabel text="Title" accessKey={KEYS.title} />
-          <input value={form.title} onChange={set('title')} {...accel(KEYS.title)} />
-        </label>
-        <label>
-          <AccessLabel text="Description" accessKey={KEYS.description} />
-          <textarea
-            rows={3}
-            value={form.description}
-            onChange={set('description')}
-            {...accel(KEYS.description)}
-          />
-        </label>
-      </div>
+      <HelpScope>
+        <div className="filter-grid">
+          <label data-help="lot_edit_title">
+            <AccessLabel text="Title" accessKey={KEYS.title} />
+            <input value={form.title} onChange={set('title')} {...accel(KEYS.title)} />
+          </label>
+          <label data-help="lot_description">
+            <AccessLabel text="Description" accessKey={KEYS.description} />
+            <textarea
+              rows={3}
+              value={form.description}
+              onChange={set('description')}
+              {...accel(KEYS.description)}
+            />
+          </label>
+        </div>
+      </HelpScope>
       <div className="row">
         <SaveButton saving={saving} disabled={saving} onClick={save} />
         <button className="link" onClick={onClose}>

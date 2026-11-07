@@ -23,6 +23,7 @@ import { api } from '../api'
 import Lots from './Lots'
 import { ApiError } from '../../shared/api'
 import { renderWithProviders } from '../../test/helpers'
+import { uncovered } from '../../test/helpCoverage'
 
 // One coin in a lot, as `SalesLotMemberOut` sends it.
 const MORGAN = {
@@ -369,5 +370,16 @@ describe('Lots', () => {
     renderWithProviders(<Lots />, { strict: true })
     expect(await screen.findByRole('button', { name: /^offer/i })).toBeEnabled()
     expect(screen.queryByText('Add coins to this lot before offering it.')).toBeNull()
+  })
+})
+
+describe('Every field on the Lots page has help', () => {
+  it("in the lot's wording form", async () => {
+    const user = userEvent.setup()
+    api.listLots.mockResolvedValue({ lots: [] })
+    renderWithProviders(<Lots />)
+    await user.click(await screen.findByRole('button', { name: 'New lot...' }))
+    expect(screen.getByRole('dialog', { name: 'Start a new lot' })).toBeVisible()
+    expect(uncovered(document.body)).toEqual([])
   })
 })

@@ -23,6 +23,7 @@ vi.mock('../api', () => ({
 import { api } from '../api'
 import Orders from './Orders'
 import { adminAuth, renderWithProviders } from '../../test/helpers'
+import { uncovered } from '../../test/helpCoverage'
 
 const ORDERS = [
   {
@@ -429,5 +430,13 @@ describe('owner Orders', () => {
     const user = await renderPage()
     await user.click(within(rowFor(12)).getByRole('button', { name: 'History' }))
     expect(api.listOrderChanges).toHaveBeenCalledWith(12)
+  })
+})
+
+describe('Every field on the Sales page has help', () => {
+  it('in the status filter and each row', async () => {
+    await renderPage()
+    expect(within(rowFor(12)).getByRole('combobox')).toBeVisible()
+    expect(uncovered(document.body)).toEqual([])
   })
 })

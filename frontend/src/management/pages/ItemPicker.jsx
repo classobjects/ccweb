@@ -15,8 +15,11 @@ import { searchItemsByCode } from '../item-search'
  * is worse than no selection at all. For the same reason an answer is
  * dropped when the code has been edited, or searched again, since it was
  * asked for: its matches are for a code no longer in the box.
+ *
+ * `help` is the code box's topic in `fieldHelp.js`: what the item is
+ * found for -- linking a photograph to it, or moving one there.
  */
-export default function ItemPicker({ onPick }) {
+export default function ItemPicker({ onPick, help }) {
   const [code, setCode] = useState('')
   const [matches, setMatches] = useState(null)
   const [error, setError] = useState('')
@@ -63,7 +66,7 @@ export default function ItemPicker({ onPick }) {
 
   return (
     <div className="item-picker">
-      <label>
+      <label data-help={help}>
         Item code{/* */}
         <input
           type="text"
