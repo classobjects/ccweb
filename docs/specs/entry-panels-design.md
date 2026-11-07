@@ -195,7 +195,10 @@ page:
 2. **Items on this purchase.** The purchase heading, the purchase-wide tax
    values, a table of items entered so far (code, title, kind, cost, status)
    whose item code opens the item editor over the page, to fix an entry where
-   it was made (the purchase is read again when the editor closes), the New
+   it was made (the purchase is read again when the editor closes),
+   **Receive all N still ordered** when two or more lines are still
+   `ordered` (Receiving's dialog, in place; the purchase is read again when
+   it closes), the New
    item row, a **Receive these** link to `/management/receiving?order=<id>`,
    and **Start another purchase**.
 

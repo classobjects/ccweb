@@ -277,7 +277,10 @@ receipt and the dialog open.
   `purchase_order_id` reads that purchase and offers the same button, named
   by its order number ("... still ordered on 49573"); the lines come from
   the purchase, not the rows shown, so a search showing part of the order
-  still receives all of it. Rows from two purchases, or one with none, offer
+  still receives all of it. Purchases offers the same button under an open
+  purchase's items table (`NewPurchase.jsx`), with the same dialog and
+  `ReceiptPanel`, reading the purchase again when it closes. Rows from two
+  purchases, or one with none, offer
   nothing. A split shipment is still received line by line.
 - **Each search request returns one page of 200 rows** per view and status.
   More than that is reported with its count; a larger order is narrowed with

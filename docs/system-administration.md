@@ -735,6 +735,7 @@ fields" pane, the errors panel and, for a banknote, the Friedberg lookup.
 After each receipt the search repeats, so what arrived drops off the list.
 
 When the whole parcel arrived, **Receive all N still ordered** (shown on a
+purchase itself, on a
 linked order with two or more lines still `ordered`, or after a search whose
 items are all on one purchase, naming its order number) opens one dialog over
 all of them: one arrival date, one location, one note, and the four outcome
@@ -880,8 +881,12 @@ holding one item (`docs/specs/entry-panels-design.md`).
   defaults;
   the exact list is in
   [specs/entry-panels-design.md](specs/entry-panels-design.md) (*New item*).
-- **Receive these** opens Receiving for that purchase; **Start another
-  purchase** returns to step one.
+- **Receive all N still ordered**, under the items table when two or more
+  lines are still `ordered`, receives them in place: the same dialog and
+  all-or-nothing request as Receiving's (below), after which the purchase is
+  read again.
+- **Receive these** opens Receiving for that purchase, to receive line by
+  line; **Start another purchase** returns to step one.
 
 The help band at the bottom of the console window explains whichever field
 has focus, on this form and every other. Every endpoint above is

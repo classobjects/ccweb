@@ -9,6 +9,8 @@ import AddItem from './entry/AddItem'
 import VendorField from '../VendorField'
 import SellerField from './SellerField'
 import ItemEditDialog from './inventory/ItemEditDialog'
+import ModalDialog from '../ModalDialog'
+import ReceiptPanel from './receiving/ReceiptPanel'
 import HelpScope from '../HelpScope'
 import { purchaseNumber } from '../purchase-number'
 import { matchesFilter, sortPurchases } from '../purchase-list'
@@ -470,6 +472,21 @@ export default function NewPurchase() {
     reloadPurchase()
   }
 
+  // Receive all, here as on Receiving: the lines still ordered, received in
+  // one dialog and one all-or-nothing request. Held with the purchase it was
+  // opened on, so the dialog shows only while that purchase is the one on
+  // screen. What the last receipt used seeds the next, as on Receiving.
+  const [receivingAll, setReceivingAll] = useState(null)
+  const [lastReceipt, setLastReceipt] = useState({})
+
+  // Done or only closed, the purchase is read again: the lines received
+  // leave "ordered", and one whose photograph failed was recorded anyway.
+  function closeReceiveAll(used) {
+    if (used) setLastReceipt(used)
+    setReceivingAll(null)
+    reloadPurchase()
+  }
+
   // Guarded by the same token a pick takes: a reload landing after "Start
   // another purchase", another pick, or a later reload must not put an old
   // answer back on screen.
@@ -482,6 +499,7 @@ export default function NewPurchase() {
     // Any reload still in flight is for the purchase being left.
     pickToken.current += 1
     setPurchase(null)
+    setReceivingAll(null)
     setPurchaseError('')
     setForm(BLANK_PURCHASE)
     setAskedNoVendor(false)
@@ -525,6 +543,10 @@ export default function NewPurchase() {
     : ''
 
   if (purchase) {
+    const stillOrdered = (purchase.lines ?? []).filter(
+      (line) => line.status === 'ordered',
+    )
+    const openAll = receivingAll?.purchaseId === purchase.id ? receivingAll.ids : null
     return (
       <section>
         <h1>Purchases</h1>
@@ -625,6 +647,48 @@ export default function NewPurchase() {
                 )}
               </tbody>
             </table>
+
+            {/* As on Receiving: the parcel that arrived whole. A split
+                shipment is received line by line there ("Receive these"). */}
+            {stillOrdered.length > 1 && (
+              <p>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setReceivingAll({
+                      purchaseId: purchase.id,
+                      ids: stillOrdered.map((line) => line.id),
+                    })
+                  }
+                >
+                  Receive all {stillOrdered.length} still ordered
+                </button>
+              </p>
+            )}
+
+            {openAll && (
+              <ModalDialog
+                label={`Receive ${openAll.length} items on ${purchaseNumber(purchase.id)}`}
+                onClose={() => closeReceiveAll()}
+              >
+                <h2>
+                  All {openAll.length} items still ordered on{' '}
+                  {purchaseNumber(purchase.id)}
+                </h2>
+                <ReceiptPanel
+                  itemIds={openAll}
+                  initial={lastReceipt}
+                  onDone={closeReceiveAll}
+                />
+                <button
+                  type="button"
+                  className="link"
+                  onClick={() => closeReceiveAll()}
+                >
+                  Close
+                </button>
+              </ModalDialog>
+            )}
 
             {editing && (
               <ItemEditDialog

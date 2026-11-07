@@ -288,8 +288,10 @@ and pick it from the list:
 
 An open purchase lists its items and takes more under **New item**. A kind and a
 title make the item and open it in the editor. **Add another like** starts the
-next one from what items on the same order usually share. **Receive these** goes
-to Receiving for this purchase.
+next one from what items on the same order usually share. When two or more items
+are still ordered, **Receive all N still ordered** under the table receives the
+whole parcel here, in the same dialog as Receiving's. **Receive these** goes to
+Receiving for this purchase, to receive line by line.
 
 ![An open purchase with five items and the New item form](images/ui-guide/purchase_open.png)
 
@@ -373,7 +375,7 @@ The fields of the receipt for one item. The first group confirms what the piece 
 | **Photo** | one item | Pictures of the piece as it arrived: choose files, drag them onto the box, or paste one with Ctrl+V. They are added to the item after the receipt is recorded, and only when one item is being received. |
 
 When the whole parcel came, **Receive all** records every line still ordered in
-one step. It is offered on a purchase opened with **Receive these**, and after
+one step. It is offered on the purchase itself, on a purchase opened with **Receive these**, and after
 a search whose items are all on one purchase -- type its order number and
 press **Find** -- where it names that order ("Receive all 3 still ordered on
 49573"). Items from two purchases offer nothing; pick a line, or open the

@@ -36,6 +36,17 @@ vi.mock('./inventory/ItemEditDialog', () => ({
   ),
 }))
 
+// The receipt panel is tested on its own (Receiving's tests drive the real
+// one); here it says which items it was given and what it was seeded with.
+vi.mock('./receiving/ReceiptPanel', () => ({
+  default: ({ itemIds, initial, onDone }) => (
+    <div>
+      receiving items {itemIds.join(',')} seeded {JSON.stringify(initial)}
+      <button onClick={() => onDone({ storageLocationId: 9 })}>stub receive</button>
+    </div>
+  ),
+}))
+
 import { api } from '../api'
 import { renderWithProviders } from '../../test/helpers'
 import NewPurchase from './NewPurchase'
@@ -1793,5 +1804,95 @@ describe('NewPurchase: an order number already entered', () => {
     await user.type(screen.getByRole('textbox', { name: /order number/i }), 'PO-1')
     await user.tab()
     await waitFor(() => expect(api.getPurchaseOrder).toHaveBeenCalledWith(12))
+  })
+})
+
+describe('NewPurchase: Receive all', () => {
+  /** Purchase 22 with two lines still ordered, one received and one missing. */
+  function withLines(statuses = ['ordered', 'received', 'ordered', 'missing']) {
+    return {
+      ...FRESH_PURCHASE,
+      lines: statuses.map((status, i) => ({
+        id: 501 + i,
+        item_code: `CC-00050${1 + i}`,
+        source_title: `Line ${501 + i}`,
+        item_kind: 'coin',
+        item_cost: '10.00',
+        status,
+      })),
+    }
+  }
+
+  it('receives every line still ordered, and only those, from the purchase', async () => {
+    const user = userEvent.setup()
+    api.getPurchaseOrder.mockResolvedValue(withLines())
+    renderWithProviders(<NewPurchase />, { route: '/?order=22' })
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Receive all 2 still ordered' }),
+    )
+    const dialog = await screen.findByRole('dialog')
+    expect(dialog).toHaveAccessibleName(/2 items/)
+    expect(within(dialog).getByText(/receiving items 501,503 /)).toBeInTheDocument()
+  })
+
+  it('reads the purchase again after the receipt, so the button goes', async () => {
+    const user = userEvent.setup()
+    api.getPurchaseOrder.mockResolvedValue(withLines())
+    renderWithProviders(<NewPurchase />, { route: '/?order=22' })
+    await user.click(
+      await screen.findByRole('button', { name: 'Receive all 2 still ordered' }),
+    )
+    const dialog = await screen.findByRole('dialog')
+
+    api.getPurchaseOrder.mockResolvedValue(
+      withLines(['received', 'received', 'received', 'missing']),
+    )
+    await user.click(within(dialog).getByRole('button', { name: 'stub receive' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(api.getPurchaseOrder).toHaveBeenCalledTimes(2)
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /Receive all/ })).toBeNull(),
+    )
+  })
+
+  it('offers the next receipt what the last one used', async () => {
+    const user = userEvent.setup()
+    api.getPurchaseOrder.mockResolvedValue(withLines())
+    renderWithProviders(<NewPurchase />, { route: '/?order=22' })
+    const button = await screen.findByRole('button', {
+      name: 'Receive all 2 still ordered',
+    })
+    await user.click(button)
+    expect(screen.getByText(/seeded \{\}/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'stub receive' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Receive all 2 still ordered' }),
+    )
+    expect(screen.getByText(/seeded \{"storageLocationId":9\}/)).toBeInTheDocument()
+  })
+
+  it('reads the purchase again when only closed', async () => {
+    const user = userEvent.setup()
+    api.getPurchaseOrder.mockResolvedValue(withLines())
+    renderWithProviders(<NewPurchase />, { route: '/?order=22' })
+    await user.click(
+      await screen.findByRole('button', { name: 'Receive all 2 still ordered' }),
+    )
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: 'Close' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(api.getPurchaseOrder).toHaveBeenCalledTimes(2)
+  })
+
+  it('is not offered for a single line still ordered', async () => {
+    api.getPurchaseOrder.mockResolvedValue(withLines(['ordered', 'received']))
+    renderWithProviders(<NewPurchase />, { route: '/?order=22' })
+    expect(await screen.findByText('CC-000501')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Receive all/ })).toBeNull()
   })
 })
