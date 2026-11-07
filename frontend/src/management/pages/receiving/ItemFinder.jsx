@@ -210,10 +210,13 @@ function searchInto(
  * two in-flight requests can never both write to `results`.
  *
  * `onPick(row)` receives the whole result row: the receipt dialog it opens
- * names what it is about.
+ * names what it is about. `onResults(rows)` hears every list shown, or null
+ * when there is none, so the page can see when everything found is on one
+ * purchase.
  */
 export default function ItemFinder({
   onPick,
+  onResults = null,
   orderId = null,
   initialOrderNumber = '',
   epoch = 0,
@@ -238,6 +241,10 @@ export default function ItemFinder({
   const lastQueryRef = useRef(null)
   const statuses = useReference('item_status')
   const denominations = useReference('denomination')
+
+  useEffect(() => {
+    onResults?.(results)
+  }, [onResults, results])
 
   function setField(field, value) {
     setFilters((prev) => ({ ...prev, [field]: value }))

@@ -94,8 +94,8 @@ item can be offered.*
 **Receive** (`/management/receiving`) finds what has not arrived, by any part
 of an order number or by what the item is, and records one of **Receive**,
 **Missing**, **Returned** or **Canceled** for the line clicked -- or, with
-**Receive all N still ordered** on a purchase's link, for every line of it
-still ordered -- with an arrival date and a storage location, in one
+**Receive all N still ordered** on a purchase's link or after finding one
+purchase's items, for every line of it still ordered -- with an arrival date and a storage location, in one
 transaction (`POST /api/inventory/receive`). A purchase's "Receive these" link opens it
 already searched for that order.
 

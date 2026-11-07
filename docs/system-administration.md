@@ -735,7 +735,8 @@ fields" pane, the errors panel and, for a banknote, the Friedberg lookup.
 After each receipt the search repeats, so what arrived drops off the list.
 
 When the whole parcel arrived, **Receive all N still ordered** (shown on a
-linked order with two or more lines still `ordered`) opens one dialog over
+linked order with two or more lines still `ordered`, or after a search whose
+items are all on one purchase, naming its order number) opens one dialog over
 all of them: one arrival date, one location, one note, and the four outcome
 buttons, recorded in one all-or-nothing request. Photographs and the
 Friedberg lookup are off there, since each belongs to one object. Lines

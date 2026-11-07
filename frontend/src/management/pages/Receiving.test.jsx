@@ -430,3 +430,88 @@ describe('Receive all', () => {
     expect(screen.queryByRole('button', { name: /Receive all/ })).toBeNull()
   })
 })
+
+describe('Receive all from a search', () => {
+  /** A search row for an item still ordered on purchase `orderId`. */
+  const row = (id, orderId) => ({
+    id,
+    item_code: `CC-000${id}`,
+    description: `Line ${id}`,
+    status: 'ordered',
+    order_number: orderId == null ? null : '49573',
+    vendor: 'ebay.com',
+    purchase_order_id: orderId,
+  })
+
+  /** Purchase 7, two lines still ordered and one received. */
+  const purchase7 = {
+    id: 7,
+    order_number: '49573',
+    vendor: 'ebay.com',
+    ordered_on: '2026-10-01',
+    lines: [
+      { id: 601, item_code: 'CC-000601', status: 'ordered' },
+      { id: 602, item_code: 'CC-000602', status: 'ordered' },
+      { id: 603, item_code: 'CC-000603', status: 'received' },
+    ],
+  }
+
+  function searchFinds(rows) {
+    api.searchInventory.mockImplementation((view, params) =>
+      Promise.resolve(
+        view === 'coins' && params.status === 'ordered'
+          ? { rows, total: rows.length }
+          : { rows: [], total: 0 },
+      ),
+    )
+  }
+
+  async function findOrder(user, number) {
+    renderWithProviders(<Receiving />, { auth: adminAuth(), route: '/receiving' })
+    await user.type(await screen.findByLabelText(/order number/i), number)
+    await user.click(screen.getByRole('button', { name: /^find$/i }))
+  }
+
+  it('offers every line still ordered on the one purchase found, and receives them', async () => {
+    const user = userEvent.setup()
+    searchFinds([row(601, 7), row(602, 7)])
+    api.getPurchaseOrder.mockResolvedValue(purchase7)
+    api.receiveItems.mockResolvedValue({ outcome: 'received', items: 2 })
+    await findOrder(user, '49573')
+
+    await user.click(
+      await screen.findByRole('button', {
+        name: 'Receive all 2 still ordered on 49573',
+      }),
+    )
+    expect(api.getPurchaseOrder).toHaveBeenCalledWith(7)
+    const dialog = await screen.findByRole('dialog')
+    expect(dialog).toHaveAccessibleName(/2 items/)
+    await user.click(within(dialog).getByRole('button', { name: 'Receive' }))
+
+    await waitFor(() =>
+      expect(api.receiveItems).toHaveBeenCalledWith(
+        expect.objectContaining({ item_ids: [601, 602], outcome: 'received' }),
+      ),
+    )
+  })
+
+  it('offers nothing when what is found spans two purchases', async () => {
+    const user = userEvent.setup()
+    searchFinds([row(601, 7), row(701, 8)])
+    await findOrder(user, '495')
+
+    await screen.findByRole('button', { name: /CC-000701/ })
+    expect(screen.queryByRole('button', { name: /Receive all/ })).toBeNull()
+    expect(api.getPurchaseOrder).not.toHaveBeenCalled()
+  })
+
+  it('offers nothing when an item found has no purchase', async () => {
+    const user = userEvent.setup()
+    searchFinds([row(601, 7), row(801, null)])
+    await findOrder(user, '49573')
+
+    await screen.findByRole('button', { name: /CC-000801/ })
+    expect(screen.queryByRole('button', { name: /Receive all/ })).toBeNull()
+  })
+})
