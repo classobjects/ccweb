@@ -83,8 +83,8 @@ The search and filters, as the help band explains each one:
 | **Mint** | Coins | The mint mark on the coin: P Philadelphia, D Denver, S San Francisco, O New Orleans, CC Carson City, W West Point. Most older Philadelphia coins carry no mark. |
 | **Country** | Coins | The country that issued it. |
 | **Note type** | Currency | The kind of note, printed across the top of the face: Federal Reserve Note, Silver Certificate, United States Note, and so on. |
-| **Seal** | Currency | The color of the Treasury seal, right of center on the face: green on a Federal Reserve Note, blue on a Silver Certificate, red on a United States Note; brown, gold and yellow on some older and wartime issues. |
-| **District** | Currency | The Federal Reserve Bank that issued the note: the letter in the black seal on the left of the face (A Boston to L San Francisco; B is New York). The same bank shows as the number printed four times around the face (2 for New York). |
+| **Seal color** | Currency | The color of the Treasury seal, right of center on the face: green on a Federal Reserve Note, blue on a Silver Certificate, red on a United States Note; brown, gold and yellow on some older and wartime issues. |
+| **Reserve Bank** | Currency | The Federal Reserve Bank that issued the note: the letter in the black seal on the left of the face (A Boston to L San Francisco; B is New York). The same bank shows as the number printed four times around the face (2 for New York). |
 | **Series year** | Currency | The year after the word SERIES on the face, near the signatures -- "SERIES 1963 A" is 1963. It is the year the design was adopted, not the year the note was printed: notes of one series are often printed for years afterwards. |
 | **Status** |  | Shows only the items at this point in buying: ordered (bought, not yet arrived), received (in hand), canceled (the order was called off), returned (sent back to the seller), missing (paid for, never arrived) or unknown. Any shows every status. |
 | **Disposition** |  | What has become of the item once it is yours: held, listed, sold, shipped, delivered, returned. Status says whether it has arrived; disposition says where it stands in selling. |
@@ -183,7 +183,7 @@ The editor's fields, top to bottom. Which appear depends on the kind: a note has
 | Field | Shown | What it is |
 |---|---|---|
 | **Purchase (link in the heading)** | the item is on a purchase | The purchase this item was bought on: its order number and vendor. The order number belongs to the purchase, not the item: this opens the purchase in a new tab, where Edit details changes its number, date, web address, seller or notes. |
-| **Title** |  | What the seller called it, as written in the listing or invoice -- kept as the seller's words. The title a buyer sees is set when it is offered for sale. |
+| **Seller's title** |  | What the seller called it, as written in the listing or invoice -- kept as the seller's words. The title a buyer sees is set when it is offered for sale. |
 | **Listing web address** |  | The web address of the listing this was bought from -- the eBay, HiBid or Whatnot page. Pieces entered one after another keep it, since a lot comes from one listing. Shown as "Listing" in the item editor, which opens it in a new tab. |
 | **Seller's item id** |  | The seller's own number for the listing this was bought from -- eBay's item number. Every piece split from one listing keeps it, so a lot stays traceable. Where it is an eBay item number, the editor's heading shows it as a link that opens the listing on eBay in a new tab. |
 | **Item cost** |  | What was paid for this item, in dollars, before shipping and tax. On an order of several items, the price of this one. |
@@ -209,7 +209,7 @@ The editor's fields, top to bottom. Which appear depends on the kind: a note has
 | **Back plate** | a note | The plate number printed on the back, digits only (1234). A face and back plate from different eras make a mule; the Friedberg web search asks about both and answers with an m suffix when it is one. |
 | **Printed at** | a note | Where the note was printed: Washington, DC or Fort Worth, TX. Read from the face plate when there is one (FW before it is Fort Worth); choose it here only for a note whose face plate is not recorded. It tells some Friedberg numbers apart: the two printings of one series and denomination can each have a number of their own. |
 | **Note type** | a note | As under *Search and filters (Coins and Currency)*. |
-| **Seal** | a note | As under *Search and filters (Coins and Currency)*. |
+| **Seal color** | a note | As under *Search and filters (Coins and Currency)*. |
 | **Signatures** | a note | The two signatures printed on the face: the Treasurer of the United States on the left, the Secretary of the Treasury on the right. Each series letter usually has its own pair. |
 | **Reserve Bank** | a note | As under *Search and filters (Coins and Currency)*. |
 | **Strike type** | not a note | As under *Search and filters (Coins and Currency)*. |
@@ -321,7 +321,7 @@ The fields of a purchase and of its New item form:
 | **Tax on shipping** | a purchase open | Whether the tax was charged on shipping as well as on the price. States differ; "As configured" uses the default setting. |
 | **New item: Kind** | a purchase open | As under *Search and filters (Coins and Currency)*. |
 | **New item: Storage form** | a purchase open | As under *The item editor*. |
-| **New item: Title** | a purchase open | As under *The item editor*. |
+| **New item: Seller's title** | a purchase open | As under *The item editor*. |
 | **Add item** | a purchase open | Makes the item on this purchase and opens it in the editor, where its details, photographs and description are entered. Close the editor without saving and the item is not kept. |
 | **Add another like** | an item on it opened | Starts the next piece from what it shares with the item the button names: the one you last opened on this purchase, or the latest when none was opened. Copied: kind, title, cost, shipping, listing and its item id, status, where it is kept, storage form and pieces, country, denomination, series, set form, grade, grading service, and a note's series, seal, district, class and signatures or a coin's metal, mint, bullion form and strike, and a set's designation, and its sales tax: "No sales tax charged" ticked on it is ticked on the next. A loose piece's designation, serial, certificate, years and description are entered for each piece. |
 
@@ -355,7 +355,7 @@ The search's fields:
 
 Clicking a line opens it. Confirm the facts that identify the piece, then give
 the arrival date, storage location, any note and photographs, and choose one of
-**Receive**, **Missing**, **Returned** or **Cancelled**. The date and location
+**Receive**, **Missing**, **Returned** or **Canceled**. The date and location
 carry to the next item, so a parcel going into one box is picked once.
 
 ![Receiving one coin](images/ui-guide/receive_dialog.png)
@@ -451,7 +451,7 @@ makes one order per buyer. Unsold lots come back:
 #### Sales
 
 Every order, whatever its source. Change the status from the order's row, through
-pending, paid, packed, shipped and delivered, or cancelled and refunded. **Edit**
+pending, paid, packed, shipped and delivered, or canceled and refunded. **Edit**
 revises an order still pending or paid. No money moves here: orders are settled
 outside the system.
 

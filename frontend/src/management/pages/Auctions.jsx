@@ -64,7 +64,7 @@ const AUCTION_STATUS_LABEL = {
   consigned: 'Consigned',
   closed: 'Closed',
   settled: 'Settled',
-  cancelled: 'Cancelled',
+  cancelled: 'Canceled',
 }
 
 //: `app.auctions._LOTS_REMOVABLE` -- the identical boundary

@@ -10,7 +10,7 @@ import { accel } from '../../shortcuts'
 //: Bank's label holds one that is still free.
 const NOTE_CLASSIFIERS = [
   ['Note type', 'note_type', 'note_type', null],
-  ['Seal', 'seal_color', 'seal_color', null],
+  ['Seal color', 'seal_color', 'seal_color', null],
   ['Signatures', 'signature_combination', 'signature_combination', null],
   ['Reserve Bank', 'fed_district', 'fed_district', 'b'],
 ]

@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { describe, expect, it } from 'vitest'
 
-import { date, dateTime, money } from './format'
+import { date, dateTime, money, orderStatusText } from './format'
 
 describe('money', () => {
   it('formats a decimal string as US currency', () => {
@@ -97,5 +97,13 @@ describe('date', () => {
     } finally {
       process.env.TZ = saved
     }
+  })
+})
+
+describe('orderStatusText', () => {
+  it('spells the stored cancelled as canceled, and leaves the rest as they are', () => {
+    expect(orderStatusText('cancelled')).toBe('canceled')
+    expect(orderStatusText('paid')).toBe('paid')
+    expect(orderStatusText('refunded')).toBe('refunded')
   })
 })

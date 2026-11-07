@@ -592,7 +592,7 @@ export default function NewPurchase() {
               <thead>
                 <tr>
                   <th>Item code</th>
-                  <th>Title</th>
+                  <th>Seller&apos;s title</th>
                   <th>Kind</th>
                   <th>Cost</th>
                   <th>Status</th>
@@ -610,7 +610,7 @@ export default function NewPurchase() {
                         {line.item_code}
                       </button>
                     </td>
-                    <td data-label="Title">
+                    <td data-label="Seller's title">
                       <div className="cell-scroll">{line.source_title}</div>
                     </td>
                     <td data-label="Kind">{line.item_kind}</td>

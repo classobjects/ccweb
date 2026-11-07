@@ -175,11 +175,11 @@ error belongs to that order and clears when the address changes.
 - First, **Identify** (`receiving/IdentifySection.jsx`): the facts that
   identify the piece, filled from the item and saved with **Receive** only,
   as a `PATCH` sent just before the receipt (`identify-first-entry-design.md`).
-  Missing, Returned and Cancelled leave the item as it was.
+  Missing, Returned and Canceled leave the item as it was.
 - *Arrived* (defaults to the operator's local today), *Storage location*
   (`LocationSelect`, which can add a location inline),
   *Note*, *Photo*, and the four buttons **Receive**, **Missing**,
-  **Returned**, **Cancelled**, each sending its own code in one request.
+  **Returned**, **Canceled**, each sending its own code in one request.
 - The location and date the previous receipt used seed the next dialog, so a
   parcel of twenty into one location is not twenty identical picks. The note
   is not carried over: it describes one object.

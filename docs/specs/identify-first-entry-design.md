@@ -85,7 +85,7 @@ single item:
   decide; a value a person set on the item stands when saved.
 - **Saved with Receive**, and only with Receive: the changed fields go in one
   `PATCH /api/inventory/{id}` carrying `base` (the values the section
-  loaded), before the receipt is posted. Missing and Cancelled mean nobody
+  loaded), before the receipt is posted. Missing and Canceled mean nobody
   held the piece; Returned means it is going back -- none of them saves
   Identify edits, and the section says so while it has any.
 - A refused PATCH stops the receipt: nothing is received, the error is shown

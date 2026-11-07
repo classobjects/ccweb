@@ -114,7 +114,7 @@ describe('ItemEditForm: entering an item', () => {
     )
     const at = (text) => labels.findIndex((label) => label.startsWith(text))
 
-    expect(at('Title')).toBe(0)
+    expect(at("Seller's title")).toBe(0)
     expect(at('Listing web address')).toBe(1)
     expect(at("Seller's item id")).toBe(2)
     expect(at('Item cost')).toBeGreaterThan(at("Seller's item id"))

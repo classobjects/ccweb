@@ -121,7 +121,7 @@ export const FIELD_HELP = {
       'number.',
   },
   source_title: {
-    title: 'Title',
+    title: "Seller's title",
     text:
       'What the seller called it, as written in the listing or invoice -- kept as ' +
       "the seller's words. The title a buyer sees is set when it is offered for sale.",
@@ -559,7 +559,7 @@ export const FIELD_HELP = {
       'usually has its own pair.',
   },
   fed_district: {
-    title: 'Reserve Bank (district)',
+    title: 'Reserve Bank',
     text:
       'The Federal Reserve Bank that issued the note: the letter in the black seal ' +
       'on the left of the face (A Boston to L San Francisco; B is New York). The ' +

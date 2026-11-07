@@ -776,7 +776,7 @@ def _refuse_held_by_an_order(db: Session, listing_id: int) -> None:
             detail=(
                 f"listing #{listing_id} cannot be ended while order {orders} "
                 "holds its stock: ending it would leave that order unable to "
-                "be cancelled. Ship or cancel the order first."
+                "be canceled. Ship or cancel the order first."
             ),
         )
 

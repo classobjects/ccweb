@@ -508,7 +508,7 @@ def _sales_notes(db: Session, excluded: int) -> list[str]:
     if excluded:
         plural = "s" if excluded != 1 else ""
         notes.append(
-            f"{excluded} cancelled or refunded order{plural} in this range "
+            f"{excluded} canceled or refunded order{plural} in this range "
             "excluded: their money is not a sale."
         )
     return notes

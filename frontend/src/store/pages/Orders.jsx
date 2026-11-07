@@ -2,7 +2,7 @@
 // Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
 // SPDX-License-Identifier: Apache-2.0
 import { api } from '../../shared/api'
-import { date, money } from '../../shared/format'
+import { date, money, orderStatusText } from '../../shared/format'
 import { useRequest } from '../../shared/useRequest'
 
 /**
@@ -28,7 +28,9 @@ export default function Orders() {
         <article key={order.id} className="order">
           <header>
             <strong>Order #{order.id}</strong>
-            <span className={`status status-${order.status}`}>{order.status}</span>
+            <span className={`status status-${order.status}`}>
+              {orderStatusText(order.status)}
+            </span>
             <span className="muted small">{date(order.placed_at)}</span>
             <span className="grow" />
             <strong>{money(order.total_amount)}</strong>

@@ -311,7 +311,7 @@ export default function AddItem({
           />
         </label>
         <label data-help="source_title">
-          Title{/* */}
+          Seller&apos;s title{/* */}
           <input
             type="text"
             value={title}
