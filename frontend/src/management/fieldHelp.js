@@ -319,6 +319,8 @@ export const FIELD_HELP = {
     text:
       'What shape a piece of bullion takes: bar, round and so on. A bar or a round ' +
       'has no face value, so it is recorded here and Denomination is left blank. ' +
+      'A new bullion item saved with no form is a Round, shown as filled by a ' +
+      'rule; choose its real form here when you know it. ' +
       'A value that is missing can be added here by its name.',
   },
   storage_location_id: {

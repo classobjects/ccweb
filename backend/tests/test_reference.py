@@ -761,6 +761,8 @@ _ACTED_ON_BY_CODE = (
 #: The single values looked up by code in vocabularies that are otherwise
 #: free to change, written out for the same reason.
 _LOOKED_UP_BY_CODE = (
+    # A new bullion item with no form is given this one.
+    ("bullion_form", "round"),
     ("country", "US"),
     ("currency", "USD"),
     ("image_role", "obverse"),

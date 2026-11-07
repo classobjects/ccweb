@@ -36,6 +36,8 @@ SERIES_CLASSIFY = "series_classify"
 #: label a row that holds it.
 SERIES_BACKFILL = "series_backfill"
 SUGGESTION = "suggestion"
+#: A bullion item entered with no form is a round: its shape is unknown.
+BULLION_FORM_DEFAULT = "bullion_form_default"
 #: Written by no rule here either; a label in the same report.
 RATING = "rating"
 #: Fine weight worked out as gross weight times fineness.

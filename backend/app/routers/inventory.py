@@ -43,6 +43,7 @@ from ..classifier_defaults import refresh_items
 from ..config import settings
 from ..deps import AdminUser, DbSession
 from ..field_sources import (
+    BULLION_FORM_DEFAULT,
     SUGGESTION,
     WEIGHT,
     derived_fields,
@@ -1184,6 +1185,11 @@ def create_item(payload: ItemCreate, db: DbSession, admin: AdminUser) -> ItemDet
     metal_id = code_to_id(db, Metal, payload.metal, "metal")
     series_id = code_to_id(db, Series, payload.series, "series")
     bullion_form_id = code_to_id(db, BullionForm, payload.bullion_form, "bullion_form")
+    # Bullion of unknown shape is a round. Marked as this rule's below, so the
+    # editor shows it as filled in and a form a person chooses replaces it.
+    form_defaulted = payload.item_kind == "bullion" and bullion_form_id is None
+    if form_defaulted:
+        bullion_form_id = require_code(db, BullionForm, "round", "bullion_form")
     set_form_id = code_to_id(db, SetForm, payload.set_form, "set_form")
     storage_form_id = require_code(
         db, StorageForm, payload.storage_form or "single", "storage_form"
@@ -1324,6 +1330,8 @@ def create_item(payload: ItemCreate, db: DbSession, admin: AdminUser) -> ItemDet
         [_column(f) for f in payload.suggested if getattr(payload, f) is not None],
         SUGGESTION,
     )
+    if form_defaulted:
+        record_derived(db, item.id, ["bullion_form_id"], BULLION_FORM_DEFAULT)
     # Whatever the form did not fill, the facts may: a coin's composition, a
     # note's signatures. Nothing the person sent is replaced.
     refresh_items(db, [item.id])
