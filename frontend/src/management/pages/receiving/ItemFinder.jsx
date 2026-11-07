@@ -476,12 +476,12 @@ export default function ItemFinder({
             {results.map((row) => (
               <li key={row.id}>
                 <button type="button" className="order-row" onClick={() => onPick(row)}>
-                  <span className="mono">{row.item_code}</span>
+                  <span className="mono whole-id">{row.item_code}</span>
                   {identity(row) && <strong> {identity(row)}</strong>} {row.description}
                   {row.order_number && (
                     <span className="muted">
                       {' '}
-                      &middot; {row.order_number}
+                      &middot; <span className="whole-id">{row.order_number}</span>
                       {row.vendor ? ` · ${row.vendor}` : ''}
                     </span>
                   )}

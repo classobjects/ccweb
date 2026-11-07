@@ -1067,6 +1067,13 @@ describe('NewPurchase: the purchases table', () => {
     return within(table).getByRole('columnheader', { name: new RegExp(name, 'i') })
   }
 
+  it('shows an order number whole: never wrapped, never in a scrolling box', async () => {
+    const table = await openTable(userEvent.setup())
+    const cell = within(table).getByRole('button', { name: 'B-10' }).closest('td')
+    expect(cell).toHaveClass('whole-id')
+    expect(cell.querySelector('.cell-scroll')).toBeNull()
+  })
+
   it('shows order number, date and vendor in their own columns', async () => {
     const table = await openTable(userEvent.setup())
     expect(

@@ -24,6 +24,12 @@ td.item-code {
   white-space: nowrap;
 }
 
+/* An order number or a seller's item id is read whole too (owner): never
+   broken at a hyphen, never scrolled in a cell. Short enough to stand. */
+.whole-id {
+  white-space: nowrap;
+}
+
 /* --- forms -------------------------------------------------------------- */
 .admin-form {
   background: var(--surface);

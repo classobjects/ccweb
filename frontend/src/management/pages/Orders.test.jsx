@@ -118,6 +118,14 @@ describe('owner Orders', () => {
     )
   })
 
+  it("sets a row's Edit and History apart, not run together", async () => {
+    await renderPage()
+    const row = within(rowFor(12))
+    const actions = row.getByRole('button', { name: 'History' }).closest('.row-actions')
+    expect(actions).not.toBeNull()
+    expect(within(actions).getByRole('button', { name: 'Edit' })).toBeInTheDocument()
+  })
+
   it('offers every status the server knows', async () => {
     await renderPage()
     const select = within(rowFor(12)).getByRole('combobox')

@@ -286,14 +286,16 @@ export default function Orders() {
                   </select>
                 </td>
                 <td>
-                  {['pending', 'paid'].includes(order.status) && (
-                    <button className="link" onClick={() => setEditing(order)}>
-                      Edit
+                  <div className="row-actions">
+                    {['pending', 'paid'].includes(order.status) && (
+                      <button className="link" onClick={() => setEditing(order)}>
+                        Edit
+                      </button>
+                    )}
+                    <button className="link" onClick={() => setHistoryOf(order)}>
+                      History
                     </button>
-                  )}{' '}
-                  <button className="link" onClick={() => setHistoryOf(order)}>
-                    History
-                  </button>
+                  </div>
                 </td>
               </tr>
             ))}

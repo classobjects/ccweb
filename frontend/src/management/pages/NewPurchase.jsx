@@ -89,20 +89,18 @@ function ExistingPurchasePicker({ orders, filterText, openOnly, onPick }) {
       <tbody>
         {shown.map((order) => (
           <tr key={order.id} className="purchase-row" onClick={() => onPick(order.id)}>
-            <td data-label="Order number">
-              <div className="cell-scroll">
-                <button
-                  type="button"
-                  className="link"
-                  onClick={(e) => {
-                    // The row picks it too; once is enough.
-                    e.stopPropagation()
-                    onPick(order.id)
-                  }}
-                >
-                  {order.order_number || 'no order number'}
-                </button>
-              </div>
+            <td data-label="Order number" className="whole-id">
+              <button
+                type="button"
+                className="link"
+                onClick={(e) => {
+                  // The row picks it too; once is enough.
+                  e.stopPropagation()
+                  onPick(order.id)
+                }}
+              >
+                {order.order_number || 'no order number'}
+              </button>
             </td>
             <td data-label="Date">{date(order.ordered_on)}</td>
             <td data-label="Vendor">

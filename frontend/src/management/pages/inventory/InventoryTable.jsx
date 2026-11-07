@@ -28,6 +28,9 @@ function cell(row, key, kind) {
  * have no vendor order number, so those fall back to the vendor and the
  * date ordered -- still enough to tell one order from another.
  */
+//: Fields that are an identifier read whole, never wrapped or scrolled (owner).
+const WHOLE_ID_KEYS = new Set(['order_number', 'source_item_id'])
+
 function orderCell(row) {
   if (row.purchase_order_id == null) return <span className="muted">-</span>
   const label =
@@ -136,15 +139,15 @@ export default function InventoryTable({
       shown = cell(row, key, kind)
     }
     // A long value scrolls in its cell rather than widening the table; an
-    // amount or the item's code is short, read whole, and stays as it is.
-    const whole = kind === 'money' || key === 'item_code'
-    const scrolledClass = whole ? undefined : kind
+    // amount, the item's code, an order number or a seller's item id is
+    // short, read whole, and stays as it is.
+    const id = WHOLE_ID_KEYS.has(key)
+    const whole = kind === 'money' || key === 'item_code' || id
+    let className = whole ? undefined : kind
+    if (key === 'item_code') className = 'item-code'
+    else if (id) className = 'whole-id'
     return (
-      <td
-        key={key}
-        className={key === 'item_code' ? 'item-code' : scrolledClass}
-        data-label={label}
-      >
+      <td key={key} className={className} data-label={label}>
         {whole ? shown : <div className="cell-scroll">{shown}</div>}
       </td>
     )

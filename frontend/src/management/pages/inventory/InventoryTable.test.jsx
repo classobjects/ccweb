@@ -229,6 +229,24 @@ describe('the order column', () => {
     expect(link.getAttribute('href')).toMatch(/\/purchases\?order=7$/)
   })
 
+  it('shows an order number whole: never wrapped, never in a scrolling box', () => {
+    // Owner: an order number or an item id is read whole.
+    setup({
+      config: orderConfig,
+      rows: [
+        {
+          id: 1,
+          item_code: 'C-001',
+          purchase_order_id: 7,
+          order_number: '123-4567890-1234567',
+        },
+      ],
+    })
+    const cell = screen.getByRole('link', { name: '123-4567890-1234567' }).closest('td')
+    expect(cell).toHaveClass('whole-id')
+    expect(cell.querySelector('.cell-scroll')).toBeNull()
+  })
+
   it('links an unnumbered order by its vendor and date', () => {
     setup({
       config: orderConfig,

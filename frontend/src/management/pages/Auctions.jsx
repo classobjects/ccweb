@@ -729,7 +729,7 @@ function AuctionDetail({ auction, venues, onChanged }) {
                   </td>
                   <td>
                     {editable && (
-                      <>
+                      <div className="row-actions">
                         <button
                           className="link"
                           disabled={busy}
@@ -744,7 +744,7 @@ function AuctionDetail({ auction, venues, onChanged }) {
                         >
                           Remove...
                         </button>
-                      </>
+                      </div>
                     )}
                   </td>
                 </tr>
