@@ -1,6 +1,6 @@
 # A tour of the screens
 
-Last revised: 2026-11-06.
+Last revised: 2026-11-07.
 
 What each screen looks like and how it is used, for someone deciding whether
 to run this software or learning to. It shows the screens; for the order the
