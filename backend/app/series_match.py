@@ -182,8 +182,12 @@ def build_rules(db: Session) -> list[Rule]:
     # evidence (`series.seal_color_id`); search still finds the nickname.
     seals = {label.lower() for label in db.scalars(select(SealColor.label))}
 
+    # A retired design is off every picker, and this is one: it is never
+    # given to an item, though the items that already hold it keep it.
     rows = db.execute(
-        select(Series.id, Series.code, Series.label, Series.applies_to)
+        select(Series.id, Series.code, Series.label, Series.applies_to).where(
+            Series.is_active.is_(True)
+        )
     ).all()
     named = aliases.aliases_by_row(db, Series)
 
