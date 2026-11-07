@@ -79,7 +79,10 @@ describe('ItemFinder', () => {
     expect(calls().every(([, params]) => params.order_number === '4452')).toBe(true)
     expect(calls().some(([view]) => view === 'currency')).toBe(true)
     // The row says which order it is on, so a partial match is checkable.
-    expect(await screen.findByText(/114-4452-X · ebay\.com/)).toBeInTheDocument()
+    const order = await screen.findByText('114-4452-X')
+    expect(order.parentElement).toHaveTextContent(/114-4452-X · ebay\.com/)
+    // Read whole: never broken at its hyphens (owner).
+    expect(order).toHaveClass('whole-id')
   })
 
   it('finds a parcel by part of its vendor or seller, in both views', async () => {

@@ -187,7 +187,8 @@ export const CURRENCY_VIEW = {
       ['Grade', 'grade_label'],
     ],
     [
-      ['Seal color', 'seal_color'],
+      // The label, as the editor shows it ("Blue Seal"), not the code.
+      ['Seal color', 'seal_color_label'],
       ['Reserve Bank', 'fed_district_letter'],
     ],
     [

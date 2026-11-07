@@ -16,6 +16,10 @@ export const NUMERIC_KINDS = new Set(['count', 'money', 'percent', 'ounces'])
 //: Column keys that hold an item's code: short, read whole, never scrolled.
 export const ITEM_CODE_KEYS = new Set(['item'])
 
+//: Column keys that hold an order number: read whole too, never wrapped or
+//: scrolled (owner).
+export const ORDER_NUMBER_KEYS = new Set(['order', 'order_number'])
+
 //: A weight as a plain decimal string, the only shape `ounces` formats.
 const DECIMAL = /^-?\d+(\.\d+)?$/
 

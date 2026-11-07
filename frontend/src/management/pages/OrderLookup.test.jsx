@@ -86,6 +86,13 @@ describe('OrderLookup', () => {
     )
   })
 
+  it('shows an order number whole: never wrapped, never in a scrolling box', async () => {
+    await open()
+    const cell = screen.getByRole('link', { name: '11-11111-11117' }).closest('td')
+    expect(cell).toHaveClass('whole-id')
+    expect(cell.querySelector('.cell-scroll')).toBeNull()
+  })
+
   it('shows what each purchase is: number, date, vendor, seller, items, cost', async () => {
     await open()
     const row = screen.getByRole('row', { name: /11-11111-11117/ })

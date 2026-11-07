@@ -793,6 +793,40 @@ describe('Reports page', () => {
     expect(api.runReport).toHaveBeenCalledTimes(1)
   })
 
+  it('shows an order number and an item code whole, never in a scrolling box', async () => {
+    const result = {
+      ...completeness(),
+      columns: [
+        { key: 'item', label: 'Item', kind: 'text' },
+        { key: 'order', label: 'Order', kind: 'text' },
+        { key: 'order_number', label: 'Order number', kind: 'text' },
+        { key: 'vendor', label: 'Vendor', kind: 'text' },
+      ],
+      rows: [
+        {
+          item: 'CC-000001',
+          order: '12-11111-22222',
+          order_number: '114-4452345-1234567',
+          vendor: 'ebay.com',
+        },
+      ],
+      totals: null,
+      drills: [null],
+    }
+    api.runReport.mockResolvedValue(result)
+    renderAt('/reports?report=dq_completeness')
+
+    for (const name of ['CC-000001', '12-11111-22222', '114-4452345-1234567']) {
+      const cell = await screen.findByRole('cell', { name })
+      expect(cell.className).toMatch(/\b(item-code|whole-id)\b/)
+      expect(cell.querySelector('.cell-scroll')).toBeNull()
+    }
+    // Anything else long still scrolls in its cell.
+    expect(
+      screen.getByRole('cell', { name: 'ebay.com' }).querySelector('.cell-scroll'),
+    ).not.toBeNull()
+  })
+
   it('shows fine ounces to three places, never through a float', async () => {
     const result = {
       ...completeness(),

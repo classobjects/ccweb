@@ -142,12 +142,10 @@ export default function OrderLookup() {
               <tbody>
                 {shown.map((order) => (
                   <tr key={order.id}>
-                    <td data-label="Order number">
-                      <div className="cell-scroll">
-                        <Link to={`/purchases?order=${order.id}`}>
-                          {order.order_number || 'no order number'}
-                        </Link>
-                      </div>
+                    <td data-label="Order number" className="whole-id">
+                      <Link to={`/purchases?order=${order.id}`}>
+                        {order.order_number || 'no order number'}
+                      </Link>
                     </td>
                     <td data-label="Date">{date(order.ordered_on)}</td>
                     <td data-label="Vendor">

@@ -114,6 +114,24 @@ def test_each_view_returns_the_columns_that_matter_to_it(
     assert "mint_mark" not in note_row
 
 
+def test_a_note_row_names_its_seal_as_the_editor_does(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    """The table reads the seal's label, as the editor's dropdown does.
+
+    The code (`blue`) is what a filter compares against; a person reading
+    the table sees the same words the editor shows (`Blue Seal`).
+    """
+    note(db, seal="blue")
+    label = db.query(SealColor.label).filter_by(code="blue").scalar()
+
+    row = search(client, "currency", admin_headers).json()["rows"][0]
+
+    assert row["seal_color"] == "blue"
+    assert row["seal_color_label"] == label
+    assert label != "blue"
+
+
 # ---------------------------------------------------------------------------
 # The purchase order behind an item
 # ---------------------------------------------------------------------------
@@ -810,7 +828,7 @@ _SHOWN = {
         "denomination_label",
         "series_label",
         "series_designation",
-        "seal_color",
+        "seal_color_label",
         "fed_district_letter",
         "serial_number",
         "friedberg_number",

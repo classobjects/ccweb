@@ -8,6 +8,7 @@ import { api } from '../../api'
 import { dateTime } from '../../../shared/format'
 import {
   ITEM_CODE_KEYS,
+  ORDER_NUMBER_KEYS,
   NUMERIC_KINDS,
   cellText,
   compareValues,
@@ -200,16 +201,16 @@ function ReportTable({ result, onOpenItem }) {
                 />
               )
               // A long name scrolls in its cell rather than widening the
-              // table; a number or an item's code is short, read whole, and
-              // stays as it is.
+              // table; a number, an item's code or an order number is short,
+              // read whole, and stays as it is.
               const code = ITEM_CODE_KEYS.has(column.key)
+              const order = ORDER_NUMBER_KEYS.has(column.key)
+              let className = alignment(column)
+              if (code) className = 'item-code'
+              else if (order) className = 'whole-id'
               return (
-                <td
-                  key={column.key}
-                  className={code ? 'item-code' : alignment(column)}
-                  data-label={column.label}
-                >
-                  {code || NUMERIC_KINDS.has(column.kind) ? (
+                <td key={column.key} className={className} data-label={column.label}>
+                  {code || order || NUMERIC_KINDS.has(column.kind) ? (
                     cell
                   ) : (
                     <div className="cell-scroll">{cell}</div>

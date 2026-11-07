@@ -17,6 +17,9 @@
   --info: #24507a;
   --ok: #2b6a2b;
   --radius: 8px;
+  /* The shade at the edge of a cell whose text scrolls on past it: drawn
+     from --text, so it is a dark edge on light and a light one on dark. */
+  --edge-shade: color-mix(in srgb, var(--text) 28%, transparent);
   color-scheme: light;
 }
 
@@ -229,6 +232,19 @@ table.stacks td {
   max-width: clamp(6rem, 14vw, 16rem);
   overflow-x: auto;
   white-space: nowrap;
+  /* A shadow at an edge with more text past it, so a cut-off value reads
+     as one that scrolls even where the system hides scrollbars (macOS,
+     phones). The `local` covers move with the text and hide each shadow
+     once that end is reached; the `scroll` shadows stay at the edges. */
+  background:
+    linear-gradient(to right, var(--surface) 40%, transparent) left / 1.5rem 100%
+      no-repeat local,
+    linear-gradient(to left, var(--surface) 40%, transparent) right / 1.5rem 100%
+      no-repeat local,
+    radial-gradient(farthest-side at 0 50%, var(--edge-shade), transparent) left /
+      0.6rem 100% no-repeat scroll,
+    radial-gradient(farthest-side at 100% 50%, var(--edge-shade), transparent) right /
+      0.6rem 100% no-repeat scroll;
 }
 
 /* On a phone a table marked `stacks` lays each row out as a card, a line

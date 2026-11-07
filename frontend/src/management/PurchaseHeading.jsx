@@ -17,7 +17,11 @@ export default function PurchaseHeading({ purchase, numbered = false }) {
   return (
     <h2>
       {numbered && `${purchaseNumber(purchase.id)} · `}
-      {purchase.order_number || <span className="muted">no order number</span>}
+      {purchase.order_number ? (
+        <span className="whole-id">{purchase.order_number}</span>
+      ) : (
+        <span className="muted">no order number</span>
+      )}
       {' · '}
       {purchase.vendor}
       {' · '}

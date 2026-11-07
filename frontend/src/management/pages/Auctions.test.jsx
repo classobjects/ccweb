@@ -342,6 +342,22 @@ describe('Auctions', () => {
     expect(screen.getByLabelText(/lot number for/i)).toBeDisabled()
   })
 
+  it("sets a lot's Save and Remove apart, not run together", async () => {
+    // Two link buttons side by side in JSX have no space between them; read
+    // as "SaveRemove..." until `.row-actions` gaps them.
+    const row = auction({ status: 'draft', lots: [auctionLot()] })
+    api.listAuctions.mockResolvedValue({ auctions: [row] })
+    renderWithProviders(<Auctions />, { strict: true })
+
+    await userEvent.setup().click(await screen.findByRole('button', { name: 'View' }))
+    const save = screen.getByRole('button', { name: 'Save' })
+    const actions = save.closest('.row-actions')
+    expect(actions).not.toBeNull()
+    expect(
+      within(actions).getByRole('button', { name: 'Remove...' }),
+    ).toBeInTheDocument()
+  })
+
   it("saves a lot with the auction's version, and the next save with the new one", async () => {
     // A lot row has no version of its own; the auction's stands for it, and
     // each lot save moves it. The saved auction replaces the row, so a second

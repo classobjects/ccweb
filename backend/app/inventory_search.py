@@ -526,6 +526,9 @@ CURRENCY_VIEW = ViewSpec(
         # Generated, so it cannot disagree with the two columns above.
         "series_designation": Col("cud.series_designation", (_J_CUR_DETAIL,)),
         "seal_color": Col("sc.code", (_J_CUR_DETAIL, _J_SEAL)),
+        # What the table shows: the words the editor's dropdown shows
+        # ("Blue Seal"); the code above is what a filter compares against.
+        "seal_color_label": Col("sc.label", (_J_CUR_DETAIL, _J_SEAL)),
         "fed_district_letter": Col("fd.letter", (_J_CUR_DETAIL, _J_DISTRICT)),
         "fed_district_city": Col("fd.city", (_J_CUR_DETAIL, _J_DISTRICT)),
         "serial_number": Col("cud.serial_number", (_J_CUR_DETAIL,)),
@@ -566,6 +569,7 @@ CURRENCY_VIEW = ViewSpec(
         "series_year",
         "series_designation",
         "seal_color",
+        "seal_color_label",
         "fed_district_letter",
         "serial_number",
         "friedberg_number",
