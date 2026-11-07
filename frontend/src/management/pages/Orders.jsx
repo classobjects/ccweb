@@ -4,7 +4,7 @@
 import { useEffect, useState } from 'react'
 
 import { api } from '../api'
-import { date, money } from '../../shared/format'
+import { date, money, orderStatusText } from '../../shared/format'
 import ModalDialog from '../ModalDialog'
 import Pager from '../Pager'
 import OrderEditor from './orders/OrderEditor'
@@ -60,7 +60,7 @@ const PAGE_SIZE = 100
 function refusal(order, status) {
   if (order.status === 'cancelled' && status !== 'cancelled') {
     return (
-      `Order #${order.id} is cancelled and its stock has been returned. ` +
+      `Order #${order.id} is canceled and its stock has been returned. ` +
       'Place a new order instead.'
     )
   }
@@ -69,14 +69,14 @@ function refusal(order, status) {
   if (order.sales_venue_code !== 'store') {
     return (
       `Sold on ${order.sales_venue_name}, whose listing ended with the sale ` +
-      `-- there is no stock to return, so order #${order.id} cannot be ${status} ` +
+      `-- there is no stock to return, so order #${order.id} cannot be ${orderStatusText(status)} ` +
       'before it ships.'
     )
   }
   if (order.items.some((line) => line.listing_ended)) {
     return (
       'Its listing has ended (a lot ends when it is bought) -- there is no ' +
-      `stock to return, so order #${order.id} cannot be ${status} before it ships.`
+      `stock to return, so order #${order.id} cannot be ${orderStatusText(status)} before it ships.`
     )
   }
   return null
@@ -204,7 +204,7 @@ export default function Orders() {
             <option value="">every status</option>
             {STATUSES.map((s) => (
               <option key={s} value={s}>
-                {s}
+                {orderStatusText(s)}
               </option>
             ))}
           </select>
@@ -280,7 +280,7 @@ export default function Orders() {
                         is answered with its reason when chosen (`refusal`). */}
                     {STATUSES.map((s) => (
                       <option key={s} value={s}>
-                        {s}
+                        {orderStatusText(s)}
                       </option>
                     ))}
                   </select>

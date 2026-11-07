@@ -1460,7 +1460,7 @@ describe('ItemEditForm keyboard accelerators', () => {
     render(<ItemEditForm itemId={12} onSaved={vi.fn()} onClose={vi.fn()} />)
     await screen.findByDisplayValue('Mercury Dime')
     const expected = [
-      [screen.getByRole('textbox', { name: /Title/ }), 't'],
+      [screen.getByRole('textbox', { name: /Seller's title/ }), 't'],
       [screen.getByRole('textbox', { name: /Description/ }), 'c'],
       [screen.getByRole('spinbutton', { name: 'Year' }), 'y'],
       [screen.getByRole('checkbox', { name: 'Range of years' }), 'r'],
@@ -1573,13 +1573,13 @@ describe('field labels in the grid', () => {
     // Asserted here, on the real form, and not only on AccessLabel in
     // isolation: the constraint is in the relationship between the two.
     render(<ItemEditForm itemId={12} onSaved={vi.fn()} onClose={vi.fn()} />)
-    const title = await screen.findByRole('textbox', { name: /Title/ })
+    const title = await screen.findByRole('textbox', { name: /Seller's title/ })
     const field = title.closest('.field')
 
     // The whole word in the first cell, with the accelerator letter marked
     // inside it rather than beside it.
-    expect(field.children[0].textContent).toBe('Title')
-    expect(field.children[0].querySelector('u')).toHaveTextContent('T')
+    expect(field.children[0].textContent).toBe("Seller's title")
+    expect(field.children[0].querySelector('u')).toHaveTextContent('t')
     // ...and the input is the next cell, not the last.
     expect(field.children[1]).toBe(title)
   })

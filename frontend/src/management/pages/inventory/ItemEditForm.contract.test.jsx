@@ -294,7 +294,7 @@ describe('ItemEditForm: what is typed while a request is out', () => {
     const asked = deferred()
     api.suggestDescriptionFromScreen.mockReturnValue(asked.promise)
     await user.click(screen.getByRole('button', { name: 'Suggest description' }))
-    await user.type(screen.getByRole('textbox', { name: /Title/ }), ' 1943')
+    await user.type(screen.getByRole('textbox', { name: /Seller's title/ }), ' 1943')
     asked.resolve({ description: 'A Mercury dime' })
 
     expect(await screen.findByDisplayValue('A Mercury dime')).toBeInTheDocument()
@@ -309,7 +309,7 @@ describe('ItemEditForm: what is typed while a request is out', () => {
     api.updateInventoryItem.mockReturnValue(saving.promise)
     await user.type(screen.getByRole('textbox', { name: /Description/ }), '!')
     await user.click(saveButton())
-    await user.type(screen.getByRole('textbox', { name: /Title/ }), ' 1943')
+    await user.type(screen.getByRole('textbox', { name: /Seller's title/ }), ' 1943')
     api.getInventoryItem.mockResolvedValue({
       ...COIN,
       version: 2,

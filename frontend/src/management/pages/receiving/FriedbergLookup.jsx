@@ -801,7 +801,7 @@ export default function FriedbergLookup({
                 )}
               </label>
               <label data-help="fed_district">
-                District
+                Reserve Bank
                 <ReferenceSelect
                   table="fed_district"
                   value={district}

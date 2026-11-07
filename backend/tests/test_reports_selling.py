@@ -859,7 +859,7 @@ def test_excluded_order_count_names_how_many_were_left_out(
 
     result = SL_SALES.run(db, SalesParams())
     assert result.rows == []
-    assert any("2 cancelled or refunded orders" in note for note in result.notes), (
+    assert any("2 canceled or refunded orders" in note for note in result.notes), (
         result.notes
     )
 
@@ -1127,7 +1127,7 @@ def test_excluded_order_count_keeps_to_the_date_range(
         db, SalesParams(date_from=date(2026, 6, 1), date_to=date(2026, 6, 30))
     )
     assert result.rows == []
-    assert any("2 cancelled or refunded orders" in note for note in result.notes), (
+    assert any("2 canceled or refunded orders" in note for note in result.notes), (
         result.notes
     )
 

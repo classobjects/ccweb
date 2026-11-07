@@ -22,7 +22,7 @@ const OUTCOMES = [
   ['received', 'Receive'],
   ['missing', 'Missing'],
   ['returned', 'Returned'],
-  ['canceled', 'Cancelled'],
+  ['canceled', 'Canceled'],
 ]
 
 //: Today, as the operator's own calendar would show it -- built from local
@@ -317,7 +317,7 @@ export default function ReceiptPanel({ itemIds, onDone, initial = {} }) {
             {identifyDirty && (
               <p className="muted">
                 Identify changes are saved only with Receive: Missing, Returned and
-                Cancelled leave the item as it was.
+                Canceled leave the item as it was.
               </p>
             )}
           </>

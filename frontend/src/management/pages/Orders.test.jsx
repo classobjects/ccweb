@@ -229,7 +229,7 @@ describe('owner Orders', () => {
     await user.selectOptions(select, 'paid')
 
     expect(
-      await screen.findByText(/cancelled and its stock has been returned/),
+      await screen.findByText(/canceled and its stock has been returned/),
     ).toBeInTheDocument()
     expect(api.setOrderStatus).not.toHaveBeenCalled()
     expect(within(rowFor(12)).getByRole('combobox')).toHaveValue('cancelled')
@@ -259,7 +259,7 @@ describe('owner Orders', () => {
   it('still offers cancel for an ordinary shop order', async () => {
     await renderPage()
     const select = within(rowFor(12)).getByRole('combobox')
-    expect(within(select).getByRole('option', { name: /cancelled/i })).toBeEnabled()
+    expect(within(select).getByRole('option', { name: /canceled/i })).toBeEnabled()
   })
 
   it('does cancel an outside sale that has already shipped', async () => {

@@ -767,9 +767,7 @@ def cancel(
         raise AuctionRefused(f"auction #{auction.id} is already {auction.status.value}")
     if auction.consigned_on is not None and returned_to_location_id is None:
         raise AuctionRefused(
-            _custody_away(
-                auction, " to bring its items back before it can be cancelled"
-            )
+            _custody_away(auction, " to bring its items back before it can be canceled")
         )
     lots = _lots_of(db, auction)
     # Every lot's rows in one pass, before the first removal: the sales lot

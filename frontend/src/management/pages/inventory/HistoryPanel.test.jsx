@@ -66,7 +66,13 @@ describe('HistoryPanel', () => {
         .map((c) => c.textContent),
     )
     // A field by its help title, the way the editor names it.
-    expect(edit).toEqual(['Test Admin', 'Title', 'Morgan', '1881-S Morgan Dollar', ''])
+    expect(edit).toEqual([
+      'Test Admin',
+      "Seller's title",
+      'Morgan',
+      '1881-S Morgan Dollar',
+      '',
+    ])
     expect(received).toEqual([
       'unknown',
       'Status',

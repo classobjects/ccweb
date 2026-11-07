@@ -187,8 +187,8 @@ export const CURRENCY_VIEW = {
       ['Grade', 'grade_label'],
     ],
     [
-      ['Seal', 'seal_color'],
-      ['District', 'fed_district_letter'],
+      ['Seal color', 'seal_color'],
+      ['Reserve Bank', 'fed_district_letter'],
     ],
     [
       ['Cost', 'total_cost', 'money'],
@@ -229,8 +229,8 @@ export const CURRENCY_VIEW = {
     ['Denomination', 'denomination', 'denomination', 'm'],
     ['Series', 'series', 'series', 'r'],
     ['Note type', 'note_type', 'note_type', 'p'],
-    ['Seal', 'seal_color', 'seal_color', 'l'],
-    ['District', 'fed_district', 'fed_district_letter', 't'],
+    ['Seal color', 'seal_color', 'seal_color', 'l'],
+    ['Reserve Bank', 'fed_district', 'fed_district_letter', 'v'],
     // A is the only free letter in "Series year", so Status takes U here.
     ['Series year', 'series_year', 'series_year', 'a'],
     ['Status', 'status', 'status', 'u'],

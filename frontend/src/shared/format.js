@@ -76,3 +76,12 @@ export function date(value) {
     day: 'numeric',
   })
 }
+
+/**
+ * An order's status as the screens spell it. The stored code is `cancelled`;
+ * every screen says "canceled", as an item's status does. The other codes read
+ * as they are.
+ */
+export function orderStatusText(status) {
+  return status === 'cancelled' ? 'canceled' : status
+}

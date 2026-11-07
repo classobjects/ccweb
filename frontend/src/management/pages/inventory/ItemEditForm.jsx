@@ -110,7 +110,7 @@ const FRIEDBERG_FACTS = [
 const PREVIEW_DELAY_MS = 400
 
 const TEXT_FIELDS = [
-  ['Title', 'source_title', 't'],
+  ["Seller's title", 'source_title', 't'],
   ['Description', 'description', 'c'],
 ]
 

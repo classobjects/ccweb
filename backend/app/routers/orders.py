@@ -532,7 +532,7 @@ def update_order_status(
     if previous == "cancelled" and payload.status != "cancelled":
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"Order #{order_id} is cancelled and its stock has been "
+            detail=f"Order #{order_id} is canceled and its stock has been "
             "returned. Place a new order instead.",
         )
     # The same for a refund that returned the stock. Cancelling it after is

@@ -70,7 +70,7 @@ async function addNote(user, title = 'A note') {
     screen.getByRole('combobox', { name: 'item_kind' }),
     'currency',
   )
-  await user.type(screen.getByRole('textbox', { name: 'Title' }), title)
+  await user.type(screen.getByRole('textbox', { name: "Seller's title" }), title)
   await user.click(screen.getByRole('button', { name: 'Add item' }))
 }
 
@@ -107,7 +107,7 @@ describe('AddItem', () => {
       tax_includes_shipping: true,
     })
     // The title is spent, and a second item waits for the first.
-    expect(screen.getByRole('textbox', { name: 'Title' })).toHaveValue('')
+    expect(screen.getByRole('textbox', { name: "Seller's title" })).toHaveValue('')
     expect(onChanged).toHaveBeenCalled()
   })
 
@@ -119,7 +119,10 @@ describe('AddItem', () => {
     expect(form).toHaveValue('single')
 
     await user.selectOptions(form, 'roll')
-    await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Wheat cents')
+    await user.type(
+      screen.getByRole('textbox', { name: "Seller's title" }),
+      'Wheat cents',
+    )
     await user.click(screen.getByRole('button', { name: 'Add item' }))
 
     expect(api.createInventoryItem).toHaveBeenCalledWith(
@@ -140,7 +143,10 @@ describe('AddItem', () => {
       screen.getByRole('combobox', { name: 'storage_form' }),
       'box',
     )
-    await user.type(screen.getByRole('textbox', { name: 'Title' }), 'A box of coins')
+    await user.type(
+      screen.getByRole('textbox', { name: "Seller's title" }),
+      'A box of coins',
+    )
     await user.click(screen.getByRole('button', { name: 'Add item' }))
 
     const sent = api.createInventoryItem.mock.calls.at(-1)[0]
@@ -158,7 +164,7 @@ describe('AddItem', () => {
     renderRow({ defaultKind: 'currency' })
     expect(screen.getByRole('combobox', { name: 'item_kind' })).toHaveValue('currency')
 
-    await user.type(screen.getByRole('textbox', { name: 'Title' }), 'A note')
+    await user.type(screen.getByRole('textbox', { name: "Seller's title" }), 'A note')
     await user.click(screen.getByRole('button', { name: 'Add item' }))
     await waitFor(() =>
       expect(api.createInventoryItem).toHaveBeenCalledWith(
@@ -242,7 +248,7 @@ describe('AddItem', () => {
   it("copies a coin's metal and mint as a person set them, and none of a note's fields", async () => {
     const user = userEvent.setup()
     renderRow({ items: ENTERED })
-    await user.type(screen.getByRole('textbox', { name: 'Title' }), 'A dollar')
+    await user.type(screen.getByRole('textbox', { name: "Seller's title" }), 'A dollar')
     await user.click(screen.getByRole('button', { name: 'Add item' }))
     await user.click(await screen.findByRole('button', { name: 'stub save' }))
 
@@ -438,7 +444,7 @@ describe('AddItem', () => {
   it('leaves what a rule filled on the last item for the rules to fill on the next', async () => {
     const user = userEvent.setup()
     renderRow({ items: ENTERED })
-    await user.type(screen.getByRole('textbox', { name: 'Title' }), 'A dime')
+    await user.type(screen.getByRole('textbox', { name: "Seller's title" }), 'A dime')
     await user.click(screen.getByRole('button', { name: 'Add item' }))
     await user.click(await screen.findByRole('button', { name: 'stub save' }))
 
@@ -620,7 +626,9 @@ describe('AddItem', () => {
     await addNote(user, 'A note')
 
     expect(await screen.findByText('Unknown purchase order')).toBeInTheDocument()
-    expect(screen.getByRole('textbox', { name: 'Title' })).toHaveValue('A note')
+    expect(screen.getByRole('textbox', { name: "Seller's title" })).toHaveValue(
+      'A note',
+    )
     expect(screen.queryByRole('dialog')).toBeNull()
   })
 
@@ -642,7 +650,10 @@ describe('AddItem', () => {
       items: ENTERED,
       disabledReason: 'Fix the tax rate above before saving items.',
     })
-    await user.type(screen.getByRole('textbox', { name: 'Title' }), 'A note{Enter}')
+    await user.type(
+      screen.getByRole('textbox', { name: "Seller's title" }),
+      'A note{Enter}',
+    )
     // Live, with the reason beside it: pressed, it sends nothing.
     const add = screen.getByRole('button', { name: 'Add item' })
     const another = screen.getByRole('button', { name: 'Add another like CC-000030' })

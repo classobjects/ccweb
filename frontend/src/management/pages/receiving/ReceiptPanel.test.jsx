@@ -112,7 +112,7 @@ describe('ReceiptPanel', () => {
     ['Receive', 'received'],
     ['Missing', 'missing'],
     ['Returned', 'returned'],
-    ['Cancelled', 'canceled'],
+    ['Canceled', 'canceled'],
   ])('sends the outcome the %s button names', async (label, outcome) => {
     renderWithProviders(<ReceiptPanel itemIds={[412]} onDone={vi.fn()} />)
     await userEvent.click(await screen.findByRole('button', { name: label }))
