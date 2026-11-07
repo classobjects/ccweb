@@ -11,6 +11,7 @@ from typing import cast
 
 import pytest
 from app.field_sources import (
+    BULLION_FORM_DEFAULT,
     HELD,
     SERIES_CLASSIFY,
     SERIES_MATCH,
@@ -584,12 +585,29 @@ def test_dq_derived_counts_a_field_a_rule_filled(db: Session) -> None:
 def test_dq_derived_names_a_weight_rule_for_a_reader(
     db: Session, rule: str, title: str
 ) -> None:
+    _assert_rule_title(db, "fine_weight_ozt", "Fine weight", rule, title)
+
+
+def test_dq_derived_names_the_bullion_form_default_for_a_reader(db: Session) -> None:
+    _assert_rule_title(
+        db,
+        "bullion_form_id",
+        "Bullion form",
+        BULLION_FORM_DEFAULT,
+        "Round when the form is unknown",
+    )
+
+
+def _assert_rule_title(
+    db: Session, column: str, field: str, rule: str, title: str
+) -> None:
+    """One field marked as this rule's is reported under both reader's names."""
     item = build_bare_item(db)
-    _mark_derived(db, item, "fine_weight_ozt", rule)
+    _mark_derived(db, item, column, rule)
 
     result = DQ_DERIVED.run(db, DqDerivedParams())
 
-    row = next(r for r in result.rows if r["field"] == "Fine weight")
+    row = next(r for r in result.rows if r["field"] == field)
     assert row["rule"] == title
 
 

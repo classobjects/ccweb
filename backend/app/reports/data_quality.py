@@ -34,6 +34,7 @@ from sqlalchemy import RowMapping, and_, case, func, select, text
 from sqlalchemy.orm import Session, selectinload
 
 from ..field_sources import (
+    BULLION_FORM_DEFAULT,
     COMPOSITION,
     HELD,
     NOTE_ISSUE,
@@ -440,6 +441,7 @@ _FIELD_TITLES: dict[str, str] = {
     "fed_district_id": "Federal Reserve district",
     "composition_id": "Composition",
     "metal_id": "Metal",
+    "bullion_form_id": "Bullion form",
     "fineness": "Fineness",
     "gross_weight_ozt": "Gross weight",
     "fine_weight_ozt": "Fine weight",
@@ -457,6 +459,7 @@ _RULE_TITLES: dict[str, str] = {
     SERIES_CLASSIFY: "Series classification",
     SERIES_BACKFILL: "Series backfill",
     SUGGESTION: "Suggestion",
+    BULLION_FORM_DEFAULT: "Round when the form is unknown",
     RATING: "Rating",
     WEIGHT: "Gross weight times fineness",
     WEIGHT_TEXT: "Read from the item's text",

@@ -73,6 +73,8 @@ _CODE_KEYED_VALUES = frozenset(
     {
         ("vendor_kind", "unknown"),
         ("storage_form", "single"),
+        # A bullion item entered with no form is given this one by its code.
+        ("bullion_form", "round"),
         ("currency", "USD"),
         ("country", "US"),
         ("note_type", "frn"),

@@ -600,6 +600,52 @@ def test_a_coin_entered_gets_its_design_series_from_the_facts(
     assert res.json()["series"] == "winged_liberty_head_dime"
 
 
+def test_a_bullion_item_entered_with_no_form_is_a_round(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    """Unknown shape is a round, marked as the rule's so a person's choice wins."""
+    from app.field_sources import BULLION_FORM_DEFAULT, derived_fields
+
+    order = _purchase_order(db)
+    res = client.post(
+        "/api/inventory",
+        json=_coin_payload(order.id, item_kind="bullion", source_title="1 oz silver"),
+        headers=admin_headers,
+    )
+    assert res.status_code == 201, res.text
+    assert res.json()["bullion_form"] == "round"
+    assert (
+        derived_fields(db, res.json()["id"])["bullion_form_id"] == BULLION_FORM_DEFAULT
+    )
+
+
+def test_a_bullion_form_entered_is_kept_as_the_person_s(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    from app.field_sources import derived_fields
+
+    order = _purchase_order(db)
+    res = client.post(
+        "/api/inventory",
+        json=_coin_payload(order.id, item_kind="bullion", bullion_form="silver_eagle"),
+        headers=admin_headers,
+    )
+    assert res.status_code == 201, res.text
+    assert res.json()["bullion_form"] == "silver_eagle"
+    assert "bullion_form_id" not in derived_fields(db, res.json()["id"])
+
+
+def test_a_coin_is_never_given_a_bullion_form(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    order = _purchase_order(db)
+    res = client.post(
+        "/api/inventory", json=_coin_payload(order.id), headers=admin_headers
+    )
+    assert res.status_code == 201, res.text
+    assert res.json()["bullion_form"] is None
+
+
 def test_a_suggested_series_is_accepted_and_recorded_as_one(
     client: TestClient, admin_headers: dict[str, str], db: Session
 ) -> None:
