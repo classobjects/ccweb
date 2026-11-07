@@ -240,8 +240,13 @@ export const FIELD_HELP = {
   series: {
     title: 'Series',
     text:
-      'The design it belongs to, as collectors name it: Morgan Dollar, Walking ' +
-      'Liberty Half Dollar, or for a note Funnyback.',
+      'The one design this piece was struck or printed in, as collectors name it: ' +
+      'Morgan Dollar, Walking Liberty Half Dollar, or for a note Funnyback. Each ' +
+      'design is distinct, and an item has at most one. Price guides and ' +
+      'population reports are organised by it, and for a coin it can decide the ' +
+      'metal and weights. On a note it is not the series year printed on the ' +
+      'face: in "SERIES 1935 A", 1935 is the series year. A private round or bar ' +
+      'has no design series; say what it is with Bullion form.',
   },
   variety: {
     title: 'Variety',
