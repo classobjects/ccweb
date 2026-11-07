@@ -2,11 +2,17 @@
 // Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
 // SPDX-License-Identifier: Apache-2.0
 import { act, renderHook, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('./api', async (importOriginal) => ({
   ApiError: (await importOriginal()).ApiError,
-  api: { login: vi.fn(), me: vi.fn(), register: vi.fn(), logout: vi.fn() },
+  api: {
+    login: vi.fn(),
+    me: vi.fn(),
+    register: vi.fn(),
+    logout: vi.fn(),
+    updateMe: vi.fn(),
+  },
   loadTokens: vi.fn(),
   saveTokens: vi.fn(),
   signOut: vi.fn(),
@@ -167,5 +173,57 @@ describe('AuthProvider', () => {
 
     expect(signOut).toHaveBeenCalledTimes(1)
     expect(auth.current.user).toBeNull()
+  })
+
+  describe("the account's light/dark choice", () => {
+    afterEach(() => {
+      document.documentElement.removeAttribute('data-theme')
+      window.localStorage.clear()
+    })
+
+    it('shows the page in the theme the account chose, on sign-in', async () => {
+      loadTokens.mockReturnValue({ access_token: 'a' })
+      api.me.mockResolvedValue({ ...BUYER, theme: 'dark' })
+      await mount()
+      expect(document.documentElement.getAttribute('data-theme')).toBe('dark')
+      expect(window.localStorage.getItem('ccwebdb.theme')).toBe('dark')
+    })
+
+    it('saves a choice to the account, and the page shows it at once', async () => {
+      loadTokens.mockReturnValue({ access_token: 'a' })
+      api.me.mockResolvedValue({ ...BUYER, theme: 'auto' })
+      api.updateMe.mockResolvedValue({ ...BUYER, theme: 'light' })
+      const auth = await mount()
+
+      await act(() => auth.current.setTheme('light'))
+
+      expect(api.updateMe).toHaveBeenCalledWith({ theme: 'light' })
+      expect(document.documentElement.getAttribute('data-theme')).toBe('light')
+      expect(auth.current.user.theme).toBe('light')
+      expect(auth.current.theme).toBe('light')
+    })
+
+    it('keeps a visitor’s choice in the browser only', async () => {
+      loadTokens.mockReturnValue(null)
+      const auth = await mount()
+
+      await act(() => auth.current.setTheme('dark'))
+
+      expect(api.updateMe).not.toHaveBeenCalled()
+      expect(document.documentElement.getAttribute('data-theme')).toBe('dark')
+      expect(auth.current.theme).toBe('dark')
+    })
+
+    it('keeps the page as chosen when the account cannot be reached', async () => {
+      loadTokens.mockReturnValue({ access_token: 'a' })
+      api.me.mockResolvedValue({ ...BUYER, theme: 'auto' })
+      api.updateMe.mockRejectedValue(new TypeError('Failed to fetch'))
+      const auth = await mount()
+
+      await act(() => auth.current.setTheme('dark'))
+
+      expect(document.documentElement.getAttribute('data-theme')).toBe('dark')
+      expect(auth.current.theme).toBe('dark')
+    })
   })
 })

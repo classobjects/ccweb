@@ -321,6 +321,62 @@ def test_me_requires_a_token(client: TestClient) -> None:
     assert client.get("/api/auth/me").status_code == 401
 
 
+# ---------------------------------------------------------------------------
+# The account's light/dark choice (docs/specs/theme-preference-design.md)
+# ---------------------------------------------------------------------------
+
+
+def test_a_new_account_follows_its_device(
+    client: TestClient, customer_headers: dict[str, str]
+) -> None:
+    """Nobody's page changes until they choose: the default is `auto`."""
+    assert (
+        client.get("/api/auth/me", headers=customer_headers).json()["theme"] == "auto"
+    )
+
+
+@pytest.mark.parametrize("theme", ["dark", "light", "auto"])
+def test_an_account_saves_its_own_theme(
+    client: TestClient, customer_headers: dict[str, str], theme: str
+) -> None:
+    """Any signed-in role sets its own choice, and it is there on the next read."""
+    response = client.patch(
+        "/api/auth/me", json={"theme": theme}, headers=customer_headers
+    )
+    assert response.status_code == 200
+    assert response.json()["theme"] == theme
+    assert client.get("/api/auth/me", headers=customer_headers).json()["theme"] == theme
+
+
+def test_a_theme_that_is_not_offered_is_refused(
+    client: TestClient, customer_headers: dict[str, str]
+) -> None:
+    """Only the three settings the page knows how to show."""
+    response = client.patch(
+        "/api/auth/me", json={"theme": "purple"}, headers=customer_headers
+    )
+    assert response.status_code == 422
+    assert (
+        client.get("/api/auth/me", headers=customer_headers).json()["theme"] == "auto"
+    )
+
+
+def test_the_preference_change_touches_nothing_else(
+    client: TestClient, customer_headers: dict[str, str]
+) -> None:
+    """The body holds the theme only: a role or an email is refused, not ignored."""
+    for body in ({"role": "manager"}, {"email": "x@example.com"}, {}):
+        response = client.patch("/api/auth/me", json=body, headers=customer_headers)
+        assert response.status_code == 422, body
+    me = client.get("/api/auth/me", headers=customer_headers).json()
+    assert me["role"] == "customer"
+    assert me["email"] == "customer@example.com"
+
+
+def test_saving_a_theme_needs_a_sign_in(client: TestClient) -> None:
+    assert client.patch("/api/auth/me", json={"theme": "dark"}).status_code == 401
+
+
 def test_me_rejects_garbage_token(client: TestClient) -> None:
     response = client.get("/api/auth/me", headers={"Authorization": "Bearer not.a.jwt"})
     assert response.status_code == 401

@@ -7,6 +7,7 @@ import { api } from '../shared/api'
 import { useAuth } from '../shared/auth-context'
 import RequireSignIn from '../shared/RequireSignIn'
 import SiteLogo from '../shared/SiteLogo'
+import ThemeSwitch from '../shared/ThemeSwitch'
 import { SHOP_NAME, SHOP_OWNER } from '../shared/site'
 import { useRequest } from '../shared/useRequest'
 import { useCart } from './cart-context'
@@ -124,6 +125,7 @@ export default function StoreApp() {
         </nav>
 
         <div className="account">
+          <ThemeSwitch />
           {user ? (
             <>
               <span className="muted">{user.email}</span>

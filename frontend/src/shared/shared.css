@@ -23,8 +23,27 @@
   color-scheme: light;
 }
 
+/* The dark set: chosen outright (`data-theme="dark"`), or asked for by the
+   device while the page has not been set to light. `auto` is no attribute,
+   so the device decides (src/shared/theme.js). The two blocks are one set
+   of values: change both together. */
+:root[data-theme='dark'] {
+  --bg: #17161a;
+  --surface: #201f24;
+  --border: #35333a;
+  --text: #ece9e4;
+  --muted: #a29c92;
+  --accent: #c8a464;
+  --accent-text: #17161a;
+  --danger: #e08585;
+  --warn: #d9b77a;
+  --info: #8cb8e0;
+  --ok: #8fcf8f;
+  color-scheme: dark;
+}
+
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme='light']) {
     --bg: #17161a;
     --surface: #201f24;
     --border: #35333a;
@@ -113,6 +132,24 @@ body {
 
 .account {
   margin-left: auto;
+}
+
+/* The light/dark choice beside the account name: a small dropdown, its
+   word muted like the email next to it. */
+.theme-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.theme-switch select {
+  font: inherit;
+  padding: 2px 4px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
 }
 
 a {

@@ -18,7 +18,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from .base import Base, enum_column, utcnow
 
-__all__ = ["User", "UserRole"]
+__all__ = ["Theme", "User", "UserRole"]
 
 
 class UserRole(enum.StrEnum):
@@ -26,6 +26,17 @@ class UserRole(enum.StrEnum):
 
     manager = "manager"
     customer = "customer"
+
+
+class Theme(enum.StrEnum):
+    """The colors an account's pages show (docs/specs/theme-preference-design.md).
+
+    `auto` follows the device's own light or dark setting.
+    """
+
+    auto = "auto"
+    light = "light"
+    dark = "dark"
 
 
 class User(Base):
@@ -45,6 +56,14 @@ class User(Base):
         nullable=False,
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    #: Light, dark, or the device's own setting -- the person's choice,
+    #: following them to every device they sign in on.
+    theme: Mapped[Theme] = mapped_column(
+        enum_column(Theme, "user_theme"),
+        default=Theme.auto,
+        server_default=Theme.auto.value,
+        nullable=False,
+    )
     #: Bumped whenever the password changes, and carried inside every token.
     #:
     #: Tokens are stateless JWTs with no server-side store, so without this a
