@@ -6,6 +6,7 @@ import { Link, NavLink, Route, Routes } from 'react-router-dom'
 import { api } from '../shared/api'
 import { useAuth } from '../shared/auth-context'
 import RequireSignIn from '../shared/RequireSignIn'
+import SiteLogo from '../shared/SiteLogo'
 import { SHOP_NAME, SHOP_OWNER } from '../shared/site'
 import { useRequest } from '../shared/useRequest'
 import { useCart } from './cart-context'
@@ -17,12 +18,15 @@ import Login from './pages/Login'
 import Orders from './pages/Orders'
 import Register from './pages/Register'
 
-/** The shop's name, which links home on every page, the closed one too. */
+/** The shop's logo and name, which link home on every page, the closed one too. */
 function Brand() {
   return (
     <Link to="/" className="brand">
-      {SHOP_NAME}
-      <span className="brand-sub">Coins &amp; Currency</span>
+      <SiteLogo />
+      <span className="brand-text">
+        {SHOP_NAME}
+        <span className="brand-sub">Coins &amp; Currency</span>
+      </span>
     </Link>
   )
 }

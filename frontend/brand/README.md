@@ -3,11 +3,15 @@
 The sources of the pictures in `frontend/public`. The build does not copy
 this folder; it copies `public`.
 
-| Source               | Picture                                                                                           | Size        |
-| -------------------- | ------------------------------------------------------------------------------------------------- | ----------- |
-| `avatar.html`        | `public/brand/classobjects-avatar.png`, the square picture (GitHub profile, avatars)              | 1000 × 1000 |
-| `banner.html`        | `public/brand/classobjects-social.png`, the banner (GitHub social preview)                        | 1280 × 640  |
-| `public/favicon.svg` | itself, and `public/favicon-32.png` and `public/apple-touch-icon.png` (180 × 180, square corners) |             |
+| Source               | Picture                                                                                           | Size          |
+| -------------------- | ------------------------------------------------------------------------------------------------- | ------------- |
+| `avatar.html`        | `public/brand/classobjects-avatar.png`, the square picture (GitHub profile, avatars)              | 1000 × 1000   |
+| `banner.html`        | `public/brand/classobjects-social.png`, the banner (GitHub social preview)                        | 1280 × 640    |
+| `public/favicon.svg` | itself, and `public/favicon-32.png` and `public/apple-touch-icon.png` (180 × 180, square corners) |               |
+| `public/favicon.svg` | `public/brand/logo.svg`, a copy: the logo left of the site's name in every header                 | 36 × 36 shown |
+
+`logo.svg` has the same name on every installation, so a site shows its own
+logo by replacing that file; nothing in the code names ClassObjects.
 
 `banner.html` is `avatar.html`'s scene beside the name and tagline: the
 same notes, coins and tilt. A change to the scene is made in both.

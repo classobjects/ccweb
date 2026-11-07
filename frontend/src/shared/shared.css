@@ -70,11 +70,24 @@ body {
   margin-bottom: 28px;
 }
 
+/* The logo, then the name over its sub-line. */
 .brand {
   font-weight: 700;
   font-size: 20px;
   text-decoration: none;
   color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.brand-logo {
+  flex: none;
+  width: 36px;
+  height: 36px;
+}
+
+.brand-text {
   display: flex;
   flex-direction: column;
   line-height: 1.15;
