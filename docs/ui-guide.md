@@ -293,7 +293,7 @@ are still ordered, **Receive all N still ordered** under the table receives the
 whole parcel here, in the same dialog as Receiving's. **Receive these** goes to
 Receiving for this purchase, to receive line by line.
 
-![An open purchase with five items and the New item form](images/ui-guide/purchase_open.png)
+![An open purchase with three items still ordered, Receive all under them, and the New item form](images/ui-guide/purchase_open.png)
 
 The fields of a purchase and of its New item form:
 
