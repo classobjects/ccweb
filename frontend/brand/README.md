@@ -9,6 +9,18 @@ this folder; it copies `public`.
 | `banner.html`        | `public/brand/classobjects-social.png`, the banner (GitHub social preview)                        | 1280 × 640    |
 | `public/favicon.svg` | itself, and `public/favicon-32.png` and `public/apple-touch-icon.png` (180 × 180, square corners) |               |
 | `public/favicon.svg` | `public/brand/logo.svg`, a copy: the logo left of the site's name in every header                 | 36 × 36 shown |
+| `public/favicon.svg` | `public/brand/bimi.svg`, the logo mail apps show beside the domain's mail (BIMI)                  | square        |
+
+`bimi.svg` is the favicon in the SVG Tiny Portable/Secure profile BIMI
+accepts: `version="1.2" baseProfile="tiny-ps"`, a `<title>`, square
+corners (a mail app crops to its own circle or rounded square), gradient
+positions as fractions, and `stroke-opacity` where the favicon has
+`opacity`, which the profile lacks. The domain's DNS names it in a TXT
+record at `default._bimi`:
+`v=BIMI1; l=https://classobjects.com/brand/bimi.svg; a=;` -- `a=` stays
+empty until a mark certificate (VMC or CMC) is bought, without which Gmail
+and Apple Mail do not show it. BIMI needs DMARC at `p=quarantine` or
+`p=reject`.
 
 `logo.svg` has the same name on every installation, so a site shows its own
 logo by replacing that file; nothing in the code names ClassObjects.
