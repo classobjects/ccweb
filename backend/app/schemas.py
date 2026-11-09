@@ -2697,6 +2697,11 @@ class PurchaseOrderLineOut(BaseModel):
     #: unknown.
     item_kind: str
     item_cost: Decimal
+    #: What the purchase's total row adds up, with `item_cost`; the same
+    #: `total_cost` Order lookup sums for the purchase's Cost.
+    shipping_cost: Decimal
+    sales_tax: Decimal
+    total_cost: Decimal
     #: An `item_status` code: ordered, received, canceled, returned, missing,
     #: unknown.
     status: str

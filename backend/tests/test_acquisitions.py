@@ -129,6 +129,9 @@ def test_a_line_carries_its_title_and_kind(
     line = res.json()["lines"][0]
     assert line["source_title"] == "Series 1928 $1 Silver Certificate"
     assert line["item_kind"] == "currency"
+    # What the purchase's total row adds up.
+    for money in ("item_cost", "shipping_cost", "sales_tax", "total_cost"):
+        assert money in line, money
 
 
 def test_an_unknown_order_is_a_404(

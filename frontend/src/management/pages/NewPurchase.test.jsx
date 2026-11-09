@@ -751,6 +751,49 @@ describe('NewPurchase: items on the purchase', () => {
     expect(within(row).getByText('ordered')).toBeInTheDocument()
   })
 
+  it('totals the items: cost, shipping, tax and what was paid', async () => {
+    const line = (id, item, shipping, tax, total) => ({
+      id,
+      item_code: `CC-00000${id}`,
+      source_title: 'Morgan dollar',
+      item_kind: 'coin',
+      item_cost: item,
+      shipping_cost: shipping,
+      sales_tax: tax,
+      total_cost: total,
+      status: 'ordered',
+    })
+    api.createPurchaseOrder.mockResolvedValue({
+      ...FRESH_PURCHASE,
+      lines: [
+        line(1, '25.10', '4.00', '1.76', '30.86'),
+        line(2, '1000.20', '0.00', '70.01', '1070.21'),
+      ],
+    })
+    const user = userEvent.setup()
+    renderWithProviders(<NewPurchase />)
+    const vendorSelect = await screen.findByRole('combobox', { name: 'Vendor' })
+    await user.selectOptions(vendorSelect, '3')
+    await user.click(screen.getByRole('button', { name: /create purchase/i }))
+
+    const total = (await screen.findByText(/2 items:/)).closest('td')
+    expect(total).toHaveTextContent(
+      '2 items: $1,025.30 + shipping $4.00 + tax $71.77 = $1,101.07',
+    )
+  })
+
+  it('shows no total for a purchase with no items yet', async () => {
+    api.createPurchaseOrder.mockResolvedValue({ ...FRESH_PURCHASE, lines: [] })
+    const user = userEvent.setup()
+    renderWithProviders(<NewPurchase />)
+    const vendorSelect = await screen.findByRole('combobox', { name: 'Vendor' })
+    await user.selectOptions(vendorSelect, '3')
+    await user.click(screen.getByRole('button', { name: /create purchase/i }))
+
+    await screen.findByText('No items entered yet.')
+    expect(screen.queryByText(/items?:/)).not.toBeInTheDocument()
+  })
+
   it('offers a Receive these link built from the router, not a hard-coded shop path', async () => {
     // The console mounts at basename "/management" (management/main.jsx); a `<Link>`
     // folds that into the rendered href, while a hard-coded

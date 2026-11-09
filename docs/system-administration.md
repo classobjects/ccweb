@@ -882,6 +882,10 @@ holding one item (`docs/specs/entry-panels-design.md`).
   defaults;
   the exact list is in
   [specs/entry-panels-design.md](specs/entry-panels-design.md) (*New item*).
+- **The total row** under the items table adds up the lines' item cost,
+  shipping and sales tax, and their `total_cost` -- what was paid, the same
+  figure Order lookup shows as the purchase's Cost (`GET
+  /api/purchase-orders/{id}` returns each line's four amounts).
 - **Receive all N still ordered**, under the items table when two or more
   lines are still `ordered`, receives them in place: the same dialog and
   all-or-nothing request as Receiving's (below), after which the purchase is

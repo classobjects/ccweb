@@ -286,14 +286,16 @@ and pick it from the list:
 
 ![Choosing an existing purchase](images/ui-guide/purchase_existing.png)
 
-An open purchase lists its items and takes more under **New item**. A kind and a
+An open purchase lists its items, with a total row under them -- item cost,
+shipping, tax and what was paid in all, the figure Order lookup shows as its
+Cost -- and takes more under **New item**. A kind and a
 title make the item and open it in the editor. **Add another like** starts the
 next one from what items on the same order usually share. When two or more items
 are still ordered, **Receive all N still ordered** under the table receives the
 whole parcel here, in the same dialog as Receiving's. **Receive these** goes to
 Receiving for this purchase, to receive line by line.
 
-![An open purchase with three items still ordered, Receive all under them, and the New item form](images/ui-guide/purchase_open.png)
+![An open purchase with three items still ordered, their total, Receive all under them, and the New item form](images/ui-guide/purchase_open.png)
 
 The fields of a purchase and of its New item form:
 

@@ -112,6 +112,13 @@ export const FIELD_HELP = {
       'Whether the tax was charged on shipping as well as on the price. States ' +
       'differ; "As configured" uses the default setting.',
   },
+  purchase_total: {
+    title: 'Total',
+    text:
+      "What the purchase's items cost, their shipping and sales tax, and what " +
+      'was paid in all: the same figure Order lookup shows as its Cost. A ' +
+      'deleted item is not counted.',
+  },
   // -- an item --------------------------------------------------------------
   item_kind: {
     title: 'Kind',

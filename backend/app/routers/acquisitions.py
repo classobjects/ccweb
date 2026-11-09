@@ -382,6 +382,9 @@ def get_purchase_order(
                 description=item.description,
                 item_kind=item.item_kind.code,
                 item_cost=item.item_cost,
+                shipping_cost=item.shipping_cost,
+                sales_tax=item.sales_tax,
+                total_cost=item.total_cost,
                 status=item.status.code,
             )
             for item in items

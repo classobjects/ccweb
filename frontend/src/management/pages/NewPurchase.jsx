@@ -14,7 +14,8 @@ import ReceiptPanel from './receiving/ReceiptPanel'
 import HelpScope from '../HelpScope'
 import { purchaseNumber } from '../purchase-number'
 import { matchesFilter, sortPurchases } from '../purchase-list'
-import { date } from '../../shared/format'
+import { centsOrZero, fromCents } from '../../shared/cents'
+import { date, money } from '../../shared/format'
 import { orNull } from '../../shared/text'
 import { SaveButton, SaveShortcut } from '../SaveButton'
 import SortHeaders from '../SortHeaders'
@@ -276,6 +277,34 @@ function PurchaseDetails({ purchase, onSaved }) {
  * opening in the item editor, and the form that adds the next. "Start
  * another purchase" clears all of it and returns to the choice.
  */
+/** Each line's `field`, in cents, added up. */
+function sumOf(lines, field) {
+  return lines.reduce((sum, line) => sum + centsOrZero(line[field]), 0)
+}
+
+/**
+ * The purchase's total row: what its items cost, their shipping and tax,
+ * and what was paid in all -- the same figure Order lookup shows as the
+ * purchase's Cost. Summed in cents, so no float rounding creeps in.
+ */
+function PurchaseTotal({ lines }) {
+  const items = sumOf(lines, 'item_cost')
+  const shipping = sumOf(lines, 'shipping_cost')
+  const tax = sumOf(lines, 'sales_tax')
+  const total = sumOf(lines, 'total_cost')
+  return (
+    <tfoot>
+      <tr className="purchase-total" data-help="purchase_total">
+        <td colSpan={5} data-label="Total">
+          {lines.length === 1 ? '1 item' : `${lines.length} items`}:{' '}
+          {money(fromCents(items))} + shipping {money(fromCents(shipping))} + tax{' '}
+          {money(fromCents(tax))} = <strong>{money(fromCents(total))}</strong>
+        </td>
+      </tr>
+    </tfoot>
+  )
+}
+
 export default function NewPurchase() {
   const rateId = useId()
   const [mode, setMode] = useState('new')
@@ -646,6 +675,9 @@ export default function NewPurchase() {
                   </tr>
                 )}
               </tbody>
+              {(purchase.lines ?? []).length > 0 && (
+                <PurchaseTotal lines={purchase.lines} />
+              )}
             </table>
 
             {/* As on Receiving: the parcel that arrived whole. A split
