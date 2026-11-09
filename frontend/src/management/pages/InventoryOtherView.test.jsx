@@ -148,7 +148,7 @@ describe('a search that finds nothing here but something on the other view', () 
 
   it('stays when the other view does not know one of the filters', async () => {
     searchFinds({ coins: 0, currency: 3 }, { refuses: ['currency'] })
-    renderBothPages('/inventory/coins?mint_mark=S')
+    renderBothPages('/inventory/coins?mint=S')
 
     await waitFor(() => expect(countsAsked('currency')).toHaveLength(1))
     await screen.findByText('Nothing matches those filters.')

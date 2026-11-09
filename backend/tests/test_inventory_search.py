@@ -176,6 +176,45 @@ def test_a_coin_row_names_its_mint(
     assert "mint" in body["sortable"]
 
 
+def test_the_mint_filter_tells_mints_sharing_a_mark_apart(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    """Each mint is offered and found by its code, not its mark.
+
+    Perth strikes a P as Philadelphia does, and a refiner strikes none: by
+    mark the two P mints were one choice, and the refiner's blank value was
+    the same as Any.
+    """
+    perth = Mint(
+        code="perth_test", label="Perth", mark="P", source=ProvenanceSource.manual
+    )
+    refiner = Mint(
+        code="valcambi_test", label="Valcambi", mark="", source=ProvenanceSource.manual
+    )
+    db.add_all([perth, refiner])
+    db.flush()
+    kangaroo, eagle, bar = coin(db), coin(db), coin(db)
+    db.add_all(
+        [
+            CoinDetail(inventory_item_id=kangaroo.id, mint_id=perth.id),
+            CoinDetail(inventory_item_id=eagle.id, mint_id=code_id(db, Mint, "P")),
+            CoinDetail(inventory_item_id=bar.id, mint_id=refiner.id),
+        ]
+    )
+    db.commit()
+
+    body = search(client, "coins", admin_headers, facets=True).json()
+    offered = {f["value"]: f["label"] for f in body["facets"]["mint"]}
+    assert offered == {
+        "perth_test": "Perth",
+        "P": "Philadelphia",
+        "valcambi_test": "Valcambi",
+    }
+    for value, item in (("perth_test", kangaroo), ("P", eagle), ("valcambi_test", bar)):
+        found = search(client, "coins", admin_headers, mint=value).json()["rows"]
+        assert [r["id"] for r in found] == [item.id], value
+
+
 def test_a_coin_row_carries_its_purchase_order(
     client: TestClient, admin_headers: dict[str, str], db: Session
 ) -> None:
@@ -858,7 +897,7 @@ _SHOWN = {
         "item_code",
         "denomination_label",
         "year_start",
-        "mint_mark",
+        "mint",
         "series_label",
         "item_kind",
         "grade",

@@ -107,7 +107,7 @@ All admin-only.
 
 The search filters Receiving uses: `order_number` (partial, case-insensitive
 `ILIKE`, for a number typed off a packing slip), `status`, `denomination`;
-for coins `year_min`/`year_max` and `mint` (the mint mark); for currency
+for coins `year_min`/`year_max` and `mint` (the mint's code, which for a US mint is its mark); for currency
 `serial_number` (partial) and `series_year`. Rows carry `order_number`,
 `vendor` and `purchase_order_id`.
 

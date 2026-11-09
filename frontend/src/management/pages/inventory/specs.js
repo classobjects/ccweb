@@ -142,7 +142,7 @@ export const COIN_VIEW = {
     ['Kind', 'kind', 'item_kind', 'k'],
     ['Metal', 'metal', 'metal', 'l'],
     ['Strike type', 'strike_type', 'strike_type', 'p'],
-    ['Mint', 'mint', 'mint_mark', 't'],
+    ['Mint', 'mint', 'mint', 't'],
     ['Country', 'country', 'country', 'u'],
     // A, not U as on the currency view: Country can only take U here.
     ['Status', 'status', 'status', 'a'],

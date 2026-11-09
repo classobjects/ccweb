@@ -124,7 +124,7 @@ class Facet:
     item -- a coin's mint is on `coin_detail`, a note's district on
     `currency_detail`. `label_column` must name the column the matching
     *filter* compares against, or the facet offers values the filter rejects:
-    mint filters on `mint.mark`, not `mint.code`.
+    a denomination filters on `denomination.code`, not its label.
 
     `table=None` means the column already holds the value and needs no lookup,
     which is how a plain integer like `series_year` is faceted.
@@ -476,7 +476,10 @@ COIN_VIEW = ViewSpec(
         **_SHARED_FILTERS,
         "kind": Filt(_C_KIND_CODE, join=(_J_KIND,)),
         "metal": Filt("mt.code", join=(_J_METAL,)),
-        "mint": Filt("m.mark", join=(_J_COIN_DETAIL, _J_MINT)),
+        # The mint's code, not its mark: Perth and Philadelphia both strike
+        # a P, and a refiner such as Valcambi strikes none. A US mint's code
+        # is its mark (P, D, S, W), so `mint=S` still means San Francisco.
+        "mint": Filt("m.code", join=(_J_COIN_DETAIL, _J_MINT)),
         "bullion_form": Filt("bf.code", join=(_J_BULLION,)),
         "set_form": Filt("sf.code", join=(_J_SET,)),
         "serial_number": Filt("cd.serial_number", "ilike", (_J_COIN_DETAIL,)),
@@ -502,12 +505,8 @@ COIN_VIEW = ViewSpec(
         "item_kind": Facet("item_kind_id", "item_kind", filter="kind"),
         "metal": Facet("metal_id", "metal"),
         "bullion_form": Facet("bullion_form_id", "bullion_form"),
-        # Resolves to `mark` because the matching filter compares against
-        # `m.mark`. Offering `mint.code` here would list values the filter
-        # then finds no item by.
-        "mint_mark": Facet(
-            "mint_id", "mint", (_J_COIN_DETAIL,), "cd", "mark", filter="mint"
-        ),
+        # Each mint by its code, read by its name, as the filter compares.
+        "mint": Facet("mint_id", "mint", (_J_COIN_DETAIL,), "cd"),
     },
     issues=COIN_ISSUES,
 )
