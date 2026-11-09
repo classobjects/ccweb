@@ -369,8 +369,9 @@ _SHARED_FILTERS: dict[str, Filt] = {
     # The seller's listing id -- eBay's item number (app.ebay_orders).
     "sellers_item_id": Filt("i.sellers_item_id", "ilike"),
     # Partial and case-insensitive, like item code: Receiving finds a parcel
-    # by an order number typed in part, read off a packing slip.
-    "order_number": Filt("po.order_number", "ilike", (_J_PURCHASE_ORDER,)),
+    # by an order number typed in part, read off a packing slip -- with or
+    # without its dashes, as the search box finds it (`_bare_clause`).
+    "order_number": Filt("po.order_number", "bare", (_J_PURCHASE_ORDER,)),
     # Who a parcel came from, typed in part in the same way: the vendor
     # (ebay.com, an auction house) or the seller on that marketplace.
     "vendor": Filt("v.name", "ilike", (_J_PURCHASE_ORDER, _J_VENDOR)),
@@ -734,6 +735,7 @@ def _names(
 #: in the operator, so the shapes live here rather than in a branch each.
 _FILTER_TEMPLATES = {
     "ilike": "{sql} ILIKE :{placeholder}",
+    "bare": "{sql} ILIKE :{placeholder}",
     "gte": "{sql} >= :{placeholder}",
     "lte": "{sql} <= :{placeholder}",
 }
@@ -959,8 +961,30 @@ def _value_clause(key: str, value: object, f: Filt, bound: dict[str, Any]) -> st
             value = date.fromisoformat(str(value).strip())
         except ValueError:
             raise ValueError(f"{key}={value!r} is not a date, YYYY-MM-DD.") from None
-    bound[placeholder] = _contains(value) if f.op == "ilike" else value
-    return template.format(sql=f.sql, placeholder=placeholder)
+    bound[placeholder] = _contains(value) if f.op in ("ilike", "bare") else value
+    clause = template.format(sql=f.sql, placeholder=placeholder)
+    if f.op == "bare":
+        return _bare_clause(clause, f.sql, placeholder, value, bound)
+    return clause
+
+
+def _bare_clause(
+    clause: str, sql: str, placeholder: str, value: object, bound: dict[str, Any]
+) -> str:
+    """`clause`, or the column and the value both reduced to letters and digits.
+
+    An order number typed without its dashes, or with spaces for them,
+    still finds it: 161396001201 finds 16-13960-01201. A value with no
+    letter or digit has nothing to compare, and is matched as typed only.
+    """
+    bare = re.sub(r"[^0-9A-Za-z]", "", str(value))
+    if not bare:
+        return clause
+    bound[f"{placeholder}_bare"] = _contains(bare)
+    return (
+        f"({clause} OR regexp_replace({sql}, '[^0-9A-Za-z]', '', 'g')"
+        f" ILIKE :{placeholder}_bare)"
+    )
 
 
 #: The fewest letters and digits a query needs before it is also matched

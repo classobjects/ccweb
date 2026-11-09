@@ -718,7 +718,8 @@ when it turns up.
   from the wrong row.
 
 **In the console** (`/management/receiving`) there is one search form: part of an
-order number (matched anywhere in it, any case) and/or what the item is --
+order number (matched anywhere in it, any case, with or without its dashes)
+and/or what the item is --
 kind, denomination, year, mint, serial, series year. By default it finds only
 what has not arrived (`ordered` or `missing`); **Any status** shows a whole
 order. Results come 200 at a time per kind and status; anything beyond that

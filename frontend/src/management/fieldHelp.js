@@ -417,7 +417,8 @@ export const FIELD_HELP = {
     text:
       "The seller's order or invoice number, from the receipt, email or packing " +
       'slip. When searching, part of it is enough: "4452" finds order ' +
-      '114-4452-X, upper or lower case alike.',
+      '114-4452-X, upper or lower case alike, and the dashes may be left out: ' +
+      '"1144452X" finds it too.',
   },
   status: {
     title: 'Status',

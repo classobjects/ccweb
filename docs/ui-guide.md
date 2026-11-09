@@ -96,7 +96,7 @@ The search and filters, as the help band explains each one:
 | **Serial number** |  | All or part of a serial, anywhere in it. _ stands for exactly one character, so B0808450_ finds a run of consecutive notes; % for any run. On coins it is a bar's, round's or Goldback's own serial. |
 | **Item code** |  | All or part of an item code: CC-006140, or 6140. |
 | **Seller's item id** |  | All or part of the seller's id for the listing an item was bought from -- eBay's item number. Every piece split from one listing keeps it, so one number can find several items. |
-| **Order number** |  | The seller's order or invoice number, from the receipt, email or packing slip. When searching, part of it is enough: "4452" finds order 114-4452-X, upper or lower case alike. |
+| **Order number** |  | The seller's order or invoice number, from the receipt, email or packing slip. When searching, part of it is enough: "4452" finds order 114-4452-X, upper or lower case alike, and the dashes may be left out: "1144452X" finds it too. |
 | **Grade** |  | A grade or a range of grades: 65 is exactly 65, 64+ exactly 64+, and 55% both 55 and 55+. PR69 names the strike too. BU is 60-62, BU+ 63-64, BU++ 65-66 and BU% all three. Coins and notes each use their own scale. |
 | **Year from** |  | Only items dated this year or later. Leave blank for no lower limit. |
 | **Year to** |  | Only items dated this year or earlier. Leave blank for no upper limit. |

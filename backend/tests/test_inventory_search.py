@@ -483,6 +483,22 @@ def test_an_order_number_is_found_without_its_dashes(
         assert {r["id"] for r in found["rows"]} == {wanted.id}, typed
 
 
+def test_the_order_number_box_finds_a_number_typed_without_its_dashes(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    """The Order number filter, like the search box, ignores separators."""
+    order = build_purchase_order(
+        db, vendor_name="ebay.com", order_number="16-13960-01201"
+    )
+    other = build_purchase_order(db, vendor_name="hibid.com", order_number="16-1")
+    wanted = coin(db, purchase_order_id=order.id)
+    coin(db, purchase_order_id=other.id)
+
+    for typed in ("161396001201", "16 13960 01201", "1396001", "16-13960-01201"):
+        found = search(client, "coins", admin_headers, order_number=typed).json()
+        assert {r["id"] for r in found["rows"]} == {wanted.id}, typed
+
+
 def test_an_order_number_search_still_honours_the_other_filters(
     client: TestClient, admin_headers: dict[str, str], db: Session
 ) -> None:
