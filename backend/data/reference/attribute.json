@@ -263,7 +263,7 @@
     {
       "code": "gift",
       "label": "Gift",
-      "applies_to": "currency",
+      "applies_to": "any",
       "attribute_group": "variety",
       "sort_order": 500
     },

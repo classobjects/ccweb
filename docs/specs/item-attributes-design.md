@@ -71,7 +71,7 @@ vocabulary is seeded from `backend/data/reference/attribute.json`:
 | Group | Attributes | For |
 |---|---|---|
 | `serial` | Star, Fancy Serial, Consecutive, Low / High Serial, Solid, Radar, Repeater, Binary, Trinary, Birthday, Ladder, Double Quad | notes |
-| `variety` | Error, Web Press, Specimen, Proof; No Motto, Motto, Mule (any); Wide / Narrow, Type 1 / Type 2, R / S Experimental; Gift | mostly notes |
+| `variety` | Error, Web Press, Specimen, Proof; No Motto, Motto, Mule, Gift (any); Wide / Narrow, Type 1 / Type 2, R / S Experimental | mostly notes |
 | `release` | First Strike (PCGS), Early Releases / First Releases (NGC), First Day of Issue, First Delivery (CACG) | coins |
 | `release` | First Print (PCGS Banknote) | notes |
 | `verification` | CAC (green sticker), CAC Gold | coins |
@@ -199,18 +199,23 @@ it marks the note a Mule -- at once in Receiving, on Save in the editor.
 
 ### Attributes from facts: Gift
 
-A banknote whose item cost is $0 is a gift. `app/gift_rule.py` applies that
-when a note is saved in the item editor (`PATCH /api/inventory/{id}`), after
+Anything can be given, so an item whose cost is $0 is a gift, coin or
+note. `app/gift_rule.py` applies that when an item is saved in the item
+editor (`PATCH /api/inventory/{id}`), after
 the save's other writes; no batch pass and no bulk edit runs it. Making the
 row (`POST /api/inventory`) does not either: a new item is made before its
-cost is typed and opens in the editor, whose first save decides. Coins are
-left alone.
+cost is typed and opens in the editor, whose first save decides.
 
-| The note, as the save leaves it | What the save does |
+The rule reaches every kind of item Gift's `applies_to` admits -- shipped
+as `any` -- and changing that on the Vocabularies page (**Edit details...**)
+changes what the rule reaches: kept to `currency`, a coin at $0 is left
+alone.
+
+| The item, as the save leaves it | What the save does |
 |---|---|
 | Costs $0, has no Gift link at all | adds Gift, derived (`derived_by` `no_cost`) |
 | Costs $0, a person removed Gift | nothing: it stays removed |
-| Has a cost, or is no longer a note, and holds the rule's own Gift | takes it back |
+| Has a cost, or is no longer a kind Gift applies to, and holds the rule's own Gift | takes it back |
 | Has a cost, holds a Gift a person set | nothing |
 
 Two things follow a link the rule adds or takes back:
@@ -222,14 +227,14 @@ Two things follow a link the rule adds or takes back:
   where they moved, though the edit sent none of them, and the item's
   version moves.
 
-**The title.** A note at $0 that holds Gift, however it came by it, has the
+**The title.** An item at $0 that holds Gift, however it came by it, has the
 word taken out of its title on every such save -- "Gift $1 Bill Green Seal"
 becomes "$1 Bill Green Seal" -- since the attribute now says it. Only the
 whole word goes ("Gifted" stays), with the dashes and commas that set it
 apart, and a title that is nothing but the word is left.
 
-The editor's **Suggest** describes the note as Save would leave it, so a note
-at $0 that Save would give Gift is suggested with it.
+The editor's **Suggest** describes the item as Save would leave it, so an
+item at $0 that Save would give Gift is suggested with it.
 
 ## 3. The grade vocabulary
 

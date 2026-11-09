@@ -1,19 +1,21 @@
 # (c) Copyright 2026 Nathaniel Mills
 # Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
 # SPDX-License-Identifier: Apache-2.0
-"""Gift: the attribute of a banknote that cost nothing.
+"""Gift: the attribute of an item that cost nothing.
 
 docs/specs/item-attributes-design.md, section 2, "Attributes from facts: Gift".
-A note saved in the item editor at an item cost of $0 is a gift, so the save
+An item saved in the item editor at an item cost of $0 is a gift, so the save
 gives it the attribute, takes the word out of its title -- the attribute
 says it now -- and writes the description again where the description was
 the generated one. Making the row (`POST /api/inventory`) does not run this:
 a new item is made before its cost is typed, and opens in the editor.
+Anything can be given, so the rule reaches every item whose kind the
+attribute's `applies_to` admits: with Gift's `any`, coins and notes alike.
 
 The link is a derived one (`derived_by` `no_cost`). Like every rule's, it is
-added only where the note has no link for the attribute at all, so a person
+added only where the item has no link for the attribute at all, so a person
 who removes Gift keeps it removed, and it is taken back only while it is
-still the rule's own: a note given a cost later loses the Gift this rule
+still the rule's own: an item given a cost later loses the Gift this rule
 gave it and keeps one a person set.
 """
 
@@ -25,9 +27,9 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .item_attributes import allowed_scopes
 from .item_descriptions import suggested_description
 from .models import (
-    AppliesTo,
     InventoryItem,
     ItemAttribute,
     ItemAttributeLink,
@@ -51,18 +53,19 @@ _WORD = re.compile(r"\bgift\b", re.IGNORECASE)
 _SEPARATORS = "-:,"
 
 
-def earns(item: InventoryItem) -> bool:
-    """Whether the item is a banknote that cost nothing."""
-    return item.currency_detail is not None and item.item_cost == Decimal("0")
+def earns(db: Session, item: InventoryItem, attribute: ItemAttribute) -> bool:
+    """Whether the item cost nothing and is of a kind the attribute fits."""
+    return item.item_cost == Decimal("0") and attribute.applies_to in (
+        allowed_scopes(db, item)
+    )
 
 
 def _attribute(db: Session) -> ItemAttribute | None:
-    """The Gift attribute, where the vocabulary has it for notes and in use."""
+    """The Gift attribute, where the vocabulary has it in use."""
     return db.scalar(
         select(ItemAttribute).where(
             ItemAttribute.code == GIFT,
             ItemAttribute.is_active.is_(True),
-            ItemAttribute.applies_to.in_([AppliesTo.currency, AppliesTo.any]),
         )
     )
 
@@ -77,7 +80,11 @@ def _link(
 def would_add(db: Session, item: InventoryItem) -> bool:
     """Whether a save of the item as it stands would give it Gift."""
     attribute = _attribute(db)
-    return attribute is not None and earns(item) and _link(db, item, attribute) is None
+    return (
+        attribute is not None
+        and earns(db, item, attribute)
+        and _link(db, item, attribute) is None
+    )
 
 
 def _separator(char: str) -> bool:
@@ -126,7 +133,7 @@ def apply(db: Session, item: InventoryItem) -> list[str]:
         return []
     moved: list[str] = []
     link = _link(db, item, attribute)
-    free = earns(item)
+    free = earns(db, item, attribute)
     held = link is not None and link.removed_at is None
     adds = free and link is None
     takes_back = not free and held and link is not None and link.derived_by == RULE

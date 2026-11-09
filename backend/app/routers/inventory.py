@@ -1898,7 +1898,7 @@ def suggest_description_for(
         # item back as the dry run left it.
         db.expire_all()
         item = _get_item(db, item_id)
-        # Save would give a note at no cost its Gift: describe it with one.
+        # Save would give an item at no cost its Gift: describe it with one.
         if gift_rule.would_add(db, item):
             held = (
                 attributes

@@ -1499,7 +1499,7 @@ export const FIELD_HELP = {
   },
   vocabulary_field_applies_to: {
     title: 'Applies to',
-    text: 'Which items the value is offered for: coin, which covers everything that is not a note, currency for notes, or any for both.',
+    text: 'Which items the value is offered for: coin, which covers everything that is not a note, currency for notes, or any for both. For the Gift attribute it also decides which items saved at no cost are given it.',
   },
   vocabulary_field_denomination: {
     title: 'Denomination',

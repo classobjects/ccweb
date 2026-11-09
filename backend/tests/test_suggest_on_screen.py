@@ -29,6 +29,8 @@ COIN = {
     "grade": "MS64",
     "mint": "S",
     "grading_service": "PCGS",
+    # Bought, like NOTE: an item at no cost is suggested as a Gift.
+    "item_cost": "45.00",
 }
 NOTE = {
     "item_kind": "currency",
@@ -39,7 +41,7 @@ NOTE = {
     "note_type": "silver_certificate",
     "seal_color": "blue",
     "serial_number": "A31415926B",
-    # Bought: a note at no cost is suggested as the Gift a save would make it.
+    # Bought: an item at no cost is suggested as the Gift a save would make it.
     "item_cost": "20.00",
 }
 

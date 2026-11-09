@@ -37,6 +37,7 @@ from .models import (
 __all__ = [
     "AttributeRefused",
     "Held",
+    "allowed_scopes",
     "held_attributes",
     "set_attributes",
 ]
@@ -82,7 +83,7 @@ def held_attributes(db: Session, item_id: int) -> list[Held]:
     ]
 
 
-def _allowed(db: Session, item: InventoryItem) -> set[AppliesTo]:
+def allowed_scopes(db: Session, item: InventoryItem) -> set[AppliesTo]:
     """The attribute scopes the item may take: its own kind's, and `any`."""
     kind = db.scalar(select(ItemKind.code).where(ItemKind.id == item.item_kind_id))
     own = AppliesTo.currency if kind == "currency" else AppliesTo.coin
@@ -114,7 +115,7 @@ def set_attributes(
     unknown = [code for code in wanted if code not in found]
     if unknown:
         raise AttributeRefused(f"Unknown attribute(s): {unknown}")
-    allowed = _allowed(db, item)
+    allowed = allowed_scopes(db, item)
     wrong = [code for code in wanted if found[code].applies_to not in allowed]
     if wrong:
         kind = "note" if AppliesTo.currency in allowed else "coin"

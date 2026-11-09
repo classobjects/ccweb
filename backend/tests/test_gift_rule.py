@@ -1,7 +1,7 @@
 # (c) Copyright 2026 Nathaniel Mills
 # Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
 # SPDX-License-Identifier: Apache-2.0
-"""Gift: the attribute a banknote saved at no cost is given.
+"""Gift: the attribute an item saved at no cost is given, coin or note.
 
 docs/specs/item-attributes-design.md, section 2, "Attributes from facts: Gift".
 Everything goes through the editor's own routes.
@@ -12,7 +12,9 @@ from __future__ import annotations
 import itertools
 
 from app import gift_rule
+from app.models import AppliesTo, ItemAttribute
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from tests.builders import build_purchase_order, patch_current
@@ -114,7 +116,7 @@ def test_a_note_entered_at_a_cost_is_no_gift(
     assert item["description"] == ""
 
 
-def test_a_coin_entered_at_no_cost_is_no_gift(
+def test_a_coin_entered_at_no_cost_is_a_gift_too(
     client: TestClient, admin_headers: Headers, db: Session
 ) -> None:
     made = _make(
@@ -131,6 +133,60 @@ def test_a_coin_entered_at_no_cost_is_no_gift(
     # The editor's save is what runs the rule, so that is what must leave it.
     coin = _save(client, admin_headers, made, source_title=made["source_title"])
     assert coin["item_cost"] == "0.00"
+    assert _gift(coin) == {
+        "code": "gift",
+        "label": "Gift",
+        "group": "variety",
+        "source": "derived",
+        "derived_by": "no_cost",
+    }
+    assert coin["source_title"] == "1881-S Morgan Dollar"
+    # Nothing else is known of it yet: the description is the Gift alone.
+    assert coin["description"] == "Gift."
+
+
+def test_a_coin_given_a_cost_loses_the_gift_the_rule_gave_it(
+    client: TestClient, admin_headers: Headers, db: Session
+) -> None:
+    made = _make(
+        client,
+        admin_headers,
+        {
+            "purchase_order_id": build_purchase_order(db, vendor_name="Coin Back").id,
+            "item_kind": "coin",
+            "source_title": "1881-S Morgan Dollar",
+            "item_cost": "0.00",
+            "year_start": 1881,
+        },
+    )
+    coin = _save(client, admin_headers, made, source_title=made["source_title"])
+    assert _gift(coin) is not None
+    coin = _save(client, admin_headers, coin, item_cost="45.00")
+    assert _gift(coin) is None
+
+
+def test_a_gift_kept_to_notes_leaves_a_coin_at_no_cost_alone(
+    client: TestClient, admin_headers: Headers, db: Session
+) -> None:
+    """The rule follows the attribute's scope, as the Vocabularies page sets it."""
+    attribute = db.scalar(
+        select(ItemAttribute).where(ItemAttribute.code == gift_rule.GIFT)
+    )
+    assert attribute is not None
+    attribute.applies_to = AppliesTo.currency
+    db.flush()
+    made = _make(
+        client,
+        admin_headers,
+        {
+            "purchase_order_id": build_purchase_order(db, vendor_name="Coin Kept").id,
+            "item_kind": "coin",
+            "source_title": "Gift 1881-S Morgan Dollar",
+            "item_cost": "0.00",
+            "year_start": 1881,
+        },
+    )
+    coin = _save(client, admin_headers, made, source_title=made["source_title"])
     assert _gift(coin) is None
     assert coin["source_title"] == "Gift 1881-S Morgan Dollar"
 

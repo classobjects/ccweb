@@ -566,7 +566,7 @@ relisting, because a returned item resumes its own history.
 
 | Endpoint | Use |
 |---|---|
-| `PATCH /api/inventory/{id}` | one item, any editable field. A banknote saved at an item cost of $0 is given the Gift attribute, and the change log names what that moved -- see *Attributes* |
+| `PATCH /api/inventory/{id}` | one item, any editable field. An item saved at an item cost of $0 is given the Gift attribute, and the change log names what that moved -- see *Attributes* |
 | `POST /api/inventory/bulk` | the same change across many items, one transaction, all or nothing. A `storage_location_id` moves each item there and records the move in its location history; the Coins and Currency pages' bulk bar offers it as **Location**, with the item editor's picker |
 | `POST /api/inventory/receive` | record what arrived -- see *Receiving* |
 | `PUT /api/inventory/{id}/errors` | replace the item's recorded errors -- see *Errors* |
@@ -1519,11 +1519,13 @@ the picker adds one, offering only attributes for that kind of item. They are
 also editable in Receiving's "Confirm or correct fields" pane.
 
 An attribute marked **read** was found by a rule (the serial, the rating, the
-series, the cost) rather than set by a person. The cost's rule is **Gift**: a
-banknote saved in the editor at an item cost of $0 is given it, the word Gift
-leaves its title, and a description the system generated is written again to
-say so. A note later given a cost loses the Gift the rule gave it and keeps
-one a person set (`docs/specs/item-attributes-design.md`). **Removing one keeps it removed**: no
+series, the cost) rather than set by a person. The cost's rule is **Gift**: any
+item -- coin or note -- saved in the editor at an item cost of $0 is given
+it, the word Gift leaves its title, and a description the system generated
+is written again to say so. An item later given a cost loses the Gift the
+rule gave it and keeps one a person set. The rule reaches the kinds of item
+Gift's **Applies to** admits, which **Edit details...** on the Vocabularies
+page changes (`docs/specs/item-attributes-design.md`). **Removing one keeps it removed**: no
 rule adds it back. Setting it again restores it. Search finds items by an
 attribute's name or alias (`godless`, `first strike`).
 

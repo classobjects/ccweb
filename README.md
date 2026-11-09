@@ -137,8 +137,8 @@ backend/
                          follows the kind), field_sources (which fields hold
                          a derived default), attribute_rules, reference_fields
                          (a vocabulary's own columns), purchases (purchase
-                         order text conventions), short_titles, gift_rule (a
-                         banknote saved at no cost is given the Gift
+                         order text conventions), short_titles, gift_rule (an
+                         item saved at no cost is given the Gift
                          attribute), serial_pairs (the star note of a note's
                          serial number already in the collection, or a star
                          note's plain twins), cell_text (text written to a
