@@ -102,8 +102,10 @@ serve the Lists page (`list-maintenance-design.md`).
   `outstanding` (those not yet received) and `total_cost` (the sum of its
   items' costs). The Purchases page and Order lookup
   (`/management/order-lookup`) both narrow this one list in the browser.
-- `GET /api/purchase-orders/{id}`, whose lines carry `source_title` and
-  `item_kind` for the page's items table.
+- `GET /api/purchase-orders/{id}`, whose lines carry `item_kind` -- which
+  of the Coins and Currency tables the page's items need -- and the amounts
+  its total adds up. The tables themselves are read from the inventory
+  search, `GET /api/inventory/{coins|currency}/search?purchase_order_id=`.
 
 ### Items: `POST /api/inventory` (`ItemCreate`)
 

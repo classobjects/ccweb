@@ -882,7 +882,14 @@ holding one item (`docs/specs/entry-panels-design.md`).
   defaults;
   the exact list is in
   [specs/entry-panels-design.md](specs/entry-panels-design.md) (*New item*).
-- **The total row** under the items table adds up the lines' item cost,
+- **The items** are listed as Coins and Currency list them (`PurchaseItems.jsx`,
+  the inventory search with `purchase_order_id`): year, mint, denomination,
+  series, grade and metal for a coin, serial, Fr#, series, grade and seal for
+  a note, status and cost for both, and the description under each -- the
+  seller's title where there is none yet. A purchase holding both kinds has
+  a table for each. The list starts in item-code order and sorts by any
+  header the search can sort by; an item's code opens it in the editor.
+- **The total** under the items adds up the lines' item cost,
   shipping and sales tax, and their `total_cost` -- what was paid, the same
   figure Order lookup shows as the purchase's Cost (`GET
   /api/purchase-orders/{id}` returns each line's four amounts).

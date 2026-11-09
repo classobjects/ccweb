@@ -67,8 +67,9 @@ function sortDirection(current, key) {
  *
  * `selected` is an array of ids; `onSelect(ids)` replaces it wholesale, so
  * the parent holds one piece of state rather than the table holding a
- * second copy able to disagree with it. `onOpen` opens the edit form for a
- * row's item.
+ * second copy able to disagree with it. Left out, the table has no tick
+ * boxes: a purchase's own list (`PurchaseItems`) opens items, and selects
+ * none. `onOpen` opens the edit form for a row's item.
  *
  * `sortable` is what the server says it can sort by, sent with every page.
  * Only those headers are clickable: the server refuses any other field
@@ -84,8 +85,10 @@ export default function InventoryTable({
   onOpen,
   sortable = [],
 }) {
+  const selectable = Array.isArray(selected)
   const ids = rows.map((r) => r.id)
-  const allShown = ids.length > 0 && ids.every((id) => selected.includes(id))
+  const allShown =
+    selectable && ids.length > 0 && ids.every((id) => selected.includes(id))
   const columns = config.columns
 
   function toggle(id) {
@@ -159,23 +162,25 @@ export default function InventoryTable({
       <table className="table inventory-table stacks">
         <thead>
           <tr>
-            <th className="select-cell" data-help="select_page" rowSpan={2}>
-              {/* Selects the current page, not the whole result set.
+            {selectable && (
+              <th className="select-cell" data-help="select_page" rowSpan={2}>
+                {/* Selects the current page, not the whole result set.
                 "Apply to 7,591" from one click on a 50-row page is not
                 something anyone means. */}
-              <input
-                type="checkbox"
-                aria-label="Select this page"
-                checked={allShown}
-                onChange={() =>
-                  onSelect(
-                    allShown
-                      ? selected.filter((id) => !ids.includes(id))
-                      : [...new Set([...selected, ...ids])],
-                  )
-                }
-              />
-            </th>
+                <input
+                  type="checkbox"
+                  aria-label="Select this page"
+                  checked={allShown}
+                  onChange={() =>
+                    onSelect(
+                      allShown
+                        ? selected.filter((id) => !ids.includes(id))
+                        : [...new Set([...selected, ...ids])],
+                    )
+                  }
+                />
+              </th>
+            )}
             {columns.map((pair) => header(pair[0], 0))}
           </tr>
           <tr className="second-titles">
@@ -190,18 +195,20 @@ export default function InventoryTable({
               // only (`item-line`).
               <Fragment key={row.id}>
                 <tr className="item-line">
-                  <td
-                    className="select-cell"
-                    data-help="select_row"
-                    rowSpan={detail ? 3 : 2}
-                  >
-                    <input
-                      type="checkbox"
-                      aria-label={`Select ${row.item_code}`}
-                      checked={selected.includes(row.id)}
-                      onChange={() => toggle(row.id)}
-                    />
-                  </td>
+                  {selectable && (
+                    <td
+                      className="select-cell"
+                      data-help="select_row"
+                      rowSpan={detail ? 3 : 2}
+                    >
+                      <input
+                        type="checkbox"
+                        aria-label={`Select ${row.item_code}`}
+                        checked={selected.includes(row.id)}
+                        onChange={() => toggle(row.id)}
+                      />
+                    </td>
+                  )}
                   {columns.map((pair) => field(row, pair[0], 0))}
                 </tr>
                 <tr className={detail ? 'item-line item-second' : 'item-second'}>

@@ -11,6 +11,7 @@ import SellerField from './SellerField'
 import ItemEditDialog from './inventory/ItemEditDialog'
 import ModalDialog from '../ModalDialog'
 import ReceiptPanel from './receiving/ReceiptPanel'
+import PurchaseItems from './PurchaseItems'
 import HelpScope from '../HelpScope'
 import { purchaseNumber } from '../purchase-number'
 import { matchesFilter, sortPurchases } from '../purchase-list'
@@ -267,6 +268,30 @@ function PurchaseDetails({ purchase, onSaved }) {
   )
 }
 
+/** Each line's `field`, in cents, added up. */
+function sumOf(lines, field) {
+  return lines.reduce((sum, line) => sum + centsOrZero(line[field]), 0)
+}
+
+/**
+ * The purchase's total, under its items: what they cost, their shipping and tax,
+ * and what was paid in all -- the same figure Order lookup shows as the
+ * purchase's Cost. Summed in cents, so no float rounding creeps in.
+ */
+function PurchaseTotal({ lines }) {
+  const items = sumOf(lines, 'item_cost')
+  const shipping = sumOf(lines, 'shipping_cost')
+  const tax = sumOf(lines, 'sales_tax')
+  const total = sumOf(lines, 'total_cost')
+  return (
+    <p className="purchase-total" data-help="purchase_total">
+      {lines.length === 1 ? '1 item' : `${lines.length} items`}:{' '}
+      {money(fromCents(items))} + shipping {money(fromCents(shipping))} + tax{' '}
+      {money(fromCents(tax))} = <strong>{money(fromCents(total))}</strong>
+    </p>
+  )
+}
+
 /**
  * The Purchases page, in its two steps.
  *
@@ -277,34 +302,6 @@ function PurchaseDetails({ purchase, onSaved }) {
  * opening in the item editor, and the form that adds the next. "Start
  * another purchase" clears all of it and returns to the choice.
  */
-/** Each line's `field`, in cents, added up. */
-function sumOf(lines, field) {
-  return lines.reduce((sum, line) => sum + centsOrZero(line[field]), 0)
-}
-
-/**
- * The purchase's total row: what its items cost, their shipping and tax,
- * and what was paid in all -- the same figure Order lookup shows as the
- * purchase's Cost. Summed in cents, so no float rounding creeps in.
- */
-function PurchaseTotal({ lines }) {
-  const items = sumOf(lines, 'item_cost')
-  const shipping = sumOf(lines, 'shipping_cost')
-  const tax = sumOf(lines, 'sales_tax')
-  const total = sumOf(lines, 'total_cost')
-  return (
-    <tfoot>
-      <tr className="purchase-total" data-help="purchase_total">
-        <td colSpan={5} data-label="Total">
-          {lines.length === 1 ? '1 item' : `${lines.length} items`}:{' '}
-          {money(fromCents(items))} + shipping {money(fromCents(shipping))} + tax{' '}
-          {money(fromCents(tax))} = <strong>{money(fromCents(total))}</strong>
-        </td>
-      </tr>
-    </tfoot>
-  )
-}
-
 export default function NewPurchase() {
   const rateId = useId()
   const [mode, setMode] = useState('new')
@@ -636,49 +633,16 @@ export default function NewPurchase() {
               </label>
             </div>
 
-            {/* On a phone each row stacks into a card, a line per labelled cell. */}
-            <table className="table stacks">
-              <thead>
-                <tr>
-                  <th>Item code</th>
-                  <th>Seller&apos;s title</th>
-                  <th>Kind</th>
-                  <th>Cost</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(purchase.lines ?? []).map((line) => (
-                  <tr key={line.id}>
-                    <td data-label="Item code" className="mono item-code">
-                      <button
-                        type="button"
-                        className="link mono"
-                        onClick={() => openItem(line.id)}
-                      >
-                        {line.item_code}
-                      </button>
-                    </td>
-                    <td data-label="Seller's title">
-                      <div className="cell-scroll">{line.source_title}</div>
-                    </td>
-                    <td data-label="Kind">{line.item_kind}</td>
-                    <td data-label="Cost">{line.item_cost}</td>
-                    <td data-label="Status">{line.status}</td>
-                  </tr>
-                ))}
-                {(purchase.lines ?? []).length === 0 && (
-                  <tr>
-                    <td colSpan={5} className="muted">
-                      No items entered yet.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-              {(purchase.lines ?? []).length > 0 && (
+            {/* Listed as Coins and Currency list them, so each line says
+              what the item is; its code opens it in the editor. */}
+            {(purchase.lines ?? []).length === 0 ? (
+              <p className="muted">No items entered yet.</p>
+            ) : (
+              <>
+                <PurchaseItems purchase={purchase} onOpen={openItem} />
                 <PurchaseTotal lines={purchase.lines} />
-              )}
-            </table>
+              </>
+            )}
 
             {/* As on Receiving: the parcel that arrived whole. A split
                 shipment is received line by line there ("Receive these"). */}

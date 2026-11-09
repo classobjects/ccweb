@@ -47,6 +47,30 @@ vi.mock('./receiving/ReceiptPanel', () => ({
   ),
 }))
 
+// The list of a purchase's items is tested on its own (PurchaseItems.test);
+// here a row per line stands in for it, with the code that opens the item.
+vi.mock('./PurchaseItems', () => ({
+  default: ({ purchase, onOpen }) => (
+    <table>
+      <tbody>
+        {purchase.lines.map((line) => (
+          <tr key={line.id}>
+            <td>
+              <button type="button" onClick={() => onOpen(line.id)}>
+                {line.item_code}
+              </button>
+            </td>
+            <td>{line.source_title}</td>
+            <td>{line.item_kind}</td>
+            <td>{line.item_cost}</td>
+            <td>{line.status}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  ),
+}))
+
 import { api } from '../api'
 import { renderWithProviders } from '../../test/helpers'
 import NewPurchase from './NewPurchase'
@@ -724,7 +748,7 @@ describe('NewPurchase: items on the purchase', () => {
     return user
   }
 
-  it('lists item code, title, kind, cost and status from the purchase lines', async () => {
+  it('hands the purchase lines to the item list', async () => {
     api.createPurchaseOrder.mockResolvedValue({
       ...FRESH_PURCHASE,
       lines: [
@@ -776,7 +800,7 @@ describe('NewPurchase: items on the purchase', () => {
     await user.selectOptions(vendorSelect, '3')
     await user.click(screen.getByRole('button', { name: /create purchase/i }))
 
-    const total = (await screen.findByText(/2 items:/)).closest('td')
+    const total = (await screen.findByText(/2 items:/)).closest('p')
     expect(total).toHaveTextContent(
       '2 items: $1,025.30 + shipping $4.00 + tax $71.77 = $1,101.07',
     )
