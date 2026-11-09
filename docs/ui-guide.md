@@ -83,7 +83,7 @@ The search and filters, as the help band explains each one:
 | **Kind** | Coins | What the item is: a coin, a banknote, bullion, a set, and so on. It decides which fields apply -- a note has no metal or strike type, a coin no serial number. |
 | **Metal** | Coins | What it is struck in: silver, gold, copper, copper-nickel clad, and so on. With the fineness and weight, it decides the melt value. |
 | **Strike type** | Coins | How the coin was made: a business strike, made for circulation and graded Mint State (MS), or a proof, struck with specially polished dies for collectors and graded PR. It decides whether a 65 reads MS65 or PR65. |
-| **Mint** | Coins | The mint mark on the coin: P Philadelphia, D Denver, S San Francisco, O New Orleans, CC Carson City, W West Point. Most older Philadelphia coins carry no mark. |
+| **Mint** | Coins | The mint that struck the piece, listed by name. A government mint puts its mark on the coin -- P Philadelphia, D Denver, S San Francisco, O New Orleans, CC Carson City, W West Point -- though most older Philadelphia coins carry none; a refiner such as Valcambi strikes no mark. |
 | **Country** | Coins | The country that issued it. |
 | **Note type** | Currency | The kind of note, printed across the top of the face: Federal Reserve Note, Silver Certificate, United States Note, and so on. |
 | **Seal color** | Currency | The color of the Treasury seal, right of center on the face: green on a Federal Reserve Note, blue on a Silver Certificate, red on a United States Note; brown, gold and yellow on some older and wartime issues. |

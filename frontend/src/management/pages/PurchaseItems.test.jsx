@@ -16,6 +16,7 @@ const COIN_ROW = {
   item_code: 'CC-000501',
   status: 'received',
   year_start: 1923,
+  mint: 'Philadelphia',
   mint_mark: 'P',
   denomination_label: 'Dollar',
   series_label: 'Peace Dollar',
@@ -72,7 +73,14 @@ describe('PurchaseItems', () => {
       <PurchaseItems purchase={purchaseOf([line(501, 'coin')])} onOpen={vi.fn()} />,
     )
     const table = await screen.findByRole('table')
-    for (const text of ['1923', 'P', 'Dollar', 'Peace Dollar', 'MS62', 'Silver']) {
+    for (const text of [
+      '1923',
+      'Philadelphia',
+      'Dollar',
+      'Peace Dollar',
+      'MS62',
+      'Silver',
+    ]) {
       expect(within(table).getAllByText(text).length).toBeGreaterThan(0)
     }
     expect(

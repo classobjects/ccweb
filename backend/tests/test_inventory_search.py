@@ -24,6 +24,7 @@ from app.models import (
     ItemImage,
     ItemKind,
     ItemStatus,
+    Mint,
     ProvenanceSource,
     PurchaseOrder,
     SealColor,
@@ -144,6 +145,35 @@ def _order(
     return build_purchase_order(
         db, vendor_name=vendor_name, order_number=number, ordered_on=ordered_on
     )
+
+
+def test_a_coin_row_names_its_mint(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    """The Mint column reads `mint`: the name, for a marked mint or a refiner."""
+    refiner = Mint(
+        code="valcambi_test", label="Valcambi", mark="", source=ProvenanceSource.manual
+    )
+    db.add(refiner)
+    db.flush()
+    bar = coin(db)
+    struck = coin(db)
+    bare = coin(db)
+    db.add_all(
+        [
+            CoinDetail(inventory_item_id=bar.id, mint_id=refiner.id),
+            CoinDetail(inventory_item_id=struck.id, mint_id=code_id(db, Mint, "W")),
+        ]
+    )
+    db.commit()
+
+    body = search(client, "coins", admin_headers, sort="mint").json()
+    rows = {r["id"]: r for r in body["rows"]}
+    assert rows[bar.id]["mint"] == "Valcambi"
+    assert rows[struck.id]["mint"] == "West Point"
+    assert rows[struck.id]["mint_mark"] == "W"
+    assert rows[bare.id]["mint"] is None
+    assert "mint" in body["sortable"]
 
 
 def test_a_coin_row_carries_its_purchase_order(

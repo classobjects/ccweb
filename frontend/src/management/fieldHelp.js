@@ -497,9 +497,10 @@ export const FIELD_HELP = {
   mint: {
     title: 'Mint',
     text:
-      'The mint mark on the coin: P Philadelphia, D Denver, S San Francisco, ' +
-      'O New Orleans, CC Carson City, W West Point. Most older Philadelphia ' +
-      'coins carry no mark.',
+      'The mint that struck the piece, listed by name. A government mint ' +
+      'puts its mark on the coin -- P Philadelphia, D Denver, S San Francisco, ' +
+      'O New Orleans, CC Carson City, W West Point -- though most older ' +
+      'Philadelphia coins carry none; a refiner such as Valcambi strikes no mark.',
   },
   denomination: {
     title: 'Denomination',

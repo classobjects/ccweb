@@ -77,7 +77,9 @@ export const COIN_VIEW = {
     ],
     [
       ['Year', 'year_start'],
-      ['Mint', 'mint_mark'],
+      // By name, not mark (owner): a refiner such as Valcambi strikes no
+      // mark, and P or W reads as a code. The description keeps 1881-S.
+      ['Mint', 'mint'],
     ],
     [
       ['Denomination', 'denomination_label'],

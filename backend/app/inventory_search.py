@@ -489,6 +489,8 @@ COIN_VIEW = ViewSpec(
     sortable=(
         *_SHARED_SORT,
         "fine_weight_ozt",
+        # The Mint column's: the mint by name (Philadelphia, Valcambi).
+        "mint",
         "mint_mark",
         "item_kind",
         "metal",
