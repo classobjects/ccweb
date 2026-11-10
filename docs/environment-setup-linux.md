@@ -473,8 +473,10 @@ creates `ccwebdb_test`, builds the schema, runs each test in a rolled-back
 transaction, and drops the database afterwards. A cluster of the
 computer's own for the tests, apart from the collection's, is
 `./scripts/ccweb_testdb.sh` ([runtime-operations-linux.md](runtime-operations-linux.md),
-*A cluster for the tests*). Never run two pytest sessions at once: they
-share `ccwebdb_test`, and the resulting failures look like real bugs.
+*A cluster for the tests*). The gate runs the suite in parallel, each
+worker on a database of its own (`ccwebdb_gw0_test` and on). Never run two
+pytest sessions, or two gates, at once: they share those databases, and the
+resulting failures look like real bugs.
 
 ---
 

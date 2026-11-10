@@ -40,7 +40,20 @@ filter that replaces it.
 From Git Bash, see the `cmd //c` form in
 [environment-setup-windows.md](environment-setup-windows.md) (*Gotchas*): a single `/c` runs
 nothing and exits 0. Never run two gates at once: both pytest runs use the
-same `ccwebdb_test` database.
+same test databases.
+
+Each stage prints when it started and, from the last complete run, about
+when it should end; the run begins by saying when the whole gate should
+finish, and ends with every stage's time and the total. The times are kept
+in `gate-times.json` in the logs folder (`CCWEB_LOG_DIR`); only a run that
+reaches the end replaces them (`backend/app/gate_clock.py`).
+
+The Python tests run in parallel (`pytest-xdist`), one worker per core up
+to eight. Each worker builds and drops a database of its own,
+`ccwebdb_gw0_test`, `ccwebdb_gw1_test` and so on, so no two workers share
+one; eight stay well inside PostgreSQL's default 100 connections, and more
+saved little when measured. Only the gate runs them in parallel: `pytest`
+run by hand, on one file or all, is one process on `ccwebdb_test`.
 
 ---
 
@@ -54,7 +67,7 @@ In order:
 | Python linting | `ruff check` | `pyproject.toml` `[tool.ruff.lint]` |
 | Mutation-scaffolding guard | `findstr /S /N` (Windows) or `grep -rn` (Linux) over `backend/app/*.py` | `scripts/ccweb_check.cmd`, `scripts/ccweb_check.sh` |
 | Python types | `mypy` | `pyproject.toml` `[tool.mypy]` |
-| Python tests | `pytest` (from `backend`) | `pyproject.toml` `[tool.pytest.ini_options]` |
+| Python tests | `pytest -n auto --maxprocesses 8` (from `backend`) | `pyproject.toml` `[tool.pytest.ini_options]`; workers in the gate scripts |
 | Frontend linting | `eslint --max-warnings 0` | `frontend/eslint.config.js` |
 | Frontend formatting | `prettier --check` | `frontend/.prettierrc.json`, `frontend/.prettierignore` |
 | Frontend tests | `vitest run` | `frontend/vite.config.js` |

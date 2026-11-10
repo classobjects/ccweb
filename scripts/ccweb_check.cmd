@@ -9,6 +9,10 @@ rem    .\scripts\ccweb_check.cmd        format check, lint, types, tests, fronte
 rem    .\scripts\ccweb_check.cmd fix    reformat and auto-fix first, then check
 rem
 rem  Exit code is non-zero if anything failed, so CI can call this directly.
+rem
+rem  Each stage says when it started and, from the last complete run, about
+rem  when it should end; the run ends with every stage's time
+rem  (backend\app\gate_clock.py, keeping its times in the logs folder).
 rem ---------------------------------------------------------------------------
 setlocal enabledelayedexpansion
 
@@ -25,6 +29,11 @@ if not exist "%PY%" (
     echo        see docs\environment-setup-windows.md
     exit /b 1
 )
+rem  The logs folder, where the stage times are kept, comes from the
+rem  settings like every other folder a script uses.
+call "%~dp0ccweb_settings.cmd" || exit /b 2
+call "%~dp0ccweb_logdir.cmd"
+set CLOCK="%PY%" "%REPO%\backend\app\gate_clock.py"
 
 pushd "%REPO%"
 
@@ -40,15 +49,20 @@ if /i "%~1"=="fix" (
     echo.
 )
 
+%CLOCK% begin "%LOGS%"
+
 echo === python format ===
+%CLOCK% stage "%LOGS%" "python format"
 "%PY%" -m ruff format --check .
 if errorlevel 1 set "FAILED=!FAILED! format"
 
 echo === python lint ===
+%CLOCK% stage "%LOGS%" "python lint"
 "%PY%" -m ruff check .
 if errorlevel 1 set "FAILED=!FAILED! lint"
 
 echo === mutation scaffolding guard ===
+%CLOCK% stage "%LOGS%" "mutation scaffolding guard"
 rem  An ordered mutation test disables a guard on purpose -- an `if False:`
 rem  in place of a shop-guard predicate is the shape this findstr catches
 rem  directly. A mutation that leaves no such literal, such as deleting an
@@ -77,27 +91,35 @@ if defined MUTATION_HIT (
 )
 
 echo === python types ===
+%CLOCK% stage "%LOGS%" "python types"
 rem Fails the build like the rest: with no findings standing, a single new
 rem one is the signal.
 "%PY%" -m mypy
 if errorlevel 1 set "FAILED=!FAILED! types"
 
 echo === tests ===
+%CLOCK% stage "%LOGS%" "tests"
 rem  Where this computer has a test cluster of its own, the tests run there
 rem  (ccweb_testdb.cmd); elsewhere TEST_DATABASE_URL is left as it was.
+rem  In parallel (pytest-xdist), one worker per core up to eight: each worker
+rem  builds a test database of its own (tests\conftest.py), and eight stay
+rem  well inside PostgreSQL's 100 connections; more saved little when
+rem  measured. Here only: a test file run by hand stays one process.
 call "%~dp0ccweb_testdb.cmd" use
 if errorlevel 1 set "FAILED=!FAILED! testdb"
 pushd backend
-"%PY%" -m pytest
+"%PY%" -m pytest -n auto --maxprocesses 8
 if errorlevel 1 set "FAILED=!FAILED! tests"
 popd
 
 if exist "frontend\node_modules\eslint" (
     echo === frontend lint ===
+    %CLOCK% stage "%LOGS%" "frontend lint"
     "%NODE%" frontend\node_modules\eslint\bin\eslint.js --max-warnings 0 frontend
     if errorlevel 1 set "FAILED=!FAILED! eslint"
 
     echo === frontend format ===
+    %CLOCK% stage "%LOGS%" "frontend format"
     rem  Both ignore files are named: prettier looks for them only in the
     rem  directory it is run from, which is the repository root, and the
     rem  frontend's own is one level down.
@@ -105,6 +127,7 @@ if exist "frontend\node_modules\eslint" (
     if errorlevel 1 set "FAILED=!FAILED! prettier"
 
     echo === frontend tests ===
+    %CLOCK% stage "%LOGS%" "frontend tests"
     rem  Run from frontend so vitest picks up vite.config.js. Invoked with
     rem  the environment's node by full path, like every other tool here,
     rem  not via npm.
@@ -114,6 +137,7 @@ if exist "frontend\node_modules\eslint" (
     popd
 
     echo === frontend bundle isolation ===
+    %CLOCK% stage "%LOGS%" "frontend bundle isolation"
     rem  Builds both entries and asserts neither reaches the other's tree.
     rem  The eslint boundary rules check the source; this checks the artefact,
     rem  so a build-configuration mistake cannot pass unnoticed.
@@ -143,6 +167,8 @@ if exist "frontend\node_modules\eslint" (
 
 popd
 
+echo.
+%CLOCK% end "%LOGS%"
 echo.
 if defined FAILED (
     echo FAILED:!FAILED!

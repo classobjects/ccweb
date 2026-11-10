@@ -271,7 +271,9 @@ def copy_url(engine: Engine, monkeypatch: pytest.MonkeyPatch) -> Iterator[str]:
         "database_url",
         engine.url.render_as_string(hide_password=False),
     )
-    name = "ccwebdb_test_bak_copy"
+    # Named from the session's database, as every scratch database is, so
+    # parallel workers never share it.
+    name = f"{TEST_URL.database}_bak_copy"
     admin = create_engine(
         TEST_URL.set(database="postgres"), isolation_level="AUTOCOMMIT"
     )

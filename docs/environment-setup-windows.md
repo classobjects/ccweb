@@ -570,9 +570,10 @@ builds the schema, runs each test in a rolled-back transaction, and drops the
 database afterwards; point it elsewhere with `TEST_DATABASE_URL`. A
 computer without the collection's database running can test on a cluster of
 its own (`ccweb_testdb.cmd`, [runtime-operations-windows.md](runtime-operations-windows.md),
-*A cluster for the tests*). Never run
-two pytest sessions at once: they share `ccwebdb_test`, and the resulting
-failures look like real bugs.
+*A cluster for the tests*). The gate runs the suite in parallel, each
+worker on a database of its own (`ccwebdb_gw0_test` and on). Never run two
+pytest sessions, or two gates, at once: they share those databases, and the
+resulting failures look like real bugs.
 
 Two suites worth knowing about:
 

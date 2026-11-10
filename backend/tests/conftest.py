@@ -85,11 +85,16 @@ def _test_database_url() -> URL:
     `TEST_DATABASE_URL` is refused unless its database's name ends in
     `_test` and is not the application's own: a URL copied from `.env` must
     stop the run here, not at `DROP DATABASE`.
+
+    Run in parallel (pytest-xdist), each worker drops and builds a database
+    of its own, so the name carries the worker's id before the `_test`
+    suffix: `ccwebdb_gw3_test`. Every scratch database a test makes is named
+    from this one, so it is the worker's own too.
     """
     configured = make_url(settings.database_url)
     override = os.environ.get("TEST_DATABASE_URL") or settings.test_database_url
     if not override:
-        return configured.set(database=f"{configured.database}_test")
+        return _per_worker(configured.set(database=f"{configured.database}_test"))
     url = make_url(override)
     name = url.database or ""
     if not name.endswith("_test") or name == configured.database:
@@ -98,7 +103,16 @@ def _test_database_url() -> URL:
             "session would drop. Name one ending in `_test` that is not the "
             "application's own database."
         )
-    return url
+    return _per_worker(url)
+
+
+def _per_worker(url: URL) -> URL:
+    """`url` itself in a single process; under xdist, the worker's own database."""
+    worker = os.environ.get("PYTEST_XDIST_WORKER")
+    if not worker:
+        return url
+    name = url.database or ""
+    return url.set(database=f"{name.removesuffix('_test')}_{worker}_test")
 
 
 TEST_URL = _test_database_url()
