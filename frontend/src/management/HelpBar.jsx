@@ -1,11 +1,12 @@
 // (c) Copyright 2026 Nathaniel Mills
 // Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
 // SPDX-License-Identifier: Apache-2.0
-import { useMemo, useState } from 'react'
+import { useContext, useMemo, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 
 import { FIELD_HELP } from './fieldHelp'
 import { HelpContext } from './help-context'
+import { useRaisedError } from './raised-error'
 
 /**
  * The console's help band: always at the bottom of the window, explaining
@@ -51,15 +52,45 @@ export function HelpText({ field }) {
   )
 }
 
-/** The band itself, rendered once by the console shell below its content. */
+/**
+ * The band itself, rendered once by the console shell below its content, and
+ * by a dialog below its body.
+ *
+ * An error shown anywhere on its page is repeated here in red, in place of
+ * the field help, so it is seen on a page too long for its own message to be
+ * in view (`useRaisedError`). The cross hides it to show the help again.
+ * Nothing here takes focus: the field being edited keeps it, and so do the
+ * accelerator keys.
+ */
 export function HelpBar() {
+  const ref = useRef(null)
+  const help = useContext(HelpContext)
+  const { error, dismiss } = useRaisedError(ref)
   return (
-    <HelpContext.Consumer>
-      {(band) => (
-        <footer className="help-bar" aria-live="polite" aria-label="Field help">
-          <HelpText field={band?.field} />
-        </footer>
+    <footer
+      ref={ref}
+      className={error ? 'help-bar help-bar-error' : 'help-bar'}
+      aria-live="polite"
+      aria-label="Field help"
+    >
+      {error ? (
+        <>
+          <span className="help-bar-message">{error}</span>
+          <button
+            type="button"
+            className="help-bar-dismiss"
+            title="Hide this error and show the field help"
+            aria-label="Hide this error and show the field help"
+            // A click must leave focus in the field being edited.
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={dismiss}
+          >
+            ×
+          </button>
+        </>
+      ) : (
+        <HelpText field={help?.field} />
       )}
-    </HelpContext.Consumer>
+    </footer>
   )
 }

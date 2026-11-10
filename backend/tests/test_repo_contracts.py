@@ -247,7 +247,9 @@ def test_sourcing_testdb_use_hands_the_caller_only_the_url(tmp_path: Path) -> No
         capture_output=True,
         text=True,
         env=environment,
-        timeout=6,
+        # A ceiling, not an expectation: with the gate's parallel workers all
+        # busy, starting bash alone has taken over six seconds.
+        timeout=60,
         check=True,
     ).stdout
     assert "rc=0" in shown.splitlines()

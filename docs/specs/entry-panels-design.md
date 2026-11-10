@@ -337,5 +337,23 @@ renders its forms open and asserts `uncovered` (`src/test/helpCoverage.js`)
 is empty: every input, dropdown and text box shown sits under a `HelpScope`
 and a `data-help` topic with a title and text.
 
+**Errors in the band.** An error shown anywhere on the band's page -- any
+red `error` box, from any form -- is repeated in the band in red, in place
+of the field help, so it is seen on a page too long for its own message to
+be in view (`management/raised-error.js`). The page watches itself: no form
+reports to the band. The newest error is the one shown -- a box appearing,
+or its text changing -- and when the form takes its message away the band
+lets it go and shows the help again. A highlighted table row (`tr.error`)
+and the numismatic `error-list` are not messages and are left out. A
+dialog's errors are its own: a dialog with a band shows them there, and the
+console's band behind it ignores them. The cross (×) hides the errors shown
+so far to read the help behind; one comes back when its text changes, or
+when a button or an accelerator key (Ctrl, Alt or Enter in a box) is pressed
+while it is still on the page, because pressing Save again for the same
+refusal changes nothing on the page and must still be answered. Typing does
+not bring it back. Nothing in the band takes focus -- a click on the cross
+leaves the field being edited focused -- so editing and the accelerator keys
+work as before.
+
 Help text is public numismatic fact only -- what is printed where on a note
 and what it means -- never a catalog's numbering or a price guide's values.

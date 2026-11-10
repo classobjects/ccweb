@@ -901,8 +901,10 @@ holding one item (`docs/specs/entry-panels-design.md`).
   line; **Start another purchase** returns to step one.
 
 The help band at the bottom of the console window explains whichever field
-has focus, on this form and every other. Every endpoint above is
-manager-only.
+has focus, on this form and every other. When a form shows an error, the
+band repeats it in red, so it is seen however far down a long page you
+are; the × beside it hides it to show the field help again. Every endpoint
+above is manager-only.
 
 ## Sales
 

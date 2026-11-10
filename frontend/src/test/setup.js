@@ -5,10 +5,16 @@
 // expect, and clears the rendered tree between tests so one test's DOM cannot
 // leak into the next.
 import '@testing-library/jest-dom/vitest'
-import { cleanup } from '@testing-library/react'
+import { cleanup, configure } from '@testing-library/react'
 import { afterEach } from 'vitest'
 
 afterEach(cleanup)
+
+// The help band repeats the newest error on its page (`raised-error.js`), so
+// every message a dialog shows is on the page twice. A text query finds the
+// form's own message, as the owner reads it there; the band's copy is
+// checked by the band's own tests, which read the band itself.
+configure({ defaultIgnore: 'script, style, .help-bar-message' })
 
 // jsdom has the <dialog> element but not its modal methods, so a component
 // calling showModal() throws before anything can be asserted. These do what

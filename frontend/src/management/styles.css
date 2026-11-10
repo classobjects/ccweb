@@ -676,6 +676,32 @@ fieldset.identify {
      as explanations come and go. */
   min-height: calc(2.8em + 16px);
 }
+/* An error from the page above, repeated in the band in the page's own red,
+   with a cross to hide it and show the field help again. */
+.help-bar-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, var(--surface));
+  border-left-color: var(--danger);
+}
+.help-bar-message {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.help-bar-dismiss {
+  flex: none;
+  padding: 0 8px;
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--danger);
+  font-size: 1.2em;
+  line-height: 1.3;
+  cursor: pointer;
+}
 
 /* HelpScope outside the console shell (a form rendered on its own): the
    help area under the form, explaining the focused field.

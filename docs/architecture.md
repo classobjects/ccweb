@@ -253,7 +253,8 @@ application reads the base tables.
 - **Console** (`src/management/`): every route but `/login` requires a
   manager. The menu groups Inventory, Procurement, Selling, Reports and
   Settings; a help band at the bottom explains whichever field has focus
-  (`fieldHelp.js`, `HelpScope`).
+  (`fieldHelp.js`, `HelpScope`) and repeats, in red, the newest error shown
+  on the page above it (`raised-error.js`).
 - **Shared** (`src/shared/`): the one `fetch` wrapper (`api.js`: one shared
   token refresh for concurrent 401s, then a replay), authentication context,
   vocabularies, money in integer cents (`cents.js`), formatting.
