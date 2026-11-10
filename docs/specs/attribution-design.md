@@ -292,14 +292,18 @@ until the editor's Save (its buttons there say **Use as proposed** and **Use
 as confirmed**). Both also show a **Fr. number** box without the lookup, for
 a number already known -- read off a graded note's holder: typed and saved,
 it is recorded with what the note records, or the catalog's row is used
-when the number is on file, exactly as a number typed after a search.
+when the number is on file, exactly as a number typed after a search. In
+the item editor a number left in the box without either Use button stops
+the editor's Save, which names it: the number is never dropped unsaid.
 
 When the catalog has no match, **Search the web** opens a question for
 Google's AI Mode built from the form (`webSearchText`): the series,
 denomination, note class, district, signatures, web press, star, mule,
 printing location and plates, asking for the mule suffix when plates are
-given. A note in a PMG holder also has **PMG cert**, which opens PMG's page
-for its certificate. The owner reads
+given. A note in a PMG holder with a certificate number also has **PMG
+cert**, beside the Look up button and beside the Fr. number box alike,
+which opens PMG's page for its certificate and grade
+(`pmgnotes.com/certlookup/NNNNNNN-NNN/GRADE/`). The owner reads
 the answer and types the number in. Nothing is fetched or stored from the
 search: a machine collecting Friedberg numbers is the harvesting the
 reference-data rule forbids.

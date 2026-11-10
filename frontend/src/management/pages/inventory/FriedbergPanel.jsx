@@ -14,12 +14,15 @@ import FriedbergLookup from '../receiving/FriedbergLookup'
  * Save applies them with the rest of the edit (`onHold`, `pending`,
  * `onUndo`), so the editor behaves one way throughout: nothing is kept until
  * Save. A held change that failed carries its reason (`pending.error`).
+ * `onTyped` hears a number typed in the box and not yet used (see
+ * `FriedbergLookup`), for the editor's Save to refuse to pass it over.
  */
 export default function FriedbergPanel({
   item,
   pending = null,
   onHold,
   onUndo = () => {},
+  onTyped,
 }) {
   const [open, setOpen] = useState(false)
   const attached = item.friedberg_id != null
@@ -87,6 +90,7 @@ export default function FriedbergPanel({
             itemId={item.id}
             item={item}
             entryOnly
+            onTyped={onTyped}
             onChoose={(choice) => onHold({ action: 'attach', ...choice })}
           />
         )}
@@ -95,6 +99,7 @@ export default function FriedbergPanel({
             itemId={item.id}
             item={item}
             searchNow
+            onTyped={onTyped}
             onClose={() => setOpen(false)}
             onChoose={(choice) => {
               onHold({ action: 'attach', ...choice })

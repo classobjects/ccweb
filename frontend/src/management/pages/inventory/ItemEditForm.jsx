@@ -276,12 +276,16 @@ const errorsDiffer = (edited, saved) =>
 const conflictsSince = (item, baseItem, draft) =>
   item && baseItem ? conflictsOf(item, baseItem, draft) : []
 
-/** Whether anything is held for Save: a field, a photograph, a number, errors. */
+/**
+ * Whether anything is held for Save: a field, a photograph, a number (or
+ * one typed in the Friedberg box, which Save then names), errors.
+ */
 function holdsAnything({
   hasFields,
   pendingPhotos,
   photoEdits,
   pendingFriedberg,
+  typedFrNumber,
   errorsChanged,
 }) {
   return (
@@ -289,6 +293,7 @@ function holdsAnything({
     pendingPhotos.length > 0 ||
     Object.keys(photoEdits).length > 0 ||
     pendingFriedberg !== null ||
+    typedFrNumber !== '' ||
     errorsChanged
   )
 }
@@ -298,11 +303,26 @@ function holdsAnything({
  * pressed, or '' when nothing does: a change to an item for sale not yet
  * acknowledged (`tick`, the label of the box that does), a new photograph
  * that does not say what it shows, an edited field that waits for a choice
- * between two values.
+ * between two values, a Friedberg number typed and not used.
  */
-function inTheWay({ forSale, acknowledged, tick, pendingPhotos, conflicts }) {
+function inTheWay({
+  forSale,
+  acknowledged,
+  tick,
+  pendingPhotos,
+  conflicts,
+  typedFrNumber,
+}) {
   if (conflicts.length > 0) {
     return 'Choose Keep mine or Use theirs for each field changed elsewhere, then Save.'
+  }
+  // Saving past it would lose the number without a word. Using it is the
+  // owner's choice of status, and may record it in the catalog at once.
+  if (typedFrNumber) {
+    return (
+      `The Fr. number ${typedFrNumber} is typed but not used: press ` +
+      'Use as proposed or Use as confirmed beside it, or empty the box, then Save.'
+    )
   }
   if (forSale && !acknowledged) {
     return `This item is for sale: tick "${tick}" above, then Save.`
@@ -436,6 +456,9 @@ export default function ItemEditForm({
   // A Friedberg number confirmed, chosen or cleared in its panel, held for
   // Save the same way.
   const [pendingFriedberg, setPendingFriedberg] = useState(null)
+  // A Friedberg number typed in its panel's box and not yet used: Save
+  // names it rather than pass over it.
+  const [typedFrNumber, setTypedFrNumber] = useState('')
   // The item's errors as last read or recorded, and as edited here -- held
   // for Save the same way, and recorded as a whole set. Both null until
   // read; a read that failed leaves its reason and nothing to edit, since a
@@ -501,9 +524,10 @@ export default function ItemEditForm({
     pendingPhotos,
     photoEdits,
     pendingFriedberg,
+    typedFrNumber,
     errorsChanged,
   })
-    ? inTheWay({ forSale, acknowledged, tick, pendingPhotos, conflicts })
+    ? inTheWay({ forSale, acknowledged, tick, pendingPhotos, conflicts, typedFrNumber })
     : 'Nothing to save: nothing has been changed.'
   const canSave = !saving && notYet === ''
   // `save` is a function declaration below, hoisted for the whole component
@@ -1735,6 +1759,7 @@ export default function ItemEditForm({
             pending={pendingFriedberg}
             onHold={setPendingFriedberg}
             onUndo={() => setPendingFriedberg(null)}
+            onTyped={setTypedFrNumber}
           />
         )}
 

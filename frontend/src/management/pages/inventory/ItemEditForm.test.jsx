@@ -3019,6 +3019,28 @@ describe('ItemEditForm: a Friedberg number waits for Save', () => {
     expect(screen.getByText(/not saved yet/i)).toBeInTheDocument()
     expect(onSaved).not.toHaveBeenCalled()
   })
+
+  it('will not save past a number typed and never used', async () => {
+    const user = userEvent.setup()
+    const onSaved = vi.fn()
+    api.getInventoryItem.mockResolvedValue({ ...item, item_kind: 'currency' })
+    api.updateInventoryItem.mockResolvedValue({})
+    render(<ItemEditForm itemId={12} onSaved={onSaved} onClose={vi.fn()} />)
+    await screen.findByDisplayValue('Mercury Dime')
+
+    // Typed alone, and typed beside a field edit: either way Save names it
+    // rather than save the rest and lose it.
+    await user.type(screen.getByLabelText(/fr\. number/i), ' 1536 ')
+    await expectSaveRefused(/^The Fr\. number 1536 is typed but not used/)
+    await user.type(screen.getByRole('textbox', { name: /Description/ }), '!')
+    await expectSaveRefused(/^The Fr\. number 1536 is typed but not used/)
+
+    await user.clear(screen.getByLabelText(/fr\. number/i))
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => expect(api.updateInventoryItem).toHaveBeenCalled())
+    expect(api.attachFriedberg).not.toHaveBeenCalled()
+  })
 })
 
 describe('Storage form: Pieces from its usual count', () => {

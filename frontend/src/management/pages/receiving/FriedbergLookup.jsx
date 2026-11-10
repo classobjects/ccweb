@@ -245,6 +245,11 @@ function fromItem(item) {
  * number already known from a graded note's holder: recorded with what the
  * note records, or the catalog's row used when it is on file already, as a
  * number typed after a search is.
+ *
+ * `onTyped` is told what stands in the number box, trimmed ('' once the box
+ * is empty or gone), so the item editor's Save can refuse to pass over a
+ * number typed and never used. It must be a stable function, a state
+ * setter for instance.
  */
 export default function FriedbergLookup({
   itemId,
@@ -252,6 +257,7 @@ export default function FriedbergLookup({
   onClose,
   onAttached,
   onChoose,
+  onTyped,
   searchNow = false,
   entryOnly = false,
 }) {
@@ -324,6 +330,11 @@ export default function FriedbergLookup({
   }, [searchNow, initial])
 
   const [recordFrNumber, setRecordFrNumber] = useState('')
+  useEffect(() => {
+    if (!onTyped) return undefined
+    onTyped(recordFrNumber.trim())
+    return () => onTyped('')
+  }, [onTyped, recordFrNumber])
   // A Save pressed with the number box empty; said until one is typed.
   const [askedForNumber, setAskedForNumber] = useState(false)
   const [recordError, setRecordError] = useState('')
@@ -698,12 +709,14 @@ export default function FriedbergLookup({
   )
 
   // A number already known -- read off a graded note's holder -- is typed
-  // straight in: no search runs, and nothing opens.
+  // straight in: no search runs, and nothing opens until asked. PMG's page
+  // for the holder's certificate sits beside the box, since that page is
+  // where the number is read.
   if (entryOnly) {
     return (
       <div className="friedberg-lookup">
         <HelpScope>
-          {numberEntry()}
+          {numberEntry(pmgButton)}
           {attachError && <p className="error">{attachError}</p>}
           {attachMessage && <p className="notice">{attachMessage}</p>}
         </HelpScope>

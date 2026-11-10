@@ -565,8 +565,24 @@ describe('FriedbergLookup', () => {
     unmount()
 
     api.searchFriedberg.mockResolvedValue([{ id: 1, fr_number: '9901' }])
-    renderWithProviders(<FriedbergLookup itemId={412} item={item} searchNow />)
+    const searched = renderWithProviders(
+      <FriedbergLookup itemId={412} item={item} searchNow />,
+    )
     expect(screen.getByRole('button', { name: /pmg cert/i })).toBeInTheDocument()
+    searched.unmount()
+
+    // The item editor's box for a number read off the holder: the page that
+    // shows the number belongs beside it, without a search first.
+    window.open.mockClear()
+    api.searchFriedberg.mockClear()
+    renderWithProviders(<FriedbergLookup itemId={412} item={item} entryOnly />)
+    await userEvent.click(screen.getByRole('button', { name: /pmg cert/i }))
+    expect(api.searchFriedberg).not.toHaveBeenCalled()
+    expect(window.open).toHaveBeenCalledWith(
+      'https://www.pmgnotes.com/certlookup/2452276-014/30/',
+      'pmg-cert',
+      expect.any(String),
+    )
   })
 
   it('offers no PMG button for a note in no PMG holder', () => {
