@@ -292,9 +292,10 @@ until the editor's Save (its buttons there say **Use as proposed** and **Use
 as confirmed**). Both also show a **Fr. number** box without the lookup, for
 a number already known -- read off a graded note's holder: typed and saved,
 it is recorded with what the note records, or the catalog's row is used
-when the number is on file, exactly as a number typed after a search. In
-the item editor a number left in the box without either Use button stops
-the editor's Save, which names it: the number is never dropped unsaid.
+when the number is on file, exactly as a number typed after a search. A
+number left in the box without its buttons is never dropped unsaid: in the
+item editor it stops the editor's Save, and in Receiving every outcome
+button (Receive, Missing, Returned, Canceled), each naming it.
 
 When the catalog has no match, **Search the web** opens a question for
 Google's AI Mode built from the form (`webSearchText`): the series,

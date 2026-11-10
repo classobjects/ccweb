@@ -407,6 +407,36 @@ describe('ReceiptPanel', () => {
     expect(api.searchFriedberg).not.toHaveBeenCalled()
   })
 
+  it('will not record an outcome past a Friedberg number typed and not saved', async () => {
+    const onDone = vi.fn()
+    api.getInventoryItem.mockResolvedValue({ ...ITEM, item_kind: 'currency' })
+    api.createFriedbergNumber.mockResolvedValue({ id: 31, fr_number: '1536' })
+    api.attachFriedberg.mockResolvedValue({
+      fr_number: '1536',
+      friedberg_status: 'proposed',
+    })
+    api.receiveItems.mockResolvedValue({})
+    renderWithProviders(<ReceiptPanel itemIds={[412]} onDone={onDone} />)
+
+    await userEvent.type(await screen.findByLabelText(/fr\. number/i), '1536')
+    await userEvent.click(screen.getByRole('button', { name: 'Receive' }))
+
+    expect(
+      await screen.findByText(/^The Fr\. number 1536 is typed but not saved/),
+    ).toBeInTheDocument()
+    expect(api.receiveItems).not.toHaveBeenCalled()
+    expect(onDone).not.toHaveBeenCalled()
+
+    // Saved, the box empties and the receipt goes through.
+    await userEvent.click(screen.getByRole('button', { name: /save as proposed/i }))
+    await waitFor(() => expect(api.attachFriedberg).toHaveBeenCalled())
+    await waitFor(() => expect(screen.getByLabelText(/fr\. number/i)).toHaveValue(''))
+    await userEvent.click(screen.getByRole('button', { name: 'Receive' }))
+
+    await waitFor(() => expect(api.receiveItems).toHaveBeenCalledTimes(1))
+    expect(onDone).toHaveBeenCalled()
+  })
+
   it('explains its fields when they have focus', async () => {
     // The dialog this panel opens in provides a help band, but only a
     // HelpScope reads `data-help`: without one every field here was silent.

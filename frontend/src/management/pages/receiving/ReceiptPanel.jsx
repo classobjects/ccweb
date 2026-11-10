@@ -78,6 +78,9 @@ export default function ReceiptPanel({ itemIds, onDone, initial = {} }) {
   // Snapshotting here, once, is what "frozen" actually requires.
   const [reviewIds, setReviewIds] = useState(null)
   const [friedbergOpen, setFriedbergOpen] = useState(false)
+  // A Friedberg number typed in its box and not yet saved: an outcome
+  // button names it rather than close the dialog over it.
+  const [typedFrNumber, setTypedFrNumber] = useState('')
   // The refusal the server sent, held while the operator answers it.
   const [forSaleRefusal, setForSaleRefusal] = useState(null)
 
@@ -169,6 +172,16 @@ export default function ReceiptPanel({ itemIds, onDone, initial = {} }) {
     // and sends nothing.
     if (itemIds.length === 0) {
       setError('No item is chosen to receive: pick one from the search first.')
+      return
+    }
+    // The dialog closes on a recorded outcome, and the number with it,
+    // unsaid. Saving it is the owner's choice of status, so it is asked for,
+    // not done here.
+    if (typedFrNumber) {
+      setError(
+        `The Fr. number ${typedFrNumber} is typed but not saved: press Save as ` +
+          'proposed or Save as confirmed beside it, or empty the box, then try again.',
+      )
       return
     }
     setBusy(true)
@@ -518,6 +531,7 @@ export default function ReceiptPanel({ itemIds, onDone, initial = {} }) {
                 itemId={singleItemId}
                 item={itemDetail}
                 entryOnly
+                onTyped={setTypedFrNumber}
               />
             )}
             {friedbergOpen && (
@@ -525,6 +539,7 @@ export default function ReceiptPanel({ itemIds, onDone, initial = {} }) {
                 key={singleItemId}
                 itemId={singleItemId}
                 item={itemDetail}
+                onTyped={setTypedFrNumber}
                 onClose={() => setFriedbergOpen(false)}
               />
             )}
