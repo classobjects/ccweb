@@ -529,11 +529,13 @@ export default function ItemEditForm({
   })
     ? inTheWay({ forSale, acknowledged, tick, pendingPhotos, conflicts, typedFrNumber })
     : 'Nothing to save: nothing has been changed.'
-  const canSave = !saving && notYet === ''
   // `save` is a function declaration below, hoisted for the whole component
   // scope, so it is safe to reference here even though it is defined later --
-  // this hook must sit above every early return.
-  useSaveShortcut(save, canSave)
+  // this hook must sit above every early return. Ctrl+S answers whenever the
+  // Save button does, not only when a save would go through: pressed with
+  // something in the way, `save` says what, as the button does. Live only
+  // when saving would have it swallow the key without a word.
+  useSaveShortcut(save, !saving)
 
   /**
    * Take `body` as the item now open -- a first load, or a save read back --

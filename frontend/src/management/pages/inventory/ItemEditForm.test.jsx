@@ -1532,12 +1532,30 @@ describe('ItemEditForm keyboard accelerators', () => {
     render(<ItemEditForm itemId={12} onSaved={vi.fn()} onClose={vi.fn()} />)
     await screen.findByDisplayValue('Mercury Dime')
 
+    // Refused, it says why, as the button does -- never a key swallowed in
+    // silence.
     fireEvent.keyDown(document, { key: 's', ctrlKey: true })
+    expect(await screen.findByText(NOTHING_TO_SAVE)).toBeInTheDocument()
     expect(api.updateInventoryItem).not.toHaveBeenCalled()
 
     await user.type(screen.getByRole('textbox', { name: /Description/ }), '!')
     fireEvent.keyDown(document, { key: 's', ctrlKey: true })
     await waitFor(() => expect(api.updateInventoryItem).toHaveBeenCalled())
+  })
+
+  it('names a Friedberg number typed and not used when Ctrl+S is pressed', async () => {
+    const user = userEvent.setup()
+    api.getInventoryItem.mockResolvedValue({ ...item, item_kind: 'currency' })
+    render(<ItemEditForm itemId={12} onSaved={vi.fn()} onClose={vi.fn()} />)
+    await screen.findByDisplayValue('Mercury Dime')
+
+    await user.type(screen.getByLabelText(/fr\. number/i), '1536')
+    fireEvent.keyDown(document, { key: 's', ctrlKey: true })
+
+    expect(
+      await screen.findByText(/^The Fr\. number 1536 is typed but not used/),
+    ).toBeInTheDocument()
+    expect(writes()).toBe(0)
   })
 
   it('leaves Ctrl+S to the offer dialog open on top of it', async () => {
