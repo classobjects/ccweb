@@ -17,7 +17,7 @@ rem
 rem      uv tool install --python 3.13 pgadmin4
 rem
 rem  The --python 3.13 is not optional. uv defaults to the newest interpreter
-rem  it can see, which here is miniforge's 3.14; pywinpty publishes no cp314
+rem  it can see, which may be a 3.14 (miniforge's, say); pywinpty publishes no cp314
 rem  wheel, so uv falls back to building it from Rust source and fails on the
 rem  missing MSVC linker.
 rem

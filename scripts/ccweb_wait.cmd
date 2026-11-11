@@ -37,7 +37,7 @@ ping -n 2 127.0.0.1 >nul
 goto url
 
 :pg
-"%PGBIN%\pg_isready.exe" -h %CCWEB_DB_HOST% -p %CCWEB_DB_PORT% >nul 2>&1
+"%PGBIN%\pg_isready.exe" -h "%CCWEB_DB_HOST%" -p %CCWEB_DB_PORT% >nul 2>&1
 if not errorlevel 1 exit /b 0
 set /a TRIES+=1
 if !TRIES! GEQ %~2 exit /b 1

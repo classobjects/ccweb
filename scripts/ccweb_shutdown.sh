@@ -87,7 +87,8 @@ killport() {
     kill -0 "$survivor" 2>/dev/null && kill -KILL "$survivor" 2>/dev/null
     return 0
 }
-pgready() { "$PGBIN/pg_isready" -h "$CCWEB_DB_HOST" -p "$CCWEB_DB_PORT" >/dev/null 2>&1; }
+# pgready, used only once the environment and the settings are known.
+. "$here/ccweb_wait.sh"
 
 echo "============================================"
 echo "  ccwebdb runtime shutdown"

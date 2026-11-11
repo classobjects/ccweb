@@ -221,8 +221,8 @@ if defined BLOCKED (
 
 rem  One command brings up all three and leaves anything already listening
 rem  alone, so it is the right answer whether one service is down or all of
-rem  them. Invoked as .\ - NoDefaultCurrentDirectoryInExePath is set on this
-rem  machine, so a bare name is "not recognized" even in this directory.
+rem  them. Invoked as .\ - where NoDefaultCurrentDirectoryInExePath is set,
+rem  a bare name is "not recognized" even in this directory.
 echo   To start:
 echo.
 echo       .\scripts\ccweb_startup.cmd

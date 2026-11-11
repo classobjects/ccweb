@@ -82,7 +82,7 @@ if not defined SKIPDB (
                 if errorlevel 1 (
                     set "DBSTATE=NOT STARTED - postmaster.pid: another computer may be running it"
                 ) else (
-                    call "%~dp0ccweb_wait.cmd" pg 60
+                    call "%REPO%\scripts\ccweb_wait.cmd" pg 60
                     if errorlevel 1 (
                         set "DBSTATE=FAILED TO START - see %LOGS%\postgres.log"
                     ) else (

@@ -187,8 +187,8 @@ if [ -n "$LAN" ]; then
     if command -v ufw >/dev/null 2>&1; then
         echo
         echo "  firewall    if ufw is active, other machines are blocked until you run,"
-        echo "              with this network's address range (192.168.1.0/24, say)"
-        echo "              in place of YOUR_SUBNET:"
+        echo "              with this network's address range in CIDR form in place"
+        echo "              of YOUR_SUBNET:"
         echo "  sudo ufw allow from YOUR_SUBNET to any port $FPORT proto tcp"
     fi
 fi

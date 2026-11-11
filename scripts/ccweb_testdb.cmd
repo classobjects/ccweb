@@ -33,6 +33,11 @@ for %%I in ("%~dp0..") do set "REPO=%%~fI"
 
 set "MODE=%~1"
 if "%MODE%"=="" set "MODE=start"
+rem  A mode is checked before anything is put in play, as in the bash twin.
+for %%M in (start use stop status) do if /i "%MODE%"=="%%M" goto :mode_ok
+echo usage: ccweb_testdb.cmd [start ^| stop ^| status]
+exit /b 2
+:mode_ok
 if /i "%MODE%"=="use" if defined TEST_DATABASE_URL exit /b 0
 
 call "%~dp0ccweb_env.cmd" || exit /b 2
@@ -52,9 +57,7 @@ if not exist "%LOGS%" mkdir "%LOGS%"
 if /i "%MODE%"=="start" goto start
 if /i "%MODE%"=="use" goto start
 if /i "%MODE%"=="stop" goto stop
-if /i "%MODE%"=="status" goto status
-echo usage: ccweb_testdb.cmd [start ^| stop ^| status]
-exit /b 2
+goto status
 
 :start
 "%PGBIN%\pg_isready.exe" -h %TESTHOST% -p %TESTPORT% -U postgres -d postgres >nul 2>&1

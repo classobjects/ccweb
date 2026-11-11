@@ -16,6 +16,14 @@ rem  (backend\app\gate_clock.py, keeping its times in the logs folder).
 rem ---------------------------------------------------------------------------
 setlocal enabledelayedexpansion
 
+rem  An unrecognised argument is refused, never ignored: a mistyped "fix"
+rem  would otherwise run the plain check and report on files left unfixed.
+if not "%~1"=="" if /i not "%~1"=="fix" (
+    echo ERROR: unknown argument %1
+    echo        .\scripts\ccweb_check.cmd [fix]
+    exit /b 2
+)
+
 set "REPO=%~dp0.."
 rem  Put the ccwebdb conda environment in play and take ENVDIR and PGBIN
 rem  from it, rather than from a guessed path. See ccweb_env.cmd.

@@ -27,11 +27,13 @@ rem  would hide a stopped server and make a stale dashboard look current.
 curl -s -f -o nul --max-time 3 "http://127.0.0.1:%SQPORT%/api/system/status"
 if errorlevel 1 (
     echo ERROR: SonarQube is not responding on port %SQPORT%.
-    echo        Run scripts\ccweb_sonar_start.cmd first.
+    echo        Run .\scripts\ccweb_sonar_start.cmd first.
     exit /b 1
 )
 
-if "%SONAR_TOKEN%"=="" (
+rem  `defined`, not a comparison with "": a value holding a quote would end
+rem  the quoted string early and break the line.
+if not defined SONAR_TOKEN (
     echo ERROR: SONAR_TOKEN is not set. Generate one at
     echo        http://127.0.0.1:%SQPORT%/account/security
     echo        then:  set "SONAR_TOKEN=squ_..."

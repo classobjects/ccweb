@@ -18,6 +18,17 @@
 set -u
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$here/.." && pwd)"
+
+# An unrecognised argument is refused, never ignored: a mistyped "fix" would
+# otherwise run the plain check and report on files left unfixed.
+case "${1:-}" in
+    ""|fix) ;;
+    *)
+        echo "ERROR: unknown argument $1"
+        echo "       ./scripts/ccweb_check.sh [fix]"
+        exit 2 ;;
+esac
+
 . "$here/ccweb_env.sh" || exit 2
 PY="$ENVDIR/bin/python"
 NODE="$ENVDIR/bin/node"
@@ -65,7 +76,8 @@ clock stage "$LOGS" "mutation scaffolding guard"
 # may be left in backend/app. See ccweb_check.cmd.
 hits="$(grep -rn --include='*.py' -e 'if False:' -e 'if True:' -e 'MUTATION' backend/app || true)"
 if [ -n "$hits" ]; then
-    printf '  left in place: %s\n' "$hits"
+    # Each hit on a line of its own, as the cmd twin prints them.
+    printf '%s\n' "$hits" | sed 's/^/  left in place: /'
     echo "  FAILED: mutation-test scaffolding was left in backend/app -- see the line(s) above"
     FAILED="$FAILED mutation-scaffold"
 fi

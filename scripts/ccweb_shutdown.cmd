@@ -26,6 +26,21 @@ rem This script lives in scripts\, so the repo root is one level up.
 rem %%~fI resolves the "..\" to a real absolute path with no trailing slash.
 for %%I in ("%~dp0..") do set "REPO=%%~fI"
 
+rem An unrecognised argument is refused, never ignored, and before anything
+rem is put in play, as in the bash twin. Git bash rewrites /keepdb into a
+rem path such as C:/Program Files/Git/keepdb, and ignoring that would stop a
+rem database the caller asked to keep running.
+set "KEEPDB="
+if /I "%~1"=="/keepdb" set "KEEPDB=1"
+if /I "%~1"=="--keepdb" set "KEEPDB=1"
+if "%~1"=="" goto :args_ok
+if defined KEEPDB goto :args_ok
+echo ERROR: unrecognised argument: %1
+echo        usage: scripts\ccweb_shutdown.cmd [/keepdb ^| --keepdb]
+echo        from git bash write --keepdb: bash rewrites /keepdb into a path
+exit /b 2
+:args_ok
+
 rem  Put ccwebdb in play for pg_ctl and the port lookups (portpid.py runs
 rem  on its Python). Unlike startup, a failure here does NOT abort: a
 rem  broken environment is exactly when you most want a way out, and the
@@ -51,20 +66,6 @@ if defined SETOK (
 )
 set "RUNTIME=%REPO%\.runtime"
 set "PIDFILE=%RUNTIME%\ccweb.pids"
-
-rem An unrecognised argument is refused, never ignored. Git bash rewrites
-rem /keepdb into a path such as C:/Program Files/Git/keepdb, and ignoring that
-rem would stop a database the caller asked to keep running.
-set "KEEPDB="
-if /I "%~1"=="/keepdb" set "KEEPDB=1"
-if /I "%~1"=="--keepdb" set "KEEPDB=1"
-if "%~1"=="" goto :args_ok
-if defined KEEPDB goto :args_ok
-echo ERROR: unrecognised argument: %1
-echo        usage: scripts\ccweb_shutdown.cmd [/keepdb ^| --keepdb]
-echo        from git bash write --keepdb: bash rewrites /keepdb into a path
-exit /b 2
-:args_ok
 
 rem The log directory must exist before anything redirects into it; otherwise
 rem the redirect fails and the command attached to it never runs at all.

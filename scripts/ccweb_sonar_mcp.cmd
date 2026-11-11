@@ -24,7 +24,7 @@ setlocal
 
 for %%I in ("%~dp0..") do set "REPO=%%~fI"
 
-if "%SONAR_TOKEN%"=="" (
+if not defined SONAR_TOKEN (
     echo ERROR: SONAR_TOKEN is not set. 1>&2
     exit /b 1
 )

@@ -12,7 +12,9 @@
 #
 #  The bash twin of ccweb_wait.cmd. A second passes between tries; a URL try
 #  that gets no answer takes up to two seconds. Sourced by ccweb_startup.sh,
-#  ccweb_pgadmin.sh and ccweb_claude.sh after ccweb_settings.sh.
+#  ccweb_shutdown.sh, ccweb_status.sh, ccweb_pgadmin.sh and ccweb_claude.sh;
+#  it only defines, so it may come before ccweb_settings.sh, but each
+#  function needs the settings by the time it is called.
 # ---------------------------------------------------------------------------
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then
     echo "ERROR: ccweb_wait.sh is sourced by the other scripts, not run" >&2

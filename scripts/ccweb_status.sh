@@ -21,6 +21,7 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$here/.." && pwd)"
 
 . "$here/ccweb_portpid.sh"
+. "$here/ccweb_wait.sh"
 
 DOWN=""
 FBUILD=""
@@ -68,7 +69,7 @@ WHY="no environment to ask with"
 if [ -z "$SETOK" ]; then
     echo "  PostgreSQL   UNKNOWN - $WHY"
     DOWN="$DOWN postgresql"
-elif "$PGBIN/pg_isready" -h "$CCWEB_DB_HOST" -p "$CCWEB_DB_PORT" >/dev/null 2>&1; then
+elif pgready; then
     echo "  PostgreSQL   $CCWEB_DB_HOST:$CCWEB_DB_PORT   RUNNING"
 else
     echo "  PostgreSQL   $CCWEB_DB_HOST:$CCWEB_DB_PORT   stopped"
