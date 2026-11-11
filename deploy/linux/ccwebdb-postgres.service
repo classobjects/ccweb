@@ -12,10 +12,13 @@
 #
 # Hardening, the part pg_ctl and its clients allow: the whole file system
 # is read-only to the server but the cluster folder, the log folder and
-# /tmp, and it can gain no privilege. /tmp stays writable and shared, not
-# private: the server makes its local socket there, where psql and the
-# backup find it, and a private /tmp would hide it from them. ProtectHome is left off: the cluster and the conda
-# environment live in the owner's home folder.
+# /tmp; it can gain no privilege, and can change neither the clock, the
+# host name, the kernel's settings, modules and logs, the control groups
+# nor a namespace. /tmp stays writable and shared, not private: the server
+# makes its local socket there, where psql and the backup find it, and a
+# private /tmp would hide it from them. ProtectHome is left off: the
+# cluster and the conda environment live in the owner's home folder.
+# MemoryDenyWriteExecute is left off too: it breaks PostgreSQL's JIT.
 [Unit]
 Description=ccwebdb PostgreSQL cluster
 After=network.target
@@ -36,6 +39,15 @@ ProtectSystem=strict
 ReadWritePaths=@CCWEB_DB_CLUSTER_DIR@ @CCWEB_LOG_DIR@ /tmp
 ProtectKernelTunables=true
 ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+SystemCallArchitectures=native
 
 [Install]
 WantedBy=multi-user.target
