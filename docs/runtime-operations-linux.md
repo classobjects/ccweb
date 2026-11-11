@@ -125,8 +125,9 @@ cd ~/dev/ccweb
 
 - **Detached servers.** Startup runs PostgreSQL, uvicorn and Vite each with
   `setsid nohup`, in a session of its own with its log writer, so it
-  outlives the terminal that started it. `.runtime/ccweb.pids` records each
-  server's process group (`backend=`, `frontend=`).
+  outlives the terminal that started it. `.runtime/ccweb.pids` records the
+  process group of each server it started (`backend=`, `frontend=`; empty
+  for one that was already running).
 - **Stopping.** Shutdown stops a recorded group only while `pgrep` still
   finds `uvicorn` or `vite` in it -- a process group number is reused after
   a reboot -- with `TERM`, then `KILL` after ten seconds, so the log writer
@@ -138,15 +139,18 @@ cd ~/dev/ccweb
   API only when `/health` answers `{"status":"ok"}`; any other program
   there is reported as taking the port, and startup exits 1.
 - **Ports.** `ss` says which process holds a port. A port held by another
-  user's process shows its pid as `?`: `ss` may not show it, and the port is
-  still reported as held, never as free.
-- **The backend** runs as `python -m uvicorn`.
+  user's process has no pid in `ss`; `ccweb_portpid.sh` prints `?` for it,
+  and the port is reported as held, never as free.
 
 `ccweb_status.sh` checks and reports exactly as its Windows twin does, exit
 codes included: [runtime-operations-windows.md](runtime-operations-windows.md),
 *Checking what is running*.
 
 ## Starting a Claude Code session
+
+Optional: it needs Claude Code installed for this account (the launcher
+expects `claude` on `PATH` or in `~/.local/bin`; see
+https://docs.anthropic.com/en/docs/claude-code).
 
 ```console
 cd ~/dev/ccweb
@@ -252,7 +256,13 @@ The scan needs `SONAR_TOKEN` in the environment. `read -rs` keeps it off the
 screen and out of the shell's history:
 
 ```console
-read -rs SONAR_TOKEN && export SONAR_TOKEN
+read -rs SONAR_TOKEN
+```
+
+Then:
+
+```console
+export SONAR_TOKEN
 ```
 
 The MCP launcher for a Linux machine's `.mcp.json` (machine-local and
@@ -279,10 +289,11 @@ guarded by `command -v sonar`) rather than through `powershell -File`.
 `./scripts/ccweb_startup.sh --lan` binds Vite to `0.0.0.0`; the API and
 PostgreSQL stay on this machine. It lists the machine's addresses at the
 end. With the `ufw` firewall active, allow the port from the local network
-only (the example's network is `192.168.0.0/16`; use yours):
+only. `YOUR_SUBNET` is this network's range, such as `192.168.1.0/24`, and
+5173 is `CCWEB_FRONTEND_PORT`'s default:
 
 ```console
-sudo ufw allow from 192.168.0.0/16 to any port 5173 proto tcp
+sudo ufw allow from YOUR_SUBNET to any port 5173 proto tcp
 ```
 
 Never open it to the internet. Under WSL, other machines cannot reach WSL's

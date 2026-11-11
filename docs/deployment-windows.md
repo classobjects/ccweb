@@ -225,7 +225,7 @@ make the other accounts there.
 ### Restore an existing collection
 
 Skip this if the collection is already on the server: restored from
-the backup workbook by environment-setup-windows.md step 8 (*This collection, on a
+the backup workbook by environment-setup-windows.md step 8 (*A collection, on a
 new machine*), it is complete.
 
 Restore the current collection. On the

@@ -37,8 +37,9 @@ controls.
 
 ## 0. The system's own tools
 
-`git` to fetch the repository, `curl` to fetch the installers, and `iproute2`
-for `ss`, which the scripts use to see which program holds a port. Most
+`git` to fetch the repository, `curl` to fetch the installers, `iproute2`
+for `ss`, which the scripts use to see which program holds a port, and
+`rsync`, which step 8 uses to copy the photographs. Most
 Ubuntu installations have them already; this installs whatever is missing
 and changes nothing that is there:
 
@@ -167,8 +168,10 @@ On an environment already in use, preview with `--dry-run` first. Pin
 `nodejs` to the 24.x LTS line; conda-forge's newest `nodejs` builds have
 been pre-releases. Pin `postgresql` to its major version: a cluster made by
 one major version is not opened by the next without an upgrade. They land in `~/miniforge3/envs/ccwebdb/bin`, so they are
-on `PATH` only with the environment active. Sign in to GitHub once with
-`gh auth login`.
+on `PATH` only with the environment active. `gh`, the GitHub CLI, is
+optional: nothing in the setup or the scripts uses it, so leave it off
+the line unless you want it for pull requests; to use it, sign in once
+with `gh auth login`.
 
 Verify:
 
@@ -249,7 +252,8 @@ psql -h localhost -U postgres -d postgres -c "CREATE DATABASE ccwebdb OWNER ccwe
 `role "ccwebdb" already exists` and `database "ccwebdb" already exists`,
 and change nothing.
 
-The server runs until step 8 stops it, or until the machine restarts; after
+The server runs until you stop it (step 8 does, when restoring a
+collection) or the machine restarts; after
 a restart, start it again with the `pg_ctl` line above. From the end of step
 8 on, `./scripts/ccweb_startup.sh` starts it.
 
@@ -258,7 +262,9 @@ Windows side is reached from Linux as `localhost:5432` when WSL's networking
 is in *mirrored* mode, and then the cluster cannot listen there. Stop the
 Windows one, or give this cluster another port: add `port = 5434` to
 `.pgdata/postgresql.conf` and use 5434 in `DATABASE_URL` (step 6) and in the
-commands above.
+commands above and below. The scripts start the cluster on
+`DATABASE_URL`'s port whatever `postgresql.conf` says, so that edit
+matters only to a server started by hand.
 
 ## 6. Configure the application
 
@@ -310,7 +316,8 @@ the settings the way the API does and prints `settings OK`, or an error
 naming the setting that is wrong, never a value:
 
 ```console
-cd ~/dev/ccweb/backend && uv run python -c "from app.config import settings; print('settings OK')"
+cd ~/dev/ccweb/backend
+uv run python -c "from app.config import settings; print('settings OK')"
 ```
 
 [settings.md](settings.md) lists every setting -- whether it is required,
@@ -441,14 +448,23 @@ uv run python -m app.seed
 `FIRST_ADMIN_EMAIL` / `FIRST_ADMIN_PASSWORD` **plus five demo items with shop
 listings**. Both are idempotent. Never run `app.seed` against a real
 collection's database: it refuses one that already holds a purchase, or an
-item other than the five demo ones, and writes nothing.
+item other than the five demo ones, and writes nothing, unless
+`--into-existing` is given.
 
 ---
 
 ## Running the application
 
-Stop a server still running from step 5 (`pg_ctl -D .pgdata -m fast stop`),
-then:
+Stop a server still running from step 5 (it prints `server stopped`, or
+`Is server running?` when none was):
+
+```console
+cd ~/dev/ccweb
+conda activate ccwebdb
+pg_ctl -D .pgdata -m fast stop
+```
+
+Then:
 
 ```console
 cd ~/dev/ccweb
@@ -496,10 +512,12 @@ uv and conda share `site-packages` through `UV_PROJECT_ENVIRONMENT`, and
 `uv sync` uninstalls anything not in `uv.lock`. Use conda only for non-Python
 tools.
 
-**`ccweb_env.sh`, `ccweb_settings.sh` and `ccweb_testdb.sh use` are
-sourced** (`. scripts/ccweb_env.sh`), because they set your shell's
-variables; the other scripts are run (`./scripts/ccweb_status.sh`). Each
-says so if used the other way.
+**`ccweb_env.sh` and `ccweb_testdb.sh use` are sourced in your own
+shell** (`. scripts/ccweb_env.sh`), because they set its variables.
+`ccweb_settings.sh`, `ccweb_logdir.sh`, `ccweb_portpid.sh` and
+`ccweb_wait.sh` are sourced by the other scripts only -- in an
+interactive shell the settings would outrank later edits to `.env`. The
+rest are run (`./scripts/ccweb_status.sh`).
 
 **A script checked out with Windows line endings fails** with
 `$'\r': command not found`. `.gitattributes` keeps every `.sh` LF, so this
