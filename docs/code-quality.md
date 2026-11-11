@@ -13,25 +13,36 @@ real -- there is no backlog to read past. That only stays true if nothing is
 ignored to spare the codebase work, and if the gate's exit code, not a skim
 of its output, decides.
 
-One command runs everything, from the repository
-(`cd /d %USERPROFILE%\dev\ccweb`):
-
-Check only:
+One command runs everything. Check only, Windows (cmd):
 
 ```console
 cd /d %USERPROFILE%\dev\ccweb
 .\scripts\ccweb_check.cmd
 ```
 
-Ruff format, ruff check --fix and prettier --write first, then check:
+Linux (bash):
+
+```console
+cd ~/dev/ccweb
+./scripts/ccweb_check.sh
+```
+
+With `fix`, it runs ruff format, ruff check --fix and prettier --write
+first, then checks. Windows (cmd):
 
 ```console
 cd /d %USERPROFILE%\dev\ccweb
 .\scripts\ccweb_check.cmd fix
 ```
 
-On Linux the same gates, in the same order, are `./scripts/ccweb_check.sh`
-(and `./scripts/ccweb_check.sh fix`), from `~/dev/ccweb`.
+Linux (bash):
+
+```console
+cd ~/dev/ccweb
+./scripts/ccweb_check.sh fix
+```
+
+Both run the same gates in the same order.
 
 It exits non-zero if anything fails, and prints `FAILED:` with the names of
 the failed stages. Gate on that exit code; do not pipe the output through a

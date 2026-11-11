@@ -134,8 +134,9 @@ backend/
                          item_descriptions, item_attributes, aliases,
                          reference_merge, references, grades, years, plates,
                          composition, fr_format, item_kinds (the detail row
-                         follows the kind), field_sources (which fields hold
-                         a derived default), attribute_rules, reference_fields
+                         follows the kind), attribute_rules, mule_rules (a
+                         note is a mule from its series and back plate),
+                         reference_fields
                          (a vocabulary's own columns), purchases (purchase
                          order text conventions), short_titles, gift_rule (an
                          item saved at no cost is given the Gift
@@ -167,7 +168,12 @@ backend/
     backup_run.py        one whole backup: export, prove by restoring, then tidy
     media_backup.py      the photographs' bytes copied to a folder, checked there,
                          and pruned of files no image names
-    logpipe.py           size-bounded log files for the dev runtime
+    media_check.py,      start-up refusals: a photograph folder holding none
+    default_kind_check.py  of the photographs, or a starting item kind the
+                         database cannot give an item
+    logpipe.py           size-bounded log files for the API and dev servers
+    portpid.py,          helpers for the scripts: the PID listening on a
+    gate_clock.py        port, and the quality gate's stage timings
   alembic/               migrations, from a squashed baseline.sql
   data/reference/        shipped vocabularies as versioned JSON
   tests/                 pytest, against its own ccwebdb_test database
@@ -181,7 +187,8 @@ frontend/
   scripts/               check-bundle-isolation.mjs
 scripts/                 ccweb_*.cmd and their ccweb_*.sh twins: startup,
                          shutdown, status, check, testdb, psql, pgadmin,
-                         backup, claude, sonar_*; env, settings, logdir,
+                         backup, api (the API in the foreground, as a
+                         server runs it), claude, sonar_*; env, settings, logdir,
                          portpid, wait and pgstart are helpers the others
                          call
 deploy/                  Caddyfile and systemd templates, rendered from
