@@ -225,5 +225,59 @@ describe('AuthProvider', () => {
       expect(document.documentElement.getAttribute('data-theme')).toBe('dark')
       expect(auth.current.theme).toBe('dark')
     })
+
+    /** A promise and the function that settles it, for a save answered late. */
+    function deferred() {
+      let resolve
+      const promise = new Promise((done) => {
+        resolve = done
+      })
+      return { promise, resolve }
+    }
+
+    it('keeps the latest choice when an earlier save answers after it', async () => {
+      loadTokens.mockReturnValue({ access_token: 'a' })
+      api.me.mockResolvedValue({ ...BUYER, theme: 'auto' })
+      const first = deferred()
+      const second = deferred()
+      api.updateMe
+        .mockReturnValueOnce(first.promise)
+        .mockReturnValueOnce(second.promise)
+      const auth = await mount()
+
+      let saves
+      act(() => {
+        saves = [auth.current.setTheme('dark'), auth.current.setTheme('light')]
+      })
+      await act(async () => {
+        second.resolve({ ...BUYER, theme: 'light' })
+        first.resolve({ ...BUYER, theme: 'dark' })
+        await Promise.all(saves)
+      })
+
+      expect(document.documentElement.getAttribute('data-theme')).toBe('light')
+      expect(auth.current.theme).toBe('light')
+      expect(auth.current.user.theme).toBe('light')
+    })
+
+    it('leaves nobody signed in when a save answers after signing out', async () => {
+      loadTokens.mockReturnValue({ access_token: 'a' })
+      api.me.mockResolvedValue({ ...BUYER, theme: 'auto' })
+      const late = deferred()
+      api.updateMe.mockReturnValueOnce(late.promise)
+      const auth = await mount()
+
+      let save
+      act(() => {
+        save = auth.current.setTheme('dark')
+      })
+      act(() => onSignedOut.mock.calls.at(-1)[0]())
+      await act(async () => {
+        late.resolve({ ...BUYER, theme: 'dark' })
+        await save
+      })
+
+      expect(auth.current.user).toBeNull()
+    })
   })
 })
