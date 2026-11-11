@@ -18,7 +18,8 @@ vi.mock('./api', () => ({
 }))
 
 import { api } from './api'
-import { FIND_FROM, ReferenceProvider, ReferenceSelect } from './reference'
+import { FIND_FROM, ReferenceSelect } from './reference'
+import { ReferenceProvider } from './reference-provider'
 import { ReferenceContext, useReference } from './reference-context'
 import { entryMatch, findEntries } from './reference-match'
 import { codeFromLabel } from './reference-codes'
