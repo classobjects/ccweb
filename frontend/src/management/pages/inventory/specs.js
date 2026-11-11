@@ -264,8 +264,3 @@ export const CURRENCY_VIEW = {
 }
 
 export const PAGE_SIZE = 50
-
-/** Every field a view's table shows: each column's first-line field, then its second. */
-export function fieldsOf(view) {
-  return view.columns.flat()
-}

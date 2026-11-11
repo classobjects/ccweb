@@ -83,6 +83,7 @@ export default function Catalog() {
         {/* Read from the vocabulary rather than repeated here, so a new
             item_kind shows up in the filter without a frontend change. */}
         <select
+          aria-label="Type"
           value={filters.kind}
           onChange={(e) => applyFilter({ kind: e.target.value })}
         >

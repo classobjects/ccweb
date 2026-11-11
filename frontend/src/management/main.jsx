@@ -7,7 +7,7 @@ import { BrowserRouter } from 'react-router-dom'
 
 import ManagementApp from './ManagementApp'
 import { AuthProvider } from '../shared/auth'
-import { ReferenceProvider } from '../shared/reference'
+import { ReferenceProvider } from '../shared/reference-provider'
 import '../shared/shared.css'
 import './styles.css'
 
