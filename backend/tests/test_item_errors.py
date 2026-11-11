@@ -156,6 +156,56 @@ def test_an_unknown_error_type_is_422(
     assert resp.status_code == 422, resp.text
 
 
+def _retire(db: Session, code: str) -> None:
+    """Retire an error type, as the reference editor does."""
+    row = db.query(ErrorType).filter(ErrorType.code == code).one()
+    row.is_active = False
+    db.commit()
+
+
+def test_a_retired_error_the_item_already_has_can_be_sent_back(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    """Retiring a type must not freeze the error set of every item carrying it."""
+    item = build_bare_item(db)
+    client.put(
+        f"/api/inventory/{item.id}/errors",
+        json={"errors": [{"error_type": "doubled_die"}]},
+        headers=admin_headers,
+    )
+    _retire(db, "doubled_die")
+
+    resp = client.put(
+        f"/api/inventory/{item.id}/errors",
+        json={
+            "errors": [
+                {"error_type": "doubled_die", "details": "now described"},
+                {"error_type": "off_center"},
+            ]
+        },
+        headers=admin_headers,
+    )
+    assert resp.status_code == 200, resp.text
+    assert _errors_of(db, item) == {
+        code_id(db, ErrorType, "doubled_die"),
+        code_id(db, ErrorType, "off_center"),
+    }
+
+
+def test_a_retired_error_the_item_does_not_have_is_still_refused(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    item = build_bare_item(db)
+    _retire(db, "doubled_die")
+    resp = client.put(
+        f"/api/inventory/{item.id}/errors",
+        json={"errors": [{"error_type": "doubled_die"}]},
+        headers=admin_headers,
+    )
+    assert resp.status_code == 422, resp.text
+    assert "Retired" in resp.json()["detail"]
+
+
 def test_the_same_error_type_twice_in_one_request_is_422(
     client: TestClient, admin_headers: dict[str, str], db: Session
 ) -> None:

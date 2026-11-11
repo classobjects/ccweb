@@ -3766,6 +3766,19 @@ def set_item_errors(
     # The set before and after, in the change log like any field an edit
     # changes, so the item's History shows errors recorded and removed.
     before = field_changes.error_set(db, item.id)
+    # A retired error type the item already carries may be sent back, as a
+    # retired classifier an item already holds may (`code_to_id`'s `keep`):
+    # otherwise one retired error would block every later edit of the set.
+    # `.all()`: `dict()` of a result itself reads it as a mapping.
+    held = dict(
+        db.execute(
+            select(ErrorType.code, ErrorType.id)
+            .join(ItemError, ItemError.error_type_id == ErrorType.id)
+            .where(ItemError.inventory_item_id == item.id)
+        )
+        .tuples()
+        .all()
+    )
     after = [
         {"error_type": entry.error_type, "details": entry.details}
         for entry in payload.errors
@@ -3790,7 +3803,11 @@ def set_item_errors(
                 ItemError(
                     inventory_item_id=item.id,
                     error_type_id=require_code(
-                        db, ErrorType, entry.error_type, "error_type"
+                        db,
+                        ErrorType,
+                        entry.error_type,
+                        "error_type",
+                        keep=held.get(entry.error_type),
                     ),
                     details=entry.details,
                     source=ProvenanceSource.manual,
