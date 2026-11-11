@@ -72,12 +72,13 @@ certificate authority's portal and paste in the request; DigiCert reissues
 at no charge and sends a new zip, and the key never travels. The example's
 commands follow: put your own domain where `classobjects.com` appears, and
 your organisation's country, state, town and name in `-subj`, which shows
-example values (`YourState`, `YourTown`, `Your Business`, `example.com`).
+stand-ins (`COUNTRY`, a two-letter code; `STATE`, `TOWN`, `BUSINESS`,
+`DOMAIN`), which openssl refuses until they are replaced.
 
 ```console
 if not exist C:\caddy\certs mkdir C:\caddy\certs
 cd /d C:\caddy\certs
-openssl req -new -newkey rsa:2048 -nodes -keyout classobjects.com.key -out classobjects.com.csr -subj "/C=US/ST=YourState/L=YourTown/O=Your Business/CN=example.com"
+openssl req -new -newkey rsa:2048 -nodes -keyout classobjects.com.key -out classobjects.com.csr -subj "/C=COUNTRY/ST=STATE/L=TOWN/O=BUSINESS/CN=DOMAIN"
 type classobjects.com.csr
 ```
 
@@ -156,10 +157,12 @@ pg_ctl -D .pgdata -m fast stop
 ```
 
 Then register the cluster as a service once, from an administrator cmd with
-`conda activate ccwebdb` run in it. `-S auto` starts it with the machine:
+`conda activate ccwebdb` run in it. `-S auto` starts it with the machine,
+and `-o` gives it the port of `DATABASE_URL` (5432 is the default; put
+yours if it differs), as the development scripts and the Linux unit do:
 
 ```console
-pg_ctl register -N ccwebdb-postgres -D "%USERPROFILE%\dev\ccweb\.pgdata" -S auto
+pg_ctl register -N ccwebdb-postgres -D "%USERPROFILE%\dev\ccweb\.pgdata" -S auto -o "-p 5432"
 ```
 
 Keep the cluster on the server's own disk, never in a folder that OneDrive
@@ -215,9 +218,9 @@ cd /d %USERPROFILE%\dev\ccweb\backend && uv run python -m app.create_admin --ema
 ```
 
 It refuses a password under 12 characters or one published in this
-repository, and refuses to run at all once a manager exists. Sign in to
-the console with that account after step 7, and make the other accounts
-there.
+repository, and refuses to run once a manager exists unless given `--another`. Sign
+in to the console with that account once the site answers (step 9), and
+make the other accounts there.
 
 ### Restore an existing collection
 
@@ -354,16 +357,19 @@ application read `.env` and need nothing more.
 ## 5. Build the frontend
 
 ```console
+conda activate ccwebdb
 cd /d %USERPROFILE%\dev\ccweb\frontend
 npm ci
 npm run build
 ```
 
 This writes `frontend\dist`: `index.html`, `management.html`, the
-favicons, `brand\` (the ClassObjects pictures) and `assets\`. The build
-reads `VITE_DIGICERT_SEAL_ID` from `.env`, so set it (step 4) before
-building, or the shop has no seal;
-the build then ends with a `WARNING` naming it.
+favicons, `brand\` and `assets\`. `brand\` holds the project's own
+ClassObjects pictures: a site of your own replaces `frontend\public\brand\logo.svg`
+(the logo in every header) with its own before building, and removes or
+replaces the `classobjects-*.png` files there. The build reads
+`VITE_DIGICERT_SEAL_ID` from `.env`, so set it (step 4) before building,
+or the shop has no seal; the build prints a `WARNING` naming it.
 Build again after every update.
 
 ## 6. Run the API at start-up
@@ -421,9 +427,12 @@ sc failure ccwebdb-api reset= 3600 actions= restart/10000/restart/30000/restart/
 
 Grant the account what the API uses. The checkout's own folder is granted
 without inheritance, so nothing new at its top level, `.pgdata` above all,
-becomes readable. Keep `MEDIA_ROOT` in the grant if `.env` moves it:
+becomes readable. Keep `MEDIA_ROOT` and `CCWEB_LOG_DIR` in the grant if
+`.env` moves them. The photograph folder does not exist on a new
+installation, so it is made first:
 
 ```console
+if not exist "%USERPROFILE%\dev\ccweb\media" mkdir "%USERPROFILE%\dev\ccweb\media"
 icacls C:\ccwebdb-api\logs /grant "NT SERVICE\ccwebdb-api:(OI)(CI)M"
 icacls "%USERPROFILE%\miniforge3" /grant "NT SERVICE\ccwebdb-api:(OI)(CI)RX" /Q
 icacls "%USERPROFILE%\dev\ccweb" /grant "NT SERVICE\ccwebdb-api:RX" /Q
@@ -444,11 +453,17 @@ Then start it and check it answers (at the default address; use
 
 ```console
 net start ccwebdb-api
-curl -s -f -o nul http://127.0.0.1:8000/docs
-if errorlevel 1 echo The API is not answering: read logs\backend.log
 ```
 
-It can take a few seconds to answer. To restart it after an update:
+It can take a few seconds to answer, so give it five before checking:
+
+```console
+ping -n 6 127.0.0.1 >nul
+curl -s -f -o nul http://127.0.0.1:8000/health
+if errorlevel 1 echo The API is not answering: read %USERPROFILE%\dev\ccweb\logs\backend.log
+```
+
+To restart it after an update:
 
 ```console
 net stop ccwebdb-api
@@ -470,8 +485,8 @@ C:\caddy\caddy.exe version
 
 `version` prints a `v2.` version line. Every command here names
 `C:\caddy\caddy.exe` in full: on a machine with
-`NoDefaultCurrentDirectoryInExePath` set, as the example's development
-computer has, a bare `caddy` is not found even in `C:\caddy`.
+`NoDefaultCurrentDirectoryInExePath` set, a bare `caddy` is not found even
+in `C:\caddy`.
 
 Then write its configuration, `C:\caddy\Caddyfile`, from the repository's
 template `deploy\Caddyfile` and the settings of step 4. The Windows service
@@ -633,7 +648,8 @@ sc query caddy
 curl -s -o nul -w "%{http_code}\n" https://YOUR_DOMAIN/
 ```
 
-`RUNNING` and `200`. Caddy reads the Caddyfile only when it starts, so after
+`RUNNING`, and `200` once the domain points at the server (step 8); with a
+certificate Caddy obtains itself, not before. Caddy reads the Caddyfile only when it starts, so after
 rendering it again or changing the certificate files, restart the service:
 
 ```console
@@ -730,15 +746,24 @@ are up; step 9 checks the whole site.
   twice a year. Ahead of each expiry, reissue in the portal (the request
   made in step 1 can be used again, so the key stays where it is), replace
   the certificate and `fullchain.pem` in `C:\caddy\certs`, and restart the
-  `caddy` service. The example's current certificate expires on
-  2027-04-30.
+  `caddy` service.
 - **An update:** `git pull`, `uv sync`, then a schema release as in
   [system-administration.md](system-administration.md) (*Applying a schema
   release*) when the update brings a migration, then `npm ci` and
-  `npm run build` in `frontend`, then restart the API task. Caddy needs no
-  restart for a new build.
-- **Backups:** schedule the daily backup once with
-  `.\scripts\ccweb_backup.cmd /schedule`. It runs every day at
+  `npm run build` in `frontend`, then restart the API service (above).
+  Caddy needs no restart for a new build. The deployed copies of the
+  templates -- `C:\caddy\Caddyfile` and the API service's XML in
+  `C:\ccwebdb-api` -- are not updated by a pull: when an update changes
+  `deploy\`, copy and edit the XML again (step 6) and render the
+  Caddyfile again (step 7).
+- **Backups:** schedule the daily backup once, from an administrator cmd:
+
+  ```console
+  cd /d %USERPROFILE%\dev\ccweb
+  .\scripts\ccweb_backup.cmd /schedule
+  ```
+
+  It runs every day at
   `CCWEB_BACKUP_TIME`, into `CCWEB_BACKUP_DIR`, whether or not anyone is
   signed in ([system-administration.md](system-administration.md), *Backing
   up and restoring*). Put that folder somewhere that leaves the machine: the

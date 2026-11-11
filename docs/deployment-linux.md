@@ -74,13 +74,21 @@ seal.
 
 Follow [environment-setup-linux.md](environment-setup-linux.md) steps 0 to
 7, as the account that will own the system. Then make PostgreSQL a service.
-First stop a server started by hand in step 5 (`pg_ctl -D .pgdata -m fast
-stop`), then render the unit from the settings and install it:
+First stop a server started by hand in step 5:
+
+```console
+cd ~/dev/ccweb
+conda activate ccwebdb
+pg_ctl -D .pgdata -m fast stop
+```
+
+It prints `server stopped`, or `Is server running?` when none was. Then
+render the unit from the settings and install it:
 
 ```console
 cd ~/dev/ccweb/backend
 conda activate ccwebdb
-python -m app.runtime_settings --render ../deploy/linux/ccwebdb-postgres.service | sudo tee /etc/systemd/system/ccwebdb-postgres.service > /dev/null
+python -m app.runtime_settings --render ../deploy/linux/ccwebdb-postgres.service > ~/ccwebdb-postgres.service && sudo install -m 644 ~/ccwebdb-postgres.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now ccwebdb-postgres
 ```
@@ -125,8 +133,9 @@ showing nothing as it is typed, so it is given alone:
 cd ~/dev/ccweb/backend && uv run python -m app.create_admin --email "$ADMIN_EMAIL"
 ```
 
-It refuses a weak or published password, and refuses to run at all once a
-manager exists.
+It refuses a password under 12 characters or one published in this
+repository, and refuses to run once a manager exists unless given
+`--another`.
 
 ### Restore an existing collection
 
@@ -184,7 +193,11 @@ npm run build
 ```
 
 Set `VITE_DIGICERT_SEAL_ID` before building, or the shop has no seal; the
-build then ends with a `WARNING` naming it. Ubuntu
+build prints a `WARNING` naming it. The build's `brand/` folder holds the
+project's own ClassObjects pictures: a site of your own replaces
+`frontend/public/brand/logo.svg` (the logo in every header) with its own
+before building, and removes or replaces the `classobjects-*.png` files
+there. Ubuntu
 makes each home folder readable by its owner alone, so Caddy cannot serve
 `frontend/dist` where it is. Copy it where it can, to `CCWEB_SITE_ROOT`:
 
@@ -230,7 +243,7 @@ rendered units name it.
 ```console
 cd ~/dev/ccweb/backend
 conda activate ccwebdb
-python -m app.runtime_settings --render ../deploy/linux/ccwebdb-api.service | sudo tee /etc/systemd/system/ccwebdb-api.service > /dev/null
+python -m app.runtime_settings --render ../deploy/linux/ccwebdb-api.service > ~/ccwebdb-api.service && sudo install -m 644 ~/ccwebdb-api.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now ccwebdb-api
 ```
@@ -239,7 +252,7 @@ Check it answers (the default address). It takes a few seconds to start,
 so this asks for up to ten:
 
 ```console
-for try in 1 2 3 4 5 6 7 8 9 10; do curl -s -f -o /dev/null http://127.0.0.1:8000/docs && break; sleep 1; done; curl -s -f -o /dev/null http://127.0.0.1:8000/docs && echo "The API answers" || echo "The API is not answering: journalctl -u ccwebdb-api"
+for try in 1 2 3 4 5 6 7 8 9 10; do curl -s -f -o /dev/null http://127.0.0.1:8000/health && break; sleep 1; done; curl -s -f -o /dev/null http://127.0.0.1:8000/health && echo "The API answers" || echo "The API is not answering: journalctl -u ccwebdb-api"
 ```
 
 ## 7. Caddy
@@ -263,7 +276,7 @@ repository's template and the settings, check it, and load it:
 ```console
 cd ~/dev/ccweb/backend
 conda activate ccwebdb
-python -m app.runtime_settings --render ../deploy/Caddyfile | sudo tee /etc/caddy/Caddyfile.new > /dev/null
+python -m app.runtime_settings --render ../deploy/Caddyfile > ~/Caddyfile.new && sudo install -m 644 ~/Caddyfile.new /etc/caddy/Caddyfile.new
 sudo caddy validate --config /etc/caddy/Caddyfile.new
 ```
 
@@ -334,7 +347,9 @@ machine.
   [system-administration.md](system-administration.md) (*Applying a schema
   release*) when the update brings a migration, `npm ci` and `npm run build`
   in `frontend`, the copy of step 5, then `sudo systemctl restart
-  ccwebdb-api`.
+  ccwebdb-api`. The installed units and `/etc/caddy/Caddyfile` are not
+  updated by a pull: when an update changes `deploy/`, render and install
+  them again as in steps 2, 6 and 7.
 - **Backups:** once, as the system's owner:
 
   ```console
@@ -344,5 +359,7 @@ machine.
 
   It installs a systemd user timer that runs the backup every day at
   `CCWEB_BACKUP_TIME`, into `CCWEB_BACKUP_DIR`, whether or not anyone is
-  signed in ([system-administration.md](system-administration.md), *Backing
+  signed in -- provided `loginctl enable-linger` succeeds, which it
+  runs; if it prints a `WARNING` instead, the timer runs only while the
+  account is signed in ([system-administration.md](system-administration.md), *Backing
   up and restoring*). `./scripts/ccweb_backup.sh --scheduled` shows it.

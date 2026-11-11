@@ -4,9 +4,9 @@ What the development runtime writes while it runs. Everything in this directory 
 (`logs/*` and `!logs/README.md` in `.gitignore`), so nothing written here
 reaches GitHub.
 
-`ccweb_startup`, `ccweb_shutdown`, `ccweb_claude`, `ccweb_backup` and
-`ccweb_testdb` in `scripts/` -- the `.cmd` on Windows, the `.sh` on Linux --
-write here. When something fails, they print the log file to read first.
+`ccweb_startup`, `ccweb_shutdown`, `ccweb_pgstart`, `ccweb_api`,
+`ccweb_claude`, `ccweb_backup`, `ccweb_testdb` and `ccweb_check` in
+`scripts/` -- the `.cmd` on Windows, the `.sh` on Linux -- write here. When something fails, they print the log file to read first.
 On a Windows server, the API's service writes `backend.log` here too,
 through the same log writer, so it rotates as below
 (`docs/deployment-windows.md`, step 6). A server installed as a systemd
@@ -24,9 +24,10 @@ logs/
   frontend.log  .1  .2    Vite: dev server output and build errors
   postgres.log  .1  .2    PostgreSQL: pg_ctl's start messages, then the server's own log
   pg_stop.log   .1  .2    pg_ctl stop: "server stopped"
-  postgres-test.log       the test cluster (ccweb_testdb), the same way
+  postgres-test.log  .1  .2  the test cluster (ccweb_testdb), the same way
   initdb-test.log         initdb, when ccweb_testdb builds the test cluster
   backup.log              ccweb_backup: what each backup run did
+  gate-times.json         ccweb_check: each stage's time in the last full run
 ```
 
 `.runtime/ccweb.pids` is not a log: it holds the running processes' PIDs
@@ -45,8 +46,8 @@ logs/
 
 ## How the files rotate
 
-**Every type but `backup.log` and `initdb-test.log` keeps its last three files, and no file of
-those grows past 1 GB.**
+**Every type but `backup.log` and `initdb-test.log` keeps its last three
+files, and no file of those but `pg_stop.log` grows past 1 GiB.**
 
 - The current file always has the plain name. When a new one starts, the
   older files move up to `.1` and `.2`, and whatever was in `.2` is deleted.
