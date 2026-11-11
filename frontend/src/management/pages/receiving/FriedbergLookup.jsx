@@ -313,6 +313,19 @@ export default function FriedbergLookup({
   const searchTextRef = useRef('')
   const [popupBlocked, setPopupBlocked] = useState(false)
 
+  // The Fr. number box takes focus when an answer is asked for -- a search
+  // finished, or a window opened to read the number from -- so the number
+  // read there is typed or pasted straight in. Asked for by a count, since
+  // a search's box is in the page only once its results are: the effect
+  // runs after the render that puts it there. Focusing a box here does not
+  // raise this window over the one just opened.
+  const numberBox = useRef(null)
+  const [focusAsked, setFocusAsked] = useState(0)
+  const focusNumberBox = () => setFocusAsked((n) => n + 1)
+  useEffect(() => {
+    if (focusAsked > 0) numberBox.current?.focus()
+  }, [focusAsked])
+
   // The item editor's search, run once with what the note records. It takes
   // the same stale-response guard as a pressed Look up, so a Look up pressed
   // after "Change search fields" supersedes it rather than racing it.
@@ -332,6 +345,7 @@ export default function FriedbergLookup({
         if (nothingNew(rows, attachedId)) {
           setPopupBlocked(!openWebSearch(searchTextRef.current))
         }
+        setFocusAsked((n) => n + 1)
       })
       .catch((err) => {
         if (!cancelled) setSearchError(err.message)
@@ -419,6 +433,7 @@ export default function FriedbergLookup({
 
   function searchWeb() {
     setPopupBlocked(!openWebSearch(searchText))
+    focusNumberBox()
   }
 
   // A note in a PMG holder: PMG's own page for its certificate names the
@@ -428,9 +443,10 @@ export default function FriedbergLookup({
     <button
       type="button"
       title="PMG's page for this note's certificate"
-      onClick={() =>
+      onClick={() => {
         setPopupBlocked(!window.open(pmgUrl, 'pmg-cert', 'popup,width=1000,height=800'))
-      }
+        focusNumberBox()
+      }}
     >
       PMG cert
     </button>
@@ -447,6 +463,7 @@ export default function FriedbergLookup({
     if (nothingNew(rows, attachedId)) {
       setPopupBlocked(!openWebSearch(searchTextRef.current))
     }
+    focusNumberBox()
   }
 
   const signatureListed = signatureOptions.some(
@@ -684,6 +701,7 @@ export default function FriedbergLookup({
         <label data-help="fr_number">
           Fr. number{/* */}
           <input
+            ref={numberBox}
             type="text"
             value={recordFrNumber}
             onChange={(e) => {

@@ -211,6 +211,27 @@ describe('FriedbergPanel', () => {
     open.mockRestore()
   })
 
+  // The owner reads the number in the window just opened and comes back to
+  // type or paste it: the box is where the cursor waits.
+  it('puts the cursor in the Fr. number box after Look up again and Search the web', async () => {
+    const open = vi.spyOn(window, 'open').mockImplementation(() => ({}))
+    api.searchFriedberg.mockResolvedValue([
+      { id: 10, fr_number: '9902', verified: true },
+    ])
+    renderWithProviders(<FriedbergPanel item={PROPOSED} onHold={vi.fn()} />)
+
+    await userEvent.click(screen.getByRole('button', { name: /^look up again$/i }))
+    const box = await screen.findByRole('textbox', { name: /Fr\. number/ })
+    await waitFor(() => expect(box).toHaveFocus())
+
+    const searchWeb = screen.getByRole('button', { name: 'Search the web' })
+    searchWeb.focus()
+    expect(box).not.toHaveFocus()
+    await userEvent.click(searchWeb)
+    await waitFor(() => expect(box).toHaveFocus())
+    open.mockRestore()
+  })
+
   it('Look up again offers another number found, without opening the web', async () => {
     const open = vi.spyOn(window, 'open').mockImplementation(() => ({}))
     api.searchFriedberg.mockResolvedValue([

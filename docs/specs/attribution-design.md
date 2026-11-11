@@ -307,7 +307,8 @@ given. A note in a PMG holder with a certificate number also has **PMG
 cert**, beside the Look up button and beside the Fr. number box alike,
 which opens PMG's page for its certificate and grade
 (`pmgnotes.com/certlookup/NNNNNNN-NNN/GRADE/`). The owner reads
-the answer and types the number in. Nothing is fetched or stored from the
+the answer and types the number in: a search finishing, **Search the web**
+and **PMG cert** each leave the cursor in the Fr. number box. Nothing is fetched or stored from the
 search: a machine collecting Friedberg numbers is the harvesting the
 reference-data rule forbids.
 

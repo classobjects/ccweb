@@ -807,6 +807,15 @@ describe('FriedbergLookup', () => {
     expect(api.attachFriedberg).not.toHaveBeenCalled()
   })
 
+  it('puts the cursor in the Fr. number box when a pressed Look up answers', async () => {
+    api.searchFriedberg.mockResolvedValue([ROW_VERIFIED])
+    renderWithProviders(<FriedbergLookup itemId={412} />)
+    await userEvent.click(screen.getByRole('button', { name: /^look up$/i }))
+
+    await screen.findByRole('button', { name: 'Use 9903' })
+    await waitFor(() => expect(screen.getByLabelText(/fr\. number/i)).toHaveFocus())
+  })
+
   it('does not read a missing Web Press attribute as sheet-fed', async () => {
     renderWithProviders(
       <FriedbergLookup itemId={412} item={{ id: 412, attributes: [] }} />,
