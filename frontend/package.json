@@ -1,8 +1,16 @@
 {
-  "name": "ccwebdb-frontend",
+  "name": "ccweb-frontend",
+  "description": "The ccweb shop and management console: a React and Vite frontend for a coin and currency inventory.",
   "private": true,
   "version": "0.1.0",
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/classobjects/ccweb.git",
+    "directory": "frontend"
+  },
+  "homepage": "https://github.com/classobjects/ccweb#readme",
+  "bugs": "https://github.com/classobjects/ccweb/issues",
   "type": "module",
   "scripts": {
     "dev": "vite",
