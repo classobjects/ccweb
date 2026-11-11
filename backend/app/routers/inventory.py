@@ -211,11 +211,12 @@ def _hold_item(db: Session, item_id: int) -> None:
     )
 
 
-def _to_piece(db: Session, spec: SplitPieceIn) -> SplitPiece:
+def _to_piece(db: Session, spec: SplitPieceIn, single: int) -> SplitPiece:
     """One piece of a split as the splitter takes it, its codes resolved to ids.
 
     Only what the request states overrides the lot; a piece is stored as a
-    single item whatever the lot was packaged as.
+    single item (`single`, the storage form's id) whatever the lot was
+    packaged as.
     """
     overrides: dict[str, object] = {}
     codes = {field: getattr(spec, field) for field in PIECE_CLASSIFIERS}
@@ -233,12 +234,6 @@ def _to_piece(db: Session, spec: SplitPieceIn) -> SplitPiece:
     if spec.description is not None:
         overrides["description"] = spec.description
 
-    # Pieces come out of a tube or a set as individual items, whatever the lot
-    # was packaged as. `.one()`: a vocabulary row that is not there fails the
-    # split loudly, rather than leaving every piece packaged as the lot was.
-    single = db.scalars(
-        select(StorageForm.id).where(StorageForm.code == "single")
-    ).one()
     overrides.setdefault("storage_form_id", single)
 
     return SplitPiece(
@@ -3622,7 +3617,14 @@ def split(
         kinds={"listing"},
     )
     _refuse_pieces_that_do_not_fit(db, parent, payload.pieces)
-    pieces = [_to_piece(db, spec) for spec in payload.pieces]
+    # Pieces come out of a tube or a set as individual items, whatever the lot
+    # was packaged as. `.one()`: a vocabulary row that is not there fails the
+    # split loudly, rather than leaving every piece packaged as the lot was.
+    # Read once here rather than once per piece.
+    single = db.scalars(
+        select(StorageForm.id).where(StorageForm.code == "single")
+    ).one()
+    pieces = [_to_piece(db, spec, single) for spec in payload.pieces]
 
     with committing(db, _STALE_ITEMS):
         try:
