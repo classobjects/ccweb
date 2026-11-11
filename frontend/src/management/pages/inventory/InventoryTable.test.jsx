@@ -6,9 +6,12 @@ import { screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import InventoryTable from './InventoryTable'
-import { COIN_VIEW, CURRENCY_VIEW, fieldsOf } from './specs'
+import { COIN_VIEW, CURRENCY_VIEW } from './specs'
 import { date } from '../../../shared/format'
 import { renderWithProviders } from '../../../test/helpers'
+
+/** Every field a view's table shows: each column's first-line field, then its second. */
+const fieldsOf = (view) => view.columns.flat()
 
 const config = {
   columns: [
