@@ -59,6 +59,16 @@ function openWebSearch(text) {
   )
 }
 
+/**
+ * Whether the catalog's answer offers nothing beyond the number the note
+ * already has: no match at all, or only that number. Either way the web is
+ * where an answer is, and it opens -- a Look up again that offered back the
+ * number on the note would answer nothing.
+ */
+function nothingNew(rows, attachedId) {
+  return rows.every((row) => row.id === attachedId)
+}
+
 //: Google's AI Mode shortcut. It keeps `q` through its redirect
 //: (/ai?q= -> /aimode?q=), where `/search?udm=50` is stripped for a request
 //: without a browser session.
@@ -262,6 +272,9 @@ export default function FriedbergLookup({
   entryOnly = false,
 }) {
   const [initial] = useState(() => fromItem(item))
+  // The number the note has now, which a search finding it again offers
+  // nothing new (`nothingNew`).
+  const attachedId = item?.friedberg_id ?? null
   const [showFields, setShowFields] = useState(!searchNow)
   // The search fields, shaped as `fromItem` makes them.
   const [fields, setFields] = useState(initial)
@@ -316,7 +329,9 @@ export default function FriedbergLookup({
         // Inlined, not `showResults`: the effect runs once, and a function
         // declared in the body would have to be one of its dependencies.
         setResults(rows)
-        if (rows.length === 0) setPopupBlocked(!openWebSearch(searchTextRef.current))
+        if (nothingNew(rows, attachedId)) {
+          setPopupBlocked(!openWebSearch(searchTextRef.current))
+        }
       })
       .catch((err) => {
         if (!cancelled) setSearchError(err.message)
@@ -327,7 +342,7 @@ export default function FriedbergLookup({
     return () => {
       cancelled = true
     }
-  }, [searchNow, initial])
+  }, [searchNow, initial, attachedId])
 
   const [recordFrNumber, setRecordFrNumber] = useState('')
   useEffect(() => {
@@ -423,12 +438,15 @@ export default function FriedbergLookup({
 
   /**
    * What a finished search does: a match shows its number to use; no
-   * match opens the web search straight away, so pressing Look up always
-   * ends in an answer or the place to find one.
+   * match, or only the number the note already has, opens the web search
+   * straight away, so pressing Look up always ends in a new answer or the
+   * place to find one.
    */
   function showResults(rows) {
     setResults(rows)
-    if (rows.length === 0) setPopupBlocked(!openWebSearch(searchTextRef.current))
+    if (nothingNew(rows, attachedId)) {
+      setPopupBlocked(!openWebSearch(searchTextRef.current))
+    }
   }
 
   const signatureListed = signatureOptions.some(
@@ -911,6 +929,13 @@ export default function FriedbergLookup({
           `webSearchText`). */}
         {results && (
           <div className="admin-form">
+            {results.length > 0 && nothingNew(results, attachedId) && (
+              <p className="muted">
+                The catalog has only the number already on this note, so the web search
+                has opened in its own window -- type or paste a different number here if
+                it finds one.
+              </p>
+            )}
             {results.length > 0 ? (
               <ul className="order-picker">
                 {results.map((row) => (

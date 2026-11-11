@@ -184,4 +184,46 @@ describe('FriedbergPanel', () => {
     )
     open.mockRestore()
   })
+
+  // The owner pressed Look up again and was offered back the number the note
+  // already had: the catalog, having nothing else, answered nothing.
+  it('Look up again opens the web search when the catalog has only the number on the note', async () => {
+    const open = vi.spyOn(window, 'open').mockImplementation(() => ({}))
+    api.searchFriedberg.mockResolvedValue([
+      { id: 9, fr_number: '9901', verified: false },
+    ])
+    renderWithProviders(<FriedbergPanel item={PROPOSED} onHold={vi.fn()} />)
+
+    await userEvent.click(screen.getByRole('button', { name: /^look up again$/i }))
+
+    await waitFor(() =>
+      expect(open).toHaveBeenCalledWith(
+        expect.stringContaining('https://www.google.com/ai?q='),
+        'friedberg-web-search',
+        expect.stringContaining('popup'),
+      ),
+    )
+    expect(
+      await screen.findByText(/only the number already on this note/i),
+    ).toBeInTheDocument()
+    // Still offered, for confirming it after all.
+    expect(screen.getByRole('button', { name: 'Use 9901' })).toBeInTheDocument()
+    open.mockRestore()
+  })
+
+  it('Look up again offers another number found, without opening the web', async () => {
+    const open = vi.spyOn(window, 'open').mockImplementation(() => ({}))
+    api.searchFriedberg.mockResolvedValue([
+      { id: 9, fr_number: '9901', verified: false },
+      { id: 10, fr_number: '9902', verified: true },
+    ])
+    renderWithProviders(<FriedbergPanel item={PROPOSED} onHold={vi.fn()} />)
+
+    await userEvent.click(screen.getByRole('button', { name: /^look up again$/i }))
+
+    expect(await screen.findByRole('button', { name: 'Use 9902' })).toBeInTheDocument()
+    expect(open).not.toHaveBeenCalled()
+    expect(screen.queryByText(/only the number already on this note/i)).toBeNull()
+    open.mockRestore()
+  })
 })

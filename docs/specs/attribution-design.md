@@ -297,7 +297,9 @@ number left in the box without its buttons is never dropped unsaid: in the
 item editor it stops the editor's Save, and in Receiving every outcome
 button (Receive, Missing, Returned, Canceled), each naming it.
 
-When the catalog has no match, **Search the web** opens a question for
+When the catalog has no match -- or none but the number the note already
+has, as **Look up again** usually finds -- the web search opens by itself;
+**Search the web** opens it on demand beside matches too. It is a question for
 Google's AI Mode built from the form (`webSearchText`): the series,
 denomination, note class, district, signatures, web press, star, mule,
 printing location and plates, asking for the mule suffix when plates are
