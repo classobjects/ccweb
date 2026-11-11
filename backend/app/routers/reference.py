@@ -31,12 +31,11 @@ from sqlalchemy import Select, UniqueConstraint, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import object_session
 
-from .. import aliases, reference_merge, sale_state
+from .. import aliases, reference_merge
 from ..deps import AdminUser, DbSession, OptionalUser, is_admin
 from ..inventory_search import plain
 from ..models import (
     REFERENCE_MODELS,
-    InventoryItem,
     ProvenanceSource,
     ReferenceMerge,
     ReferenceMixin,
@@ -642,20 +641,13 @@ def merge_value(
         if payload.dry_run:
             result, _, _ = reference_merge.plan(db, model, code, payload.into)
         else:
-            planned, _, _ = reference_merge.plan(db, model, code, payload.into)
-            if planned.for_sale_count:
-                for_sale_items = db.scalars(
-                    select(InventoryItem).where(
-                        InventoryItem.item_code.in_(planned.for_sale)
-                    )
-                ).all()
-                sale_state.guard(
-                    db,
-                    list(for_sale_items),
-                    acknowledged=payload.acknowledge_for_sale,
-                )
             result = reference_merge.merge(
-                db, model, code, payload.into, user_id=admin.id
+                db,
+                model,
+                code,
+                payload.into,
+                user_id=admin.id,
+                acknowledged_for_sale=payload.acknowledge_for_sale,
             )
     except reference_merge.NoSuchValue as exc:
         db.rollback()
