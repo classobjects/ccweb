@@ -80,7 +80,7 @@ def _note(db: Session, **overrides: object) -> InventoryItem:
             fed_district_id=code_id(db, FedDistrict, "F"),
             signature_combination_id=signers.id,
             series_year=1999,
-            serial_number="F06566560R",
+            serial_number="F12344321R",
         )
     )
     db.flush()
@@ -104,7 +104,7 @@ def test_a_note_reads_as_the_owner_writes_it(db: Session) -> None:
     radar = _link(db, item, "radar")
     assert radar.endswith(" Serial")
     assert suggested_description(db, item) == (
-        f"{_short(_label(db, Grade, 'N67'))} EPQ Radar 1999 $1 S/N F06566560R. "
+        f"{_short(_label(db, Grade, 'N67'))} EPQ Radar 1999 $1 S/N F12344321R. "
         f"{_label(db, NoteType, 'frn')} {_label(db, SealColor, 'green')}."
     )
 
@@ -144,7 +144,7 @@ def test_a_series_named_for_the_face_values_unit_takes_its_place(
 def test_a_notes_design_series_follows_its_face_value(db: Session) -> None:
     item = _note(db, series_id=code_id(db, Series, "barr_note"))
     barr = _label(db, Series, "barr_note")
-    assert f"1999 $1 {barr} S/N F06566560R." in suggested_description(db, item)
+    assert f"1999 $1 {barr} S/N F12344321R." in suggested_description(db, item)
 
 
 def test_a_design_series_an_attribute_has_named_is_not_said_twice(
@@ -176,7 +176,7 @@ def test_a_design_series_that_only_repeats_the_note_is_left_out(
     db.flush()
     item = _note(db, series_id=series.id)
     assert suggested_description(db, item) == (
-        f"{_short(_label(db, Grade, 'N67'))} EPQ 1999 $1 S/N F06566560R. "
+        f"{_short(_label(db, Grade, 'N67'))} EPQ 1999 $1 S/N F12344321R. "
         f"{_label(db, NoteType, 'frn')} {_label(db, SealColor, 'green')}."
     )
 
@@ -420,7 +420,7 @@ def test_the_route_writes_nothing(
         f"/api/inventory/{item_id}/suggested-description", headers=admin_headers
     )
     assert response.status_code == 200, response.text
-    assert "1999 $1 S/N F06566560R" in response.json()["description"]
+    assert "1999 $1 S/N F12344321R" in response.json()["description"]
     db.expire_all()
     item = db.get(InventoryItem, item_id)
     assert item is not None

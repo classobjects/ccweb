@@ -975,7 +975,7 @@ def _bare_clause(
     """`clause`, or the column and the value both reduced to letters and digits.
 
     An order number typed without its dashes, or with spaces for them,
-    still finds it: 161396001201 finds 16-13960-01201. A value with no
+    still finds it: 120000001234 finds 12-00000-01234. A value with no
     letter or digit has nothing to compare, and is matched as typed only.
     """
     bare = re.sub(r"[^0-9A-Za-z]", "", str(value))

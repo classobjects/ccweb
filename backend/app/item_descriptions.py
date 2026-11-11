@@ -10,7 +10,7 @@ box. `suggested_description` writes one from the item's classified facts,
 in the owner's own style: the grade and what makes the piece special first,
 then what it is, with no field labels:
 
-    Superb Gem Unc 67 EPQ Radar 1999 $1 S/N F06566560R. Federal Reserve
+    Superb Gem Unc 67 EPQ Radar 1999 $1 S/N F12344321R. Federal Reserve
     Note Green Seal.
 
     MS64 First Strike 1921-S Morgan Dollar. Silver, 0.7734 ozt fine.
