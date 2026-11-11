@@ -73,7 +73,7 @@ def named_as_stored(source_ref: str | None, media_type: str) -> str | None:
 
     Every file is re-encoded on the way in -- a WebP is stored as JPEG --
     so a converted file's name says what is actually held:
-    `CC-007595_02.webp` becomes `CC-007595_02.jpg`. A name already right
+    `CC-000412_02.webp` becomes `CC-000412_02.jpg`. A name already right
     for the format (`DSC00417.JPG`), or with no extension, is kept as it is.
     """
     if not source_ref:

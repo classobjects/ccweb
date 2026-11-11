@@ -10,12 +10,12 @@ describe('listingIdFrom', () => {
     ['https://www.ebay.com/itm/434343434343', '434343434343'],
     ['https://www.ebay.com/itm/1878-Morgan-Dollar/444444444444?hash=x', '444444444444'],
     [
-      'https://hibid.com/lot/280623476/1986-2024-american-eagle--5-00-gold-coin',
-      '280623476',
+      'https://hibid.com/lot/900000002/1986-2024-american-eagle--5-00-gold-coin',
+      '900000002',
     ],
     [
-      'https://exampleauctions.hibid.com/lot/218761505/-3--2006-silver-eagle',
-      '218761505',
+      'https://exampleauctions.hibid.com/lot/900000003/-3--2006-silver-eagle',
+      '900000003',
     ],
     [
       'https://www.liveauctioneers.com/item/194045322_1880-s-1-morgan-silver-dollar',

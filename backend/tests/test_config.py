@@ -107,6 +107,26 @@ def test_cors_defaults_to_the_dev_servers_addresses(
     ]
 
 
+@pytest.mark.parametrize("algorithm", ["none", "RS256", "hs256"])
+def test_a_token_algorithm_other_than_hmac_refuses_to_start(algorithm: str) -> None:
+    """`none` would let every unsigned token through; a key pair has no key here."""
+    from app.config import Settings
+
+    with pytest.raises(ValidationError, match="jwt_algorithm"):
+        Settings(_env_file=None, jwt_secret="k" * 32, jwt_algorithm=algorithm)
+
+
+def test_each_hmac_token_algorithm_is_accepted() -> None:
+    """The three the shared secret can sign with."""
+    from app.config import Settings
+
+    for algorithm in ("HS256", "HS384", "HS512"):
+        settings = Settings(
+            _env_file=None, jwt_secret="k" * 32, jwt_algorithm=algorithm
+        )
+        assert settings.jwt_algorithm == algorithm
+
+
 def test_the_archive_folder_defaults_beside_the_repository(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

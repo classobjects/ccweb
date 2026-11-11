@@ -572,8 +572,8 @@ describe('Grading: designation, service and certificate', () => {
       'PMG',
     )
     const certs = screen.getByDisplayValue('111')
-    await user.type(certs, ', 8061234-005,')
-    expect(certs).toHaveValue('111, 8061234-005, ')
+    await user.type(certs, ', 1234567-005,')
+    expect(certs).toHaveValue('111, 1234567-005, ')
     await user.click(screen.getByRole('button', { name: /save/i }))
 
     await waitFor(() =>
@@ -583,7 +583,7 @@ describe('Grading: designation, service and certificate', () => {
           grade_designation: 'EPQ',
           grading_service: 'PMG',
           // The trailing comma's empty entry is not sent.
-          cert_numbers: ['111', '8061234-005'],
+          cert_numbers: ['111', '1234567-005'],
           base: expect.objectContaining({ cert_numbers: ['111'] }),
         }),
       ),
@@ -2630,7 +2630,7 @@ describe('An item for sale', () => {
 })
 
 describe('ItemEditForm: the listing web address', () => {
-  const LISTING = 'https://www.hibid.com/lot/307575524/1898-morgan-dollar'
+  const LISTING = 'https://www.hibid.com/lot/900000001/1898-morgan-dollar'
 
   it('links the listing it was bought from', async () => {
     api.getInventoryItem.mockResolvedValue({ ...item, listing_url: LISTING })

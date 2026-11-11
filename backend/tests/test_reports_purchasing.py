@@ -1559,7 +1559,7 @@ def test_received_items_shows_a_notes_series_and_serial_number(db: Session) -> N
             inventory_item_id=lettered.id,
             series_year=1935,
             series_letter="A",
-            serial_number="G03986163*",
+            serial_number="G12345673*",
         )
     )
     db.add(
@@ -1577,7 +1577,7 @@ def test_received_items_shows_a_notes_series_and_serial_number(db: Session) -> N
 
     result = PR_RECEIVED_ITEMS.run(db, ReceivedItemsParams())
     assert [(r["item"], r["year"], r["mint"], r["serial"]) for r in result.rows] == [
-        ("CC-900031", "1935A", "", "G03986163*"),
+        ("CC-900031", "1935A", "", "G12345673*"),
         ("CC-900032", "1957", "", "00012345A"),
         ("CC-900033", "", "", ""),
     ]
@@ -1921,7 +1921,7 @@ def test_outstanding_items_lists_each_outstanding_item_with_what_identifies_it(
             inventory_item_id=note.id,
             series_year=1935,
             series_letter="A",
-            serial_number="G03986163*",
+            serial_number="G12345673*",
         )
     )
     _item(db, order, "received", Decimal("30.00"))
@@ -1957,7 +1957,7 @@ def test_outstanding_items_lists_each_outstanding_item_with_what_identifies_it(
             "item": "CC-900042",
             "year": "1935A",
             "mint": "",
-            "serial": "G03986163*",
+            "serial": "G12345673*",
             "title": "Silver certificate",
             "status": _status_label(db, "missing"),
             "total_cost": Decimal("20.00"),

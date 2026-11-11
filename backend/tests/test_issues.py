@@ -198,8 +198,8 @@ def test_a_near_duplicate_of_a_deleted_note_is_not_flagged(
     client: TestClient, admin_headers: dict[str, str], db: Session
 ) -> None:
     order = build_purchase_order(db, vendor_name="test-vendor", order_number="X2")
-    _note(db, "B08084501A", purchase_order_id=order.id)
-    _note(db, "B0808451A", purchase_order_id=order.id, deleted_at=_GONE)
+    _note(db, "B12345671A", purchase_order_id=order.id)
+    _note(db, "B1234571A", purchase_order_id=order.id, deleted_at=_GONE)
 
     assert _currency_issue(client, admin_headers, "near_duplicate_serial") == []
 
@@ -266,16 +266,16 @@ def test_a_near_duplicate_serial_is_found_within_one_order(
     db.add_all(
         [
             # A dropped '0': ten characters against nine, one edit apart.
-            CurrencyDetail(inventory_item_id=pair[0].id, serial_number="B08084501A"),
-            CurrencyDetail(inventory_item_id=pair[1].id, serial_number="B0808451A"),
+            CurrencyDetail(inventory_item_id=pair[0].id, serial_number="B12345671A"),
+            CurrencyDetail(inventory_item_id=pair[1].id, serial_number="B1234571A"),
             # A consecutive run, same length throughout -- the shape of a
             # deliberate purchase of sequential star notes, not a
             # mistranscription, and must not be flagged.
             CurrencyDetail(
-                inventory_item_id=consecutive[0].id, serial_number="G03986160"
+                inventory_item_id=consecutive[0].id, serial_number="G12345670"
             ),
             CurrencyDetail(
-                inventory_item_id=consecutive[1].id, serial_number="G03986161"
+                inventory_item_id=consecutive[1].id, serial_number="G12345671"
             ),
             CurrencyDetail(inventory_item_id=apart.id, serial_number="Z99999999A"),
         ]

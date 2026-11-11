@@ -458,6 +458,9 @@ def export_workbook(
     try:
         book.save(partial)
     except BaseException:
+        # A save that stopped partway leaves sheets open, as an export that
+        # failed before saving does.
+        _abandon(book)
         partial.unlink(missing_ok=True)
         raise
     partial.replace(path)

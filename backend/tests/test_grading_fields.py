@@ -115,18 +115,18 @@ def test_certificate_numbers_are_edited_as_a_set(
     kept_id = _certs(db, item.id)[0].id
 
     response = _patch(
-        client, admin_headers, item.id, {"cert_numbers": ["111", " 8061234-005 "]}
+        client, admin_headers, item.id, {"cert_numbers": ["111", " 1234567-005 "]}
     )
     assert response.status_code == 200, response.text
 
     rows = _certs(db, item.id)
-    assert [r.cert_number for r in rows] == ["111", "8061234-005"]
+    assert [r.cert_number for r in rows] == ["111", "1234567-005"]
     # Kept as it was, not re-created; the new one graded by the item's service.
     assert rows[0].id == kept_id
     assert rows[0].grading_service_id is None
     assert rows[1].grading_service_id == pmg
     detail = client.get(f"/api/inventory/{item.id}", headers=admin_headers).json()
-    assert detail["cert_numbers"] == ["111", "8061234-005"]
+    assert detail["cert_numbers"] == ["111", "1234567-005"]
 
     logged = db.scalars(
         select(ItemFieldChange).where(
@@ -136,7 +136,7 @@ def test_certificate_numbers_are_edited_as_a_set(
     ).one()
     assert (logged.old_value, logged.new_value) == (
         ["111", "222"],
-        ["111", "8061234-005"],
+        ["111", "1234567-005"],
     )
 
     cleared = _patch(client, admin_headers, item.id, {"cert_numbers": []})
@@ -152,7 +152,7 @@ def test_a_certificate_added_with_a_service_takes_that_service(
         client,
         admin_headers,
         item.id,
-        {"grading_service": "NGC", "cert_numbers": ["5790123-001"]},
+        {"grading_service": "NGC", "cert_numbers": ["7654321-001"]},
     )
     assert response.status_code == 200, response.text
     (row,) = _certs(db, item.id)

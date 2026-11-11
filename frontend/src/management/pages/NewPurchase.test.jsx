@@ -1667,7 +1667,7 @@ describe('NewPurchase: the kind a new item starts as', () => {
 })
 
 describe("NewPurchase: a lot's page as the item's listing", () => {
-  const LOT = 'https://hibid.com/lot/280623476/1986-2024-american-eagle'
+  const LOT = 'https://hibid.com/lot/900000002/1986-2024-american-eagle'
 
   it('offers the lot page the server names to the new item', async () => {
     api.getPurchaseOrder.mockResolvedValue({

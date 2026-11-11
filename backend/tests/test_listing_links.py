@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 
 from tests.builders import ItemFactory, build_purchase_order
 
-LOT = "https://hibid.com/lot/280623476/1986-2024-american-eagle--5-00-gold-coin"
+LOT = "https://hibid.com/lot/900000002/1986-2024-american-eagle--5-00-gold-coin"
 
 
 @pytest.mark.parametrize(
@@ -32,8 +32,8 @@ LOT = "https://hibid.com/lot/280623476/1986-2024-american-eagle--5-00-gold-coin"
     [
         ("https://www.ebay.com/itm/434343434343", "434343434343"),
         ("https://www.ebay.com/itm/1878-Morgan/444444444444?x=1", "444444444444"),
-        (LOT, "280623476"),
-        ("https://exampleauctions.hibid.com/lot/218761505/x", "218761505"),
+        (LOT, "900000002"),
+        ("https://exampleauctions.hibid.com/lot/900000003/x", "900000003"),
         ("https://www.liveauctioneers.com/item/194045322_1880-s-morgan", "194045322"),
         ("https://www.proxibid.com/lotInformation/91896919/x#Top", "91896919"),
         ("https://www.whatnot.com/order/YLMRqwXPqcdsXx35UxxA2V", None),
@@ -85,9 +85,9 @@ def test_the_pass_fills_each_from_the_other(
 
     # An address filled from the purchase gives its id in the same run.
     assert todo.listing_ids == {
-        by_url.id: "280623476",
+        by_url.id: "900000002",
         to_order.id: "194045322",
-        from_order.id: "280623476",
+        from_order.id: "900000002",
     }
     assert todo.listing_urls == {
         by_id.id: "https://www.ebay.com/itm/434343434343",
@@ -105,8 +105,8 @@ def test_a_shops_page_is_not_copied_onto_its_items(
     # A pawn shop's location page names no lot: the pass leaves the items be.
     order = build_purchase_order(
         db,
-        vendor_name="silasdeanepawn.com",
-        source_url="https://silasdeanepawn.com/locations/manchester/",
+        vendor_name="pawnshop.example",
+        source_url="https://pawnshop.example/locations/x/",
     )
     item = _item(db, make_item, order)
     db.commit()
@@ -125,8 +125,8 @@ def test_a_shops_page_is_not_copied_onto_its_items(
         ("Whatnot", "www.whatnot.com", True),
         ("hibid.com", None, False),
         # The letters inside another site's name make it neither.
-        ("thebaycoins.com", None, False),
-        ("Bay Coins", "www.thebaycoins.com", False),
+        ("baycoins.example", None, False),
+        ("Bay Coins", "www.baycoins.example", False),
         ("whatnotcoins.com", None, False),
     ],
 )
@@ -140,7 +140,7 @@ def test_a_dealer_whose_name_holds_the_letters_ebay_is_no_marketplace(
     db: Session, make_item: ItemFactory
 ) -> None:
     # Its lot page is its purchase's, as at any dealer or auction house.
-    order = build_purchase_order(db, vendor_name="thebaycoins.com", source_url=LOT)
+    order = build_purchase_order(db, vendor_name="baycoins.example", source_url=LOT)
     item = _item(db, make_item, order, sellers_item_id="434343434343")
     db.commit()
 
@@ -185,7 +185,7 @@ def test_applying_logs_each_items_change_under_the_person(
     db.commit()
 
     db.refresh(item)
-    assert (item.listing_url, item.sellers_item_id) == (LOT, "280623476")
+    assert (item.listing_url, item.sellers_item_id) == (LOT, "900000002")
     assert counts["listing_urls"] == 1
     changes = db.scalars(
         select(ItemFieldChange).where(ItemFieldChange.inventory_item_id == item.id)
@@ -330,12 +330,12 @@ def _lot_page(client: TestClient, headers: dict[str, str], order_id: int) -> obj
         # A lot's page at an auction house is its purchase's.
         ("hibid.com", LOT, LOT),
         # The letters inside another site's name make it no marketplace.
-        ("thebaycoins.com", LOT, LOT),
+        ("baycoins.example", LOT, LOT),
         # A marketplace's address names an order or a listing, never a lot.
         ("ebay.com", "https://www.ebay.com/itm/434343434343", None),
         ("whatnot.com", "https://www.whatnot.com/order/A", None),
         # A shop's location page carries no lot id: it is no listing.
-        ("silasdeanepawn.com", "https://silasdeanepawn.com/locations/x/", None),
+        ("pawnshop.example", "https://pawnshop.example/locations/x/", None),
         ("hibid.com", None, None),
     ],
 )

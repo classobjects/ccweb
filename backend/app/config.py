@@ -6,7 +6,7 @@
 from decimal import Decimal
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Self
+from typing import Any, Literal, Self
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import Field, field_validator, model_validator
@@ -84,7 +84,10 @@ class Settings(RuntimeFields):
     # token, so a missing, short or published value refuses to start
     # (`_refuse_a_weak_secret`).
     jwt_secret: str = Field(default="", repr=False)
-    jwt_algorithm: str = "HS256"
+    # An HMAC algorithm only: the secret is a shared key. A free text value
+    # would take `none`, which signs nothing -- and the same list is what
+    # verification accepts, so every token would then pass unsigned.
+    jwt_algorithm: Literal["HS256", "HS384", "HS512"] = "HS256"
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 14
 

@@ -125,7 +125,7 @@ def test_a_converted_file_is_named_as_it_is_stored(
     body = _upload(
         client,
         admin_headers,
-        "CC-007595_02.webp",
+        "CC-000412_02.webp",
         _webp(),
         "image/webp",
         inventory_item_id=str(item.id),
@@ -133,7 +133,7 @@ def test_a_converted_file_is_named_as_it_is_stored(
 
     image = db.get_one(Image, body["id"])
     assert image.media_type == "image/jpeg"
-    assert image.source_ref == "CC-007595_02.jpg"
+    assert image.source_ref == "CC-000412_02.jpg"
 
 
 def test_a_name_without_an_extension_is_kept_as_it_is(

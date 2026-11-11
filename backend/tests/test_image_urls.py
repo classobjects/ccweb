@@ -8,8 +8,8 @@ from __future__ import annotations
 import pytest
 from app.image_urls import full_size, named_edge
 
-EBAY = "https://i.ebayimg.com/images/g/90cAAeSw0l5qrTHf"
-NGC = "https://ccg-imaging-ngc-coins-production.s3.amazonaws.com/17803211-25b7"
+EBAY = "https://i.ebayimg.com/images/g/AAAAtestimgkey00"
+NGC = "https://ccg-imaging-ngc-coins-production.s3.amazonaws.com/00000000-0000"
 
 
 @pytest.mark.parametrize(

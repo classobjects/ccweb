@@ -723,7 +723,7 @@ def test_an_unknown_attribute_is_named(
     assert "no_such_thing" in res.json()["detail"]
 
 
-LISTING = "https://www.hibid.com/lot/307575524/1898-morgan-dollar"
+LISTING = "https://www.hibid.com/lot/900000001/1898-morgan-dollar"
 
 
 def test_an_item_is_entered_with_its_listing_web_address(
