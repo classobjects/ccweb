@@ -1220,7 +1220,7 @@ describe('Changing the kind', () => {
 
     await user.type(
       screen.getByRole('textbox', { name: 'Serial number' }),
-      'F06566560R',
+      'F12344321R',
     )
     await user.click(screen.getByRole('button', { name: 'Save' }))
 
@@ -1230,7 +1230,7 @@ describe('Changing the kind', () => {
       item_kind: 'currency',
       metal: null,
       denomination: null,
-      serial_number: 'F06566560R',
+      serial_number: 'F12344321R',
     })
   })
 
@@ -1249,11 +1249,11 @@ describe('Changing the kind', () => {
 
   it("clears a note's serial number when it stops being a note, and says so", async () => {
     const user = userEvent.setup()
-    await open({ item_kind: 'currency', serial_number: 'F06566560R' })
+    await open({ item_kind: 'currency', serial_number: 'F12344321R' })
 
     await user.selectOptions(kindBox(), 'coin')
 
-    expect(screen.getByRole('status')).toHaveTextContent('F06566560R')
+    expect(screen.getByRole('status')).toHaveTextContent('F12344321R')
     await user.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(api.updateInventoryItem).toHaveBeenCalled())
     const [, payload] = api.updateInventoryItem.mock.calls[0]

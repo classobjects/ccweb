@@ -551,14 +551,14 @@ describe('FriedbergLookup', () => {
       note_type: 'frn',
       grading_service: 'PMG',
       grade: 'N30',
-      cert_numbers: ['2452276014'],
+      cert_numbers: ['1234567001'],
     }
     const { unmount } = renderWithProviders(
       <FriedbergLookup itemId={412} item={item} />,
     )
     await userEvent.click(screen.getByRole('button', { name: /pmg cert/i }))
     expect(window.open).toHaveBeenCalledWith(
-      'https://www.pmgnotes.com/certlookup/2452276-014/30/',
+      'https://www.pmgnotes.com/certlookup/1234567-001/30/',
       'pmg-cert',
       expect.any(String),
     )
@@ -579,7 +579,7 @@ describe('FriedbergLookup', () => {
     await userEvent.click(screen.getByRole('button', { name: /pmg cert/i }))
     expect(api.searchFriedberg).not.toHaveBeenCalled()
     expect(window.open).toHaveBeenCalledWith(
-      'https://www.pmgnotes.com/certlookup/2452276-014/30/',
+      'https://www.pmgnotes.com/certlookup/1234567-001/30/',
       'pmg-cert',
       expect.any(String),
     )

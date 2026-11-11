@@ -686,7 +686,7 @@ export const FIELD_HELP = {
     title: 'Serial number',
     text:
       'All or part of a serial, anywhere in it. _ stands for exactly one ' +
-      'character, so B0808450_ finds a run of consecutive notes; % for any run. ' +
+      'character, so B1234567_ finds a run of consecutive notes; % for any run. ' +
       "On coins it is a bar's, round's or Goldback's own serial.",
   },
   ordered_since: {
@@ -711,7 +711,7 @@ export const FIELD_HELP = {
   },
   item_code_filter: {
     title: 'Item code',
-    text: 'All or part of an item code: CC-006140, or 6140.',
+    text: 'All or part of an item code: CC-000412, or 412.',
   },
   sellers_item_id_filter: {
     title: "Seller's item id",

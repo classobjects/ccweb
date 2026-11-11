@@ -7,29 +7,29 @@ import { pmgCertUrl } from './pmgCert'
 
 const pmg = (more) => ({
   grading_service: 'PMG',
-  cert_numbers: ['2452276014'],
+  cert_numbers: ['1234567001'],
   ...more,
 })
 
 describe('pmgCertUrl', () => {
   it("opens PMG's page for the certificate and grade on the holder", () => {
     expect(pmgCertUrl(pmg({ grade: 'N30' }))).toBe(
-      'https://www.pmgnotes.com/certlookup/2452276-014/30/',
+      'https://www.pmgnotes.com/certlookup/1234567-001/30/',
     )
   })
 
   it('takes the number as typed: a dash already in it, or spaces', () => {
-    expect(pmgCertUrl(pmg({ grade: 'N64', cert_numbers: ['2452276-014'] }))).toBe(
-      'https://www.pmgnotes.com/certlookup/2452276-014/64/',
+    expect(pmgCertUrl(pmg({ grade: 'N64', cert_numbers: ['1234567-001'] }))).toBe(
+      'https://www.pmgnotes.com/certlookup/1234567-001/64/',
     )
-    expect(pmgCertUrl(pmg({ grade: 'N64', cert_numbers: [' 2452276 014 '] }))).toBe(
-      'https://www.pmgnotes.com/certlookup/2452276-014/64/',
+    expect(pmgCertUrl(pmg({ grade: 'N64', cert_numbers: [' 1234567 001 '] }))).toBe(
+      'https://www.pmgnotes.com/certlookup/1234567-001/64/',
     )
   })
 
   it('leaves the grade off when the note records none', () => {
     expect(pmgCertUrl(pmg({ grade: null }))).toBe(
-      'https://www.pmgnotes.com/certlookup/2452276-014/',
+      'https://www.pmgnotes.com/certlookup/1234567-001/',
     )
   })
 

@@ -9,7 +9,7 @@
 const CERT_LOOKUP = 'https://www.pmgnotes.com/certlookup/'
 
 //: A PMG certificate: seven digits and three, written with or without the
-//: dash PMG's page puts between them (2452276-014).
+//: dash PMG's page puts between them (1234567-001).
 const CERT = /^(\d{7})-?(\d{3})$/
 
 /**

@@ -23,7 +23,7 @@ describe('normalizeFr', () => {
     ['  9901-L ', '9901-L'],
     ['Fr. 9905-D', '9905-D'],
     ['FR#9905-d', '9905-D'],
-    ['fr 12', '12'],
+    ['fr 9912', '9912'],
     ['FR-9905-D', '9905-D'],
     ['French', 'French'],
     // The label comes off only before a digit 0 to 9.

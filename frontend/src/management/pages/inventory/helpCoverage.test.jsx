@@ -87,7 +87,7 @@ beforeEach(() => {
 
 describe('Every field has help', () => {
   it.each([
-    ['a banknote', { item_kind: 'currency', serial_number: 'F06566560R' }],
+    ['a banknote', { item_kind: 'currency', serial_number: 'F12344321R' }],
     ['a coin', { item_kind: 'coin', mint: 'S' }],
     ['a bullion item', { item_kind: 'bullion', serial_number: 'PAMP-0042' }],
   ])('in the item editor for %s', async (_what, kind) => {

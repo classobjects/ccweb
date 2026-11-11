@@ -56,7 +56,7 @@ const NOTE = {
   year_start: null,
   year_end: null,
   metal: null,
-  serial_number: 'F06566560R',
+  serial_number: 'F12344321R',
   seal_color: 'blue',
 }
 

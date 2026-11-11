@@ -1695,8 +1695,8 @@ describe("NewPurchase: a lot's page as the item's listing", () => {
     api.getPurchaseOrder.mockResolvedValue({
       ...FRESH_PURCHASE,
       id: 42,
-      vendor: 'silasdeanepawn.com',
-      source_url: 'https://silasdeanepawn.com/locations/manchester/',
+      vendor: 'pawnshop.example',
+      source_url: 'https://pawnshop.example/locations/x/',
       lot_page: null,
     })
     api.createInventoryItem.mockResolvedValue({ id: 62, item_code: 'CC-000062' })

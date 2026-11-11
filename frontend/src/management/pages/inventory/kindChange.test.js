@@ -63,7 +63,7 @@ describe('clearedByKind', () => {
 
   it("empties a note's own fields for a coin, its serial above all", () => {
     const note = from({
-      serial_number: 'F06566560R',
+      serial_number: 'F12344321R',
       series_year: 1999,
       seal_color: 'green',
       denomination: 'usd_note_1',
@@ -74,7 +74,7 @@ describe('clearedByKind', () => {
     const { fields, attributes } = clearedByKind('coin', note, vocab)
 
     expect(fields).toEqual({
-      serial_number: 'F06566560R',
+      serial_number: 'F12344321R',
       series_year: 1999,
       seal_color: 'green',
       denomination: 'usd_note_1',

@@ -221,7 +221,7 @@ export const CURRENCY_VIEW = {
     ['cc-0070', 'part of an item code'],
   ],
   textFilters: [
-    ['Serial number', 'serial_number', 'B0808450_  (_ = one char, % = any)', 'b'],
+    ['Serial number', 'serial_number', 'B1234567_  (_ = one char, % = any)', 'b'],
     ['Item code', 'item_code', 'CC-000123', 'i'],
     SELLERS_ITEM_ID,
     ORDER_NUMBER,
