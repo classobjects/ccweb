@@ -52,6 +52,13 @@ describe('Catalog', () => {
     expect(await screen.findByLabelText(/in stock only/i)).toBeInTheDocument()
   })
 
+  it('names the type filter, so a screen reader can say what it picks', async () => {
+    api.listCatalog.mockResolvedValue(page([]))
+    renderWithProviders(<Catalog />)
+    await screen.findByText('Nothing is for sale yet.')
+    expect(screen.getByRole('combobox', { name: 'Type' })).toHaveValue('')
+  })
+
   it('reports a failed load', async () => {
     api.listCatalog.mockRejectedValue(new Error('catalog is unavailable'))
     renderWithProviders(<Catalog />)
