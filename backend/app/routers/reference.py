@@ -167,8 +167,10 @@ def _value_with_aliases(
     db: DbSession, row: ReferenceMixin, model: type[ReferenceMixin]
 ) -> ReferenceValueOut:
     """One value, with its current and retired aliases."""
-    everything = aliases.aliases_by_row(db, model, include_retired=True).get(row.id, [])
-    active = set(aliases.aliases_by_row(db, model).get(row.id, []))
+    everything = aliases.aliases_by_row(
+        db, model, include_retired=True, row_id=row.id
+    ).get(row.id, [])
+    active = set(aliases.aliases_by_row(db, model, row_id=row.id).get(row.id, []))
     return _to_value(
         row,
         model,

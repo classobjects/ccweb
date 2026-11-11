@@ -145,7 +145,7 @@ def _new_names(
     the first spelling, and a second would be refused as the name it holds.
     """
     names = [source.label, source.code]
-    names += aliases.aliases_by_row(db, model).get(source.id, [])
+    names += aliases.aliases_by_row(db, model, row_id=source.id).get(source.id, [])
     once: dict[str, str] = {}
     for name in (aliases.normalise(n) for n in names if n.strip()):
         once.setdefault(name.lower(), name)
@@ -270,7 +270,7 @@ def _names_kept(
     keeps. A name the kept value already goes by is in neither list.
     """
     already = {target.label.lower(), target.code.lower()}
-    held = aliases.aliases_by_row(db, model).get(target.id, [])
+    held = aliases.aliases_by_row(db, model, row_id=target.id).get(target.id, [])
     already |= {name.lower() for name in held}
     kept: list[str] = []
     lost: list[str] = []

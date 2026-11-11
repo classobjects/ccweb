@@ -126,11 +126,21 @@ def word_pattern(name: str) -> re.Pattern[str]:
 
 
 def aliases_by_row(
-    db: Session, model: type[ReferenceMixin], *, include_retired: bool = False
+    db: Session,
+    model: type[ReferenceMixin],
+    *,
+    include_retired: bool = False,
+    row_id: int | None = None,
 ) -> dict[int, list[str]]:
-    """Every row's aliases, in alphabetical order, keyed by row id."""
+    """Every row's aliases, in alphabetical order, keyed by row id.
+
+    `row_id` narrows it to that one row, for a caller that wants no other:
+    a vocabulary's aliases are read whole otherwise.
+    """
     held = _alias_table(model)
     stmt = select(held.row_id, held.alias).where(*held.scope)
+    if row_id is not None:
+        stmt = stmt.where(held.row_id == row_id)
     if not include_retired:
         stmt = stmt.where(held.is_active.is_(True))
     found: dict[int, list[str]] = defaultdict(list)
