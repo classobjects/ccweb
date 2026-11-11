@@ -247,10 +247,11 @@ media/
 # Local development-tool scratch; not project source.
 .superpowers/
 
-# SonarQube agent wiring written by `sonar integrate claude` (project scope):
-# MCP server registration and the secret-scanning hooks. No credentials live
-# here -- the token is in the OS keychain -- but this is per-developer agent
-# tooling, not project source.
+# Claude Code's per-developer state: local settings, agent worktrees, and the
+# SonarQube wiring `sonar integrate claude` writes (MCP server registration
+# and the secret-scanning hooks). No credentials live here -- the token is in
+# the OS keychain -- but this is per-developer agent tooling, not project
+# source.
 .claude/
 .mcp.json
 
@@ -260,8 +261,14 @@ media/
 .scannerwork/
 frontend/coverage/
 
-# SonarQube CLI state, created by `sonar` commands under scripts\.
-scripts/.sonar/
+# SonarQube CLI state, created by `sonar` commands in whatever folder they
+# run from: the repository root, scripts\ or logs\.
+.sonar/
+
+# Reports and state of local AI-assistant tooling: Claude Security scan
+# folders and the Remember plugin's session notes. Per-developer, not source.
+CLAUDE-SECURITY-*/
+.remember/
 
 # Photographs waiting to be imported (app.photo_import). Not source.
 /photos/

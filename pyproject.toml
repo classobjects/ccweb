@@ -9,7 +9,19 @@ readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]
 authors = [{ name = "Nathaniel Mills" }]
+# The same minor version as .python-version and the conda environment the
+# setup documents create; [tool.ruff] and [tool.mypy] below target it too.
 requires-python = ">=3.13"
+keywords = ["numismatics", "coins", "currency", "inventory", "fastapi"]
+classifiers = [
+    "Framework :: FastAPI",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Office/Business",
+    # An application run from its checkout, never a package: refuse an
+    # accidental upload to PyPI.
+    "Private :: Do Not Upload",
+]
 dependencies = [
     "alembic>=1.19.1",
     "argon2-cffi>=25.1.0",
@@ -28,6 +40,12 @@ dependencies = [
     "tzdata>=2026.3",
     "uvicorn[standard]>=0.52.4",
 ]
+
+[project.urls]
+Homepage = "https://github.com/classobjects/ccweb"
+Repository = "https://github.com/classobjects/ccweb"
+Issues = "https://github.com/classobjects/ccweb/issues"
+Documentation = "https://github.com/classobjects/ccweb/tree/main/docs"
 
 [dependency-groups]
 dev = [
