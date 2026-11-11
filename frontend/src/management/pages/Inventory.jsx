@@ -67,6 +67,20 @@ function InventoryView({ config }) {
   const total = page?.total ?? 0
   const rows = page?.rows ?? []
 
+  // A search that finds one item opens it: a row to click is a step with
+  // nothing to choose. Once per search -- the filters' results arriving, not
+  // each read of them: closing the editor, or saving and reading the same
+  // one result back, leaves it closed. Not over an item the address opened,
+  // nor in review. Set while rendering, as React has state follow a change.
+  const filters = JSON.stringify(filtersOf(current))
+  const [answered, setAnswered] = useState(null)
+  if (!busy && page && answered !== filters) {
+    setAnswered(filters)
+    if (total === 1 && rows.length === 1 && openId == null && !itemCode && !reviewing) {
+      setEditing(rows[0].id)
+    }
+  }
+
   // Two renderings of one result set, not both at once. While review is open
   // the filters, sorting, paging and bulk bar are gone -- changing any of
   // them would reorder the table behind the pane, and a second edit form

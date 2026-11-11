@@ -1,9 +1,34 @@
 // (c) Copyright 2026 Nathaniel Mills
 // Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
 // SPDX-License-Identifier: Apache-2.0
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import ItemEditForm from './ItemEditForm'
+
+/**
+ * Escape leaves the review, as it closes the editor opened from a row.
+ *
+ * On `document`, since focus may be anywhere in the form or on nothing. Not
+ * an Escape something else took first -- an inline add form cancelling
+ * (`isCancellingEscape`), the console menu closing its list -- nor one
+ * pressed while a dialog is open over the pane (a confirmation, an enlarged
+ * photograph, the offer dialog): that Escape is the dialog's.
+ */
+function useEscapeToLeave(leave) {
+  const latest = useRef(leave)
+  useEffect(() => {
+    latest.current = leave
+  })
+  useEffect(() => {
+    function onKey(e) {
+      if (e.key !== 'Escape' || e.defaultPrevented) return
+      if (document.querySelector('dialog[open]')) return
+      latest.current()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [])
+}
 
 /**
  * Walk a result set one item at a time.
@@ -28,6 +53,7 @@ export default function ReviewPane({ ids, onClose }) {
   const [at, setAt] = useState(0)
   const [done, setDone] = useState([])
   const [deleted, setDeleted] = useState([])
+  useEscapeToLeave(() => onClose?.(deleted))
 
   const queue = ids.filter((id) => !deleted.includes(id))
   if (queue.length === 0) return null

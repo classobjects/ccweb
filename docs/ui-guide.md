@@ -134,9 +134,12 @@ The bulk bar's fields:
 | **Group into lot: Lot** |  | Where the selected items go: a new lot, or one still being assembled. A lot is offered and sold as one thing. Grouping changes nothing else about an item, which stays in stock. |
 | **Group into lot: Title** | a new lot | What the new lot is called: the Lots page lists it by this, and its offer starts from it. |
 
+A search that finds a single item opens it in the editor straight away. Once
+closed, it stays closed until the search changes.
+
 **Review these** walks through the current result one item at a time, in the
 editor. The list is frozen when you start, so fixing an item does not skip the
-next one.
+next one. **Leave review** or Escape returns to the list.
 
 ![Review, with the item editor open on the first of the result](images/ui-guide/review.png)
 

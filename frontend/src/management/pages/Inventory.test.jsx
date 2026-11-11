@@ -353,6 +353,81 @@ describe('Inventory narrowed by a missing field', () => {
   })
 })
 
+// A search that finds one item opens it: the owner asked why a single row
+// had to be clicked when there was nothing to choose between.
+describe('Inventory search that finds one item', () => {
+  beforeEach(() => {
+    api.searchInventory.mockResolvedValue({
+      rows: [{ id: 7, item_code: 'CC-000007', description: 'A note' }],
+      total: 1,
+      facets: {},
+      issues: {},
+      sortable: [],
+    })
+  })
+
+  function renderOne() {
+    return renderWithProviders(<InventoryCurrency />, {
+      auth: adminAuth(),
+      route: '/inventory/currency?missing=photo',
+    })
+  }
+
+  it('opens the editor on it without a click', async () => {
+    renderOne()
+
+    const heading = await screen.findByRole('heading', { name: 'CC-000007' })
+    expect(heading.closest('dialog')).toHaveAttribute('open')
+    expect(api.getInventoryItem).toHaveBeenCalledWith(7)
+  })
+
+  it('stays closed once closed, though the row is still the only one', async () => {
+    const user = userEvent.setup()
+    renderOne()
+    await screen.findByRole('heading', { name: 'CC-000007' })
+
+    await user.click(screen.getByRole('button', { name: 'Close' }))
+
+    await waitFor(() => expect(document.querySelector('dialog')).toBeNull())
+    expect(screen.getByRole('button', { name: 'CC-000007' })).toBeInTheDocument()
+    // A render or two later, still closed.
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(document.querySelector('dialog')).toBeNull()
+  })
+
+  it('stays closed after a save reads the same one result back', async () => {
+    // Opened again on every read, a save could never close it.
+    const user = userEvent.setup()
+    api.updateInventoryItem.mockResolvedValue({})
+    renderOne()
+    await screen.findByRole('heading', { name: 'CC-000007' })
+    const searches = api.searchInventory.mock.calls.length
+
+    await typeDescription(user, 'Star note')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() =>
+      expect(api.searchInventory.mock.calls.length).toBeGreaterThan(searches),
+    )
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(document.querySelector('dialog')).toBeNull()
+  })
+
+  it('opens nothing on a search that finds more than one', async () => {
+    api.searchInventory.mockResolvedValue({
+      rows: rows.slice(0, 2),
+      total: 2,
+      facets: {},
+      issues: {},
+      sortable: [],
+    })
+    renderOne()
+
+    await screen.findByRole('button', { name: 'CC-000002' })
+    expect(document.querySelector('dialog')).toBeNull()
+  })
+})
+
 describe('Inventory search that fails', () => {
   it('clears the last rows, stops searching and says why', async () => {
     const user = userEvent.setup()

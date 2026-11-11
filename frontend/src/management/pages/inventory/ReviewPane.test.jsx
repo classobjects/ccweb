@@ -71,4 +71,48 @@ describe('ReviewPane', () => {
 
     expect(onClose).toHaveBeenCalledWith([1])
   })
+
+  it('leaves the review on Escape, as Leave review does', async () => {
+    // The owner pressed Escape and had to find the menu to get out.
+    const user = userEvent.setup()
+    const onClose = vi.fn()
+    render(<ReviewPane ids={[1, 2, 3]} onClose={onClose} />)
+    await user.click(screen.getByRole('button', { name: 'stub delete' }))
+    await user.keyboard('{Escape}')
+
+    expect(onClose).toHaveBeenCalledWith([1])
+  })
+
+  it('leaves an Escape something else took first', async () => {
+    // An inline add form's Escape cancels the add, and goes no further.
+    const user = userEvent.setup()
+    const onClose = vi.fn()
+    const takeIt = (e) => e.preventDefault()
+    document.body.addEventListener('keydown', takeIt)
+    try {
+      render(<ReviewPane ids={[1, 2]} onClose={onClose} />)
+      await user.keyboard('{Escape}')
+    } finally {
+      document.body.removeEventListener('keydown', takeIt)
+    }
+
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('leaves to a dialog open over the pane the Escape pressed in it', async () => {
+    // A confirmation or an enlarged photograph: Escape closes that, not the review.
+    const user = userEvent.setup()
+    const onClose = vi.fn()
+    const over = document.createElement('dialog')
+    over.setAttribute('open', '')
+    document.body.append(over)
+    try {
+      render(<ReviewPane ids={[1, 2]} onClose={onClose} />)
+      await user.keyboard('{Escape}')
+    } finally {
+      over.remove()
+    }
+
+    expect(onClose).not.toHaveBeenCalled()
+  })
 })
