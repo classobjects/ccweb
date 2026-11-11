@@ -14,9 +14,10 @@ and its cost basis. Most of what follows is about keeping that record true:
 who may change it, which code paths are allowed to write each part, and how
 to take and prove a backup before anything risky.
 
-Related documents: [runtime-operations-windows.md](runtime-operations-windows.md) (starting
+Related documents: [runtime-operations-windows.md](runtime-operations-windows.md)
+and [runtime-operations-linux.md](runtime-operations-linux.md) (starting
 and stopping the services), [environment-setup-windows.md](environment-setup-windows.md)
-(installing them), [database-design.md](database-design.md) (how the record
+and [environment-setup-linux.md](environment-setup-linux.md) (installing them), [database-design.md](database-design.md) (how the record
 is structured).
 
 ## Contents
@@ -58,8 +59,9 @@ commands run from `backend\` with the `ccwebdb` conda environment active;
 `cd /d %USERPROFILE%\dev\ccweb\backend`); a script is
 `./scripts/NAME.sh` for `.\scripts\NAME.cmd`, with `--option` for
 `/option`; and a variable is set with `export NAME=value` for
-`set "NAME=value"`, or, for a password asked for, `read -rs PGPASSWORD &&
-export PGPASSWORD` for `set /p PGPASSWORD=...`. Blocks that differ in more
+`set "NAME=value"` and `unset NAME` for `set "NAME="`, or, for a
+password asked for, `read -rs PGPASSWORD` and then `export PGPASSWORD` for
+`set /p PGPASSWORD=...`. Blocks that differ in more
 than that show the Linux form beside the Windows one.
 
 ## Accounts
@@ -189,8 +191,8 @@ A purchase charged no tax has `tax_rate` 0: the **No sales tax charged** box
 on the item edit form, `tax_rate` through `PATCH /api/inventory/{id}`, or
 `POST /api/inventory/bulk` for a batch. Unticking the box restores the rate
 the item was bought at, or, for an item recorded as untaxed, the configured
-one. A rate cannot reproduce a marketplace's own rounding (Whatnot charged
-$0.35 where 6.35% of $5.40 is $0.34); those pennies stay as computed.
+one. A rate cannot reproduce a marketplace's own rounding (it may charge
+a cent more or less than rate x price); those pennies stay as computed.
 
 ### Images and the photograph library
 
@@ -212,8 +214,7 @@ restore from a verified backup.
 ### The passes over stored items
 
 A pass applies a rule to every stored item at once -- the work the console
-does as each item is saved, done for everything recorded before the rule
-existed. **Each pass is a dry run unless given `--commit`**: it prints what it
+does as each item is saved, done for everything already recorded. **Each pass is a dry run unless given `--commit`**: it prints what it
 would change and writes no database rows.
 
 | Pass | Does | Options |
@@ -402,8 +403,8 @@ fineness, and the fine weight is worked out as their product when it is left
 empty. Type the fine weight when it is what is known. Emptying it keeps it
 empty.
 
-For the items entered before these fields existed, `python -m
-app.bullion_weights` guesses. It looks only at bullion, medals and tokens
+For an item with no fine weight, `python -m app.bullion_weights`
+guesses. It looks only at bullion, medals and tokens
 with no fine weight, fills only empty fields, and takes:
 
 - a weight ("5 oz", "1/2 oz", "10 grams", "1 Kilo", "One Ounce") and a
@@ -621,7 +622,7 @@ separated) beside the grade; each change is logged in `item_field_change`.
 description written from what the editor shows, unsaved changes included
 (`POST /api/inventory/{id}/suggested-description`, `app.item_descriptions`),
 in the owner's style: grade, designation and attributes first, then what it
-is -- "Superb Gem Unc 67 EPQ Radar 1999 $1 S/N F06566560R. Federal Reserve
+is -- "Superb Gem Unc 67 EPQ Radar 1999 $1 S/N F12344321R. Federal Reserve
 Note Green Seal." for a note, "MS64 First Strike 1921-S Morgan Dollar.
 Silver, 0.7734 ozt fine." for a coin -- with recorded errors beside the attributes, right after the grade ("Error Note, Misaligned Print (Reverse) 1963A $1 ..."). No field
 labels, district, signatures or grading service. A note's design series
@@ -1381,7 +1382,8 @@ reorders them; its picker lists the vocabularies alphabetically.
   `item_status`, `disposition`, `sales_order_status`, `shipment_status`,
   `strike_type`, `item_kind`, `grade_scale`, `valuation_basis`,
   `authenticity`, `sales_venue_kind` and `sales_fee_kind`, plus vendor kind
-  `unknown`, storage form `single`, storage location kind `consigned`,
+  `unknown`, storage form `single`, bullion form `round`, storage location
+  kind `consigned`,
   currency `USD`, country `US`, note type `frn`, and image roles `obverse`,
   `reverse` and `unassigned` (`app/references.py`, `retirable`). Pressing
   Retire or Merge into... on one says so in its row.
@@ -1701,7 +1703,9 @@ On Linux, `--schedule` installs `ccwebdb-backup.service` and
 turns on lingering for your account, so the timer runs whether or not you
 are signed in. The timer is persistent: a run the machine was off for
 happens when it is next up. `journalctl --user -u ccwebdb-backup` shows its
-runs. Either way PostgreSQL has to be running.
+runs. Where there is no systemd user manager (WSL without systemd, for
+one), `--schedule` installs nothing, prints the `crontab -e` line to add
+instead, and fails. Either way PostgreSQL has to be running.
 
 ### Photographs
 
@@ -2006,7 +2010,13 @@ python -m app.workbook_backup compare postgresql+psycopg://ccwebdb:%PGPASSWORD%@
 On Linux, the password the same way, on its own:
 
 ```console
-read -rs PGPASSWORD && export PGPASSWORD
+read -rs PGPASSWORD
+```
+
+Then:
+
+```console
+export PGPASSWORD
 ```
 
 Then:
@@ -2094,7 +2104,7 @@ every release is schema first, reference data second.
    python -m app.workbook_backup compare postgresql+psycopg://ccwebdb:%PGPASSWORD%@localhost:5432/ccwebdb_rehearsal
    ```
 
-   On Linux, after `read -rs PGPASSWORD && export PGPASSWORD`:
+   On Linux, with `PGPASSWORD` read and exported as above:
 
    ```console
    cd ~/dev/ccweb/backend
@@ -2205,7 +2215,8 @@ every release is schema first, reference data second.
    ```
 
    Run the startup script bare -- never piped or redirected, or the call
-   hangs (*Runtime operations*). Then confirm with the status script
+   hangs ([runtime-operations-windows.md](runtime-operations-windows.md),
+   [runtime-operations-linux.md](runtime-operations-linux.md)). Then confirm with the status script
    (`.\scripts\ccweb_status.cmd` or `./scripts/ccweb_status.sh`, exit 0).
 
    On a server, build the frontend again as the deployment document's

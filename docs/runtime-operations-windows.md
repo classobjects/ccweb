@@ -185,8 +185,9 @@ defaults written there and in `.env.example`. No script writes a port or a
 folder of its own, so changing one in `.env` moves every script with it. A
 variable already set in the shell wins over `.env`, as it does for the API.
 A value `.env` gets wrong -- `CCWEB_API_PORT=80a` -- stops the script with
-exit 2 and a message naming the setting, never its value; `ccweb_status.cmd`
-reports it and carries on.
+exit 2 and a message naming the setting, never its value (`ccweb_claude.cmd`
+and `ccweb_shutdown.cmd` exit 1); `ccweb_status.cmd` reports it and
+carries on.
 
 ---
 
@@ -292,7 +293,9 @@ are reported as skipped, and the exit code is 1.
 
 ## Starting a Claude Code session
 
-New session:
+Optional: it needs Claude Code installed for this account (the
+launcher expects `claude` on `PATH` or in `%USERPROFILE%\.local\bin`;
+see https://docs.anthropic.com/en/docs/claude-code). New session:
 
 ```console
 cd /d %USERPROFILE%\dev\ccweb
@@ -351,7 +354,9 @@ connection dies.
   logs folder and exits 1 when the backup could not be proved.
   `/schedule [HH:MM]` creates the daily scheduled task `ccwebdb backup`, at
   `CCWEB_BACKUP_TIME` (20:00) when no time is given; `/unschedule` deletes
-  it, `/scheduled` shows it; any other argument is refused with exit 2. The
+  it, `/scheduled` shows it. `/schedule` needs an administrator cmd and
+  exits 1 without one; any other argument, or an
+  environment or setting that is refused, exits 2. The
   task reads `.env` like the script, so a folder set there reaches a run
   made while signed out. See `system-administration.md`, *The routine
   backup*.
@@ -365,7 +370,7 @@ connection dies.
 - **`ccweb_check.cmd`** runs every quality gate; `fix` reformats and
   auto-fixes first. See [code-quality.md](code-quality.md).
 - **`ccweb_testdb.cmd`** creates and starts a cluster for the tests alone
-  (`stop`, `status`); see *A cluster for the tests*.
+  (`stop`, `status`, `use`); see *A cluster for the tests*.
 - **`ccweb_api.cmd`** runs the API alone in the foreground, as a production
   server's service does
   ([deployment-windows.md](deployment-windows.md), step 6). Development
@@ -430,7 +435,8 @@ Dashboard: http://localhost:9000 (`CCWEB_SONAR_PORT`), project
 and its database run as podman containers (`sonarqube`, `sonar-db`) on the
 `sonar-net` network; the server is bound to 127.0.0.1 and the database
 publishes no host port. The start script starts the podman machine if it is
-not running. All state is in four named volumes
+not running. Podman itself is a prerequisite: install Podman for
+Windows (podman.io) and run `podman machine init` once. All state is in four named volumes
 (`sonar-db-data`, `sonarqube-data`, `sonarqube-extensions`,
 `sonarqube-logs`); stopping keeps them, `podman volume rm` destroys the
 analysis history and admin account.
@@ -498,8 +504,9 @@ the process on a port from `backend\app\portpid.py`, readiness from
 `curl`, sleeps from
 `ping -n 2 127.0.0.1 >nul` (`timeout` needs a real console and returns at
 once, with no pause, when stdin is redirected), process trees from
-`taskkill /T`. Not `netstat`: on Windows 26300.9818 it reads a listening
-socket's state wrong and leaves the row out, so a held port looked free.
+`taskkill /T`. Not `netstat`: on some Windows builds it misreads a
+listening socket's state and leaves the row out, so a held port reads as
+free.
 `portpid.py` reads the same table and tells a listener by its empty remote
 address instead.
 
@@ -572,7 +579,9 @@ needed and run the tests there, so the tests never build their databases in
 the collection's cluster. It holds only what a test session builds and
 drops, under the development password. `.\scripts\ccweb_testdb.cmd stop`
 stops it and `status` reports it. For `pytest` on its own, set
-`TEST_DATABASE_URL` to the line it prints.
+`TEST_DATABASE_URL` to the line it prints, or let
+`call .\scripts\ccweb_testdb.cmd use` start the cluster if needed and set
+it in the current cmd, as the gate does.
 
 ---
 
@@ -596,8 +605,8 @@ When the other computer has certainly stopped and the file is still there
 service does not go through that script: registered to start with the
 machine, it would start under the other computer after any reboot. A
 shared cluster's service has to start by hand (`sc config
-ccwebdb-postgres start= demand`), so the server is down after every reboot
-until someone starts it.
+ccwebdb-postgres start= demand`, from an administrator cmd), so the server
+is down after every reboot until someone starts it.
 
 The sync service brings troubles of its own. It locks files as it uploads
 them, so dropping a database can leave its folder behind in `base`
@@ -624,7 +633,7 @@ The database:
 ```console
 cd /d %USERPROFILE%\dev\ccweb
 conda activate ccwebdb
-pg_ctl -D .pgdata -l logs\postgres-by-hand.log start
+start "ccweb-postgres" /min pg_ctl -D .pgdata -l logs\postgres-by-hand.log start
 pg_isready -h localhost -p 5432
 ```
 
@@ -658,12 +667,12 @@ these up: the port sweep catches what the PID file does not know about.
 **`[WinError 10013] An attempt was made to access a socket in a way forbidden
 by its access permissions`** -- almost never permissions. Either something is
 already listening, or Windows has reserved the port range (Hyper-V / WSL).
-In a window where `conda activate ccwebdb` has been run, the first prints
-the process ID holding the port, or nothing; the second lists the reserved
-ranges:
+The first prints the process ID holding the port, or nothing; the second
+lists the reserved ranges:
 
 ```console
 cd /d %USERPROFILE%\dev\ccweb
+conda activate ccwebdb
 python backend\app\portpid.py 8000
 netsh interface ipv4 show excludedportrange protocol=tcp
 ```

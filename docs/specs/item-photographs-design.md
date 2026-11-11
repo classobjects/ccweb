@@ -57,7 +57,7 @@ therefore guarded by the for-sale rule.
   anything else is refused as not a readable image.
   `image.source_ref` is the name the photograph goes by: the file's name
   as uploaded, with the stored format's extension when it was converted
-  (`CC-007595_02.webp` is kept as `CC-007595_02.jpg`; `DSC00417.JPG` stays
+  (`CC-000412_02.webp` is kept as `CC-000412_02.jpg`; `DSC00417.JPG` stays
   as it is), a name made for its place when it was fetched from a web
   address, and renamed when it is filed in another place (below).
 - `image_store.ingest` stores a photograph -- original and both derivatives
@@ -198,7 +198,7 @@ had none, and gives the item it left its next photograph as primary. Both
 items are checked by the for-sale guard, under one acknowledgement.
 
 **Named for its place.** A photograph moved, or filed from
-`/management/photos`, is renamed for its new place (`CC-008079_02.jpg`) when
+`/management/photos`, is renamed for its new place (`CC-000414_02.jpg`) when
 its name was another item's place -- a real item's code and a position,
 whatever folder of the library it was imported from -- and it is filed on
 no other item (`image_links.name_for_place`). A camera's

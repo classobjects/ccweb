@@ -215,7 +215,7 @@ error belongs to that order and clears when the address changes.
   only mules are offered; No leaves them out; Not known offers both. A note
   in a PMG holder with a certificate number gets a **PMG cert** button,
   which opens PMG's page for that certificate and grade
-  (`pmgnotes.com/certlookup/2452276-014/30/`) beside the form; nothing is
+  (`pmgnotes.com/certlookup/1234567-001/30/`) beside the form; nothing is
   read from it.
 - *Photo* takes files from the file box, dropped onto it, or pasted into it
   with Ctrl+V; anything that is not an image is refused with its name.

@@ -72,7 +72,7 @@ and this lists every `conda` your shells can run now, from any installation:
 where conda
 ```
 
-- **It prints a version (`conda 26.9.3`):** Miniforge is installed. Skip the
+- **It prints a version (`conda 26.5.3`):** Miniforge is installed. Skip the
   install below, bring conda up to date, and go on to `conda init`. Preview
   the update, then make it:
 
@@ -221,7 +221,10 @@ Pin `nodejs` to the 24.x LTS line; conda-forge's newest `nodejs` builds have
 been pre-releases. Pin `postgresql` to its major version: a cluster made by
 one major version is not opened by the next without an upgrade, so the
 version must not change under it. `gh` lands in `envs\ccwebdb\Library\bin`, so it is on
-`PATH` only with the environment active. Sign in once with `gh auth login`.
+`PATH` only with the environment active. `gh`, the GitHub CLI, is optional:
+nothing in the setup or the scripts uses it, so leave it off the line
+unless you want it for pull requests; to use it, sign in once with
+`gh auth login`.
 
 Verify, with the environment active:
 
@@ -305,7 +308,8 @@ Run again, the two `CREATE` lines answer `role "ccwebdb" already exists` and
 `database "ccwebdb" already exists`, and change nothing; with the server
 already up, the `start` line changes nothing either.
 
-The server runs until step 8 stops it, or until the machine restarts; after a
+The server runs until you stop it (step 8 does, when restoring a
+collection) or the machine restarts; after a
 restart, start it again with the `start` line above. From the end of step 8
 on, `.\scripts\ccweb_startup.cmd` starts it. Do not leave out the `start`: a
 server started straight from a setup window keeps the port when that window
@@ -353,7 +357,7 @@ notepad .env
 | Setting | What to put there |
 | --- | --- |
 | `JWT_SECRET` | **Required.** The 64 characters from 2, pasted after the `=`. It signs every sign-in, so it is this machine's alone: the API refuses to start without one, with one under 32 characters, or with an example value published in this repository. |
-| `FIRST_ADMIN_PASSWORD` | A password of your own, 12 characters or more, for the administrator `app.seed` makes on a **trial installation** (step 8). `app.create_admin`, which makes a new installation's first manager, takes it too when set, and otherwise asks. Restoring this collection runs neither, so it may stay empty there. |
+| `FIRST_ADMIN_PASSWORD` | A password of your own, 12 characters or more, for the administrator `app.seed` makes on a **trial installation** (step 8). `app.create_admin`, which makes a new installation's first manager, takes it too when set, and otherwise asks. Restoring a collection runs neither, so it may stay empty there. |
 | `FIRST_ADMIN_EMAIL` | The trial administrator's sign-in; `admin@example.com` will do. |
 | `DATABASE_URL` | Leave it: it names the `ccwebdb` database and the `devpassword` of step 5. Change it only if step 5 used another password. |
 | `SALES_TAX_RATE`, `SALES_TAX_INCLUDES_SHIPPING` | Your sales tax on purchases as a fraction (`0.0635` is 6.35%), and `true` or `false` for whether shipping is taxed; unset, no tax ([settings.md](settings.md#the-shop-and-purchases)). |
@@ -370,12 +374,12 @@ ignored.
 value:
 
 ```console
-cd /d %USERPROFILE%\dev\ccweb\backend && uv run python -c "from app.config import settings; print('settings OK')"
+cd /d %USERPROFILE%\dev\ccweb\backend
+uv run python -c "from app.config import settings; print('settings OK')"
 ```
 
 It must run in the repository's `backend` folder -- anywhere else Python
-answers `No module named 'app'` -- so the change of folder and the check are
-one line. If cmd answers `The system cannot find the path specified`, the
+answers `No module named 'app'`. If cmd answers `The system cannot find the path specified`, the
 repository is somewhere else on this machine: change the folder in the line.
 It needs step 7's dependencies, so on a new machine run it after step 7.
 [settings.md](settings.md) lists every setting -- whether it is required,
@@ -391,6 +395,8 @@ uv sync
 cd frontend
 npm install
 ```
+
+Then run step 6's check (*4. Check it*), if it could not run before.
 
 ## 8. Fill the database
 
@@ -408,7 +414,7 @@ start it with the `start` line of step 5 and check again. If it still says
 repository with ccwebdb active, prints a process ID, the server was started from a window that has since closed: see
 [runtime-operations-windows.md](runtime-operations-windows.md) (*Troubleshooting*).
 
-### This collection, on a new machine
+### A collection, on a new machine
 
 The collection moves as the backup workbook and its photographs: the folder
 the backup writes to, `CCWEB_BACKUP_DIR`. Carry that folder to the new
