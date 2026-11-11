@@ -15,7 +15,7 @@ from __future__ import annotations
 from app.aliases import ids_named
 from app.inventory_search import COIN_VIEW, count_facets, search
 from app.models import Series
-from app.series_match import build_rules, match
+from app.series_match import build_rules, match, stated_face
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -120,6 +120,45 @@ def test_presidential_on_a_dollar_names_the_presidential_dollar(db: Session) -> 
     assert match("Presidential Inaugural Medal", "usd_coin_0_50", rules) == set()
     # A whole word only.
     assert match("Vice-presidentially signed", "usd_coin_1_00", rules) == set()
+
+
+def test_stated_face_reads_one_face_or_none() -> None:
+    """The face a description states, only when it states exactly one.
+
+    Each phrase that holds a face word but means something else -- a quarter
+    eagle, a half dime, copper-nickel -- must not be read as that face.
+    """
+    for text, expected in (
+        ("Presidential $1 Coin Uncirculated Set", "usd_coin_1_00"),
+        ("2010 D Franklin Pierce Presidential Dollar", "usd_coin_1_00"),
+        ("National Parks 50c Half Dollar", "usd_coin_0_50"),
+        ("1899 Barber Half-Dollar", "usd_coin_0_50"),
+        ("2005-P Quarter. Copper-Nickel Clad.", "usd_coin_0_25"),
+        ("Seated Liberty 25c", "usd_coin_0_25"),
+        ("Barber Dime", "usd_coin_0_10"),
+        ("$1.00 Sacagawea", "usd_coin_1_00"),
+        # Another face, or no face at all.
+        ("1907 Liberty Head Quarter Eagle", None),
+        ("1854 Three Dollar Gold", None),
+        ("1857 Seated Liberty Half Dime", None),
+        ("Indian Head Cent", None),
+        ("Buffalo Nickel", None),
+        ("1/4 oz Gold Buffalo", None),
+        ("Quarter ounce silver round", None),
+        ("$10 Indian Eagle", None),
+        ("Bought at $1.50", None),
+        ("1977 Presidential Inaugural Medal", None),
+        # Two faces: a lot, not a face.
+        ("Barber dimes and quarters", None),
+        ("Kennedy Half Dollar and Peace Dollar", None),
+        ("1936 Year Set - Liberty Half, Mercury Dime, Buffalo", None),
+        ("Kennedy Half /Sacagawea Dollar", None),
+        # Words naming another issuer state no US face, whatever the
+        # recorded country says.
+        ("1988 RCM Double Dollar Set w/Silver $1 Commem", None),
+        ("Royal Canadian Mint Proof Dollar", None),
+    ):
+        assert stated_face(text) == expected, text
 
 
 def test_two_series_in_one_description_stays_ambiguous(db: Session) -> None:

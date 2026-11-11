@@ -17,7 +17,11 @@ denominations and mean nothing on their own:
     Presidential    a dollar, but also medals and sets
 
 For those the denomination decides, and an item whose denomination is unknown
-is left unclassified rather than guessed at. A wrong series is worse than none:
+is left unclassified rather than guessed at. A US coin or set with none
+recorded whose words state one face -- "$1 Presidential Coin", "50c Half
+Dollar" -- is judged by that face (`stated_face`), here and against a
+design's faces below; words naming two faces, or none, state nothing, and a
+lot or another issuer's piece is not read. A wrong series is worse than none:
 it would be inherited by every price lookup made against it.
 
 Matches are recorded as `derived`, never `manual`, so a later hand correction
@@ -60,6 +64,7 @@ from . import aliases
 from .database import SessionLocal
 from .field_sources import SERIES_MATCH, held_empty, record_derived
 from .models import (
+    Country,
     Denomination,
     InventoryItem,
     ItemKind,
@@ -140,6 +145,88 @@ EXTRA: dict[str, list[str]] = {
         r"\btype\s*(?:3|iii)\s+(?:gold\s+)?\$1(?![\d.])"
     ],
 }
+
+#: Phrases that hold a face word but are not that face -- a quarter eagle
+#: is gold, a half dime five cents, copper-nickel a metal, a quarter ounce
+#: a weight. Blanked before any face is read.
+_NOT_A_FACE = re.compile(
+    r"\b(?:quarter|half|double)[\s-]+eagles?\b"
+    r"|\b(?:copper|cupro)[\s-]+nickel\b|\bnickel[\s-]+(?:clad|silver|plated)\b"
+    r"|\bquarter[\s-]+(?:ounce|oz)\b|\b1/4\s*oz\b",
+    re.IGNORECASE,
+)
+
+#: The faces a description can state, in reading order: each match is blanked
+#: before the next is read, so the dollar in "half dollar" is not also a
+#: dollar. `None` is a face this module does not read -- a cent, a nickel, a
+#: gold piece -- which counts as a second face, so the words then state none.
+_STATED_FACES: list[tuple[str | None, re.Pattern[str]]] = [
+    (
+        None,
+        re.compile(
+            r"\bhalf[\s-]+(?:dimes?|cents?)\b"
+            r"|\b(?:two|three|four|five|ten|twenty|fifty|hundred)[\s-]+dollars?\b"
+            r"|\$\s?(?:2\.50|\d{2,}|[2-9])(?![\d.,])"
+            r"|\b(?:2|3|5|20)\s?(?:c|cents?)\b"
+            r"|\b(?:cents?|penn(?:y|ies)|nickels?)\b",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "usd_coin_0_50",
+        # A bare "half" too: half dimes, cents and eagles are already gone.
+        re.compile(
+            r"\bhalf(?:[\s-]+dollars?)?\b|\b50\s?(?:c|cents?)\b|50¢", re.IGNORECASE
+        ),
+    ),
+    (
+        "usd_coin_0_25",
+        re.compile(r"\bquarters?\b|\b25\s?(?:c|cents?)\b|25¢", re.IGNORECASE),
+    ),
+    (
+        "usd_coin_0_10",
+        re.compile(r"\bdimes?\b|\b10\s?(?:c|cents?)\b|10¢", re.IGNORECASE),
+    ),
+    (
+        "usd_coin_1_00",
+        re.compile(r"\$\s?1(?:\.00)?(?![\d.,/])|\bdollars?\b", re.IGNORECASE),
+    ),
+]
+
+
+#: Words naming an issuer other than the US. A piece recorded as US can still
+#: say "RCM" -- the recorded country is not always right -- and its "$1" is
+#: then a Canadian dollar.
+_OTHER_ISSUER = re.compile(
+    r"\b(?:rcm|royal\s+canadian\s+mint|canad(?:a|ian))\b", re.IGNORECASE
+)
+
+#: The kinds whose words are read for a face: one coin, or a set of them. A
+#: lot is many pieces, and a bar, round, medal or token has no face.
+STATED_FACE_KINDS: frozenset[str] = frozenset({"coin", "set"})
+
+
+def stated_face(text: str) -> str | None:
+    """The denomination code the words state, when they state exactly one.
+
+    Read only for an item with no denomination recorded: "$1 Presidential
+    Coin" is a dollar, and "National Parks Half Dollar" is not a quarter
+    whatever else it says. Words naming two faces -- a lot of dimes and
+    quarters, or a face this does not read beside one it does -- state none,
+    as do words naming another issuer, whose dollar is not a US dollar.
+    """
+    if _OTHER_ISSUER.search(text):
+        return None
+    rest = _NOT_A_FACE.sub(" ", text)
+    found: set[str | None] = set()
+    for face, pattern in _STATED_FACES:
+        if pattern.search(rest):
+            found.add(face)
+            rest = pattern.sub(" ", rest)
+    if len(found) != 1:
+        return None
+    return next(iter(found))
+
 
 #: `AMBIGUOUS`'s terms, compiled once rather than on every description.
 _AMBIGUOUS_PATTERNS = [
@@ -340,13 +427,18 @@ def _classify(
     """Which series each item earns, and the tally of how it went."""
     stats: Counter = Counter()
     assignments: dict[int, int] = {}
-    for item_id, description, title, denomination, item_kind, start, end in items:
+    for item_id, description, title, recorded, item_kind, country, start, end in items:
         text = f"{title or ''} {description or ''}"
+        # With none recorded, the face the words state stands in -- on a US
+        # coin or set only: another issuer's dollar is not a US dollar.
+        denomination = recorded
+        if denomination is None and item_kind in STATED_FACE_KINDS and country == "US":
+            denomination = stated_face(text)
         named = match(text, denomination, rules, inventory_of(item_kind))
         # A piece of one year cannot be a design not struck that year, nor a
         # piece of one denomination a design struck in others. A range of
         # years spans designs, so it rules nothing out; nor does a
-        # denomination left empty on a coin.
+        # denomination neither recorded nor stated, on a coin.
         year = single_year((start, end))
         found = {
             code
@@ -400,6 +492,7 @@ def run(db: Session, *, commit: bool) -> Counter:
             InventoryItem.source_title,
             Denomination.code,
             ItemKind.code,
+            Country.code,
             InventoryItem.year_start,
             InventoryItem.year_end,
         )
@@ -407,6 +500,7 @@ def run(db: Session, *, commit: bool) -> Counter:
         .join(
             Denomination, Denomination.id == InventoryItem.denomination_id, isouter=True
         )
+        .join(Country, Country.id == InventoryItem.country_id, isouter=True)
         .where(
             InventoryItem.split_at.is_(None),
             InventoryItem.series_id.is_(None),

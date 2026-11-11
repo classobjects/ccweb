@@ -13,12 +13,12 @@ argue what the behavior ought to be.
 
 from __future__ import annotations
 
-from app.models import ProvenanceSource, Series
+from app.models import Country, ProvenanceSource, Series
 from app.series_match import run
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from tests.builders import ItemFactory
+from tests.builders import ItemFactory, code_id
 
 # Nothing in the seeded series vocabulary matches this.
 UNRECOGNISABLE = {"title": "Plain metal disc", "description": "No series here."}
@@ -144,6 +144,99 @@ def test_counts_cover_every_item_examined(db: Session, make_item: ItemFactory) -
         "contradicted": 1,
         "no_match": 1,
     }
+
+
+def test_a_face_the_words_state_stands_in_for_one_not_recorded(
+    db: Session, make_item: ItemFactory
+) -> None:
+    # With no denomination recorded, "$1" in the words is the dollar that
+    # decides "Presidential", and "Half Dollar" is a face an America the
+    # Beautiful quarter does not fit, though its year does.
+    presidential = make_item(
+        kind="set",
+        title="2010-P/D (8) United States Mint Presidential $1 Coin Uncirculated Set",
+        description="In the Mint's packaging.",
+        year_start=2010,
+    )
+    pierce = make_item(
+        title="2010 D FRANKLIN PIERCE PRESIDENTIAL DOLLAR ANACS",
+        description="Slabbed.",
+        year_start=2010,
+    )
+    parks = make_item(
+        title="2016-D 100th Anniversary National Parks 50c Half Dollar",
+        description="First strike.",
+        year_start=2016,
+    )
+
+    stats = run(db, commit=True)
+
+    for item in (presidential, pierce, parks):
+        db.refresh(item)
+    assert presidential.series_id == _series_id(db, "presidential_dollar")
+    # Franklin is a half's name; on a dollar it is the president's.
+    assert pierce.series_id == _series_id(db, "presidential_dollar")
+    assert parks.series_id is None
+    assert stats["contradicted"] == 1
+
+
+def test_words_naming_two_faces_state_none(db: Session, make_item: ItemFactory) -> None:
+    # A lot of dimes and quarters names no one face, so "Barber" stays
+    # unresolved rather than taking whichever face was read first.
+    lot = make_item(
+        title="Barber dimes and quarters, 12 pieces",
+        description="Mixed lot.",
+        year_start=1900,
+    )
+
+    stats = run(db, commit=True)
+
+    db.refresh(lot)
+    assert lot.series_id is None
+    assert dict(stats) == {"no_match": 1}
+
+
+def test_a_medal_reads_no_face_from_its_words(
+    db: Session, make_item: ItemFactory
+) -> None:
+    # A medal is not struck at a face value, whatever its words say.
+    medal = make_item(
+        kind="medal",
+        title="Presidential $1 Inaugural Medal",
+        description="Bronze.",
+        year_start=2009,
+    )
+
+    run(db, commit=True)
+
+    db.refresh(medal)
+    assert medal.series_id is None
+
+
+def test_a_lot_or_another_countrys_coin_reads_no_face(
+    db: Session, make_item: ItemFactory
+) -> None:
+    # A lot is many pieces, not one face; and a dollar of another issuer is
+    # not a US dollar, so its words name no US design.
+    lot = make_item(
+        kind="other",
+        title="Estate lot: silver dollars, proof sets, commemoratives",
+        description="Mixed.",
+        year_start=None,
+    )
+    canadian = make_item(
+        title="1984 RCM Proof Silver Dollar Commem",
+        description="In its capsule.",
+        year_start=1984,
+        country_id=code_id(db, Country, "CA"),
+    )
+
+    run(db, commit=True)
+
+    for item in (lot, canadian):
+        db.refresh(item)
+    assert lot.series_id is None
+    assert canadian.series_id is None
 
 
 def test_a_round_or_medal_is_not_a_coin_design_for_sharing_its_name(
