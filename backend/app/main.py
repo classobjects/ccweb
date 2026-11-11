@@ -12,6 +12,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import DataError
 
 from . import auctions, default_kind_check, media_check, sales_writes
 from .config import settings
@@ -267,6 +268,31 @@ def _number_recorded(_request: Request, exc: Exception) -> JSONResponse:
     )
 
 
+#: What psycopg says, before anything reaches the server, when a text value
+#: holds a NUL character -- which PostgreSQL text cannot store.
+_NUL_REFUSED = "cannot contain NUL (0x00) bytes"
+
+
+def _nul_in_text(_request: Request, exc: Exception) -> JSONResponse:
+    """A NUL character in a value bound as text: the caller's input, a 422.
+
+    Any text a request carries -- a search box, a filter code, a JSON
+    field -- can hold a NUL, and psycopg refuses it while binding, as a
+    `DataError`. Unhandled that is a 500, and the public catalog would
+    answer a stranger's `?q=%00` with one. Every other `DataError` is
+    re-raised, so it still reaches `ServerErrorMiddleware` as the crash it
+    is, with its traceback logged; the same reasoning as
+    `_server_misconfigured`'s about not handling a wide class.
+    """
+    if _NUL_REFUSED not in str(getattr(exc, "orig", "")):
+        raise exc
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        content={"detail": "Text cannot contain a NUL character"},
+    )
+
+
+app.add_exception_handler(DataError, _nul_in_text)
 app.add_exception_handler(inventory.FieldConflicts, _field_conflicts)
 app.add_exception_handler(friedberg.NumberRecorded, _number_recorded)
 app.add_exception_handler(friedberg.CombinationRecorded, _combination_recorded)
