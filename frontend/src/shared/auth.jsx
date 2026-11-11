@@ -23,15 +23,15 @@ import { applyTheme, storedTheme } from './theme'
  * its account's choice with it.
  */
 export function AuthProvider({ children }) {
-  const [user, setUserState] = useState(null)
+  const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [theme, setThemeState] = useState(storedTheme)
+  const [theme, setTheme] = useState(storedTheme)
 
   // Every profile that arrives -- restored, signed in, or saved -- shows its
   // account's choice; signing out (null) leaves the page as it is.
-  const setUser = useCallback((profile) => {
-    setUserState(profile)
-    if (profile?.theme) setThemeState(applyTheme(profile.theme))
+  const acceptProfile = useCallback((profile) => {
+    setUser(profile)
+    if (profile?.theme) setTheme(applyTheme(profile.theme))
   }, [])
 
   // On first mount, exchange any stored token for the current profile.
@@ -49,7 +49,7 @@ export function AuthProvider({ children }) {
       }
       try {
         const me = await api.me()
-        if (!cancelled) setUser(me)
+        if (!cancelled) acceptProfile(me)
       } catch {
         /* nobody signed in: a refusal has already signed out, a blip keeps the tokens */
       } finally {
@@ -60,23 +60,23 @@ export function AuthProvider({ children }) {
     return () => {
       cancelled = true
     }
-  }, [setUser])
+  }, [acceptProfile])
 
   // A session the server stops accepting while the page is open -- expired
   // past its refresh, or ended by a password reset -- leaves nobody signed
   // in, so the page offers sign-in again rather than naming an account
   // whose every request is refused.
-  useEffect(() => onSignedOut(() => setUser(null)), [setUser])
+  useEffect(() => onSignedOut(() => acceptProfile(null)), [acceptProfile])
 
   const login = useCallback(
     async (email, password) => {
       const tokens = await api.login(email, password)
       saveTokens(tokens)
       const me = await api.me()
-      setUser(me)
+      acceptProfile(me)
       return me
     },
-    [setUser],
+    [acceptProfile],
   )
 
   const register = useCallback(
@@ -105,17 +105,17 @@ export function AuthProvider({ children }) {
   // keeps it. A save that fails (offline, server down) leaves the page as
   // chosen and remembered in this browser; the account keeps its old choice
   // until the next save.
-  const setTheme = useCallback(
+  const chooseTheme = useCallback(
     async (next) => {
-      setThemeState(applyTheme(next))
+      setTheme(applyTheme(next))
       if (!user) return
       try {
-        setUser(await api.updateMe({ theme: next }))
+        acceptProfile(await api.updateMe({ theme: next }))
       } catch {
         /* the page already shows it; the account catches up on a later save */
       }
     },
-    [user, setUser],
+    [user, acceptProfile],
   )
 
   const value = useMemo(
@@ -126,10 +126,10 @@ export function AuthProvider({ children }) {
       register,
       logout,
       theme,
-      setTheme,
+      setTheme: chooseTheme,
       isAdmin: user?.role === 'manager',
     }),
-    [user, loading, login, register, logout, theme, setTheme],
+    [user, loading, login, register, logout, theme, chooseTheme],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

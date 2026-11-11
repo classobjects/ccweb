@@ -32,6 +32,20 @@ function orderIdFromParams(params) {
 }
 
 /**
+ * What "Receive all" offers: the purchase, its lines still `ordered`, and
+ * the button's words. A linked order is named by the heading above it; a
+ * purchase found by a search is named in the button. `purchase` is null when
+ * neither read has settled.
+ */
+function receiveAllOffer(linked, found) {
+  const purchase = linked ?? found
+  if (!purchase) return { purchase: null, lines: [], label: '' }
+  const lines = purchase.lines.filter((line) => line.status === 'ordered')
+  const named = linked ? '' : ` on ${found.order_number || purchaseNumber(found.id)}`
+  return { purchase, lines, label: `Receive all ${lines.length} still ordered${named}` }
+}
+
+/**
  * Receiving: find what arrived, then record it, one item at a time.
  *
  * One search form (`ItemFinder`): its order number field takes part of the
@@ -104,18 +118,12 @@ export default function Receiving() {
   const scope = `order:${orderId}`
   const openLine = receiving?.scope === scope ? receiving.line : null
   // Offered only from a settled read, never from the previous one.
-  const allOf = order && !link.busy ? order : foundOrder
-  const stillOrdered = allOf
-    ? allOf.lines.filter((line) => line.status === 'ordered')
-    : []
+  const {
+    purchase: allOf,
+    lines: stillOrdered,
+    label: allLabel,
+  } = receiveAllOffer(order && !link.busy ? order : null, foundOrder)
   const openAll = receiving?.scope === scope && receiving.all ? receiving.all : null
-  // A linked order is named by the heading above; one found is named here.
-  const allLabel =
-    allOf === foundOrder && foundOrder
-      ? `Receive all ${stillOrdered.length} still ordered on ${
-          foundOrder.order_number || purchaseNumber(foundOrder.id)
-        }`
-      : `Receive all ${stillOrdered.length} still ordered`
 
   function handleReceiptDone(used) {
     if (used) setLastReceipt(used)

@@ -39,8 +39,8 @@ export function storedTheme() {
 export function applyTheme(theme) {
   const chosen = normalTheme(theme)
   const root = document.documentElement
-  if (chosen === 'auto') root.removeAttribute('data-theme')
-  else root.setAttribute('data-theme', chosen)
+  if (chosen === 'auto') delete root.dataset.theme
+  else root.dataset.theme = chosen
   // The browser's own canvas follows `color-scheme`; on Automatic the
   // pages' <meta name="color-scheme" content="light dark"> leaves it to
   // the device, as public/theme-init.js does on the next load.
