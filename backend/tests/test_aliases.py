@@ -86,6 +86,16 @@ def test_nothing_resolves_nothing(db: Session) -> None:
     assert aliases.resolve(db, NoteType, "  ") is None
 
 
+def test_aliases_can_be_read_for_one_row(db: Session) -> None:
+    """`row_id` gives that row's aliases, the same as the whole read does."""
+    national = code_id(db, NoteType, "national_bank_note")
+    whole = aliases.aliases_by_row(db, NoteType)
+    assert len(whole) > 1
+    assert aliases.aliases_by_row(db, NoteType, row_id=national) == {
+        national: whole[national]
+    }
+
+
 def test_a_retired_alias_no_longer_names_anything(db: Session) -> None:
     national = code_id(db, NoteType, "national_bank_note")
     assert aliases.resolve(db, NoteType, "Natl") == aliases.Resolved(national, "alias")

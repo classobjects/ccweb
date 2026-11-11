@@ -145,7 +145,7 @@ def _new_names(
     the first spelling, and a second would be refused as the name it holds.
     """
     names = [source.label, source.code]
-    names += aliases.aliases_by_row(db, model).get(source.id, [])
+    names += aliases.aliases_by_row(db, model, row_id=source.id).get(source.id, [])
     once: dict[str, str] = {}
     for name in (aliases.normalise(n) for n in names if n.strip()):
         once.setdefault(name.lower(), name)
@@ -270,7 +270,7 @@ def _names_kept(
     keeps. A name the kept value already goes by is in neither list.
     """
     already = {target.label.lower(), target.code.lower()}
-    held = aliases.aliases_by_row(db, model).get(target.id, [])
+    held = aliases.aliases_by_row(db, model, row_id=target.id).get(target.id, [])
     already |= {name.lower() for name in held}
     kept: list[str] = []
     lost: list[str] = []
@@ -489,6 +489,7 @@ def merge(
     into: str,
     *,
     user_id: int | None,
+    acknowledged_for_sale: bool,
 ) -> MergePlan:
     """Move everything from `code` to `into`, delete `code`, remember it.
 
@@ -497,6 +498,11 @@ def merge(
     before its records (`routers.inventory._hold_item` where the records
     would otherwise go first), and a merge taking the records first could
     each hold what the other waits for.
+
+    Refused (`sale_state.guard`'s 409) when any item it would move is for
+    sale, unless `acknowledged_for_sale`. Asked once the items are locked,
+    so an item offered, or given the value, after the caller's preview is
+    asked about too rather than moved unseen.
     """
     result, source, target = plan(db, model, code, into)
     table = model.__tablename__
@@ -507,6 +513,14 @@ def merge(
     late = _items_holding(db, model, source.id) - items
     _lock_items(db, late)
     items |= late
+    if not acknowledged_for_sale and (selling := sale_state.for_sale(db, items)):
+        sale_state.guard(
+            db,
+            db.scalars(
+                select(InventoryItem).where(InventoryItem.id.in_(list(selling)))
+            ).all(),
+            acknowledged=False,
+        )
 
     before = _history_before(db, model, source)
     if model is ItemAttribute:

@@ -211,11 +211,12 @@ def _hold_item(db: Session, item_id: int) -> None:
     )
 
 
-def _to_piece(db: Session, spec: SplitPieceIn) -> SplitPiece:
+def _to_piece(db: Session, spec: SplitPieceIn, single: int) -> SplitPiece:
     """One piece of a split as the splitter takes it, its codes resolved to ids.
 
     Only what the request states overrides the lot; a piece is stored as a
-    single item whatever the lot was packaged as.
+    single item (`single`, the storage form's id) whatever the lot was
+    packaged as.
     """
     overrides: dict[str, object] = {}
     codes = {field: getattr(spec, field) for field in PIECE_CLASSIFIERS}
@@ -233,12 +234,6 @@ def _to_piece(db: Session, spec: SplitPieceIn) -> SplitPiece:
     if spec.description is not None:
         overrides["description"] = spec.description
 
-    # Pieces come out of a tube or a set as individual items, whatever the lot
-    # was packaged as. `.one()`: a vocabulary row that is not there fails the
-    # split loudly, rather than leaving every piece packaged as the lot was.
-    single = db.scalars(
-        select(StorageForm.id).where(StorageForm.code == "single")
-    ).one()
     overrides.setdefault("storage_form_id", single)
 
     return SplitPiece(
@@ -3622,7 +3617,14 @@ def split(
         kinds={"listing"},
     )
     _refuse_pieces_that_do_not_fit(db, parent, payload.pieces)
-    pieces = [_to_piece(db, spec) for spec in payload.pieces]
+    # Pieces come out of a tube or a set as individual items, whatever the lot
+    # was packaged as. `.one()`: a vocabulary row that is not there fails the
+    # split loudly, rather than leaving every piece packaged as the lot was.
+    # Read once here rather than once per piece.
+    single = db.scalars(
+        select(StorageForm.id).where(StorageForm.code == "single")
+    ).one()
+    pieces = [_to_piece(db, spec, single) for spec in payload.pieces]
 
     with committing(db, _STALE_ITEMS):
         try:
@@ -3766,6 +3768,19 @@ def set_item_errors(
     # The set before and after, in the change log like any field an edit
     # changes, so the item's History shows errors recorded and removed.
     before = field_changes.error_set(db, item.id)
+    # A retired error type the item already carries may be sent back, as a
+    # retired classifier an item already holds may (`code_to_id`'s `keep`):
+    # otherwise one retired error would block every later edit of the set.
+    # `.all()`: `dict()` of a result itself reads it as a mapping.
+    held = dict(
+        db.execute(
+            select(ErrorType.code, ErrorType.id)
+            .join(ItemError, ItemError.error_type_id == ErrorType.id)
+            .where(ItemError.inventory_item_id == item.id)
+        )
+        .tuples()
+        .all()
+    )
     after = [
         {"error_type": entry.error_type, "details": entry.details}
         for entry in payload.errors
@@ -3790,7 +3805,11 @@ def set_item_errors(
                 ItemError(
                     inventory_item_id=item.id,
                     error_type_id=require_code(
-                        db, ErrorType, entry.error_type, "error_type"
+                        db,
+                        ErrorType,
+                        entry.error_type,
+                        "error_type",
+                        keep=held.get(entry.error_type),
                     ),
                     details=entry.details,
                     source=ProvenanceSource.manual,

@@ -33,8 +33,8 @@ NGC = "https://ccg-imaging-ngc-coins-production.s3.amazonaws.com/17803211-25b7"
         ),
         ("  " + f"{EBAY}/s-l140.webp" + "\n", f"{EBAY}/s-l1600.webp"),
         # NGC: a thumbnail is the full picture's name, marked.
-        (f"{NGC}/TN_NGC8849054-176_OBV.jpg", f"{NGC}/NGC8849054-176_OBV.jpg"),
-        (f"{NGC}/NGC3975857-136_REV@200X300.JPG", f"{NGC}/NGC3975857-136_REV.JPG"),
+        (f"{NGC}/TN_NGC1234567-001_OBV.jpg", f"{NGC}/NGC1234567-001_OBV.jpg"),
+        (f"{NGC}/NGC7654321-002_REV@200X300.JPG", f"{NGC}/NGC7654321-002_REV.JPG"),
         (f"{NGC}/TN_NGC1-1_OBV@200x300.jpg", f"{NGC}/NGC1-1_OBV.jpg"),
     ],
 )
@@ -47,7 +47,7 @@ def test_a_scaled_address_becomes_its_full_size_form(given: str, largest: str) -
     [
         # Already the full size.
         f"{EBAY}/s-l1600.webp",
-        f"{NGC}/NGC8849054-176_OBV.jpg",
+        f"{NGC}/NGC1234567-001_OBV.jpg",
         # eBay, but not a picture file of the sized kind.
         "https://i.ebayimg.com/images/g/abc/original.jpg",
         "https://i.ebayimg.com/images/g/s-l500.jpg/extra",
@@ -75,7 +75,7 @@ def test_any_other_address_is_returned_as_given(address: str) -> None:
         ("https://I.EBAYIMG.COM/g/abc/S-L64.JPG", 64),
         # No size in the name, or not eBay's to read.
         (f"{EBAY}/original.jpg", None),
-        (f"{NGC}/TN_NGC8849054-176_OBV.jpg", None),
+        (f"{NGC}/TN_NGC1234567-001_OBV.jpg", None),
         ("https://example.com/images/s-l500.jpg", None),
         ("https://notebayimg.com/g/abc/s-l500.jpg", None),
         ("", None),

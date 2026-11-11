@@ -10,7 +10,7 @@ sites.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from decimal import Decimal
 
 import pytest
@@ -634,6 +634,44 @@ def test_a_merge_reports_the_items_for_sale_then_refuses(
         headers=admin_headers,
     )
     assert made.status_code == 200, made.text
+
+
+def test_a_merge_asks_about_an_item_offered_after_its_plan_was_read(
+    client: TestClient,
+    db: Session,
+    listing: Listing,
+    admin_headers: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The for-sale question is asked under the merge's locks, not before them.
+
+    The first look at what is for sale answers "nothing", as it would for an
+    item offered a moment after the merge planned: the item is offered by
+    the time the merge holds it, and must not be moved unasked.
+    """
+    item = db.get(InventoryItem, listing.inventory_item_id)
+    assert item is not None
+    assert item.grade is not None
+    code = item.grade.code
+    into = "63" if code != "63" else "62"
+
+    real = sale_state.for_sale
+    asked: list[int] = []
+
+    def not_yet_on_the_first_look(
+        session: Session, item_ids: Collection[int]
+    ) -> dict[int, list[sale_state.SaleUse]]:
+        asked.append(1)
+        return {} if len(asked) == 1 else real(session, item_ids)
+
+    monkeypatch.setattr(sale_state, "for_sale", not_yet_on_the_first_look)
+    refused = client.post(
+        f"/api/reference/grade/{code}/merge",
+        json={"into": into, "dry_run": False},
+        headers=admin_headers,
+    )
+    assert refused.status_code == 409, refused.text
+    assert "For sale" in refused.json()["detail"]
 
 
 def test_a_missing_piece_ends_the_lot_listing_that_held_it(

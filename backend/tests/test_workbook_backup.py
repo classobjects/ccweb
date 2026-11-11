@@ -184,6 +184,23 @@ def pair(
         admin.dispose()
 
 
+def test_a_save_cut_short_leaves_no_workbook_under_the_backup_name(
+    pair: tuple[Engine, str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A truncated file named like a backup would be kept as one next run."""
+    source, _ = pair
+    path = tmp_path / "ccwebdb_20260101_000000.xlsx"
+
+    def cut_short(book: Workbook, filename: Path) -> None:
+        Path(filename).write_bytes(b"PK\x03\x04 only the start")
+        raise OSError("No space left on device")
+
+    monkeypatch.setattr(Workbook, "save", cut_short)
+    with pytest.raises(OSError, match="No space left"):
+        wb.export_workbook(source, path)
+    assert list(tmp_path.iterdir()) == []
+
+
 def test_a_round_trip_rebuilds_the_database_exactly(
     pair: tuple[Engine, str], tmp_path: Path
 ) -> None:

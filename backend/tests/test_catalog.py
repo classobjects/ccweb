@@ -44,6 +44,7 @@ from app.sales_venues import store_venue_id
 from fastapi.testclient import TestClient
 from httpx import Response
 from sqlalchemy import select
+from sqlalchemy.exc import DataError
 from sqlalchemy.orm import Session
 
 # --------------------------------------------------------------------------
@@ -194,6 +195,29 @@ def test_price_is_serialised_with_two_decimals(
 ) -> None:
     """Money must survive the round trip exactly -- no float drift."""
     assert client.get(f"/api/catalog/{listing.id}").json()["price"] == "189.00"
+
+
+@pytest.mark.parametrize("query", ["q=%00", "kind=%00", "country=u%00s"])
+def test_a_nul_character_in_a_filter_is_a_422_not_a_500(
+    client: TestClient, listing: Listing, query: str
+) -> None:
+    """PostgreSQL text cannot hold NUL; a stranger typing one gets told so."""
+    response = client.get(f"/api/catalog?{query}")
+    assert response.status_code == 422, response.text
+    assert "NUL" in response.json()["detail"]
+
+
+def test_any_other_data_error_is_not_swallowed(
+    client: TestClient, listing: Listing, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Only the NUL refusal is the caller's fault; anything else stays a crash."""
+
+    def overflow(*, active_only: bool) -> list[Any]:
+        raise DataError("SELECT 1", {}, Exception("numeric field overflow"))
+
+    monkeypatch.setattr(offering_writes, "shop_listing_filters", overflow)
+    with pytest.raises(DataError, match="numeric field overflow"):
+        client.get("/api/catalog")
 
 
 def test_withdrawn_listings_hidden_by_default(

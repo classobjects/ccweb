@@ -450,7 +450,17 @@ def export_workbook(
         _abandon(book)
         raise
     path.parent.mkdir(parents=True, exist_ok=True)
-    book.save(path)
+    # Saved under a temporary name and renamed, as `LocalStorage.put` does: a
+    # save cut short (a full disk) would otherwise leave a truncated file
+    # under a name `backup_run.WORKBOOK` matches, and the next run would
+    # keep it as an older backup in place of a good one.
+    partial = path.with_name(path.name + ".partial")
+    try:
+        book.save(partial)
+    except BaseException:
+        partial.unlink(missing_ok=True)
+        raise
+    partial.replace(path)
     return counts
 
 
