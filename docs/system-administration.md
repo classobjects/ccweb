@@ -27,7 +27,8 @@ is structured).
    [settings.md](settings.md)
 3. [The collection record](#the-collection-record) -- the command-line passes
 4. [Finding items](#finding-items) -- the inventory search panel
-5. [Inventory items](#inventory-items) -- creating, editing, receiving, removing
+5. [Inventory items](#inventory-items) -- creating, editing, receiving, removing,
+   holder labels
 6. [Entering a purchase](#entering-a-purchase)
 7. [Sales](#sales) -- sales orders
 8. [Selling](#selling) -- platforms, offers, sales lots, auctions
@@ -45,7 +46,7 @@ is structured).
 (`docs/specs/management-console-separation-design.md`); none of it is
 reachable from the storefront. Its menu is one row of groups, named for what the
 work is for, each opening a list of its pages: **Inventory** (Coins,
-Currency, Photos, Order lookup), **Procurement** (Purchases, Receive),
+Currency, Labels, Photos, Order lookup), **Procurement** (Purchases, Receive),
 **Selling** (Listings, Lots, Auctions, Sales, Platforms, Spot prices), and
 **Settings** (People, Vocabularies, Lists); **Reports**, a single page, is a
 plain link between Selling and Settings. A list closes when a page is
@@ -851,6 +852,55 @@ Three cases are refused with 409:
 Deleting twice is not an error. `DELETE /api/inventory/{id}/parent` detaches a
 split child from its parent, for when the lineage itself was wrong; the piece
 keeps the cost it was allocated, and repeating it is harmless.
+
+### Holder labels
+
+The console's **Labels** page (Inventory menu) prints a label for each item
+to stick on its holder (`docs/specs/holder-labels-design.md`, section 4). An
+item takes a label -- is **labelable** -- when it is a coin, a note or a
+set, received, held or listed, not in a grading service's holder, and a
+single piece or a set, not a roll, tube, bag or box of several. Nothing
+else is offered a label or counted as needing one.
+
+**The sheets.** Two products from sheetlabels.com, both US Letter, in the
+inkjet material ("Spectacle White Matte Inkjet"):
+
+| | SL597 | SL564 |
+|---|---|---|
+| Used for | coins | notes and sets |
+| Label | 0.625" x 0.5", rounded corners | 1.333" x 0.625", square |
+| Grid | 10 across, 16 down: 160 | 6 across, 17 down: 102 |
+
+Their layouts are data in `backend/app/labels.py` (`SHEETS`); a third
+product is a new entry there.
+
+**Printing.** In the browser's print dialog:
+
+- Print at **100%**: Scale "Actual size" or 100, never "Fit to page" or
+  "Shrink to fit", which moves every label off its cell.
+- Turn **headers and footers** off.
+- Leave Margins at Default: the page sets its own, none.
+
+Before the first run on a new printer, or whenever labels seem to drift,
+print **Print a test page** on plain paper: the same layout with every
+cell's outline. Hold it against a sheet of labels to the light; the
+outlines should sit on the labels' edges. Text keeps 0.06" inside each
+label's edge, so a small drift stays on the label.
+
+**What printed.** When the print dialog closes the page asks whether the
+labels printed correctly. **Yes** records, for every item in the run, when
+it was labeled and the text printed on it, and takes those items out of the
+print batch; **No** records nothing. Recording is bookkeeping, not an edit:
+the item's version and last-changed time do not move, so a form open on it
+still saves. An item **needs a new label** when the text its label would
+have now differs from the text printed; the *Needs a new label* run rechecks
+every labeled item first, so a change no save saw -- a vocabulary label
+renamed -- is caught too.
+
+**Font sizes** are in `frontend/src/management/pages/labels/labels.css`: 7pt
+on SL597 and 7.5pt on SL564, a long line set smaller down to 5pt and then
+cut with an ellipsis, never wrapped. They are provisional until a test print
+on the Epson sets them.
 
 ## Entering a purchase
 

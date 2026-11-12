@@ -18,6 +18,7 @@ const MENU = [
     [
       ['/inventory/coins', 'Coins'],
       ['/inventory/currency', 'Currency'],
+      ['/labels', 'Labels'],
       ['/photos', 'Photos'],
       ['/order-lookup', 'Order lookup'],
     ],

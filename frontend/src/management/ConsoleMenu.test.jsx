@@ -15,6 +15,7 @@ const GROUPS = [
     [
       ['Coins', '/inventory/coins'],
       ['Currency', '/inventory/currency'],
+      ['Labels', '/labels'],
       ['Photos', '/photos'],
       ['Order lookup', '/order-lookup'],
     ],
@@ -94,8 +95,8 @@ describe('ConsoleMenu', () => {
       await user.click(group(name))
       hrefs.push(...pages(name).map(([, href]) => href))
     }
-    expect(hrefs).toHaveLength(16)
-    expect(new Set(hrefs).size).toBe(16)
+    expect(hrefs).toHaveLength(17)
+    expect(new Set(hrefs).size).toBe(17)
   })
 
   it('keeps one list open at a time', async () => {

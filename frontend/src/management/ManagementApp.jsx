@@ -16,6 +16,7 @@ import { HelpBar, HelpProvider } from './HelpBar'
 import AdminPeople from './pages/AdminPeople'
 import Auctions from './pages/Auctions'
 import { InventoryCoins, InventoryCurrency } from './pages/Inventory'
+import Labels from './pages/Labels'
 import Listings from './pages/Listings'
 import Lists from './pages/Lists'
 import Login from './pages/Login'
@@ -107,6 +108,7 @@ function Console() {
             <Route path="/" element={<ConsoleHome />} />
             <Route path="/inventory/coins" element={<InventoryCoins />} />
             <Route path="/inventory/currency" element={<InventoryCurrency />} />
+            <Route path="/labels" element={<Labels />} />
             <Route path="/photos" element={<Photos />} />
             <Route path="/order-lookup" element={<OrderLookup />} />
             <Route path="/receiving" element={<Receiving />} />

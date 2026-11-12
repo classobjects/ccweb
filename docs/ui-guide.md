@@ -1,6 +1,6 @@
 # A tour of the screens
 
-Last revised: 2026-11-07.
+Last revised: 2026-11-12.
 
 What each screen looks like and how it is used, for someone deciding whether
 to run this software or learning to. It shows the screens; for the order the
@@ -244,6 +244,44 @@ The split dialog's fields:
 | **Year (each row)** | not a note | This piece's year. Blank keeps the lot's. |
 | **Items (each row)** |  | How many items this row holds, usually 1. A row of 3 takes three shares of the cost and stays one item of 3 pieces. |
 | **Value of one (each row)** | dividing by value | What one item of this row is worth, on whatever basis you choose -- the same basis for every row. Only the proportions matter: it divides the lot's cost and is kept on the piece. |
+
+#### Labels
+
+Prints holder labels on sheets of labels from sheetlabels.com: SL597 for
+coins, SL564 for notes and sets. A sheet partly used can be finished: a run
+starts at any cell.
+
+**What to print** is one of three: **The print batch**, the items you added
+for the next small run; **Not yet labeled**, every item that takes a holder
+label and has never had one; **Needs a new label**, items whose label no
+longer says what the item does. Once chosen, a source shows how many labels it
+prints. The batch's items that no longer take a label -- sold since they
+were added, say -- are named above the sheets; they do not print and stay in
+the batch until removed.
+
+Each sheet product the run needs is drawn to scale, every cell a button:
+click the first unused label on your sheet. The cells before it show as used,
+the cells the run fills are shaded, and the line under the sheet says where
+the run ends, onto further sheets if it needs them -- those always start at
+cell 1. **Print** opens the browser's print dialog on the labels alone, one
+page per sheet; print at 100% -- "Actual size", not "Fit to page" -- with
+headers and footers turned off. When the dialog closes the page asks **Did
+these labels print correctly?** **Yes** records every label in the run as
+printed, with the text on it, and empties the batch of what printed; **No**
+records nothing, and the run can be printed again from any cell. **Print a
+test page** prints the same layout with every cell's outline, on plain
+paper, to hold against a sheet; it asks nothing after.
+
+**The print batch**, under the sheets, lists its items with a **Remove**
+beside each. Type an item's number in **Item number** and press **Add to
+batch**.
+
+Its fields:
+
+| Field | What it is |
+|---|---|
+| **What to print** | The print batch: the items you added for the next small run. Not yet labeled: every item that takes a holder label and has never had one. Needs a new label: items whose label no longer says what the item does. The number is how many labels that choice prints. |
+| **Item number** | The number of an item to add to the print batch, as on its label (004521) or with the prefix (CC-004521). Press Add to batch or Enter. Only an item that takes a holder label can be added. |
 
 #### Photos
 

@@ -426,6 +426,23 @@ export const api = {
     send(`/api/orders/${orderId}`, { method: 'PUT', body: payload }),
   listOrderChanges: (orderId) => send(`/api/orders/${orderId}/changes`),
 
+  // holder labels (holder-labels-design.md, section 4)
+  // The label products, measures in inches (Decimals as strings).
+  labelSheets: () => send('/api/labels/sheets'),
+  // `source`: batch, unlabeled or stale. One run per sheet product, and the
+  // batch items no longer labelable in `skipped`.
+  labelRun: (source) => send(withQuery('/api/labels/run', { source })),
+  labelBatch: () => send('/api/labels/batch'),
+  // All or none: an item not labelable is refused (422), naming it.
+  addToLabelBatch: (itemIds) =>
+    send('/api/labels/batch', { method: 'POST', body: { item_ids: itemIds } }),
+  removeFromLabelBatch: (itemId) =>
+    send(`/api/labels/batch/${itemId}`, { method: 'DELETE' }),
+  // `labels`: `{item_id, lines}` exactly as the run carried them -- the
+  // server records what is on the sheet, not what the item reads now.
+  recordPrintedLabels: (source, labels) =>
+    send('/api/labels/printed', { method: 'POST', body: { source, labels } }),
+
   // accounts -- who can sign in
   customerForUser: (userId) =>
     send(`/api/users/${userId}/customer`, { method: 'POST' }),

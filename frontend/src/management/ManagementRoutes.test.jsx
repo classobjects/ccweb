@@ -20,6 +20,7 @@ vi.mock('./pages/Inventory', () => ({
   InventoryCoins: () => 'page:coins',
   InventoryCurrency: () => 'page:currency',
 }))
+vi.mock('./pages/Labels', () => ({ default: () => 'page:labels' }))
 vi.mock('./pages/Listings', () => ({ default: () => 'page:listings' }))
 vi.mock('./pages/Lists', () => ({ default: () => 'page:lists' }))
 vi.mock('./pages/Lots', () => ({ default: () => 'page:lots' }))
@@ -46,6 +47,7 @@ import { adminAuth, renderWithProviders } from '../test/helpers'
 const MENU_PAGES = [
   ['/inventory/coins', 'page:coins'],
   ['/inventory/currency', 'page:currency'],
+  ['/labels', 'page:labels'],
   ['/photos', 'page:photos'],
   ['/order-lookup', 'page:order-lookup'],
   ['/purchases', 'page:purchases'],

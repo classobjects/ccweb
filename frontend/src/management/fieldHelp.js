@@ -1368,6 +1368,22 @@ export const FIELD_HELP = {
       'Type it and press Find or Enter, then choose the match. The move is ' +
       'made when the item is saved.',
   },
+  // -- the Labels page --------------------------------------------------------
+  label_source: {
+    title: 'What to print',
+    text:
+      'The print batch: the items you added for the next small run. Not yet ' +
+      'labeled: every item that takes a holder label and has never had one. ' +
+      'Needs a new label: items whose label no longer says what the item does. ' +
+      'The number is how many labels that choice prints.',
+  },
+  label_item_number: {
+    title: 'Item number',
+    text:
+      'The number of an item to add to the print batch, as on its label ' +
+      '(004521) or with the prefix (CC-004521). Press Add to batch or Enter. ' +
+      'Only an item that takes a holder label can be added.',
+  },
   // -- the Reports page -------------------------------------------------------
   // A report's parameter is explained by `report_<name>`; one with no entry of
   // its own falls back to `report_param`.

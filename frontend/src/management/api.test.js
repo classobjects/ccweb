@@ -442,3 +442,41 @@ describe('reports', () => {
     expect(file).toEqual({ blob, filename: 'pr_outstanding_20260928.xlsx' })
   })
 })
+
+describe('holder labels', () => {
+  it('asks for a run from its source', async () => {
+    saveTokens({ access_token: 'a', refresh_token: 'r' })
+    const fetchMock = captureFetch()
+
+    await api.labelRun('stale')
+
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/labels/run?source=stale')
+  })
+
+  it('adds items to the batch by id', async () => {
+    saveTokens({ access_token: 'a', refresh_token: 'r' })
+    const fetchMock = captureFetch()
+
+    await api.addToLabelBatch([3, 4])
+
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe('/api/labels/batch')
+    expect(init.method).toBe('POST')
+    expect(sentBody(fetchMock)).toEqual({ item_ids: [3, 4] })
+  })
+
+  it('records printed labels with the lines they carried', async () => {
+    saveTokens({ access_token: 'a', refresh_token: 'r' })
+    const fetchMock = captureFetch()
+
+    await api.recordPrintedLabels('batch', [{ item_id: 3, lines: ['000003', '1921'] }])
+
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe('/api/labels/printed')
+    expect(init.method).toBe('POST')
+    expect(sentBody(fetchMock)).toEqual({
+      source: 'batch',
+      labels: [{ item_id: 3, lines: ['000003', '1921'] }],
+    })
+  })
+})

@@ -25,3 +25,27 @@ export async function searchItemsByCode(code) {
 export function sameItemCode(row, code) {
   return String(row.item_code).toLowerCase() === code.toLowerCase()
 }
+
+/**
+ * Whether `row` is the item `number` names: its whole code (`CC-004521`),
+ * or the number a holder label prints, the code without its prefix and dash
+ * (`004521`, `000412_02`). Case is ignored, as the search ignores it.
+ */
+export function sameItemNumber(row, number) {
+  const code = String(row.item_code)
+  return (
+    sameItemCode(row, number) ||
+    code.slice(code.indexOf('-') + 1).toLowerCase() === number.toLowerCase()
+  )
+}
+
+/**
+ * The one item `number` names, as the inventory's search takes it -- with
+ * the prefix or without -- or null when none is. The search matches part of
+ * a code, so `004521` also finds `CC-004521_02`; only the exact item is
+ * answered.
+ */
+export async function findItemByNumber(number) {
+  const rows = await searchItemsByCode(number)
+  return rows.find((row) => sameItemNumber(row, number)) ?? null
+}
