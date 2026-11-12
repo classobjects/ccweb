@@ -325,6 +325,7 @@ def _site_values(cert: str, key: str) -> dict[str, str]:
         "CCWEB_API_HOST": "127.0.0.1",
         "CCWEB_API_PORT": "8000",
         "CCWEB_CADDY_IMPORT_DIRECTIVE": "",
+        "CCWEB_CADDY_LOG_DIRECTIVE": "",
     }
 
 

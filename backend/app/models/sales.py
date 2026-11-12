@@ -356,6 +356,13 @@ class Listing(VersionedMixin, TimestampMixin, Base):
             "inventory_item_id",
             postgresql_where=text("is_active"),
         ),
+        # The listings an offer paused, read back as it settles or ends
+        # (`offering_writes`). Only paused listings carry a pointer.
+        Index(
+            "ix_listing_paused_by_listing_id",
+            "paused_by_listing_id",
+            postgresql_where=text("paused_by_listing_id IS NOT NULL"),
+        ),
     )
 
 

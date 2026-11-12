@@ -127,6 +127,10 @@ class RuntimeFields(BaseSettings):
     # the repository: a file or a pattern such as
     # C:/caddy/sites/*.caddy. Empty imports nothing.
     ccweb_caddy_import: str = ""
+    # The file Caddy writes its log to. Empty: standard error, which systemd
+    # keeps in the journal; a Windows service has none, so a Windows server
+    # names a file (deployment-windows.md, step 4).
+    ccweb_caddy_log: str = ""
 
     # --- image storage ------------------------------------------------------
     # Bytes never live in the database: a collection's photographs run to
@@ -239,6 +243,7 @@ def assignments(s: RuntimeFields, *, include_password: bool = False) -> dict[str
         "CCWEB_TLS_KEY": s.ccweb_tls_key,
         "CCWEB_SITE_ROOT": str(s.ccweb_site_root),
         "CCWEB_CADDY_IMPORT": s.ccweb_caddy_import,
+        "CCWEB_CADDY_LOG": s.ccweb_caddy_log,
     }
     # ccweb_testdb asks the host and creates the role the test URL names.
     test_url = make_url(values["CCWEB_TEST_DB_URL"])
@@ -335,7 +340,9 @@ RUNTIME_DIR = REPO_ROOT / ".runtime"
 
 #: Placeholders whose value is already in Caddy's syntax -- a whole directive,
 #: or nothing when there is none to give -- so it is written as it stands.
-_CADDY_VERBATIM = frozenset({"CCWEB_TLS_DIRECTIVE", "CCWEB_CADDY_IMPORT_DIRECTIVE"})
+_CADDY_VERBATIM = frozenset(
+    {"CCWEB_TLS_DIRECTIVE", "CCWEB_CADDY_IMPORT_DIRECTIVE", "CCWEB_CADDY_LOG_DIRECTIVE"}
+)
 
 
 def _caddy_token(value: str) -> str:
@@ -363,6 +370,16 @@ def import_directive(pattern: str) -> str:
     return f"import {_caddy_token(pattern)}" if pattern else ""
 
 
+def log_directive(path: str) -> str:
+    """Caddy's global options block sending its log to `path`, or "" for stderr.
+
+    Caddy rolls the file itself: a new one at 100 MB, ten kept.
+    """
+    if not path:
+        return ""
+    return f"{{\n\tlog {{\n\t\toutput file {_caddy_token(path)}\n\t}}\n}}"
+
+
 def render_values(
     s: RuntimeFields, user: str, *, include_password: bool = False
 ) -> dict[str, str]:
@@ -376,6 +393,7 @@ def render_values(
     values["CCWEB_RUNTIME_DIR"] = str(RUNTIME_DIR)
     values["CCWEB_TLS_DIRECTIVE"] = tls_directive(s.ccweb_tls_cert, s.ccweb_tls_key)
     values["CCWEB_CADDY_IMPORT_DIRECTIVE"] = import_directive(s.ccweb_caddy_import)
+    values["CCWEB_CADDY_LOG_DIRECTIVE"] = log_directive(s.ccweb_caddy_log)
     return values
 
 

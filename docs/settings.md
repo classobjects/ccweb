@@ -150,6 +150,7 @@ stored.
 | `CCWEB_TLS_KEY` | no | empty | the full path of the certificate's key; set with `CCWEB_TLS_CERT`<br><br>**Seen:** Caddyfile render |
 | `CCWEB_SITE_ROOT` | no | `frontend/dist` | the built pages Caddy serves: a copy it can read where it cannot read the repository<br><br>**Seen:** Caddyfile render |
 | `CCWEB_CADDY_IMPORT` | no | empty: nothing imported | a Caddyfile, or a pattern such as `C:/caddy/sites/*.caddy`, of other sites the server runs beside the shop, kept outside the repository<br><br>**Seen:** Caddyfile render |
+| `CCWEB_CADDY_LOG` | on a Windows server | empty: standard error | the file Caddy writes its log to, such as `C:/caddy/logs/caddy.log`; Caddy creates the folder and rolls the file at 100 MB, keeping ten. Empty, the log goes to standard error, which systemd keeps in the journal and a Windows service throws away<br><br>**Seen:** Caddyfile render, then a Caddy restart |
 
 ## Environment variables that are not `.env` settings
 

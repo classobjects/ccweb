@@ -178,6 +178,9 @@ class LocationHistory(Base):
             "inventory_item_id",
             text("moved_at DESC"),
         ),
+        # A location's moves, counted before it may be deleted
+        # (`acquisitions._location_use`) -- and what the RESTRICT check reads.
+        Index("ix_location_history_storage_location_id", "storage_location_id"),
     )
 
 

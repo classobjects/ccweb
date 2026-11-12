@@ -6,7 +6,7 @@
 #
 # A template for both systems. Fill it from the settings (CCWEB_SITE_DOMAIN,
 # CCWEB_TLS_CERT, CCWEB_TLS_KEY, CCWEB_SITE_ROOT, CCWEB_API_HOST,
-# CCWEB_API_PORT and CCWEB_CADDY_IMPORT in .env) with
+# CCWEB_API_PORT, CCWEB_CADDY_IMPORT and CCWEB_CADDY_LOG in .env) with
 #
 #     python -m app.runtime_settings --render ../deploy/Caddyfile
 #
@@ -40,6 +40,12 @@
 # unchanged) before each use. Without a rule a browser guesses a freshness
 # from Last-Modified and goes on running the previous build for hours after
 # a deploy. The API's answers are left to the API.
+#
+# The log: with CCWEB_CADDY_LOG set, the global options block below sends
+# Caddy's log to that file; unset, it is nothing, and the log goes to
+# standard error -- the journal under systemd, nowhere for a Windows service.
+{$CCWEB_CADDY_LOG_DIRECTIVE}
+
 {$CCWEB_SITE_DOMAIN} {
 	{$CCWEB_TLS_DIRECTIVE}
 	encode gzip

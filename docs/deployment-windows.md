@@ -159,10 +159,12 @@ pg_ctl -D .pgdata -m fast stop
 Then register the cluster as a service once, from an administrator cmd with
 `conda activate ccwebdb` run in it. `-S auto` starts it with the machine,
 and `-o` gives it the port of `DATABASE_URL` (5432 is the default; put
-yours if it differs), as the development scripts and the Linux unit do:
+yours if it differs), as the development scripts and the Linux unit do. It
+also has the server write its own log files, one per weekday, each
+overwritten a week later (*Logs*, under *Keeping it running*):
 
 ```console
-pg_ctl register -N ccwebdb-postgres -D "%USERPROFILE%\dev\ccweb\.pgdata" -S auto -o "-p 5432"
+pg_ctl register -N ccwebdb-postgres -D "%USERPROFILE%\dev\ccweb\.pgdata" -S auto -o "-p 5432 -c logging_collector=on -c log_filename=postgresql-%a.log -c log_truncate_on_rotation=on"
 ```
 
 Keep the cluster on the server's own disk, never in a folder that OneDrive
@@ -279,6 +281,7 @@ with its default; [settings.md](settings.md) says what each one takes):
 | `CCWEB_TLS_CERT`, `CCWEB_TLS_KEY` | the full paths of `fullchain.pem` and the key from step 1 (the example: `C:\caddy\certs\fullchain.pem`, `C:\caddy\certs\classobjects.com.key`); both empty when Caddy is to obtain the certificate (*No certificate to buy*) |
 | `CCWEB_SITE_ROOT` | unset: the repository's `frontend\dist`, which Caddy, running as `SYSTEM`, can read |
 | `CCWEB_CADDY_IMPORT` | unset, unless the server runs sites of its own beside the shop (step 7, *Other sites on the server*); the example: `C:\caddy\sites\*.caddy` |
+| `CCWEB_CADDY_LOG` | `C:\caddy\logs\caddy.log`. A Windows service has no console, so without a file Caddy's log is lost (*Logs*, below) |
 | `VITE_DIGICERT_SEAL_ID` | the eight characters after `DigiCertClickID_` in DigiCert's seal code for the certificate, or unset for no seal. Read when the frontend is built (step 5) |
 | `VITE_SHOP_NAME`, `VITE_SHOP_OWNER` | the shop's name and its owner's legal name. Read when the frontend is built (step 5) |
 | `CCWEB_BACKUP_DIR`, `CCWEB_BACKUP_TIME` | a folder that leaves the machine, and the time of the daily backup (*Keeping it running*). The example: its OneDrive folder, 20:00 |
@@ -769,3 +772,33 @@ are up; step 9 checks the whole site.
   up and restoring*). Put that folder somewhere that leaves the machine: the
   example's is a OneDrive folder, whose files OneDrive carries off at the
   owner's next sign-in.
+
+### Logs
+
+| Part | Its log |
+|---|---|
+| The API | `backend.log` in the log folder (`%USERPROFILE%\dev\ccweb\logs` by default), started afresh each time the service starts (step 6) |
+| PostgreSQL | `postgresql-Mon.log` to `postgresql-Sun.log` in the cluster's `log` folder, `%USERPROFILE%\dev\ccweb\.pgdata\log` by default: one file per weekday, written all day and overwritten a week later |
+| Caddy | the file `CCWEB_CADDY_LOG` names (step 4), `C:\caddy\logs\caddy.log` in the example. Caddy creates the folder, starts a new file at 100 MB and keeps ten |
+| The daily backup | `backup.log` in the log folder |
+
+Both service logs need their settings. A Windows service has no console, so
+anything it writes to one is lost:
+
+- **PostgreSQL registered without the `logging_collector` options** (as
+  step 2 did before) writes to the Windows Application event log instead:
+  Event Viewer, *Windows Logs*, *Application*, source `PostgreSQL`. To move
+  it to files, register the service again from an administrator cmd with
+  `conda activate ccwebdb` run in it. The API loses the database for a few
+  seconds and reconnects by itself:
+
+  ```console
+  sc stop ccwebdb-postgres
+  pg_ctl unregister -N ccwebdb-postgres
+  pg_ctl register -N ccwebdb-postgres -D "%USERPROFILE%\dev\ccweb\.pgdata" -S auto -o "-p 5432 -c logging_collector=on -c log_filename=postgresql-%a.log -c log_truncate_on_rotation=on"
+  sc start ccwebdb-postgres
+  ```
+
+- **Caddy with `CCWEB_CADDY_LOG` unset** keeps no log at all. Set it in
+  `.env`, render the Caddyfile again (step 7) and restart the `caddy`
+  service.

@@ -83,6 +83,7 @@ def test_with_no_env_file_the_values_are_todays_literals(
         "CCWEB_TLS_KEY": "",
         "CCWEB_SITE_ROOT": str(REPO_ROOT / "frontend" / "dist"),
         "CCWEB_CADDY_IMPORT": "",
+        "CCWEB_CADDY_LOG": "",
     }
 
 
@@ -357,6 +358,7 @@ def test_render_values_add_what_only_the_templates_use(
         "CCWEB_RUNTIME_DIR": str(REPO_ROOT / ".runtime"),
         "CCWEB_TLS_DIRECTIVE": "",
         "CCWEB_CADDY_IMPORT_DIRECTIVE": "",
+        "CCWEB_CADDY_LOG_DIRECTIVE": "",
     }
 
 
@@ -373,6 +375,25 @@ def test_the_import_directive_is_written_as_it_stands() -> None:
     assert render(template, {"CCWEB_CADDY_IMPORT_DIRECTIVE": ""}) == "site {\n}\n"
     values = {"CCWEB_CADDY_IMPORT_DIRECTIVE": "import /etc/caddy/sites/*"}
     assert render(template, values).endswith("\nimport /etc/caddy/sites/*")
+
+
+def test_a_log_file_makes_a_global_log_block(bare: pytest.MonkeyPatch) -> None:
+    """A Windows service has no stderr: the log goes to the file named."""
+    bare.setenv("CCWEB_CADDY_LOG", "C:\\caddy\\logs\\caddy.log")
+    directive = render_values(defaults(), "someone")["CCWEB_CADDY_LOG_DIRECTIVE"]
+    assert directive == "{\n\tlog {\n\t\toutput file C:/caddy/logs/caddy.log\n\t}\n}"
+
+
+def test_the_log_block_comes_before_every_site() -> None:
+    """Caddy reads a global options block only as the file's first block."""
+    template = (REPO_ROOT / "deploy" / "Caddyfile").read_text(encoding="utf-8")
+    code = [line for line in template.splitlines() if line and not line.startswith("#")]
+    assert code[0] == "{$CCWEB_CADDY_LOG_DIRECTIVE}"
+    values = {"CCWEB_CADDY_LOG_DIRECTIVE": "{\n\tlog\n}"}
+    assert render("{$CCWEB_CADDY_LOG_DIRECTIVE}\nsite", values) == "{\n\tlog\n}\nsite"
+    assert (
+        render("{$CCWEB_CADDY_LOG_DIRECTIVE}", {"CCWEB_CADDY_LOG_DIRECTIVE": ""}) == ""
+    )
 
 
 def test_the_media_root_comes_from_the_environment(

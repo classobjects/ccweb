@@ -564,7 +564,8 @@ two concurrent first consignments to one auction house would otherwise each
 create a location.
 
 `location_history` (`inventory_item_id`, `storage_location_id`, `moved_at`,
-`moved_by_id`, `note`) answers "where was this in March".
+`moved_by_id`, `note`) answers "where was this in March", and
+`ix_location_history_storage_location_id` answers "what has been kept here".
 
 ### Per-field state
 
@@ -922,9 +923,16 @@ leading columns), so the column has no index of its own. On `inventory_item`:
 metal, country, status, disposition and bullion form `WHERE split_at IS
 NULL`: a smaller index over live rows. They do not give the default facet
 query an index-only scan, since it also filters `deleted_at IS NULL`, which
-is not in the predicate. There is no full-text or `attributes` index: the
-search matches text with `ILIKE`, and nothing queries `attributes` with a
-JSONB operator. Time-ordered
+is not in the predicate. `ix_listing_paused_by_listing_id` (partial, `WHERE
+paused_by_listing_id IS NOT NULL`) finds the listings an offer paused, and
+`ix_location_history_storage_location_id` counts a location's moves before
+it may be deleted. There is no full-text, trigram or `attributes` index:
+nothing queries `attributes` with a JSONB operator, and the search ORs
+`ILIKE '%...%'` over four columns with an `EXISTS` on the purchase's order
+number. An OR with a subquery arm cannot become a bitmap scan, so pg_trgm
+GIN indexes go unused there. Measured on a synthetic table: about 15 ms for
+8,500 items with or without them, and 140 ms for 85,000. Dropping the
+`EXISTS` arm would let the indexes cut the larger case to 9 ms. Time-ordered
 history indexes on `item_status_history`, `location_history`,
 `listing_status_history`, `item_field_change` and `valuation_snapshot`;
 `ix_metal_price_latest`. Expression indexes and defaults are written exactly
