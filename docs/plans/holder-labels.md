@@ -25,8 +25,8 @@
 
 ## Review Focus
 
-1. A serial typed with spaces, lower case, or the star first (`*12345678A`, `b0000 0001*`) -- patterns, Duplicate Serial and both lookup links normalise it the same way (tests in Tasks 2, 3, 5).
-2. A label line longer than the label -- it never wraps or spills onto the neighbour; it shrinks to the minimum size, then ends in an ellipsis (test in Task 9).
+1. A serial typed with spaces, lower case, or the star first (`*12345678A`, `b0000 0001*`) -- patterns, Duplicate Serial and both lookup links normalize it the same way (tests in Tasks 2, 3, 5).
+2. A label line longer than the label -- it never wraps or spills onto the neighbor; it shrinks to the minimum size, then ends in an ellipsis (test in Task 9).
 3. A run longer than the cells left after the start cell -- it continues on new sheets from cell 1; start cell 160 with one label works; a start cell past the sheet is refused (test in Task 9).
 4. An item in the batch that stops being labelable before printing (sold, slabbed) -- left out of the run with a note, and an unlabelable item is refused when added (tests in Task 8).
 5. *No* after printing changes nothing; *Yes* twice records once; an edit after printing that changes the label text marks it as needing a new label, and one that does not change it leaves it alone (tests in Task 8).
@@ -164,7 +164,7 @@ def test_other_series_faces_and_classes_are_not_duplicates():
 ```
 
 - [ ] **Step 2: Run; fail** (module missing).
-- [ ] **Step 3: Implement** both modules' additions. Normalise the serial with `.replace(" ", "").upper()`.
+- [ ] **Step 3: Implement** both modules' additions. Normalize the serial with `.replace(" ", "").upper()`.
 - [ ] **Step 4: Run; pass.**
 - [ ] **Step 5: Commit** -- "$1 star notes of Series 2013 and 1995 in the duplicated ranges are Duplicate Serial".
 
@@ -310,16 +310,16 @@ def test_labelable(...):  # sold, slabbed, roll of 50, ordered, bullion -> False
 **Interfaces:**
 - Produces:
   - `inventory_item.label_printed_at TIMESTAMPTZ NULL`, `label_text TEXT NULL`, `label_stale BOOLEAN NOT NULL DEFAULT false`, `in_label_batch BOOLEAN NOT NULL DEFAULT false`; partial index `ix_inventory_item_in_label_batch` on `id WHERE in_label_batch`.
-  - `labels.refresh_stale(db: Session, item_ids: Collection[int]) -> None` -- for labelled items, `label_stale = label_text != label_text(label_lines(...))`. Not a logged field change.
+  - `labels.refresh_stale(db: Session, item_ids: Collection[int]) -> None` -- for labeled items, `label_stale = label_text != label_text(label_lines(...))`. Not a logged field change.
 
 - [ ] **Step 1: Write the failing tests**
 
 ```python
 def test_an_edit_that_changes_the_label_marks_it_stale(...):
-    # item labelled with its current text; PATCH mint D -> label_stale True
+    # item labeled with its current text; PATCH mint D -> label_stale True
 def test_an_edit_that_does_not_change_the_label_leaves_it(...):
     # PATCH storage location -> label_stale False
-def test_an_unlabelled_item_is_never_stale(...): ...
+def test_an_unlabeled_item_is_never_stale(...): ...
 ```
 
 - [ ] **Step 2: Run; fail.** - [ ] **Step 3: Implement.** - [ ] **Step 4: Run; pass** (with `test_migrations.py`).
@@ -329,13 +329,13 @@ def test_an_unlabelled_item_is_never_stale(...): ...
 
 **Files:**
 - Create: `backend/app/routers/labels.py`; register it in `backend/app/main.py` with the other routers
-- Modify: `backend/app/inventory_search.py` -- filter `label` = `labelled` | `unlabelled` | `stale` (on `labelable_clause()` and the columns)
+- Modify: `backend/app/inventory_search.py` -- filter `label` = `labeled` | `unlabeled` | `stale` (on `labelable_clause()` and the columns)
 - Modify: `backend/app/schemas.py` -- `LabelSheetOut`, `LabelOut`, `LabelRunOut`, `LabelItemsIn`
 - Test: `backend/tests/test_labels_api.py`, `backend/tests/test_inventory_search.py`
 
 **Interfaces (all manager-only, under `/api/labels`):**
 - `GET /sheets` -> `list[LabelSheetOut]` (every `SheetLayout` field, plus `cells`).
-- `GET /run?source=batch|unlabelled|stale` -> `list[LabelRunOut]`, one per sheet code that has labels: `{sheet: str, labels: list[LabelOut]}`; `LabelOut = {item_id, item_code, lines: list[str]}`; item-number order; only labelable items. `stale` first runs `refresh_stale` over every labelled item, so a change no save saw -- a vocabulary label renamed -- is caught too. For `batch`, also `skipped: list[str]` -- item codes in the batch that are no longer labelable.
+- `GET /run?source=batch|unlabeled|stale` -> `list[LabelRunOut]`, one per sheet code that has labels: `{sheet: str, labels: list[LabelOut]}`; `LabelOut = {item_id, item_code, lines: list[str]}`; item-number order; only labelable items. `stale` first runs `refresh_stale` over every labeled item, so a change no save saw -- a vocabulary label renamed -- is caught too. For `batch`, also `skipped: list[str]` -- item codes in the batch that are no longer labelable.
 - `GET /batch` -> `list[LabelOut]`; `POST /batch` body `LabelItemsIn{item_ids}` -> adds; 422 naming every item code that is not labelable, adding none; `DELETE /batch/{item_id}` -> 204.
 - `POST /printed` body `LabelItemsIn{item_ids, source}` -> for each labelable id: `label_printed_at = now`, `label_text` from current lines, `label_stale = false`; when `source == "batch"`, `in_label_batch = false`. Returns `{recorded: int}`. Idempotent.
 
@@ -344,7 +344,7 @@ def test_an_unlabelled_item_is_never_stale(...): ...
 ```python
 def test_a_mixed_batch_prints_as_two_runs(...): # coin + note -> runs for SL597 and SL564
 def test_an_item_sold_after_joining_the_batch_is_skipped(...): # skipped == [code], not in labels
-def test_printing_the_unlabelled_run_leaves_the_batch_alone(...):
+def test_printing_the_unlabeled_run_leaves_the_batch_alone(...):
 def test_printed_twice_records_once(...): # second call same timestamps? -> label_text unchanged, recorded counts 1 each call, batch empty
 def test_inventory_filter_label_stale(...):
 def test_a_customer_cannot_read_labels(...): # 403
@@ -381,7 +381,7 @@ expect(() => placeLabels(1, 161, 160)).toThrow(RangeError)
 ```
 
 - [ ] **Step 2: Run** `npx vitest run src/management/pages/labels src/management/pages/Labels.test.jsx` -- fail.
-- [ ] **Step 3: Implement.** The page: source choice (Print batch, Not yet labelled, Needs a new label) with counts; the batch list with Remove and an item-number lookup box that adds; per run, its SheetPicker and a Print button; a "Print a test page" button (`outline`); the confirmation dialog using `ConfirmDialog`. Print via `window.print()` with the `LabelSheets` of the chosen run the only thing visible under `@media print`; the dialog opens on `afterprint`.
+- [ ] **Step 3: Implement.** The page: source choice (Print batch, Not yet labeled, Needs a new label) with counts; the batch list with Remove and an item-number lookup box that adds; per run, its SheetPicker and a Print button; a "Print a test page" button (`outline`); the confirmation dialog using `ConfirmDialog`. Print via `window.print()` with the `LabelSheets` of the chosen run the only thing visible under `@media print`; the dialog opens on `afterprint`.
 - [ ] **Step 4: Run; pass.** By hand: print the test page on plain paper on the Epson, hold it against an SL597 and an SL564 sheet, and set the font sizes (the spec leaves them to this test). Record the sizes in `labels.css` comments.
 - [ ] **Step 5: Commit** -- "The Labels page prints holder labels from any starting cell".
 
@@ -390,7 +390,7 @@ expect(() => placeLabels(1, 161, 160)).toThrow(RangeError)
 **Files:**
 - Modify: `frontend/src/management/pages/inventory/BulkEditBar.jsx` (an "Add to label batch" button for the selected ids)
 - Modify: `frontend/src/management/pages/inventory/ItemEditForm.jsx` (an "Add to label batch" button)
-- Modify: `frontend/src/management/pages/inventory/FilterPanel.jsx` (Label: any / labelled / not labelled / needs a new label)
+- Modify: `frontend/src/management/pages/inventory/FilterPanel.jsx` (Label: any / labeled / not labeled / needs a new label)
 - Test: their `.test.jsx` files
 
 - [ ] **Step 1: Write the failing tests** -- the bulk button posts `/api/labels/batch` with the selected ids and shows "N added"; a 422 shows the refused item codes; the editor button does the same for one item; the filter sends `label=stale`.

@@ -18,15 +18,15 @@ earlier ones record.
 
 ## Why
 
-The owner is re-holdering the collection and wants every holder labelled in
+The owner is re-holdering the collection and wants every holder labeled in
 print rather than by hand: about 4,500 coins in flips, 1,370 notes and 775
 sets on hand. A label must say what the piece is at a glance -- the item's
 number, so it can be found in the console, and what makes it worth a look.
 For notes that includes fancy-serial designations and a "coolness" figure,
 which collectors use and which today exist nowhere in the record.
 
-Success: the whole collection labelled in one run of about 50 sheets; after
-that, a sheet at a time as items arrive or change, without labelling
+Success: the whole collection labeled in one run of about 50 sheets; after
+that, a sheet at a time as items arrive or change, without labeling
 anything twice or missing anything, and without wasting the unused part of a
 sheet.
 
@@ -52,9 +52,9 @@ sheet.
 
 **Anti-goals** -- a build that does these has failed even if it works:
 
-- Text that runs onto a neighbouring label when the printer drifts a little.
+- Text that runs onto a neighboring label when the printer drifts a little.
   SL564 labels touch edge to edge.
-- Marking items labelled when the sheet did not print correctly.
+- Marking items labeled when the sheet did not print correctly.
 - The software fetching, parsing or storing a website's results. Forbidden
   by `docs/reference-data.md`: the owner reads the page and types what they
   choose to record.
@@ -279,7 +279,7 @@ A **Labels** page in the console:
 
 1. **What to print**, one of:
    - *The print batch* (below);
-   - *Not yet labelled*: every **labelable** item of the chosen label type
+   - *Not yet labeled*: every **labelable** item of the chosen label type
      that carries no label;
    - *Needs a new label*: labelable items whose label no longer matches
      (below).
@@ -303,7 +303,7 @@ closing the browser. An item is added to it from:
 The Labels page lists the batch with a *Remove* beside each item. Only
 labelable items can be added. A *Yes* after printing the batch empties it;
 a *No* keeps it. The batch is separate from the other two choices: printing
-everything not yet labelled neither reads nor empties it.
+everything not yet labeled neither reads nor empties it.
 2. **Start at cell**: the sheet drawn to scale, every cell clickable, the
    cells this run fills shaded, and a line saying where it ends -- including
    onto further sheets, which always start at cell 1. Default: cell 1.
@@ -311,22 +311,22 @@ everything not yet labelled neither reads nor empties it.
    one page per sheet. The page tells the owner to print at 100% ("Actual
    size", not "Fit to page") with no headers or footers.
 4. **Did these labels print correctly?** asked when the dialog closes. *Yes*
-   records every item in the run as labelled. *No* records nothing; the run
+   records every item in the run as labeled. *No* records nothing; the run
    can be printed again from any cell.
 
 A **test page** prints the same layout on plain paper with every label's
 outline, to hold against a sheet and check alignment before using labels.
 
-### Knowing what is labelled
+### Knowing what is labeled
 
-On *Yes*, each item records **when** it was labelled and **the text printed**
+On *Yes*, each item records **when** it was labeled and **the text printed**
 on its label. An item **needs a new label** when the text its label would
 have now differs from the text printed -- a corrected mint mark, an added
 error, a new Coolness index. Comparing the text, rather than watching
 fields, means anything that changes the label is noticed and nothing else
 is. *My call; the owner asked for the tracking, not for this mechanism.*
 
-The inventory gains a filter for *Labelled* / *Not labelled* / *Needs a new
+The inventory gains a filter for *Labeled* / *Not labeled* / *Needs a new
 label*.
 
 ### Volume
