@@ -1,6 +1,6 @@
 # Holder labels, serial patterns and fancy-serial lookups
 
-*2026-11-12. Design, not yet built.*
+*2026-11-12. Design approved by the owner; not yet built.*
 
 Four pieces, built in this order, and a one-time review of the existing
 records. Each piece is useful on its own; each later one uses what the
@@ -177,10 +177,9 @@ owner, each with help text:
 Help text, on each button's tooltip and each field: where the value comes
 from (mycurrencycollection.com; the Coolness Index is CoolNumbers.com's
 for-fun score, which the site says does not measure value) and whom to ask
-about the site's data. The owner asked for dave@mycurrencycollection.com to
-be named. *My call: the builder names it only if the site itself publishes
-that address; otherwise the help names the site's contact page, and the
-owner is told.*
+about the site's data: dave@mycurrencycollection.com, the address the site
+publishes under *Anything else* on https://www.mycurrencycollection.com/contact
+(the owner checked it there; the page hides it from programs).
 
 A typed value is a fact the owner recorded about their note, like a
 certification number: stored per note, never seeded or shipped.
