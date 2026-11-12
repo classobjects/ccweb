@@ -48,11 +48,14 @@ describe('starLookupUrl', () => {
 
 describe('faceFromDenomination', () => {
   it('reads the whole dollars from a note denomination code', () => {
-    expect(faceFromDenomination('usd_note_1_00')).toBe(1)
-    expect(faceFromDenomination('usd_note_100_00')).toBe(100)
+    expect(faceFromDenomination('usd_note_1')).toBe(1)
+    expect(faceFromDenomination('usd_note_5')).toBe(5)
+    expect(faceFromDenomination('usd_note_100')).toBe(100)
   })
 
-  it('is null for a coin or nothing', () => {
+  it('is null for a fractional note, a coin or nothing', () => {
+    expect(faceFromDenomination('usd_note_0_50')).toBeNull()
+    expect(faceFromDenomination('usd_note_0_03')).toBeNull()
     expect(faceFromDenomination('usd_coin_0_25')).toBeNull()
     expect(faceFromDenomination(null)).toBeNull()
   })

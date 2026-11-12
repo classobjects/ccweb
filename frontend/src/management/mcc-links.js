@@ -38,9 +38,10 @@ export function starLookupUrl({ face, seriesYear, serial }) {
 
 /**
  * The whole-dollar face value a US note's denomination code names
- * (`usd_note_5_00` is 5), or null for anything else.
+ * (`usd_note_5` is 5), or null for anything else, a fractional note
+ * (`usd_note_0_50`) included.
  */
 export function faceFromDenomination(code) {
-  const match = /^usd_note_(\d+)_\d{2}$/.exec(String(code ?? ''))
+  const match = /^usd_note_([1-9]\d*)$/.exec(String(code ?? ''))
   return match ? Number.parseInt(match[1], 10) : null
 }

@@ -11,7 +11,7 @@ import HelpScope from '../../HelpScope'
 import NoteFields from './NoteFields'
 
 // Made-up note values.
-const BASE = { denomination: 'usd_note_1_00', series_year: '2017A', serial_number: '' }
+const BASE = { denomination: 'usd_note_1', series_year: '2017A', serial_number: '' }
 
 function show(fields, setNumber = () => () => {}) {
   return renderWithProviders(
@@ -52,6 +52,11 @@ describe('the lookups beside the serial number', () => {
     expect(link).toHaveAttribute('target', '_blank')
     expect(link).toHaveAttribute('rel', 'noopener noreferrer')
     expect(link.getAttribute('title')).toContain('mycurrencycollection.com')
+  })
+
+  it('shows no star lookup for a fractional note', () => {
+    show({ denomination: 'usd_note_0_50', serial_number: 'F01011010*' })
+    expect(screen.queryByRole('link', { name: 'Star note lookup' })).toBeNull()
   })
 
   it('shows neither for a serial that is not eight digits and has no star', () => {
