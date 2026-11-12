@@ -46,7 +46,7 @@ database's own vocabularies or the item's own values
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable
+from collections.abc import Collection, Iterable
 from dataclasses import dataclass, field
 
 from sqlalchemy import select
@@ -70,6 +70,7 @@ __all__ = [
     "FANCY_SERIAL",
     "Features",
     "fancy_is_redundant",
+    "saved_errors_of",
     "saved_features",
     "suggested_description",
 ]
@@ -137,15 +138,29 @@ def saved_features(db: Session, item: InventoryItem) -> Features:
     """A saved item's attributes and errors, as `Features` holds a form's."""
     return Features(
         attributes=saved_attributes(db, item),
-        errors=list(
-            db.execute(
-                select(ErrorType.label, ItemError.details)
-                .join(ErrorType, ErrorType.id == ItemError.error_type_id)
-                .where(ItemError.inventory_item_id == item.id)
-                .order_by(ErrorType.sort_order, ErrorType.label)
-            ).tuples()
-        ),
+        errors=saved_errors_of(db, [item.id]).get(item.id, []),
     )
+
+
+def saved_errors_of(
+    db: Session, item_ids: Collection[int]
+) -> dict[int, list[tuple[str, str | None]]]:
+    """Saved items' errors as `Features.errors` holds them, keyed by item id.
+
+    One statement for all of them; an item with no error is absent.
+    """
+    if not item_ids:
+        return {}
+    rows = db.execute(
+        select(ItemError.inventory_item_id, ErrorType.label, ItemError.details)
+        .join(ErrorType, ErrorType.id == ItemError.error_type_id)
+        .where(ItemError.inventory_item_id.in_(item_ids))
+        .order_by(ErrorType.sort_order, ErrorType.label)
+    ).tuples()
+    errors: dict[int, list[tuple[str, str | None]]] = {}
+    for item_id, label, details in rows:
+        errors.setdefault(item_id, []).append((label, details))
+    return errors
 
 
 def saved_attributes(db: Session, item: InventoryItem) -> list[str]:

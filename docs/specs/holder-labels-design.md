@@ -327,7 +327,17 @@ fields, means anything that changes the label is noticed and nothing else
 is. *My call; the owner asked for the tracking, not for this mechanism.*
 
 The inventory gains a filter for *Labeled* / *Not labeled* / *Needs a new
-label*.
+label* (`label=labeled|unlabeled|stale`), each among labelable items only:
+labeled is printed with the text it would print now, not labeled is never
+printed, needs a new label is printed with text that no longer matches.
+The *Needs a new label* run first rechecks every labeled item, so a change
+no save saw -- a vocabulary label renamed -- is caught too.
+
+Recording a label, joining or leaving the batch, and the needs-a-new-label
+flag are bookkeeping, not edits of the item: none of them moves the item's
+version or last-changed time, so a form open on an item still saves. *Yes*
+on a run already recorded records nothing new: an item whose label already
+matches keeps the time it was first labeled.
 
 ### Volume
 

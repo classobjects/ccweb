@@ -18,7 +18,7 @@ the link the person's (`manual`), so no rule takes it back as its own.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Collection, Iterable
 from dataclasses import dataclass
 
 from sqlalchemy import select
@@ -39,6 +39,7 @@ __all__ = [
     "Held",
     "allowed_scopes",
     "held_attributes",
+    "held_attributes_of",
     "set_attributes",
 ]
 
@@ -60,27 +61,39 @@ class Held:
 
 def held_attributes(db: Session, item_id: int) -> list[Held]:
     """The item's attributes, less those a person removed, in vocabulary order."""
+    return held_attributes_of(db, [item_id]).get(item_id, [])
+
+
+def held_attributes_of(db: Session, item_ids: Collection[int]) -> dict[int, list[Held]]:
+    """`held_attributes` for many items in one statement, keyed by item id.
+
+    An item holding none is absent from the result.
+    """
+    if not item_ids:
+        return {}
     rows = db.execute(
         select(ItemAttribute, ItemAttributeLink)
         .join(
             ItemAttributeLink, ItemAttributeLink.item_attribute_id == ItemAttribute.id
         )
         .where(
-            ItemAttributeLink.inventory_item_id == item_id,
+            ItemAttributeLink.inventory_item_id.in_(item_ids),
             ItemAttributeLink.removed_at.is_(None),
         )
         .order_by(ItemAttribute.sort_order, ItemAttribute.code)
     ).all()
-    return [
-        Held(
-            code=attribute.code,
-            label=attribute.label,
-            group=attribute.attribute_group.value,
-            source=link.source.value,
-            derived_by=link.derived_by,
+    held: dict[int, list[Held]] = {}
+    for attribute, link in rows:
+        held.setdefault(link.inventory_item_id, []).append(
+            Held(
+                code=attribute.code,
+                label=attribute.label,
+                group=attribute.attribute_group.value,
+                source=link.source.value,
+                derived_by=link.derived_by,
+            )
         )
-        for attribute, link in rows
-    ]
+    return held
 
 
 def allowed_scopes(db: Session, item: InventoryItem) -> set[AppliesTo]:

@@ -3132,3 +3132,74 @@ class MetalPriceOut(BaseModel):
     fine_ozt_held: Decimal | None
     #: The ounces at the newest quote; null without both.
     melt_value: Decimal | None
+
+
+# --------------------------------------------------------------------------
+# Holder labels
+# --------------------------------------------------------------------------
+
+#: What a run of labels is drawn from (holder-labels spec, section 4).
+LabelSource = Literal["batch", "unlabeled", "stale"]
+
+
+class LabelSheetOut(BaseModel):
+    """One label product (`app.labels.SheetLayout`): its grid, in inches."""
+
+    code: str
+    name: str
+    columns: int
+    rows: int
+    width: Decimal
+    height: Decimal
+    top: Decimal
+    left: Decimal
+    gap_x: Decimal
+    gap_y: Decimal
+    rounded: bool
+    #: Labels on one sheet.
+    cells: int
+
+
+class LabelOut(BaseModel):
+    """One item's label: its lines, empty ones left out."""
+
+    item_id: int
+    item_code: str
+    lines: list[str]
+
+
+class LabelRunOut(BaseModel):
+    """The labels one sheet product prints, in item-number order."""
+
+    #: A `LabelSheetOut.code`.
+    sheet: str
+    labels: list[LabelOut]
+
+
+class LabelRunsOut(BaseModel):
+    """A run of labels: one `LabelRunOut` per sheet that has any."""
+
+    runs: list[LabelRunOut]
+    #: Item codes in the batch that are no longer labelable -- sold, say,
+    #: since they joined. Not printed, and left in the batch to be removed.
+    #: Always empty for a run not drawn from the batch.
+    skipped: list[str]
+
+
+class LabelItemsIn(BaseModel):
+    """Items to add to the batch, or whose labels printed correctly."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    #: A whole collection's run is a few thousand labels; the cap only stops
+    #: an unbounded request.
+    item_ids: list[int] = Field(min_length=1, max_length=20_000)
+    #: The run the labels were printed from, on `/printed`: printing the batch
+    #: empties it of what printed. Not read when adding to the batch.
+    source: LabelSource | None = None
+
+
+class LabelsRecordedOut(BaseModel):
+    """How many of the items named were labelable, and so are recorded."""
+
+    recorded: int

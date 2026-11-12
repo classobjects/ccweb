@@ -28,6 +28,7 @@ from .routers import (
     image_links,
     images,
     inventory,
+    labels,
     lots,
     metal_prices,
     offers,
@@ -115,6 +116,7 @@ app.include_router(sales_venues.router, prefix=settings.api_prefix)
 app.include_router(metal_prices.router, prefix=settings.api_prefix)
 app.include_router(offers.router, prefix=settings.api_prefix)
 app.include_router(lots.router, prefix=settings.api_prefix)
+app.include_router(labels.router, prefix=settings.api_prefix)
 app.include_router(auctions_router.router, prefix=settings.api_prefix)
 app.include_router(reports.router, prefix=settings.api_prefix)
 

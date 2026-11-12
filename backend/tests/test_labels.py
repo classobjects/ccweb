@@ -358,6 +358,31 @@ def test_a_label_that_reads_the_same_again_is_fresh_again(
     assert item.label_stale is False
 
 
+def test_marking_a_label_stale_is_not_an_edit_of_the_item(
+    db: Session, make_item: ItemFactory
+) -> None:
+    """A pass over every labeled item moves no version and no last-changed time.
+
+    A form open on one of them would otherwise refuse its save as a conflict
+    over a flag its user never touched.
+    """
+    item = _labeled_coin(db, make_item)
+    item.label_text = "something else"
+    db.commit()
+    db.expire_all()
+    before = db.get(InventoryItem, item.id)
+    assert before is not None
+    mark = (before.version, before.updated_at)
+    refresh_stale(db, [item.id])
+    db.commit()
+    assert before.label_stale is True
+    db.expire_all()
+    after = db.get(InventoryItem, item.id)
+    assert after is not None
+    assert after.label_stale is True
+    assert (after.version, after.updated_at) == mark
+
+
 def _count_queries(db: Session, ids: list[int]) -> int:
     """How many statements `refresh_stale` sends for these items."""
     counted: list[str] = []
@@ -391,16 +416,17 @@ def _labeled_notes(db: Session, make_item: ItemFactory, n: int) -> list[int]:
 def test_refresh_stale_loads_its_items_together(
     db: Session, make_item: ItemFactory
 ) -> None:
-    """The items and their kind and details come in a handful of statements.
+    """A handful of statements, however many items.
 
-    What `label_lines` asks per item (its attributes, its errors, its stamped
-    version bump) remains a few statements each, so the bound is per item.
+    The items with their kind and details, then each thing their labels
+    read -- attributes, errors, note types -- for all of them at once, then
+    one UPDATE for the flags that flip. A pass over every labeled item is
+    thousands of items, so nothing here may be a statement per item.
     """
     few = _labeled_notes(db, make_item, 5)
     many = _labeled_notes(db, make_item, 20)
     small = _count_queries(db, few)
     db.expire_all()
     large = _count_queries(db, many)
-    per_item = (large - small) / 15
-    assert per_item <= 6, (small, large)
-    assert small - 5 * per_item <= 8, (small, large)
+    assert large <= small + 1, (small, large)
+    assert small <= 14, (small, large)

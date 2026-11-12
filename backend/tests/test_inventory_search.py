@@ -30,6 +30,7 @@ from app.models import (
     SealColor,
     Seller,
 )
+from app.models.reference import Disposition
 from fastapi.testclient import TestClient
 from httpx import Response
 from sqlalchemy.orm import Session
@@ -1367,3 +1368,50 @@ def test_an_unknown_missing_field_is_refused_listing_the_known_ones(
     detail = response.json()["detail"]
     assert "bogus" in detail
     assert "photo" in detail
+
+
+# ---------------------------------------------------------------------------
+# Holder labels: labeled, not labeled, needs a new label
+# ---------------------------------------------------------------------------
+
+_PRINTED = datetime(2026, 1, 2, tzinfo=UTC)
+
+
+def test_inventory_filter_label_stale(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    """Each label state, among labelable items only.
+
+    A sold coin with no label is not "not labeled": it is never offered one.
+    """
+    sold = code_id(db, Disposition, "sold")
+    unlabeled = coin(db)
+    labeled = coin(db, label_printed_at=_PRINTED, label_text="x")
+    stale = coin(db, label_printed_at=_PRINTED, label_text="x", label_stale=True)
+    coin(db, disposition_id=sold)
+    coin(
+        db,
+        disposition_id=sold,
+        label_printed_at=_PRINTED,
+        label_text="x",
+        label_stale=True,
+    )
+
+    def ids(state: str) -> set[int]:
+        body = search(client, "coins", admin_headers, label=state).json()
+        return {r["id"] for r in body["rows"]}
+
+    assert ids("unlabeled") == {unlabeled.id}
+    assert ids("labeled") == {labeled.id}
+    assert ids("stale") == {stale.id}
+
+
+def test_an_unknown_label_state_is_refused_naming_the_known_ones(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    coin(db)
+    response = search(client, "coins", admin_headers, label="printed")
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    for state in ("labeled", "unlabeled", "stale"):
+        assert state in detail

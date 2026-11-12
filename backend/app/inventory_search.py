@@ -33,15 +33,19 @@ import re
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal
+from functools import cache
 from typing import Any
 
-from sqlalchemy import text
+from sqlalchemy import select, text
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Session
 
 from . import aliases, grades
 from .issues import COIN_ISSUES, CURRENCY_ISSUES, Issue
+from .labels import labelable_clause
 from .models import (
     GradeDesignation,
+    InventoryItem,
     ItemAttribute,
     Mint,
     NoteType,
@@ -53,6 +57,7 @@ from .models import (
 __all__ = [
     "COIN_VIEW",
     "CURRENCY_VIEW",
+    "LABEL_STATES",
     "MISSING_FIELDS",
     "SPECIAL_PARAMS",
     "VIEWS",
@@ -828,6 +833,45 @@ def _item_codes_clause(params: dict[str, Any], bound: dict[str, Any]) -> str | N
     return "i.item_code = ANY(:p_item_codes)"
 
 
+#: The `label=` filter: each state of an item's holder label. Every state
+#: is among labelable items only (`app.labels.labelable_clause`) -- a sold
+#: coin is never offered a label, so it is not "not labeled" either.
+LABEL_STATES: dict[str, str] = {
+    # Printed, and its text is what it would print now.
+    "labeled": "i.label_printed_at IS NOT NULL AND NOT i.label_stale",
+    # Never printed.
+    "unlabeled": "i.label_printed_at IS NULL",
+    # Printed, and it would now read differently: needs a new label.
+    "stale": "i.label_stale",
+}
+
+
+@cache
+def _labelable_sql() -> str:
+    """`labelable_clause` as SQL text against `i`, compiled once.
+
+    Its only values are the vocabulary codes `app.labels` names, never user
+    input, so they are written into the text rather than bound.
+    """
+    labelable = select(InventoryItem.id).where(labelable_clause())
+    compiled = labelable.compile(
+        dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
+    )
+    return f"i.id IN ({compiled})"
+
+
+def _label_clause(params: dict[str, Any]) -> str | None:
+    """The `label=` filter (`LABEL_STATES`), consumed from `params` in place."""
+    state = params.pop("label", None)
+    if not state:
+        return None
+    if state not in LABEL_STATES:
+        raise ValueError(
+            f"unknown label state {state!r}; expected one of {sorted(LABEL_STATES)}."
+        )
+    return f"{_labelable_sql()} AND {LABEL_STATES[state]}"
+
+
 #: The grade parameters, read as search terms rather than codes.
 GRADE_PARAMS = ("grade", "grade_min", "grade_max")
 
@@ -842,6 +886,7 @@ SPECIAL_PARAMS: tuple[str, ...] = (
     "error_type",
     "attribute",
     "item_codes",
+    "label",
     *GRADE_PARAMS,
 )
 
@@ -1053,6 +1098,7 @@ def _conditions(
         _error_type_clause(params, bound),
         _attribute_clause(params, bound),
         _item_codes_clause(params, bound),
+        _label_clause(params),
         _grade_clause(params, bound, joins),
     ):
         if clause is not None:
