@@ -7,7 +7,8 @@ records. Each piece is useful on its own; each later one uses what the
 earlier ones record.
 
 1. **A description written on save** when the item has none.
-2. **Serial patterns derived on save**, with Ladder split into three.
+2. **Serial patterns derived on save**, with Ladder split into three, and
+   the Series 2013 $1 B star duplicates flagged.
 3. **Two lookup buttons on a note** for mycurrencycollection.com, and two
    fields for what the owner reads there.
 4. **Printed labels** for coin flips, currency holders and sets, with a
@@ -106,6 +107,37 @@ Both are seeded in `backend/data/reference/attribute.json` in the `serial`
 group, `applies_to` currency, beside Ladder; Broken Ladder is a
 `reference_alias` of Scattered Ladder. They are terms in common use, so they
 may ship (`docs/reference-data.md`).
+
+**Duplicate Serial** (`duplicate_serial`, new; the owner's request). In
+2014-2016 the Bureau of Engraving and Printing printed the same 6,650,000
+serials of the Series 2013 $1 New York (B) star notes at both Washington
+and Fort Worth. A note is a Duplicate Serial when it is a Federal Reserve
+Note, face $1, Series 2013, and its serial is `B` + eight digits + `*`
+with the digits in
+
+- 00000001 to 00250000, or
+- 03200001 to 09600000.
+
+The two ranges hold 250,000 and 6,400,000 serials, matching the BEP's
+count of 6,650,000. Sources, which agree on both ranges:
+https://www.2013b.com/2021/10/welcome.html,
+https://project2013b2.com/ (a registry matching Washington and Fort Worth
+halves), and https://www.numismaticnews.net/paper-money/duplicated-frn-serial-numbers
+(for the BEP's count). One site, serialworth.com, gives 06400000 as the
+second range's end, which does not match the count; it is not followed.
+
+Both halves of a pair are duplicates, so the rule does not depend on where
+the note was printed. Which half it is, is already recorded:
+`currency_detail.printing_facility` (`dc` or `fw`, read from the face
+plate). The attribute is seeded in the `variety` group, `applies_to`
+currency, so it prints on the label's attributes line. It is a derived link
+like the serial patterns -- added on save, taken back if the serial or
+series is corrected out of the range, never re-added once a person removes
+it. The ranges are a fact about a printing error, not a publisher's
+arrangement, so they may ship (`docs/reference-data.md`); they are kept
+as data with their sources beside them. *My call: only Series 2013. The
+Series 1995 $1 B and F star notes were also duplicated, but no source found
+gives their ranges; they can be added the same way once one does.*
 
 **Existing notes** get the new attributes from the review in section 5;
 the save rule keeps them current after.
