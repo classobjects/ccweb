@@ -795,15 +795,31 @@ anything it writes to one is lost:
   step 2 did before) writes to the Windows Application event log instead:
   Event Viewer, *Windows Logs*, *Application*, source `PostgreSQL`. To move
   it to files, register the service again from an administrator cmd with
-  `conda activate ccwebdb` run in it. The API loses the database for a few
-  seconds and reconnects by itself:
+  `conda activate ccwebdb` run in it, typed or pasted into the window
+  rather than run from a `.cmd` file, which would drop the `%a`. The API
+  service depends on the database's, so it stops first and starts last:
+  the site is down for about a minute. Stop both, and wait until `sc query
+  ccwebdb-postgres` says `STOPPED`:
 
   ```console
+  net stop ccwebdb-api
   sc stop ccwebdb-postgres
+  sc query ccwebdb-postgres
+  ```
+
+  Then register the database again and start both. Neither `pg_ctl` line
+  prints anything when it works, and the API's dependency survives, because
+  it names the service by its name:
+
+  ```console
   pg_ctl unregister -N ccwebdb-postgres
   pg_ctl register -N ccwebdb-postgres -D "%USERPROFILE%\dev\ccweb\.pgdata" -S auto -o "-p 5432 -c logging_collector=on -c log_filename=postgresql-%a.log -c log_truncate_on_rotation=on"
   sc start ccwebdb-postgres
+  net start ccwebdb-api
   ```
+
+  `dir %USERPROFILE%\dev\ccweb\.pgdata\log` then lists that day's file,
+  `postgresql-Wed.log` on a Wednesday.
 
 - **Caddy with `CCWEB_CADDY_LOG` unset** keeps no log at all. Set it in
   `.env`, render the Caddyfile again (step 7) and restart the `caddy`
