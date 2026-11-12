@@ -8,7 +8,7 @@ earlier ones record.
 
 1. **A description written on save** when the item has none.
 2. **Serial patterns derived on save**, with Ladder split into three, and
-   the Series 2013 $1 B star duplicates flagged.
+   the Series 2013 and 1995 $1 star duplicates flagged.
 3. **Two lookup buttons on a note** for mycurrencycollection.com, and two
    fields for what the owner reads there.
 4. **Printed labels** for coin flips, currency holders and sets, with a
@@ -135,9 +135,21 @@ like the serial patterns -- added on save, taken back if the serial or
 series is corrected out of the range, never re-added once a person removes
 it. The ranges are a fact about a printing error, not a publisher's
 arrangement, so they may ship (`docs/reference-data.md`); they are kept
-as data with their sources beside them. *My call: only Series 2013. The
-Series 1995 $1 B and F star notes were also duplicated, but no source found
-gives their ranges; they can be added the same way once one does.*
+as data with their sources beside them.
+
+**Series 1995 too.** The same Numismatic News article's Table 1
+(https://www.numismaticnews.net/uploads/MTc4MTgxMjk1MDk5MDk0NjMy/table1.jpg,
+found by the owner) lists the Series 1995 $1 star printings, all at
+Washington, whose serials repeated an earlier run's:
+
+| District | Duplicated serials | How |
+|---|---|---|
+| New York (B) | `B00000001*` to `B00640000*` | four press runs (Sep 1995, May 1996, May 1997, Sep 1997) each began at B00000001*; their overlaps cover these 640,000 serials, the first 320,000 printed four times |
+| Atlanta (F) | `F09856001*` to `F10240000*` | two Aug 1996 runs overlapped: 384,000 serials |
+
+A Federal Reserve Note, face $1, Series 1995, whose serial falls in one of
+these is a Duplicate Serial as well. Since all were printed at Washington,
+the printing facility does not tell the copies apart.
 
 **Existing notes** get the new attributes from the review in section 5;
 the save rule keeps them current after.

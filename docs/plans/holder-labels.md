@@ -122,7 +122,7 @@ Fill each `...` by running today's `analyse` on the serial first; the new codes 
 
 - [ ] **Step 5: Commit** -- "Scattered and Partial Ladder are derived from the serial".
 
-### Task 3: Duplicate Serial for the Series 2013 $1 B star duplicates
+### Task 3: Duplicate Serial for the Series 2013 and 1995 $1 star duplicates
 
 **Files:**
 - Create: `backend/app/duplicate_serials.py`
@@ -132,7 +132,7 @@ Fill each `...` by running today's `analyse` on the serial first; the new codes 
 
 **Interfaces:**
 - Produces:
-  - `duplicate_serials.RANGES: tuple[DuplicateRange, ...]` -- frozen dataclass `DuplicateRange(note_type: str, face: Decimal, series_year: int, prefix: str, low: int, high: int)`; the two Series 2013 rows (`"frn"`, `Decimal("1")`, `2013`, `"B"`, 1, 250000) and (..., 3200001, 9600000), with the three source URLs from the spec in a comment.
+  - `duplicate_serials.RANGES: tuple[DuplicateRange, ...]` -- frozen dataclass `DuplicateRange(note_type: str, face: Decimal, series_year: int, prefix: str, low: int, high: int)`; four rows, all `"frn"`, `Decimal("1")`: (2013, `"B"`, 1, 250000), (2013, `"B"`, 3200001, 9600000), (1995, `"B"`, 1, 640000), (1995, `"F"`, 9856001, 10240000), with the source URLs from the spec in a comment.
   - `duplicate_serials.is_duplicate(note_type: str | None, face: Decimal | None, series_year: int | None, serial: str | None) -> bool`
   - `serial_patterns.designations(serial: str | None, *, note_type: str | None, face: Decimal | None, series_year: int | None) -> set[str]` -- `analyse(serial)` plus `duplicate_serial` when `is_duplicate`. `DESIGNATIONS` gains `duplicate_serial`; it is not in `DIGIT_PATTERNS` (no Fancy Serial).
 
@@ -148,8 +148,17 @@ Fill each `...` by running today's `analyse` on the serial first; the new codes 
 def test_the_two_ranges(serial, expected):
     assert is_duplicate("frn", Decimal("1"), 2013, serial) is expected
 
+@pytest.mark.parametrize(("serial", "expected"), [
+    ("B00640000*", True), ("B00640001*", False),
+    ("F09856001*", True), ("F10240000*", True), ("F09856000*", False), ("F10240001*", False),
+    ("F00000001*", False),
+])
+def test_the_1995_ranges(serial, expected):
+    assert is_duplicate("frn", Decimal("1"), 1995, serial) is expected
+
 def test_other_series_faces_and_classes_are_not_duplicates():
     assert not is_duplicate("frn", Decimal("1"), 2017, "B00000001*")
+    assert not is_duplicate("frn", Decimal("1"), 2013, "F09856001*")  # a 1995 range, not 2013's
     assert not is_duplicate("frn", Decimal("5"), 2013, "B00000001*")
     assert not is_duplicate("silver_certificate", Decimal("1"), 2013, "B00000001*")
 ```
@@ -157,7 +166,7 @@ def test_other_series_faces_and_classes_are_not_duplicates():
 - [ ] **Step 2: Run; fail** (module missing).
 - [ ] **Step 3: Implement** both modules' additions. Normalise the serial with `.replace(" ", "").upper()`.
 - [ ] **Step 4: Run; pass.**
-- [ ] **Step 5: Commit** -- "Series 2013 $1 B star notes in the duplicated ranges are Duplicate Serial".
+- [ ] **Step 5: Commit** -- "$1 star notes of Series 2013 and 1995 in the duplicated ranges are Duplicate Serial".
 
 ### Task 4: Serial designations derived on every save
 
