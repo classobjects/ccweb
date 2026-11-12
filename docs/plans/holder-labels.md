@@ -20,7 +20,7 @@
 - Labelable = kind `coin`, `currency` or `set`; status `received`; disposition `held` or `listed`; `grading_service_id IS NULL`; and (`piece_count = 1` or kind `set`); not deleted, not split.
 - Friedberg number prints when `friedberg_status` is `confirmed` or `proposed`.
 - New reference rows reach a database by `python -m app.seeding load`, not by a migration.
-- One Alembic migration per task that changes the schema, chained from head `c3a7e1f9d2b4`.
+- One Alembic migration per task that changes the schema, chained from head `d8e2a4c6f1b3`.
 - Help texts name mycurrencycollection.com and dave@mycurrencycollection.com (published on https://www.mycurrencycollection.com/contact under *Anything else*); the Coolness Index is CoolNumbers.com's for-fun score, not a measure of value.
 
 ## Review Focus
@@ -108,7 +108,7 @@ Expected: the first two FAIL (description stays empty).
 ("A11111112B", <no ladder of any kind>),
 ```
 
-Fill each `...` by running today's `analyse` on the serial first; the new codes are the only additions. Also: `A12345678B` earns `ladder` and neither new code.
+Fill each `...` by running today's `analyze` on the serial first; the new codes are the only additions. Also: `A12345678B` earns `ladder` and neither new code.
 
 - [ ] **Step 2: Run** `pt.cmd tests/test_serial_patterns.py -q` -- the new rows FAIL.
 
@@ -134,7 +134,7 @@ Fill each `...` by running today's `analyse` on the serial first; the new codes 
 - Produces:
   - `duplicate_serials.RANGES: tuple[DuplicateRange, ...]` -- frozen dataclass `DuplicateRange(note_type: str, face: Decimal, series_year: int, prefix: str, low: int, high: int)`; four rows, all `"frn"`, `Decimal("1")`: (2013, `"B"`, 1, 250000), (2013, `"B"`, 3200001, 9600000), (1995, `"B"`, 1, 640000), (1995, `"F"`, 9856001, 10240000), with the source URLs from the spec in a comment.
   - `duplicate_serials.is_duplicate(note_type: str | None, face: Decimal | None, series_year: int | None, serial: str | None) -> bool`
-  - `serial_patterns.designations(serial: str | None, *, note_type: str | None, face: Decimal | None, series_year: int | None) -> set[str]` -- `analyse(serial)` plus `duplicate_serial` when `is_duplicate`. `DESIGNATIONS` gains `duplicate_serial`; it is not in `DIGIT_PATTERNS` (no Fancy Serial).
+  - `serial_patterns.designations(serial: str | None, *, note_type: str | None, face: Decimal | None, series_year: int | None) -> set[str]` -- `analyze(serial)` plus `duplicate_serial` when `is_duplicate`. `DESIGNATIONS` gains `duplicate_serial`; it is not in `DIGIT_PATTERNS` (no Fancy Serial).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -211,7 +211,7 @@ def test_series_2013_b_star_gets_duplicate_on_save(...):
 ### Task 5: Coolness index and star run size, and the two buttons
 
 **Files:**
-- Create: `backend/alembic/versions/<rev>_coolness_and_star_run.py` (down_revision `c3a7e1f9d2b4`)
+- Create: `backend/alembic/versions/<rev>_coolness_and_star_run.py` (down_revision `d8e2a4c6f1b3`)
 - Modify: `backend/app/models/core.py` (`CurrencyDetail`)
 - Modify: `backend/app/schemas.py` (`InventoryItemUpdate` :1134, `ItemCreate` :1325, `_CURRENCY_ONLY_FIELDS` :1311, `ItemDetailOut` :1001)
 - Modify: `backend/app/routers/inventory.py` (wherever `printing_facility` is copied to and from `CurrencyDetail`, do the same for the two fields)
