@@ -100,6 +100,13 @@
       "sort_order": 110
     },
     {
+      "code": "duplicate_serial",
+      "label": "Duplicate Serial",
+      "applies_to": "currency",
+      "attribute_group": "variety",
+      "sort_order": 115
+    },
+    {
       "code": "ladder",
       "label": "Ladder Serial",
       "applies_to": "currency",

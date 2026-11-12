@@ -38,12 +38,14 @@ import argparse
 import re
 import sys
 from collections import Counter
+from decimal import Decimal
 from itertools import pairwise
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .database import SessionLocal
+from .duplicate_serials import is_duplicate
 from .models import (
     CurrencyDetail,
     InventoryItem,
@@ -97,6 +99,7 @@ DESIGNATIONS: frozenset[str] = DIGIT_PATTERNS | {
     "high_serial",
     "star",
     "fancy_serial",
+    "duplicate_serial",
 }
 
 
@@ -236,6 +239,25 @@ def analyze(serial: str) -> set[str]:
     # the digits, so it does not make a serial fancy.
     if found & DIGIT_PATTERNS:
         found.add("fancy_serial")
+    return found
+
+
+def designations(
+    serial: str | None,
+    *,
+    note_type: str | None,
+    face: Decimal | None,
+    series_year: int | None,
+) -> set[str]:
+    """`analyze(serial)` plus Duplicate Serial, which needs the note's class.
+
+    Duplicate Serial is not a digit pattern, so it does not add Fancy Serial.
+    """
+    if not serial:
+        return set()
+    found = analyze(serial)
+    if is_duplicate(note_type, face, series_year, serial):
+        found.add("duplicate_serial")
     return found
 
 
