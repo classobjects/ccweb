@@ -247,6 +247,49 @@ refuses a database that already holds a collection), `app.backup`,
 and restoring*), and `app.reports` (*Reports*). None of them takes
 `--commit`; `app.media_backup prune` only lists unless given `--delete`.
 
+### Bringing records up to date
+
+Three passes bring stored items in line with what the editor now does on a
+save. Run them in this order, each to completion before the next, because a
+description is suggested from the record as the earlier passes leave it:
+
+1. `app.serial_patterns` -- the dry run, then `--commit --by EMAIL`.
+2. `app.description_review fill` -- the dry run, then `--commit --by EMAIL`.
+   Every unsplit, undeleted item whose description is empty gets the
+   description the editor's Suggest would write; an item whose record holds
+   nothing to say is left empty and counted.
+3. `app.description_review export` writes a workbook of the items whose
+   written description differs from the suggestion, with the columns
+   `item_code`, `current`, `suggested` and an empty `replace`. Put an `x` in
+   `replace` on each row that should give way to the suggestion, save, and
+   run `app.description_review apply` on it -- the dry run, then
+   `--commit --by EMAIL`. The suggestion is computed again at that moment. A
+   row whose `current` is no longer the item's description (it was edited
+   after the export) is skipped, and so is a code no item holds; both are
+   named.
+
+```console
+cd /d %USERPROFILE%\dev\ccweb\backend
+python -m app.description_review fill
+python -m app.description_review export review.xlsx
+python -m app.description_review apply review.xlsx
+```
+
+On Linux:
+
+```console
+cd ~/dev/ccweb/backend
+python -m app.description_review fill
+python -m app.description_review export review.xlsx
+python -m app.description_review apply review.xlsx
+```
+
+Each of the writing steps runs under the live-write procedure: a verified
+`pg_dump` of live, a rehearsal of the `--commit` on a restored copy
+(*Applying a schema release*, steps 1 and 2), the same `--commit` on live, and
+a check afterwards -- the item count unchanged, and a few items' History
+showing the changes under the person named.
+
 ### eBay order numbers and listing ids
 
 An eBay purchase is found and receipted by its order number, and a listing id
