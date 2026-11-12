@@ -6,10 +6,10 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import DataError
@@ -76,6 +76,23 @@ app.add_middleware(
     # response header not named here from a cross-origin caller.
     expose_headers=["X-Total-Count"],
 )
+
+
+@app.middleware("http")
+async def _never_stored(
+    request: Request, call_next: Callable[[Request], Awaitable[Response]]
+) -> Response:
+    """Mark every answer `Cache-Control: no-store` unless its route chose.
+
+    Without it a browser may keep an answer and, when it restores a tab or
+    goes Back, replay it without asking the server: the inventory showed a
+    list from before the latest purchase. An image's bytes, named for their
+    content, set their own long-lived caching and keep it.
+    """
+    response = await call_next(request)
+    response.headers.setdefault("Cache-Control", "no-store")
+    return response
+
 
 app.include_router(auth.router, prefix=settings.api_prefix)
 app.include_router(catalog.router, prefix=settings.api_prefix)
