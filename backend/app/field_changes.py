@@ -63,6 +63,8 @@ NUMERIC_FIELDS: frozenset[str] = frozenset(
         "year_start",
         "year_end",
         "series_year",
+        "coolness_index",
+        "star_run_size",
         "piece_count",
         "storage_location_id",
     }

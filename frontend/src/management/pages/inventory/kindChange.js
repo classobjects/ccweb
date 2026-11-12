@@ -43,6 +43,8 @@ const NOTE_SCALARS = [
   'face_plate_number',
   'back_plate_number',
   'printing_facility',
+  'coolness_index',
+  'star_run_size',
 ]
 
 //: What a coin weighs and is made of: a note that kept them would go on

@@ -1283,6 +1283,8 @@ def create_item(payload: ItemCreate, db: DbSession, admin: AdminUser) -> ItemDet
                 face_plate_number=payload.face_plate_number,
                 back_plate_number=payload.back_plate_number,
                 printing_facility=_entered_facility(payload),
+                coolness_index=payload.coolness_index,
+                star_run_size=payload.star_run_size,
             )
         )
     else:
@@ -2100,6 +2102,8 @@ NOTE_SCALARS: tuple[str, ...] = (
     "face_plate_number",
     "back_plate_number",
     "printing_facility",
+    "coolness_index",
+    "star_run_size",
 )
 
 #: Columns `app.classifier_defaults` fills, and so may hold empty.

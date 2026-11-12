@@ -213,6 +213,8 @@ banknote is refused while the note row holds a value.
 | `friedberg_status` | same four values as `pcgs_status` |
 | `face_plate_number`, `back_plate_number`, `plate_position` | varchar(16); needed to identify a mule, and carry check letters |
 | `printing_facility` | `dc` \| `fw` (check constraint), null when not known; read from the face plate when there is one -- `FW` before it is Fort Worth (`app.plates`) |
+| `coolness_index` | numeric(4,1) null, check 0 to 100 (`ck_currency_detail_coolness_index`); the "Coolness Index" CoolNumbers.com gives a serial, typed by the owner |
+| `star_run_size` | integer null, check above 0 (`ck_currency_detail_star_run_size`); the size of a star note's print run, typed by the owner |
 
 A series letter (`1957-B`) and a mint mark (`1921-D`) look alike and mean
 different things, so they are separate columns on separate tables.
@@ -894,7 +896,8 @@ removing a member of staff never erases the record of what they did.
 `shipping_cost`, `numismatic_value`, prices, fees, share amounts and share
 fees (`ck_sales_order_item_share_fee_non_negative`), an auction lot's
 `reserve` and `hammer_price`, and shipment costs; `piece_count > 0`; year
-ranges ordered; fineness a fraction; fine weight within gross; the
+ranges ordered; `ck_currency_detail_coolness_index` (0 to 100) and
+`ck_currency_detail_star_run_size` (above 0); fineness a fraction; fine weight within gross; the
 `pcgs_status`, `friedberg_status`, `size_class`, `printing_facility` and
 `series.applies_to` vocabularies; `ck_listing_item_xor_lot` and `ck_listing_lot_quantity_one`;
 `ck_listing_paused_by_only_when_paused` (only a paused listing names the

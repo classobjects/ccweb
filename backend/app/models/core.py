@@ -803,6 +803,13 @@ class CurrencyDetail(Base):
     #: and it tells two Friedberg numbers apart: Washington's and Fort
     #: Worth's printings of one series are numbered separately.
     printing_facility: Mapped[str | None] = mapped_column(String(2), nullable=True)
+    #: The note's Coolness Index, 0 to 100 with one decimal place: the
+    #: for-fun score CoolNumbers.com gives a serial, which does not measure
+    #: value. Typed by the owner from mycurrencycollection.com's checker.
+    coolness_index: Mapped[Decimal | None] = mapped_column(Numeric(4, 1), nullable=True)
+    #: How many notes of this star's run were printed, typed by the owner
+    #: from mycurrencycollection.com's star note lookup.
+    star_run_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     item: Mapped[InventoryItem] = relationship(back_populates="currency_detail")
 
@@ -814,5 +821,13 @@ class CurrencyDetail(Base):
         CheckConstraint(
             "printing_facility IS NULL OR printing_facility IN ('dc', 'fw')",
             name="ck_currency_detail_printing_facility",
+        ),
+        CheckConstraint(
+            "coolness_index IS NULL OR coolness_index BETWEEN 0 AND 100",
+            name="ck_currency_detail_coolness_index",
+        ),
+        CheckConstraint(
+            "star_run_size IS NULL OR star_run_size > 0",
+            name="ck_currency_detail_star_run_size",
         ),
     )

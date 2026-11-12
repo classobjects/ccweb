@@ -550,6 +550,44 @@ export const FIELD_HELP = {
       'numbers apart: the two printings of one series and denomination can ' +
       'each have a number of their own.',
   },
+  coolness_index: {
+    title: 'Coolness index',
+    text:
+      "A percentage from 0 to 100 with one decimal place, copied from the 'Coolness " +
+      "Index' that mycurrencycollection.com's Check serial page shows. It is " +
+      "CoolNumbers.com's for-fun score for how interesting a serial number is; the " +
+      'site says it does not measure value. Typed by you, never filled in. Ask about ' +
+      "the site's data at dave@mycurrencycollection.com, the address it publishes " +
+      'under Anything else on https://www.mycurrencycollection.com/contact.',
+  },
+  star_run_size: {
+    title: 'Star run size',
+    text:
+      'How many notes were printed in this star note’s run, a whole number above 0, ' +
+      "copied from mycurrencycollection.com's Star note lookup page. Typed by you, " +
+      'never filled in. Ask about the site’s data at dave@mycurrencycollection.com, ' +
+      'the address it publishes under Anything else on ' +
+      'https://www.mycurrencycollection.com/contact. For reading only, a price guide ' +
+      'for star notes is at ' +
+      'https://www.uscurrencyauctions.com/us-currency-star-notes-value-price-guide.html.',
+  },
+  check_serial_link: {
+    title: 'Check serial',
+    text:
+      "Opens mycurrencycollection.com's fancy serial number checker for this serial " +
+      'in a new tab; its Coolness Index goes in the Coolness index box. Ask about the ' +
+      'site’s data at dave@mycurrencycollection.com (published at ' +
+      'https://www.mycurrencycollection.com/contact under Anything else).',
+  },
+  star_lookup_link: {
+    title: 'Star note lookup',
+    text:
+      "Opens mycurrencycollection.com's star note lookup for this note in a new tab, " +
+      'using the face value, the series year (digits only) and the serial as ' +
+      'recorded; the run size goes in the Star run size box. The site may not answer ' +
+      'for every series. Ask about the site’s data at dave@mycurrencycollection.com ' +
+      '(published at https://www.mycurrencycollection.com/contact under Anything else).',
+  },
   series_letter: {
     title: 'Series letter',
     text:

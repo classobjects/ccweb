@@ -55,6 +55,18 @@ Rate = Annotated[
     Decimal, Field(ge=Decimal("0"), le=Decimal("1"), max_digits=6, decimal_places=4)
 ]
 
+#: A note's Coolness Index: a percentage, 0 to 100, one decimal place, held to
+#: the `NUMERIC(4,1)` column it is stored in. Optional.
+CoolnessIndex = Annotated[
+    Decimal | None,
+    Field(
+        ge=Decimal("0"),
+        le=Decimal("100"),
+        max_digits=4,
+        decimal_places=1,
+    ),
+]
+
 #: The bounds of a banknote's series year, wherever one is sent. 1690 is the
 #: first paper money issued in America, and the collection holds notes back
 #: to 1801; 2200 is the same far bound the item years use.
@@ -1099,6 +1111,9 @@ class ItemDetailOut(InventoryItemOut):
     back_plate_number: str | None = None
     #: `dc` (Washington) or `fw` (Fort Worth); None when not known.
     printing_facility: str | None = None
+    #: Typed by the owner: a percentage with one decimal, and a star run's size.
+    coolness_index: Decimal | None = None
+    star_run_size: int | None = None
     #: The Friedberg number attached to the note, if any. Set through
     #: `POST`/`DELETE /inventory/{id}/friedberg`, never by a PATCH.
     friedberg_id: int | None = None
@@ -1240,6 +1255,10 @@ class InventoryItemUpdate(BaseModel):
     back_plate_number: BackPlate = None
     #: `dc` or `fw`; read from the face plate when that is sent.
     printing_facility: str | None = Field(default=None, pattern=_PRINTING_FACILITY)
+    #: The Coolness Index, 0 to 100 with one decimal place.
+    coolness_index: CoolnessIndex = None
+    #: A star run's size, a whole number above 0.
+    star_run_size: int | None = Field(default=None, gt=0)
 
     #: Required, as true, to change an item that is up for sale: a listing
     #: offers it or an unshipped order holds it (app.sale_state).
@@ -1319,6 +1338,8 @@ _CURRENCY_ONLY_FIELDS: tuple[str, ...] = (
     "face_plate_number",
     "back_plate_number",
     "printing_facility",
+    "coolness_index",
+    "star_run_size",
 )
 
 
@@ -1424,6 +1445,10 @@ class ItemCreate(BaseModel):
     back_plate_number: BackPlate = None
     #: `dc` or `fw`; read from the face plate when that is sent.
     printing_facility: str | None = Field(default=None, pattern=_PRINTING_FACILITY)
+    #: The Coolness Index, 0 to 100 with one decimal place.
+    coolness_index: CoolnessIndex = None
+    #: A star run's size, a whole number above 0.
+    star_run_size: int | None = Field(default=None, gt=0)
 
     #: Fields whose value is a suggestion the form filled from the facts and
     #: the person left as it was, by field name. They are recorded as derived

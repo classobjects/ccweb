@@ -57,6 +57,8 @@ export const CURRENCY_ONLY_FIELDS = new Set([
   'face_plate_number',
   'back_plate_number',
   'printing_facility',
+  'coolness_index',
+  'star_run_size',
   'note_type',
   'seal_color',
   'fed_district',

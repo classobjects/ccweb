@@ -606,6 +606,21 @@ kind: `note_type`, `seal_color`, `fed_district` and `signature_combination`
 `fw`), read from the face plate when one is sent -- a location sent beside a
 face plate that says otherwise is refused.
 
+Also on the note: `coolness_index` (0 to 100, one decimal place; a second
+decimal is refused) and `star_run_size` (a whole number above 0), each
+optional and each typed by the owner from mycurrencycollection.com, never
+filled in. Beside the serial number the editor offers two links that open
+that site in a new tab: *Check serial* (the serial has eight digits) and
+*Star note lookup* (the serial has a `*`). The software never reads the
+site's answer. The star lookup's address carries the denomination's whole
+dollars, the series year's digits alone (`2017` for a 2017A note) and the
+serial as recorded with its spaces removed (a star-first serial such as
+`*12345678A` is passed as it is). Whether the site answers a lettered series
+or a star-first serial is for the owner to confirm in a browser. The address
+for questions about the site's data is dave@mycurrencycollection.com,
+published at https://www.mycurrencycollection.com/contact under *Anything
+else*.
+
 **Attributes** (`attributes`, a list of codes) replace the item's whole set:
 one the item had and the list omits is marked removed, so no rule adds it
 back. `[]` clears them; null is refused. Single-item edits only -- bulk edit

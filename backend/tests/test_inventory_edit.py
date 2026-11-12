@@ -1122,3 +1122,90 @@ def test_a_typed_description_is_kept(
     assert response.status_code == 200, response.text
     db.expire_all()
     assert db.get_one(InventoryItem, item.id).description == "My words"
+
+
+def test_coolness_and_run_size_are_saved_and_read(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    note = _note(db, serial_number="A11111111*")
+    path = f"/api/inventory/{note.id}"
+
+    response = patch_current(
+        client,
+        path,
+        json={"coolness_index": "96.9", "star_run_size": 320000},
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 200, response.text
+    read = client.get(path, headers=admin_headers).json()
+    assert Decimal(read["coolness_index"]) == Decimal("96.9")
+    assert read["star_run_size"] == 320000
+    db.expire_all()
+    assert db.get_one(CurrencyDetail, note.id).coolness_index == Decimal("96.9")
+
+
+@pytest.mark.parametrize("bad", ["-0.1", "100.1", "12.34"])
+def test_coolness_outside_0_to_100_or_finer_than_one_place_is_refused(
+    client: TestClient, admin_headers: dict[str, str], db: Session, bad: str
+) -> None:
+    note = _note(db, serial_number="A11111111A")
+
+    response = patch_current(
+        client,
+        f"/api/inventory/{note.id}",
+        json={"coolness_index": bad},
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 422, response.text
+
+
+@pytest.mark.parametrize("edge", ["0", "100", "0.5"])
+def test_coolness_at_the_edges_is_kept(
+    client: TestClient, admin_headers: dict[str, str], db: Session, edge: str
+) -> None:
+    note = _note(db, serial_number="A11111111A")
+
+    response = patch_current(
+        client,
+        f"/api/inventory/{note.id}",
+        json={"coolness_index": edge},
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 200, response.text
+
+
+@pytest.mark.parametrize("bad", [0, -5])
+def test_run_size_zero_or_less_is_refused(
+    client: TestClient, admin_headers: dict[str, str], db: Session, bad: int
+) -> None:
+    note = _note(db, serial_number="A11111111*")
+
+    response = patch_current(
+        client,
+        f"/api/inventory/{note.id}",
+        json={"star_run_size": bad},
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 422, response.text
+
+
+def test_coolness_and_run_size_can_be_cleared(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    note = _note(db, coolness_index=Decimal("50.0"), star_run_size=10)
+
+    response = patch_current(
+        client,
+        f"/api/inventory/{note.id}",
+        json={"coolness_index": None, "star_run_size": None},
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 200, response.text
+    db.expire_all()
+    detail = db.get_one(CurrencyDetail, note.id)
+    assert (detail.coolness_index, detail.star_run_size) == (None, None)
