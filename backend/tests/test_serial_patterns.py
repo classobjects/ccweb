@@ -36,7 +36,25 @@ STAR_SERIAL = "A38164927*"
         # Low and high are positional -- where the note sits in the print
         # run -- so they stack with the pattern designations rather than
         # replacing them.
-        ("A00001234B", {"low_serial"}),
+        ("A00001234B", {"low_serial", "partial_ladder", "fancy_serial"}),
+        # Ladder family: Ladder (all eight step), Scattered (the eight digits
+        # of a ladder, shuffled), Partial (a run of five or more, or four
+        # consecutive pairs). A note may earn Scattered and Partial both.
+        ("A31452786B", {"scattered_ladder", "fancy_serial"}),
+        ("A67890123B", {"ladder", "fancy_serial"}),
+        (
+            "A81234567B",
+            {"scattered_ladder", "partial_ladder", "fancy_serial"},
+        ),
+        ("A12345567B", {"partial_ladder", "fancy_serial"}),
+        ("A12345679B", {"partial_ladder", "fancy_serial"}),
+        ("A89012555B", {"partial_ladder", "fancy_serial"}),
+        ("A00112233B", {"partial_ladder", "fancy_serial"}),
+        ("A33112200B", {"partial_ladder", "fancy_serial"}),
+        ("A99001122B", {"high_serial", "partial_ladder", "fancy_serial"}),
+        ("A10203040B", set()),
+        ("A12321555B", set()),
+        ("A11111112B", {"binary", "fancy_serial"}),
         ("A98765432B", {"high_serial", "ladder", "fancy_serial"}),
         (
             "A99999999B",

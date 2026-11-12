@@ -107,6 +107,20 @@
       "sort_order": 120
     },
     {
+      "code": "scattered_ladder",
+      "label": "Scattered Ladder",
+      "applies_to": "currency",
+      "attribute_group": "serial",
+      "sort_order": 121
+    },
+    {
+      "code": "partial_ladder",
+      "label": "Partial Ladder",
+      "applies_to": "currency",
+      "attribute_group": "serial",
+      "sort_order": 122
+    },
+    {
       "code": "specimen",
       "label": "Specimen",
       "applies_to": "currency",
@@ -297,6 +311,11 @@
     }
   ],
   "reference_alias": [
+    {
+      "table": "item_attribute",
+      "code": "scattered_ladder",
+      "alias": "Broken Ladder"
+    },
     {
       "table": "item_attribute",
       "code": "no_motto",

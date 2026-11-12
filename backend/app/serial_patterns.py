@@ -38,6 +38,7 @@ import argparse
 import re
 import sys
 from collections import Counter
+from itertools import pairwise
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -82,6 +83,8 @@ DIGIT_PATTERNS: frozenset[str] = frozenset(
         "repeater",
         "double_quad",
         "ladder",
+        "scattered_ladder",
+        "partial_ladder",
         "birthday",
     }
 )
@@ -122,6 +125,54 @@ def _positional_designations(d: str) -> set[str]:
     return found
 
 
+#: A stretch of this many positions stepping one way makes a Partial Ladder.
+PARTIAL_LADDER_RUN = 5
+
+
+def _steps_one_way(d: str) -> bool:
+    """True when a stretch of `PARTIAL_LADDER_RUN` positions steps by one.
+
+    Every step in the stretch is +1 mod 10, or every step is -1 mod 10; a
+    run past 9 to 0 or past 0 to 9 counts.
+    """
+    for start in range(len(d) - PARTIAL_LADDER_RUN + 1):
+        window = [int(c) for c in d[start : start + PARTIAL_LADDER_RUN]]
+        steps = {(b - a) % 10 for a, b in pairwise(window)}
+        if steps in ({1}, {9}):
+            return True
+    return False
+
+
+def _consecutive_mod10(digits: set[int]) -> bool:
+    """True when the digits are consecutive, running past 9 to 0 allowed."""
+    return any(
+        {(first + i) % 10 for i in range(len(digits))} == digits for first in digits
+    )
+
+
+def _four_pairs_in_sequence(d: str) -> bool:
+    """True for `aabbccdd` whose four distinct digits are consecutive."""
+    pairs = [d[i : i + 2] for i in range(0, SERIAL_DIGITS, 2)]
+    if any(p[0] != p[1] for p in pairs):
+        return False
+    digits = {int(p[0]) for p in pairs}
+    return len(digits) == len(pairs) and _consecutive_mod10(digits)
+
+
+def _ladder_family(d: str) -> set[str]:
+    """Scattered and Partial Ladder, for a serial that is not a Ladder.
+
+    A note may earn both; both are recorded.
+    """
+    found: set[str] = set()
+    digits = {int(c) for c in d}
+    if len(digits) == SERIAL_DIGITS and _consecutive_mod10(digits):
+        found.add("scattered_ladder")
+    if _steps_one_way(d) or _four_pairs_in_sequence(d):
+        found.add("partial_ladder")
+    return found
+
+
 def _pattern_designations(d: str) -> set[str]:
     """Designations earned by what the digits spell."""
     found: set[str] = set()
@@ -150,6 +201,8 @@ def _pattern_designations(d: str) -> set[str]:
     descending = "".join(str((int(d[0]) - i) % 10) for i in range(SERIAL_DIGITS))
     if d in (ascending, descending):
         found.add("ladder")
+    else:
+        found |= _ladder_family(d)
 
     month, day, year = d[:2], d[2:4], d[4:]
     if 1 <= int(month) <= 12 and 1 <= int(day) <= 31 and 1850 <= int(year) <= 2030:
