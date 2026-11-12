@@ -164,6 +164,21 @@ export const FIELD_HELP = {
     title: 'Year',
     text: "This piece's year. Blank keeps the lot's.",
   },
+  label_filter: {
+    title: 'Label',
+    text:
+      'Narrows to items by their holder label: labeled (printed, and it still ' +
+      'reads the same), not labeled (never printed) or needs a new label ' +
+      '(printed, but the item has changed since). Items that are sold or not ' +
+      'in the collection are never labeled, so no state includes them.',
+  },
+  add_to_label_batch: {
+    title: 'Add to label batch',
+    text:
+      'Puts this item on the list of labels to print next, as last saved. ' +
+      'The Labels page prints the batch. An item that is sold or not in the ' +
+      'collection is refused.',
+  },
   delete_item: {
     title: 'Delete item',
     text:

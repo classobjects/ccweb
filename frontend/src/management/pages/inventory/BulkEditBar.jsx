@@ -282,6 +282,22 @@ export default function BulkEditBar({
     }
   }
 
+  /** Add the selection to the print batch: all of it, or none and say which. */
+  async function addToLabelBatch() {
+    setBusy(true)
+    setGrouped('')
+    try {
+      await api.addToLabelBatch(ids)
+      setError('')
+      setGrouped(`${ids.length} added`)
+    } catch (err) {
+      // The server names every item it refused, in its message.
+      setError(err.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <div className="bulk-bar">
       <strong>{ids.length} selected</strong>
@@ -342,6 +358,9 @@ export default function BulkEditBar({
         }}
       >
         Group into lot...
+      </button>
+      <button disabled={busy} onClick={addToLabelBatch}>
+        Add to label batch
       </button>
       <button className="link" onClick={onClear}>
         Clear selection

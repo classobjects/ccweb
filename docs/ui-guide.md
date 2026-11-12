@@ -91,6 +91,7 @@ The search and filters, as the help band explains each one:
 | **Series year** | Currency | The year after the word SERIES on the face, near the signatures -- "SERIES 1963 A" is 1963. It is the year the design was adopted, not the year the note was printed: notes of one series are often printed for years afterwards. |
 | **Status** |  | Shows only the items at this point in buying: ordered (bought, not yet arrived), received (in hand), canceled (the order was called off), returned (sent back to the seller), missing (paid for, never arrived) or unknown. Any shows every status. |
 | **Disposition** |  | What has become of the item once it is yours: held, listed, sold, shipped, delivered, returned. Status says whether it has arrived; disposition says where it stands in selling. |
+| **Label** |  | Narrows to items by their holder label: Labeled (printed, and it still reads the same), Not labeled (never printed) or Needs a new label (printed, but the item has changed since). Items that are sold or not in the collection are never labeled, so no state includes them. |
 | **Error** |  | Only items with this printing or minting error recorded on them. The list is of the errors the matching items carry, each with how many. |
 | **Attribute** |  | Only items carrying this attribute: Star Note, Radar, First Strike, CAC and the like. The list is of the attributes the matching items carry, each with how many. |
 | **Serial number** |  | All or part of a serial, anywhere in it. _ stands for exactly one character, so B1234567_ finds a run of consecutive notes; % for any run. On coins it is a bar's, round's or Goldback's own serial. |
@@ -133,6 +134,7 @@ The bulk bar's fields:
 | **New value: Storage location** |  | Where the piece is kept -- a safe, a bank box, home. Optional: choose it when it is known, and change it whenever the piece moves; every move is kept in the item's history. It never shows to a buyer. |
 | **Group into lot: Lot** |  | Where the selected items go: a new lot, or one still being assembled. A lot is offered and sold as one thing. Grouping changes nothing else about an item, which stays in stock. |
 | **Group into lot: Title** | a new lot | What the new lot is called: the Lots page lists it by this, and its offer starts from it. |
+| **Add to label batch** |  | Puts every selected item on the list of labels to print next, and says "N added". All or none: if any item is sold or otherwise takes no label, nothing is added and the refusal names each such item. The Labels page prints the batch. |
 
 A search that finds a single item opens it in the editor straight away. Once
 closed, it stays closed until the search changes.
@@ -227,6 +229,7 @@ The editor's fields, top to bottom. Which appear depends on the kind: a note has
 | **Web press (Friedberg lookup)** | a note | Printed on the Bureau of Engraving and Printing's experimental web press, from a roll of paper, instead of the usual sheet-fed press. Only some $1 notes of series 1988-A, 1993 and 1995 were. The two printings have different Friedberg numbers. Leave it as not known unless you can tell. |
 | **Star note (Friedberg lookup)** | a note | A replacement note: its serial carries a star in place of a letter. A star note has its own Friedberg number, ending in * (3007-B*), so the lookup offers only the kind this is. Filled from the note's serial; Not known offers both. |
 | **Mule (Friedberg lookup)** | a note | A note printed from a face plate and a back plate made for different series. A mule has its own Friedberg number, with an m (3007-Em), so Yes offers only mules and No leaves them out. Yes when the note carries the Mule attribute; Not known offers both. |
+| **Add to label batch** |  | Puts this item on the list of labels to print next, as last saved. The Labels page prints the batch. An item that is sold or not in the collection is refused. |
 | **Delete item...** |  | Removes an item that should never have been entered -- one purchase recorded twice. It asks first. An item with pieces split from it, one that has ever been offered, or one in a sales lot cannot be deleted, and the reason is shown. |
 
 **Split into pieces...** turns a lot bought as one item into one item per

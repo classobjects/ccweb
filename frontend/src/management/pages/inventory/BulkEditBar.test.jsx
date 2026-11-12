@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 vi.mock('../../api', () => ({
   api: {
     bulkEditInventory: vi.fn(),
+    addToLabelBatch: vi.fn(),
     // The location picker's own call.
     listStorageLocations: vi.fn(),
     // OfferDialog's own calls, reachable once "Offer for sale..." is pressed.
@@ -76,6 +77,26 @@ beforeEach(() => {
 })
 
 describe('BulkEditBar', () => {
+  it('adds the selection to the label batch and says how many', async () => {
+    const user = userEvent.setup()
+    api.addToLabelBatch.mockResolvedValue([{}, {}])
+    render(<BulkEditBar view="coins" ids={[1, 2]} onClear={vi.fn()} />)
+    await user.click(screen.getByRole('button', { name: 'Add to label batch' }))
+    expect(api.addToLabelBatch).toHaveBeenCalledWith([1, 2])
+    expect(await screen.findByText('2 added')).toBeVisible()
+  })
+
+  it('names the items the label batch refused', async () => {
+    const user = userEvent.setup()
+    api.addToLabelBatch.mockRejectedValue(
+      new Error('Not labelable: CC-000002. Nothing was added.'),
+    )
+    render(<BulkEditBar view="coins" ids={[1, 2]} onClear={vi.fn()} />)
+    await user.click(screen.getByRole('button', { name: 'Add to label batch' }))
+    expect(await screen.findByText(/Not labelable: CC-000002/)).toBeVisible()
+    expect(screen.queryByText('2 added')).toBeNull()
+  })
+
   it('offers a note selection no Year, and starts it on another field', () => {
     render(
       <BulkEditBar view="currency" ids={[1]} onApplied={vi.fn()} onClear={vi.fn()} />,

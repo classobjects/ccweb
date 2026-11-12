@@ -38,6 +38,7 @@ vi.mock('../../api', () => ({
     moveImageLink: vi.fn(),
     searchInventory: vi.fn(),
     splitItem: vi.fn(),
+    addToLabelBatch: vi.fn(),
     // The storage location picker's list.
     listStorageLocations: vi.fn(),
   },
@@ -185,6 +186,20 @@ describe('ItemEditForm', () => {
     expect(onChanged).toHaveBeenCalled()
     // Kept open to say so: onSaved closes the editor.
     expect(onSaved).not.toHaveBeenCalled()
+  })
+
+  it('adds the item to the label batch, or names why it was refused', async () => {
+    const user = userEvent.setup()
+    api.addToLabelBatch
+      .mockResolvedValueOnce([{}])
+      .mockRejectedValueOnce(new Error('Not labelable: C-012. Nothing was added.'))
+    render(<ItemEditForm itemId={12} onSaved={vi.fn()} onClose={vi.fn()} />)
+    const button = await screen.findByRole('button', { name: 'Add to label batch' })
+    await user.click(button)
+    expect(api.addToLabelBatch).toHaveBeenCalledWith([12])
+    expect(await screen.findByText('Added to the label batch')).toBeVisible()
+    await user.click(button)
+    expect(await screen.findByText(/Not labelable: C-012/)).toBeVisible()
   })
 
   it('deletes the item once asked, and closes over a list read again', async () => {

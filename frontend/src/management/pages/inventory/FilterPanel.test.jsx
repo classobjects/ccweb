@@ -192,6 +192,22 @@ describe('FilterPanel', () => {
   })
 })
 
+describe('FilterPanel label filter', () => {
+  it('offers the label states and sends the one chosen', async () => {
+    const { props } = setup()
+    const picker = screen.getByRole('combobox', { name: 'Label' })
+    const names = [...picker.options].map((o) => o.textContent)
+    expect(names).toEqual(['Any', 'Labeled', 'Not labeled', 'Needs a new label'])
+    await userEvent.selectOptions(picker, 'Needs a new label')
+    expect(props.apply).toHaveBeenCalledWith({ label: 'stale' })
+  })
+
+  it('shows the label state in force', () => {
+    setup({ current: { label: 'unlabeled' } })
+    expect(screen.getByRole('combobox', { name: 'Label' })).toHaveValue('unlabeled')
+  })
+})
+
 describe('FilterPanel search tips', () => {
   it('shows no tips for a view that defines none', () => {
     setup()

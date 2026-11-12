@@ -12,6 +12,14 @@ import { SHARED_KEYS } from './specs'
 //: For a view that names no placeholder of its own.
 const DEFAULT_PLACEHOLDER = 'Search title, description, item code or order number'
 
+//: The `label=` filter's states, as the API names them.
+const LABEL_STATES = [
+  ['', 'Any'],
+  ['labeled', 'Labeled'],
+  ['unlabeled', 'Not labeled'],
+  ['stale', 'Needs a new label'],
+]
+
 /** A label with its underlined letter, or plain text when it has none. */
 function Label({ text, letter }) {
   return letter ? <AccessLabel text={text} accessKey={letter} /> : text
@@ -209,6 +217,23 @@ export default function FilterPanel({
               />
             </label>
           ))}
+
+          {/* The same four states on both views, so they are not facets: no
+            count to show, and nothing to be unrecorded. No letter, as the
+            seller's item id has none. */}
+          <label data-help="label_filter">
+            Label
+            <select
+              value={current.label ?? ''}
+              onChange={(e) => apply({ label: e.target.value })}
+            >
+              {LABEL_STATES.map(([value, text]) => (
+                <option key={value} value={value}>
+                  {text}
+                </option>
+              ))}
+            </select>
+          </label>
 
           <label data-help="year_from">
             <AccessLabel text="Year from" accessKey={SHARED_KEYS.yearFrom} />

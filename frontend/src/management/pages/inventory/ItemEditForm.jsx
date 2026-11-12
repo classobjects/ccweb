@@ -489,6 +489,9 @@ export default function ItemEditForm({
   const [splitNote, setSplitNote] = useState('')
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState('')
+  const [labeling, setLabeling] = useState(false)
+  const [labelError, setLabelError] = useState('')
+  const [labelNote, setLabelNote] = useState('')
   // Counts the saves made here. The history is read again on this as well
   // as on the item's version: a save whose read-back failed leaves the
   // version the form holds where it was.
@@ -1249,6 +1252,22 @@ export default function ItemEditForm({
     }
   }
 
+  // The item joins the print batch as saved; an item that cannot be labeled
+  // (sold, say) is refused in the server's words.
+  async function addToLabelBatch() {
+    setLabeling(true)
+    setLabelError('')
+    setLabelNote('')
+    try {
+      await api.addToLabelBatch([item.id])
+      setLabelNote('Added to the label batch')
+    } catch (err) {
+      setLabelError(err.message)
+    } finally {
+      setLabeling(false)
+    }
+  }
+
   const textRow = ([label, key, letter]) => (
     <label key={key} className="field" data-help={key}>
       <AccessLabel text={label} accessKey={letter} />
@@ -1790,6 +1809,14 @@ export default function ItemEditForm({
               lot. Its reason is shown under this row. */}
           <button
             type="button"
+            data-help="add_to_label_batch"
+            disabled={labeling}
+            onClick={addToLabelBatch}
+          >
+            Add to label batch
+          </button>
+          <button
+            type="button"
             data-help="delete_item"
             disabled={deleting}
             onClick={deleteItem}
@@ -1798,6 +1825,8 @@ export default function ItemEditForm({
           </button>
         </div>
         {deleteError && <p className="error">{deleteError}</p>}
+        {labelError && <p className="error">{labelError}</p>}
+        {labelNote && <output className="muted status-line">{labelNote}</output>}
         {splitting && (
           <SplitDialog
             item={item}
