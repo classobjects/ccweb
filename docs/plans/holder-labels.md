@@ -326,7 +326,7 @@ def test_an_unlabelled_item_is_never_stale(...): ...
 
 **Interfaces (all manager-only, under `/api/labels`):**
 - `GET /sheets` -> `list[LabelSheetOut]` (every `SheetLayout` field, plus `cells`).
-- `GET /run?source=batch|unlabelled|stale` -> `list[LabelRunOut]`, one per sheet code that has labels: `{sheet: str, labels: list[LabelOut]}`; `LabelOut = {item_id, item_code, lines: list[str]}`; item-number order; only labelable items. For `batch`, also `skipped: list[str]` -- item codes in the batch that are no longer labelable.
+- `GET /run?source=batch|unlabelled|stale` -> `list[LabelRunOut]`, one per sheet code that has labels: `{sheet: str, labels: list[LabelOut]}`; `LabelOut = {item_id, item_code, lines: list[str]}`; item-number order; only labelable items. `stale` first runs `refresh_stale` over every labelled item, so a change no save saw -- a vocabulary label renamed -- is caught too. For `batch`, also `skipped: list[str]` -- item codes in the batch that are no longer labelable.
 - `GET /batch` -> `list[LabelOut]`; `POST /batch` body `LabelItemsIn{item_ids}` -> adds; 422 naming every item code that is not labelable, adding none; `DELETE /batch/{item_id}` -> 204.
 - `POST /printed` body `LabelItemsIn{item_ids, source}` -> for each labelable id: `label_printed_at = now`, `label_text` from current lines, `label_stale = false`; when `source == "batch"`, `in_label_batch = false`. Returns `{recorded: int}`. Idempotent.
 
