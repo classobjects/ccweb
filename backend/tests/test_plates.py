@@ -4,9 +4,9 @@
 """Face and back plates, and where a note was printed (`app.plates`).
 
 A 2017-A $1 printed in Washington and one printed in Fort Worth carry
-different catalogue numbers, and the face plate says which -- FW before it is
+different catalog numbers, and the face plate says which -- FW before it is
 Fort Worth. The two numbers here are made up (the 9900s, past any real one):
-the catalogue's arrangement is never shipped (`docs/reference-data.md`).
+the catalog's arrangement is never shipped (`docs/reference-data.md`).
 """
 
 from __future__ import annotations
@@ -183,7 +183,7 @@ def test_plates_are_a_notes_and_not_a_coins(
     assert "face_plate_number" in refused.text
 
 
-def test_the_catalogue_tells_the_two_printings_apart(
+def test_the_catalog_tells_the_two_printings_apart(
     client: TestClient, admin_headers: dict[str, str]
 ) -> None:
     common = {

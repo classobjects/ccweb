@@ -22,7 +22,7 @@ it would hand `str(exc)` verbatim to whoever asked, and because
 `ExceptionMiddleware` handles the exception, it would never reach
 `ServerErrorMiddleware` -- no traceback logged, no re-raise in `TestClient`
 -- so a genuine bug that happened to be a `RuntimeError` would be a tidy
-JSON 500 labelled a server precondition. A class that means exactly one
+JSON 500 labeled a server precondition. A class that means exactly one
 thing avoids that: its three raise sites (`app.auctions._consigned_location`,
 `app.sales_venues.ensure_store_venue`, `app.sales_venues.store_venue_id`)
 answer the operator with a message, and everything else crashes loudly, the

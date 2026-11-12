@@ -135,18 +135,18 @@ def test_a_refused_add_writes_nothing(
     ]
 
 
-def test_a_cancelled_orders_stock_does_not_bar_a_lot_join(
+def test_a_canceled_orders_stock_does_not_bar_a_lot_join(
     db: Session,
     ebay_listing: Listing,
     admin_user: User,
     ebay_venue: SalesVenue,
 ) -> None:
-    """A cancelled order must not permanently bar an item from every lot.
+    """A canceled order must not permanently bar an item from every lot.
 
     A `sales_order_item` row is permanent even after the order that made it
-    is cancelled and its stock returned, so "sold units" restated as a bare
+    is canceled and its stock returned, so "sold units" restated as a bare
     join with no filter on order status would bar the item forever.
-    `sale_state.orders_holding` excludes a cancelled order via
+    `sale_state.orders_holding` excludes a canceled order via
     `OPEN_ORDER_STATUSES`; `_refuse_partial` reaches that same, single
     definition instead of a second one that forgets to.
 
@@ -164,7 +164,7 @@ def test_a_cancelled_orders_stock_does_not_bar_a_lot_join(
         status_code="paid",
     )
     order.sales_order_status_id = require_code(
-        db, SalesOrderStatus, "cancelled", "status"
+        db, SalesOrderStatus, "canceled", "status"
     )
     return_stock(db, order)
     db.flush()

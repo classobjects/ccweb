@@ -85,7 +85,7 @@ export function useAddOption() {
  * keeps it from going any further. Unhandled, the Escape would reach the
  * dialog the form sits in and close that, losing everything typed in it.
  */
-export function isCancellingEscape(e) {
+export function isCancelingEscape(e) {
   if (e.key !== 'Escape') return false
   e.preventDefault()
   e.stopPropagation()
@@ -125,6 +125,6 @@ export function useKeydownRef(handler) {
  */
 export function useEscapeCancels(cancel) {
   return useKeydownRef((e) => {
-    if (isCancellingEscape(e)) cancel()
+    if (isCancelingEscape(e)) cancel()
   })
 }

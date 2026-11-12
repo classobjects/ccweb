@@ -38,7 +38,7 @@ __all__ = [
     "aliases_by_row",
     "delete_all",
     "ids_named",
-    "normalise",
+    "normalize",
     "remove_alias",
     "resolve",
     "word_pattern",
@@ -53,7 +53,7 @@ class AliasError(ValueError):
     """An alias that cannot be added or removed, with the reason."""
 
 
-def normalise(text: str) -> str:
+def normalize(text: str) -> str:
     """A name with its runs of whitespace collapsed and its ends trimmed.
 
     Case is kept: every comparison of names here is case-insensitive
@@ -160,7 +160,7 @@ def ids_named(db: Session, model: type[ReferenceMixin], query: str | None) -> li
     "PR" is the Proof strike and "D" the Denver mint, but as substrings "s"
     would name the strike aliased "MS", and with it most of the collection.
     """
-    text = normalise(query or "")
+    text = normalize(query or "")
     if not text:
         return []
     whole = len(text) < SUBSTRING_FROM
@@ -196,7 +196,7 @@ def resolve(db: Session, model: type[ReferenceMixin], word: str) -> Resolved | N
     alias shared by two rows names neither -- a guess between them would be
     silent -- so it resolves to None.
     """
-    text = normalise(word or "")
+    text = normalize(word or "")
     if not text:
         return None
     found = db.scalar(select(model.id).where(model.code == text))
@@ -256,7 +256,7 @@ def add_alias(
     because `reference_merge.merge` catches `AliasError` broadly and would
     swallow any of them.
     """
-    text = normalise(alias)
+    text = normalize(alias)
     if not text:
         raise AliasError("An alias needs some text.")
     if len(text) > MAX_ALIAS:
@@ -304,7 +304,7 @@ def remove_alias(
     db: Session, model: type[ReferenceMixin], row_id: int, alias: str
 ) -> None:
     """Take a name away: retire a shipped one, delete one added here."""
-    existing = _existing(db, model, row_id, normalise(alias))
+    existing = _existing(db, model, row_id, normalize(alias))
     if existing is None or not existing.is_active:
         raise AliasError(f"{alias!r} is not an alias of this value.")
     if existing.source == ProvenanceSource.manual:

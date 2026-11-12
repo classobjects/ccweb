@@ -35,7 +35,7 @@ has a particular catalog number is one publisher's numbering scheme.
 - **The software never fetches, parses or stores search results.** The console
   can build the text of a web search for a note; what the owner reads there
   and types in is theirs to record.
-- **The format of a number is not the catalog.** Normalising how a typed
+- **The format of a number is not the catalog.** Normalizing how a typed
   number is written (`app/fr_format.py`,
   `frontend/src/management/friedberg-format.js`) restates no mapping.
 - **Tests use synthetic numbers.** Friedberg numbers in tests and fixtures are

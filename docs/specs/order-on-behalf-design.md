@@ -4,7 +4,7 @@ The management console is a superset of the shop: anything a customer can do, a
 manager can do from `/management`. For orders that means placing an order
 for someone else -- a phone, walk-in or in-person sale of a web-store item --
 changing an order after it is placed, and moving it through its statuses to
-shipped or cancelled. All of it happens on the **Sales** page
+shipped or canceled. All of it happens on the **Sales** page
 (`/management/sales`), which lists every order: shop checkouts, orders
 entered on a customer's behalf, and sales recorded from other platforms
 (`selling-design.md`). Because a manager can act for a buyer and re-price a
@@ -15,7 +15,7 @@ paid order, every order records who placed it and every change to it.
 | Question | Rule |
 |---|---|
 | Who an order can be for | **Any customer record**, account holder or not. Choosing an account with no customer record creates one. |
-| When contents may change | **While `pending` or `paid`, on an order that has never been packed.** Not from `packed` on, and not when `cancelled` or `refunded`. An order set back to `pending` or `paid` after it was packed, shipped or delivered (read from its status history) keeps its lines: its coins have left. |
+| When contents may change | **While `pending` or `paid`, on an order that has never been packed.** Not from `packed` on, and not when `canceled` or `refunded`. An order set back to `pending` or `paid` after it was packed, shipped or delivered (read from its status history) keeps its lines: its coins have left. |
 | Line prices | **The listing's price by default; a manager may override it** (not below zero). Existing lines keep the price they were bought at unless changed. |
 | Accountability | **Who placed the order, plus a history row for every change.** |
 | Shape | **One order-writing module (`app/order_writes.py`) behind separate manager endpoints.** The shop's `POST /api/orders` keeps its contract. |
@@ -108,30 +108,30 @@ another platform (`sales_writes`); an on-behalf order leaves them unset.
    returns `False`.
 
 **Status changes** (`PATCH /api/orders/{id}`, any `sales_order_status`
-code: `pending`, `paid`, `packed`, `shipped`, `delivered`, `cancelled`,
+code: `pending`, `paid`, `packed`, `shipped`, `delivered`, `canceled`,
 `refunded`, with the `version` the order was read at) lock the order row,
 write a `status` change row and bump `version`. No `version`: 422; a
 `version` the order has moved past: 409, so a status chosen from a stale
 page is not applied over a change its chooser never saw.
 
-- Cancelling an order that has not been packed returns its stock
-  (`return_stock`, through the same lock path). Cancelling one whose listing
+- Canceling an order that has not been packed returns its stock
+  (`return_stock`, through the same lock path). Canceling one whose listing
   has ended -- an outside sale, or a lot bought in the shop -- is refused
   while it is unpacked, because there is nothing to return the stock to.
-- Cancelling a `packed`, `shipped` or `delivered` order moves no stock; it is
+- Canceling a `packed`, `shipped` or `delivered` order moves no stock; it is
   how a refund is recorded, whatever the listing's state.
 - "Has been packed" is read from the order's status history, not only its
   status: an order set back from `shipped` to `pending` or `paid` still
-  returns no stock when it is cancelled or refunded.
-- **Refunding** moves stock exactly as cancelling does. Refunded while
+  returns no stock when it is canceled or refunded.
+- **Refunding** moves stock exactly as canceling does. Refunded while
   `pending` or `paid`, the coins never left: the stock is returned, refused
   in the same cases a cancellation is, and the order cannot then be moved on
-  except to `cancelled` (read from its status history). Refunded after
+  except to `canceled` (read from its status history). Refunded after
   packing moves no stock and may still be moved on.
-- Cancelling a `refunded` order moves no more stock: the refund already
+- Canceling a `refunded` order moves no more stock: the refund already
   returned it, or it left with the parcel.
-- A cancelled order cannot be moved to another status: its stock is back on
-  sale. Re-sending `cancelled` is harmless.
+- A canceled order cannot be moved to another status: its stock is back on
+  sale. Re-sending `canceled` is harmless.
 
 ## Endpoints
 
@@ -147,7 +147,7 @@ page is not applied over a change its chooser never saw.
 
 The manager endpoints' request schemas forbid extra fields. 422 for a
 quantity below 1, a unit price below 0, a listing twice in one order, or no
-lines -- an order is emptied by cancelling it. Shoppers cannot edit an order.
+lines -- an order is emptied by canceling it. Shoppers cannot edit an order.
 
 `OrderOut` carries `version`, `notes`, `placed_by_email`, each line's
 `listing_ended`, and `payment_adjustment_due`: true when the order is `paid`
@@ -183,9 +183,9 @@ is not the customer's, **Edit** on `pending` and `paid` orders, and
 **History** (`orders/OrderHistory.jsx`, changes grouped by edit). Each row's
 status is a select, saved as it is chosen with the order's `version`. Every
 option stays live. Choosing one the server would refuse sends nothing and
-says why above the table: `cancelled` or `refunded` on an unpacked outside
+says why above the table: `canceled` or `refunded` on an unpacked outside
 sale, or on an unpacked store order with a line whose listing has ended
-(`listing_ended`); and any other status on a cancelled order, whose stock
+(`listing_ended`); and any other status on a canceled order, whose stock
 is back on sale. The console reads "unpacked" from the current status; the
 server also reads the order's history.
 

@@ -58,7 +58,7 @@ doing more harm than described here is still welcome.
 - **Sign-in tokens are kept in the browser's `localStorage`**, where any
   script running on the site's own pages can read them. A cross-site
   scripting flaw would therefore let an attacker take a signed-in
-  session. Defences against that: the content security policy in
+  session. Defenses against that: the content security policy in
   `deploy/Caddyfile` runs only the site's own scripts and DigiCert's seal,
   and refuses inline scripts; React escapes everything it renders; and the
   pages never insert raw HTML. A stolen access token works for 30 minutes,

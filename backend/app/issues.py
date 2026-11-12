@@ -191,7 +191,7 @@ CURRENCY_ISSUES: dict[str, Issue] = {
         # or duplicated character and is invisible to equality.
         #
         # Edit distance alone is not enough either: a consecutive run of
-        # serials, bought and kept as a set, differs from its neighbour by
+        # serials, bought and kept as a set, differs from its neighbor by
         # edit distance 1 as the *normal* case, so edit-distance-1 alone
         # flags the run. Filtering by a "consecutive" attribute does not
         # rescue it: that attribute is not reliably applied.

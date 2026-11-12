@@ -71,7 +71,7 @@ new key and request on the server, then use *Reissue* on the order in the
 certificate authority's portal and paste in the request; DigiCert reissues
 at no charge and sends a new zip, and the key never travels. The example's
 commands follow: put your own domain where `classobjects.com` appears, and
-your organisation's country, state, town and name in `-subj`, which shows
+your organization's country, state, town and name in `-subj`, which shows
 stand-ins (`COUNTRY`, a two-letter code; `STATE`, `TOWN`, `BUSINESS`,
 `DOMAIN`), which openssl refuses until they are replaced.
 
@@ -134,7 +134,7 @@ when the Caddyfile is rendered.
 The authority checks that the domain is the server's by connecting to it,
 so before Caddy starts, the DNS records must point at the server and ports
 80 and 443 must reach it (step 8). Until they do, Caddy logs a failed
-attempt and tries again. Such a certificate carries no organisation's name
+attempt and tries again. Such a certificate carries no organization's name
 and comes with no site seal: leave `VITE_DIGICERT_SEAL_ID` unset.
 
 ## 2. Install the system

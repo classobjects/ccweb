@@ -98,7 +98,7 @@ def period_by_vendor(
 
     `columns` are the report's own: a `period` and a `vendor` column, then
     one per aggregate, each keyed by its aggregate's label. The first
-    aggregate must be the count of purchases, labelled `purchases` -- it
+    aggregate must be the count of purchases, labeled `purchases` -- it
     decides the empty case.
 
     Three queries at three grouping levels: the overall total (which also

@@ -221,7 +221,7 @@ Rules that hold across the API:
 
 - **Classifiers cross the API as codes, not ids** (`"grade": "MS64"`). An
   unknown code is a 422 naming the field; the API never invents a vocabulary
-  row. An unrecognised search filter is also a 422, never ignored -- a dropped
+  row. An unrecognized search filter is also a 422, never ignored -- a dropped
   filter returns the whole collection and looks like a result.
 - **Concurrent edits are detected.** Reads return a `version`; a write that
   sends a stale one is refused with 409 and the current state.

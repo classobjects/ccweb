@@ -169,7 +169,7 @@ def drop_database(conn: Connection, name: str) -> None:
     """Drop a database, ending the client sessions on it first.
 
     Client sessions only, and not `DROP DATABASE ... WITH (FORCE)`: an
-    autovacuum worker may be running on the database, and signalling one
+    autovacuum worker may be running on the database, and signaling one
     needs the pg_signal_autovacuum_worker role -- which the application user
     does not have, so the attempt raises and the drop fails intermittently.
     Workers exit when the database is dropped, so there is nothing to
@@ -590,7 +590,7 @@ def _auction_lot_problems(
             problems.append("has no result on a settled auction")
         if listing_status is not ListingStatus.ended:
             problems.append(f"its listing is {listing_status.value} after settlement")
-    elif status is AuctionStatus.cancelled:
+    elif status is AuctionStatus.canceled:
         problems.append("survived its auction's cancellation")
     else:
         problems.append(f"belongs to an auction in unknown status {status.value}")
@@ -614,7 +614,7 @@ def check_auction_invariant(db: Session) -> None:
       is never paused -- only a store listing is.
     - A `settled` auction has a result on every lot, and every lot's listing
       is `ended`.
-    - A `cancelled` auction has no lots: `cancel` deletes them.
+    - A `canceled` auction has no lots: `cancel` deletes them.
     - A `sold` lot has a hammer price and a buyer; any other lot has neither.
     - A lot details an auction-format listing. Not the converse: the Offer
       dialog puts a coin on eBay by auction with no `auction` behind it.

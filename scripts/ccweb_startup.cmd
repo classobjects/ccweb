@@ -33,7 +33,7 @@ rem  Pure cmd - no PowerShell. Uses backend\app\portpid.py for PIDs and
 rem  curl for readiness (curl.exe ships with Windows 10 1803 and later).
 rem ---------------------------------------------------------------------------
 
-rem An unrecognised argument is refused, never ignored. Git bash rewrites /lan
+rem An unrecognized argument is refused, never ignored. Git bash rewrites /lan
 rem into a path such as C:/Program Files/Git/lan, and ignoring that would
 rem start a frontend the caller asked to open to the network on loopback only.
 set "LAN="
@@ -41,7 +41,7 @@ if /I "%~1"=="/lan" set "LAN=1"
 if /I "%~1"=="--lan" set "LAN=1"
 if "%~1"=="" goto :args_ok
 if defined LAN goto :args_ok
-echo ERROR: unrecognised argument: %1
+echo ERROR: unrecognized argument: %1
 echo        usage: scripts\ccweb_startup.cmd [/lan ^| --lan]
 echo        from git bash write --lan: bash rewrites /lan into a path
 exit /b 2

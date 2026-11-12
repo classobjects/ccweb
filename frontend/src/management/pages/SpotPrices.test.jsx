@@ -187,7 +187,7 @@ describe('SpotPrices', () => {
     const user = await open()
     const box = screen.getByLabelText('New price for Silver')
     await user.type(box, typed)
-    // The button answers: a greyed-out one explains nothing.
+    // The button answers: a grayed-out one explains nothing.
     const button = within(row('Silver')).getByRole('button', { name: 'Record' })
     expect(button).toBeEnabled()
 
@@ -225,7 +225,7 @@ describe('SpotPrices', () => {
       // Words, not a figure: `0.00` here reads as the metal's price.
       expect(box).toHaveAttribute('placeholder', 'type a price')
       expect(box).toBeEnabled()
-      // Not greyed out before anything is typed: that reads as a dead page.
+      // Not grayed out before anything is typed: that reads as a dead page.
       expect(within(row(metal)).getByRole('button', { name: 'Record' })).toBeEnabled()
     }
     expect(screen.getByText(/click in the\s+metal.s/)).toBeVisible()
@@ -268,7 +268,7 @@ describe('SpotPrices', () => {
     expect(screen.getByLabelText('New price for Silver')).toHaveValue('31.50')
   })
 
-  it('greys the buttons out only while a price is being recorded', async () => {
+  it('grays the buttons out only while a price is being recorded', async () => {
     const user = await open()
     let answer
     api.recordMetalPrice.mockReturnValue(

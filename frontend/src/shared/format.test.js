@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { describe, expect, it } from 'vitest'
 
-import { date, dateTime, money, orderStatusText } from './format'
+import { date, dateTime, money } from './format'
 
 describe('money', () => {
   it('formats a decimal string as US currency', () => {
@@ -40,7 +40,7 @@ describe('money', () => {
     expect(money('12.5', 'CAD')).toBe('CA$12.50')
   })
 
-  it('shows an unrecognised currency code as written, never throws', () => {
+  it('shows an unrecognized currency code as written, never throws', () => {
     expect(money('12.5', 'GOLD')).toBe('12.5 GOLD')
   })
 
@@ -97,13 +97,5 @@ describe('date', () => {
     } finally {
       process.env.TZ = saved
     }
-  })
-})
-
-describe('orderStatusText', () => {
-  it('spells the stored cancelled as canceled, and leaves the rest as they are', () => {
-    expect(orderStatusText('cancelled')).toBe('canceled')
-    expect(orderStatusText('paid')).toBe('paid')
-    expect(orderStatusText('refunded')).toBe('refunded')
   })
 })

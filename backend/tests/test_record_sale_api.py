@@ -467,18 +467,18 @@ def test_recording_a_sale_ends_the_listing(
     assert reloaded.status.value == "ended"
 
 
-def test_a_recorded_outside_sale_cannot_be_cancelled(
+def test_a_recorded_outside_sale_cannot_be_canceled(
     client: TestClient,
     db: Session,
     ebay_listing: Listing,
     admin_headers: dict[str, str],
 ) -> None:
-    """Cancelling one would strand the item on `sold` with no way back.
+    """Canceling one would strand the item on `sold` with no way back.
 
     `record_sale` ended the listing, so `order_writes.return_stock` would add
     the quantity back to an **ended** listing -- whose generated `is_active`
     is false, which is exactly the condition `_after_stock_change` needs to be
-    true before it moves the item off `sold`. The order would read cancelled
+    true before it moves the item off `sold`. The order would read canceled
     while the listing carried phantom stock and the item stayed `sold`
     forever, refused by `offering_writes._refuse_sold` on every later attempt
     to offer it. The refusal is the remedy: nothing is written at all.
@@ -493,12 +493,12 @@ def test_a_recorded_outside_sale_cannot_be_cancelled(
 
     response = client.patch(
         f"/api/orders/{order_id}",
-        json={"status": "cancelled", "version": version},
+        json={"status": "canceled", "version": version},
         headers=admin_headers,
     )
     assert response.status_code == 409, response.text
     assert "eBay" in response.json()["detail"]
-    assert "cannot be cancelled" in response.json()["detail"]
+    assert "cannot be canceled" in response.json()["detail"]
 
     # Nothing moved: the sale still stands, and the item is still sold rather
     # than holding stock on a listing no one can see.
@@ -513,7 +513,7 @@ def test_a_recorded_outside_sale_cannot_be_cancelled(
     assert still_paid.json()["status"] == "paid"
 
 
-def test_an_auction_house_sale_can_be_cancelled_as_a_refund(
+def test_an_auction_house_sale_can_be_canceled_as_a_refund(
     client: TestClient,
     db: Session,
     heritage_listing: Listing,
@@ -532,7 +532,7 @@ def test_an_auction_house_sale_can_be_cancelled_as_a_refund(
     `return_stock` is not called for a shipped order, so nothing is added
     back to the ended listing and nothing is stranded -- the item stays
     `sold`, which is the truth after an auction house has shipped it, and
-    cancelling is how the refund is recorded. The assertions below are that
+    canceling is how the refund is recorded. The assertions below are that
     pair: the order really cancels, and no stock came back.
 
     The mutation that proves it: drop `previous not in
@@ -552,12 +552,12 @@ def test_an_auction_house_sale_can_be_cancelled_as_a_refund(
 
     response = client.patch(
         f"/api/orders/{order_id}",
-        json={"status": "cancelled", "version": started.json()["version"]},
+        json={"status": "canceled", "version": started.json()["version"]},
         headers=admin_headers,
     )
 
     assert response.status_code == 200, response.text
-    assert response.json()["status"] == "cancelled"
+    assert response.json()["status"] == "canceled"
     # No stock returned, which is what made this safe to allow: the listing
     # the sale ended stays ended and empty, and the coin stays sold.
     db.expire_all()
@@ -568,4 +568,4 @@ def test_an_auction_house_sale_can_be_cancelled_as_a_refund(
     assert item_of(listing).disposition.code == "sold"
     current = client.get(f"/api/orders/{order_id}", headers=admin_headers)
     assert current.status_code == 200
-    assert current.json()["status"] == "cancelled"
+    assert current.json()["status"] == "canceled"

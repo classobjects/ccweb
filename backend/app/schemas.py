@@ -668,7 +668,7 @@ class OrderItemOut(BaseModel):
     #: holds costs. None for a shopper, and on a line that carries none.
     snapshot: dict[str, object] | None = None
     #: Whether the listing this line bought from has ended -- a lot bought in
-    #: the shop, or any outside sale. Cancelling an unshipped order with such
+    #: the shop, or any outside sale. Canceling an unshipped order with such
     #: a line is refused (`routers.orders._no_stock_to_return`); the console
     #: reads this to gray the option out instead of offering it and failing.
     listing_ended: bool = False
@@ -739,7 +739,7 @@ class OrderStatusUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     #: A `sales_order_status` code: pending, paid, packed, shipped,
-    #: delivered, cancelled, refunded.
+    #: delivered, canceled, refunded.
     status: str = Field(min_length=1, max_length=64)
     #: The version the order was read at; a mismatch is a 409, so a status
     #: chosen from a stale page is not applied over a change never seen.
@@ -2486,7 +2486,7 @@ class AuctionOut(BaseModel):
     ends_at: datetime | None = None
     status: str
     #: When custody moved to the house. Null unless the house holds its lots:
-    #: settling or cancelling the auction clears it.
+    #: settling or canceling the auction clears it.
     consigned_on: date | None = None
     notes: str | None = None
     #: Send this back on a PATCH to be told about a conflicting edit.
@@ -3007,7 +3007,7 @@ class FriedbergNumberCreate(BaseModel):
             and self.seal_color is None
         ):
             raise ValueError(
-                f"Set the seal colour before recording {self.fr_number}: the "
+                f"Set the seal color before recording {self.fr_number}: the "
                 "seal is part of its type."
             )
         return self

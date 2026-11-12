@@ -245,7 +245,7 @@ def test_a_near_duplicate_serial_is_found_within_one_order(
 
     Edit distance alone is not enough: a consecutive run of serials --
     exactly how star notes are deliberately bought and stored -- differs from
-    its neighbour by edit distance 1 as the normal case, so the check also
+    its neighbor by edit distance 1 as the normal case, so the check also
     requires the two serials to differ in length. That is what a dropped or
     duplicated character does and a consecutive run does not.
     """

@@ -553,37 +553,37 @@ export default function ItemEditForm({
   }, [])
 
   useEffect(() => {
-    let cancelled = false
+    let canceled = false
     api
       .getInventoryItem(itemId)
       .then((body) => {
-        if (cancelled) return
+        if (canceled) return
         adopt(body)
         setError('')
       })
       .catch((err) => {
-        if (!cancelled) setError(err.message)
+        if (!canceled) setError(err.message)
       })
     return () => {
-      cancelled = true
+      canceled = true
     }
   }, [itemId, adopt])
 
   useEffect(() => {
-    let cancelled = false
+    let canceled = false
     api
       .getItemErrors(itemId)
       .then((body) => {
-        if (cancelled) return
+        if (canceled) return
         const rows = errorRows(body)
         setSavedErrors(rows)
         setErrors(rows)
       })
       .catch((err) => {
-        if (!cancelled) setErrorsReadError(err.message)
+        if (!canceled) setErrorsReadError(err.message)
       })
     return () => {
-      cancelled = true
+      canceled = true
     }
   }, [itemId])
 
@@ -599,12 +599,12 @@ export default function ItemEditForm({
   // field being edited keeps its base, so a change to it shows as a conflict
   // to resolve rather than being overwritten or adopted unseen.
   useEffect(() => {
-    let cancelled = false
+    let canceled = false
     function check() {
       api
         .getInventoryItem(itemId)
         .then((fresh) => {
-          if (cancelled || versionRef.current == null) return
+          if (canceled || versionRef.current == null) return
           // Equal is nothing new; lower is a read that left before a save's
           // read-back and came back after it, and would restore the older item.
           if (fresh.version <= versionRef.current) return
@@ -622,7 +622,7 @@ export default function ItemEditForm({
     const timer = setInterval(check, CHECK_EVERY_MS)
     window.addEventListener('focus', check)
     return () => {
-      cancelled = true
+      canceled = true
       clearInterval(timer)
       window.removeEventListener('focus', check)
     }
@@ -667,25 +667,25 @@ export default function ItemEditForm({
   const itemVersion = item?.version ?? null
   useEffect(() => {
     if (draftKey === '{}') return undefined
-    let cancelled = false
+    let canceled = false
     const timer = setTimeout(() => {
       const changes = certsCleaned(JSON.parse(draftKey))
       api
         .previewItem(itemId, { changes })
         .then((body) => {
-          if (!cancelled) setPreview(body ?? null)
+          if (!canceled) setPreview(body ?? null)
         })
         .catch((err) => {
           // Only a refusal of the change itself leaves the last preview up.
           // Any other failure says nothing about the item, and a preview
           // left standing would show values no longer asked about.
-          if (!cancelled && err?.status !== 422 && err?.status !== 409) {
+          if (!canceled && err?.status !== 422 && err?.status !== 409) {
             setPreview(null)
           }
         })
     }, PREVIEW_DELAY_MS)
     return () => {
-      cancelled = true
+      canceled = true
       clearTimeout(timer)
     }
   }, [itemId, draftKey, itemVersion])
@@ -988,7 +988,7 @@ export default function ItemEditForm({
         if (!was) return [entry]
         // Filed: held no longer, or the next Save would file it twice.
         if (!refused.has(entry.key)) return []
-        // Refused: held with its reason -- or, relabelled meanwhile, with
+        // Refused: held with its reason -- or, relabeled meanwhile, with
         // the new role, to be filed with that.
         return [entry === was ? refused.get(entry.key) : entry]
       }),
@@ -1197,7 +1197,7 @@ export default function ItemEditForm({
    * is saved.
    */
   async function save() {
-    // Save is never greyed out: pressed with something in the way, it says
+    // Save is never grayed out: pressed with something in the way, it says
     // what, and sends nothing.
     if (notYet) {
       setError(notYet)

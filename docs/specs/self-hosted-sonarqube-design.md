@@ -114,7 +114,7 @@ The frontend's `vitest run --coverage` writes `frontend/coverage/lcov.info`.
 Ignored by git: `coverage.xml`, `.scannerwork/`, `frontend/coverage/`,
 `.mcp.json`, `scripts/.sonar/`.
 
-**Rules.** Every language is analysed with the server's built-in `Sonar way`
+**Rules.** Every language is analyzed with the server's built-in `Sonar way`
 profile but JavaScript, whose profile is `ccwebdb way`: a child of `Sonar way`,
 so it follows the built-in's changes, with one rule switched off --
 `javascript:S6846`, which forbids the `accesskey` attribute. The console gives

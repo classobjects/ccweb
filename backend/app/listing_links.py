@@ -14,7 +14,7 @@ Two identifiers name the listing an item was bought from: its web address
 At an auction house or a shop -- any vendor but eBay and Whatnot, whose
 pages are orders of many listings -- a purchase is usually one lot, so the
 lot's page is the purchase's web address too. An item with no address takes
-its purchase's when that is recognisably a lot's page (it carries a lot id),
+its purchase's when that is recognizably a lot's page (it carries a lot id),
 and a purchase with none takes the one address its items share. A purchase
 whose items name several lots gives none and takes none.
 

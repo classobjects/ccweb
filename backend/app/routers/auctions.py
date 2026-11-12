@@ -8,13 +8,13 @@ same as an offer, and a house's fees and hammer prices are staff-only figures
 the shop's own catalog endpoints never touch.
 
 Every transition goes through `app.auctions`: adding and removing lots,
-scheduling, consigning, closing, cancelling and settling. Creating a `draft`
+scheduling, consigning, closing, canceling and settling. Creating a `draft`
 auction, editing its wording and dates, and changing a lot's `lot_number`
 or `reserve` are plain writes here, the way `routers.offers.update_listing`
 edits a listing's price and wording, because none of those fields carries a
 consequence `app.auctions` needs to own. This module resolves ids and codes,
 owns the transaction, and shapes the response; it decides nothing about
-what may be added, removed, consigned, closed, cancelled or settled.
+what may be added, removed, consigned, closed, canceled or settled.
 
 **`AuctionRefused` and its narrower `SettlementInputInvalid`, and
 `sales_writes.SaleRefused` and its narrower `SaleInputInvalid`, are never
@@ -390,7 +390,7 @@ def remove_auction_lot(
 ) -> AuctionOut:
     """Take a lot out of its auction: end its offer, as an ordinary End.
 
-    `AuctionRefused` -- the auction has closed, settled or been cancelled, or
+    `AuctionRefused` -- the auction has closed, settled or been canceled, or
     the auction is consigned and no return location was given -- is left to
     propagate to the handler `app.main` registers for it; see this module's
     own docstring for why nothing here catches it.

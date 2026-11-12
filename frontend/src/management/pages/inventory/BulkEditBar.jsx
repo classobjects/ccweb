@@ -254,7 +254,7 @@ export default function BulkEditBar({
   const topic = HELP_FOR[field] ?? field
 
   async function apply() {
-    // Live with nothing chosen, and says what it wants rather than greying.
+    // Live with nothing chosen, and says what it wants rather than graying.
     if (value === '') {
       setError(
         type === 'location'

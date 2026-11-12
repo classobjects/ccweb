@@ -22,7 +22,7 @@ REPO = Path(__file__).resolve().parents[2]
 APP = REPO / "backend" / "app"
 
 
-def _normalise(name: str) -> str:
+def _normalize(name: str) -> str:
     """PEP 503 form, so `Pillow`, `pillow` and `python_multipart` compare."""
     return re.sub(r"[-_.]+", "-", name).lower()
 
@@ -41,7 +41,7 @@ def _imported_top_level_modules() -> set[str]:
 
 def _name(spec: str) -> str:
     """The distribution name of a requirement string."""
-    return _normalise(re.split(r"[\s\[<>=!~;(]", spec.strip(), maxsplit=1)[0])
+    return _normalize(re.split(r"[\s\[<>=!~;(]", spec.strip(), maxsplit=1)[0])
 
 
 def _runtime_distributions() -> set[str]:
@@ -76,7 +76,7 @@ def test_every_imported_third_party_module_is_a_runtime_dependency() -> None:
     for module in _imported_top_level_modules() - set(sys.stdlib_module_names):
         if module in {"app", "__future__"}:
             continue
-        dists = {_normalise(d) for d in installed.get(module, [])}
+        dists = {_normalize(d) for d in installed.get(module, [])}
         assert dists, f"`{module}` is imported by app/ but no installed dist has it"
         if not dists & runtime:
             missing[module] = sorted(dists)

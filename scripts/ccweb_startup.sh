@@ -30,7 +30,7 @@ case "${1:-}" in
     "") ;;
     --lan) LAN=1 ;;
     *)
-        echo "ERROR: unrecognised argument: $1"
+        echo "ERROR: unrecognized argument: $1"
         echo "       usage: ./scripts/ccweb_startup.sh [--lan]"
         exit 2 ;;
 esac

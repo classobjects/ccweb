@@ -44,7 +44,7 @@ def test_an_ordinary_shop_order_s_listing_has_not_ended(
     assert placed.json()["items"][0]["listing_ended"] is False
 
 
-def test_cancelling_a_shop_order_that_bought_a_lot_is_refused(
+def test_canceling_a_shop_order_that_bought_a_lot_is_refused(
     client: TestClient,
     db: Session,
     store_lot_listing: Listing,
@@ -71,11 +71,11 @@ def test_cancelling_a_shop_order_that_bought_a_lot_is_refused(
     # What the console reads to refuse Cancel with its reason, unsent.
     assert placed.json()["items"][0]["listing_ended"] is True
 
-    refused = _set(client, admin_headers, order_id, "cancelled")
+    refused = _set(client, admin_headers, order_id, "canceled")
 
     assert refused.status_code == 409, refused.text
     detail = refused.json()["detail"]
-    assert "cannot be cancelled" in detail
+    assert "cannot be canceled" in detail
     assert f"#{listing_id}" in detail
     # Nothing moved: no phantom stock, and the order still stands.
     db.expire_all()
@@ -87,7 +87,7 @@ def test_cancelling_a_shop_order_that_bought_a_lot_is_refused(
     assert current["status"] == "pending"
 
 
-def test_refunding_an_unshipped_lot_order_is_refused_like_cancelling(
+def test_refunding_an_unshipped_lot_order_is_refused_like_canceling(
     client: TestClient,
     db: Session,
     store_lot_listing: Listing,
@@ -112,7 +112,7 @@ def test_refunding_an_unshipped_lot_order_is_refused_like_cancelling(
     assert current["status"] == "pending"
 
 
-def test_a_shipped_lot_order_can_still_be_cancelled_as_a_refund(
+def test_a_shipped_lot_order_can_still_be_canceled_as_a_refund(
     client: TestClient,
     db: Session,
     store_lot_listing: Listing,
@@ -121,8 +121,8 @@ def test_a_shipped_lot_order_can_still_be_cancelled_as_a_refund(
 ) -> None:
     """The refusal must match the danger, and a shipped order has none.
 
-    Cancelling returns stock only when the order has not shipped
-    (`SHIPPED_STATUSES`), so cancelling a shipped one moves nothing that
+    Canceling returns stock only when the order has not shipped
+    (`SHIPPED_STATUSES`), so canceling a shipped one moves nothing that
     could be stranded -- it is how a refund is recorded once the coins have
     left. Refusing it would buy no safety and close a real workflow, so the
     refusal asks about the order's status, not only the listing.
@@ -133,10 +133,10 @@ def test_a_shipped_lot_order_can_still_be_cancelled_as_a_refund(
     order_id = placed.json()["id"]
     assert _set(client, admin_headers, order_id, "shipped").status_code == 200
 
-    cancelled = _set(client, admin_headers, order_id, "cancelled")
+    canceled = _set(client, admin_headers, order_id, "canceled")
 
-    assert cancelled.status_code == 200, cancelled.text
-    assert cancelled.json()["status"] == "cancelled"
+    assert canceled.status_code == 200, canceled.text
+    assert canceled.json()["status"] == "canceled"
     # And no stock came back: a shipped order returns none, which is exactly
     # why this was safe to allow.
     db.expire_all()
@@ -195,21 +195,21 @@ def test_mine_is_only_the_callers_own_orders_even_for_an_administrator(
     assert [o["customer_email"] for o in customers_own] == ["customer@example.com"]
 
 
-def test_a_cancelled_order_cannot_be_revived_after_its_stock_returned(
+def test_a_canceled_order_cannot_be_revived_after_its_stock_returned(
     client: TestClient,
     listing: Listing,
     customer_headers: dict[str, str],
     admin_headers: dict[str, str],
     db: Session,
 ) -> None:
-    """Cancelling returned the stock; moving the order on again would sell it twice.
+    """Canceling returned the stock; moving the order on again would sell it twice.
 
-    5 on hand, 2 ordered leaves 3; cancelling puts back 2 for 5. Setting the
+    5 on hand, 2 ordered leaves 3; canceling puts back 2 for 5. Setting the
     order to paid afterwards would leave the 5 still listed -- an order for
     2 standing on stock already offered to the next buyer.
     """
     order = post_order(client, customer_headers, listing.id, 2).json()
-    assert _set(client, admin_headers, order["id"], "cancelled").status_code == 200
+    assert _set(client, admin_headers, order["id"], "canceled").status_code == 200
 
     for status in ("pending", "paid", "shipped"):
         response = _set(client, admin_headers, order["id"], status)
@@ -218,4 +218,4 @@ def test_a_cancelled_order_cannot_be_revived_after_its_stock_returned(
     db.refresh(listing)
     assert listing.quantity_available == 5
     current = client.get(f"/api/orders/{order['id']}", headers=admin_headers).json()
-    assert current["status"] == "cancelled"
+    assert current["status"] == "canceled"

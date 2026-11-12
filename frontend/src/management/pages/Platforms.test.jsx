@@ -242,7 +242,7 @@ describe('Platforms', () => {
   // so unless the setup re-arms it the guard is disarmed for the dialog's
   // whole life: a save that SUCCEEDS then never reaches `onSaved`, the dialog
   // never closes and the button sits on "Saving..." forever. The guard itself
-  // is load-bearing -- see "does not apply a save the user cancelled" below,
+  // is load-bearing -- see "does not apply a save the user canceled" below,
   // which is exactly what it is for -- so it is re-armed, not removed.
   it('applies a successful save in StrictMode, where effects run twice', async () => {
     const user = userEvent.setup()

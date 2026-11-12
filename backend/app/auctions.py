@@ -293,7 +293,7 @@ def add_lot(
 
     **Builds the row through the `auction`/`listing` relationships, not their
     foreign-key columns.** `AuctionLot(auction_id=..., listing_id=...)` fires
-    no backref event -- SQLAlchemy synchronises a *loaded* collection only
+    no backref event -- SQLAlchemy synchronizes a *loaded* collection only
     when a relationship attribute is assigned, never from a bare FK column --
     so a session that had already read `auction.lots` before this call would
     keep seeing the old, short list for the rest of the session, and a
@@ -387,7 +387,7 @@ def remove_lot(
     each item's location history.
 
     Raises `AuctionRefused` if the auction has closed, settled or been
-    cancelled. **`closed` refuses whether or not the auction was consigned**:
+    canceled. **`closed` refuses whether or not the auction was consigned**:
     once closed, the sale has happened and the only ways out are `settle`
     and `cancel`; a lot that did not sell is `AuctionLotResult.withdrawn`, a
     settlement result, not a removal with no record of what became of it.
@@ -430,7 +430,7 @@ def _remove_lot(
     Separate so `cancel`, whose status boundary is wider (it accepts
     `closed`, `remove_lot` does not), can remove each of an auction's lots
     without `_LOTS_REMOVABLE` refusing an auction `cancel` has already
-    judged cancellable.
+    judged cancelable.
 
     If the house still holds something of this auction's
     (`auction.consigned_on is not None` -- **not** `auction.status is
@@ -528,7 +528,7 @@ def refuse_unless_lot_editable(db: Session, auction_lot: AuctionLot) -> None:
     `routers.auctions.update_auction_lot` writes `lot_number` and `reserve`
     with a plain `setattr` after asking this. The boundary is
     `_LOTS_REMOVABLE`, the identical tuple `remove_lot` uses: `draft`, `scheduled` or
-    `consigned`, never `closed`, `settled` or `cancelled`. A lot number and a
+    `consigned`, never `closed`, `settled` or `canceled`. A lot number and a
     reserve are both things set *before* the sale runs -- once the auction is
     `closed`, the lot numbers are part of the record the house's statement is
     reconciled against, and a reserve is meaningless once a result exists to
@@ -706,22 +706,22 @@ def cancel(
     Each lot is removed exactly as `remove_lot` removes one -- ending its
     offer, resuming any store listing it paused, dissolving its sales lot --
     so nothing is left claimed by a sale that is not happening. The removals
-    run before the status moves to `cancelled`.
+    run before the status moves to `canceled`.
 
-    **Accepts every status except `settled` and `cancelled`, `closed`
+    **Accepts every status except `settled` and `canceled`, `closed`
     included.** The spec's line `draft -> scheduled -> [consigned] -> closed
-    -> settled, or cancelled` makes `cancelled` an alternative terminal state
+    -> settled, or canceled` makes `canceled` an alternative terminal state
     from anywhere before `settled`: a closed auction whose settlement is
     being abandoned is a real case. Lots are removed through `_remove_lot`,
     not the public `remove_lot`, so a `closed` auction -- which
-    `_LOTS_REMOVABLE` refuses lot by lot -- can still be cancelled whole.
+    `_LOTS_REMOVABLE` refuses lot by lot -- can still be canceled whole.
 
     **Takes the `auction` row FOR UPDATE first, as `settle` does**
     (`_lock_auction`). Both are legal on a `closed` auction, and a `cancel`
     that reached the coins first and wrote the auction row last would take
     lots -> items -> listings -> auction, the inverse of `settle`: a Postgres
     deadlock, an HTTP 500 on a money path.
-    `test_cancelling_an_auction_races_settling_it`
+    `test_canceling_an_auction_races_settling_it`
     (`tests/test_settlement_race.py`) is the proof. `add_lot`, `remove_lot`
     and `consign` take the auction row first for the same reason: `cancel`
     is legal on their statuses too. The status and custody checks below
@@ -737,7 +737,7 @@ def cancel(
     lot would take the sales lot rows in the order the lots were added to
     the auction, which need not be ascending, and a receipt or an item edit
     naming coins from two of them takes both rows at once --
-    `test_cancelling_an_auction_races_a_receipt_across_its_lots`
+    `test_canceling_an_auction_races_a_receipt_across_its_lots`
     (`tests/test_settlement_race.py`). Each removal's own `end_offer` then
     re-locks rows this pass already holds, and its return from consignment
     writes item rows held the same way.
@@ -752,10 +752,10 @@ def cancel(
     rest. The requirement is checked here as well as in `_remove_lot`,
     because a consigned auction with **no** lots never enters the removal
     loop:
-    `test_cancelling_a_consigned_auction_with_no_lots_requires_a_return_location`.
+    `test_canceling_a_consigned_auction_with_no_lots_requires_a_return_location`.
 
     Raises `AuctionRefused` if the auction has already been settled or
-    cancelled, or if custody is still at the house and
+    canceled, or if custody is still at the house and
     `returned_to_location_id` is missing.
 
     Needs no `offering_writes.refuse_if_lot_unheld`, as for `remove_lot`
@@ -763,7 +763,7 @@ def cancel(
     `_remove_lot`, on a listing named by this auction's own lot rows.
     """
     auction = _lock_auction(db, auction.id)
-    if auction.status in (AuctionStatus.settled, AuctionStatus.cancelled):
+    if auction.status in (AuctionStatus.settled, AuctionStatus.canceled):
         raise AuctionRefused(f"auction #{auction.id} is already {auction.status.value}")
     if auction.consigned_on is not None and returned_to_location_id is None:
         raise AuctionRefused(
@@ -787,7 +787,7 @@ def cancel(
             user_id=user_id,
         )
     auction.consigned_on = None
-    auction.status = AuctionStatus.cancelled
+    auction.status = AuctionStatus.canceled
     db.flush()
 
 
@@ -858,7 +858,7 @@ def _lock_auction(db: Session, auction_id: int) -> Auction:
     of them or by none. One taking this level and another not is the "caller
     that bypasses the owner" shape, one level up: a `settle` that took it
     while `cancel` did not would deadlock against it, an HTTP 500
-    (`test_cancelling_an_auction_races_settling_it`), and so would a
+    (`test_canceling_an_auction_races_settling_it`), and so would a
     `cancel` that took it against a `consign` whose item moves flushed
     before its `UPDATE auction`. Any transition that reaches a coin must
     take this first as well.
@@ -906,7 +906,7 @@ def _lots_of(db: Session, auction: Auction) -> list[AuctionLot]:
     these rows, so a stale collection here is a lot left unsettled inside a
     transaction that then marks the auction `settled`; `cancel` removes every
     one of them, so a stale collection there is a lot left live under an
-    auction that reads `cancelled`. A fresh read closes that only together
+    auction that reads `canceled`. A fresh read closes that only together
     with the auction lock: `add_lot` takes `_lock_auction` first, so it
     cannot insert a lot between another transition's read and its commit.
 

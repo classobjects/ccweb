@@ -66,7 +66,7 @@ def test_orders_report_how_much_is_outstanding(
 def test_a_missing_line_counts_as_outstanding(
     client: TestClient, admin_headers: dict[str, str], db: Session
 ) -> None:
-    """`missing` means paid for, not cancelled, never arrived -- not `outstanding=0`.
+    """`missing` means paid for, not canceled, never arrived -- not `outstanding=0`.
 
     An order whose only receivable line is `missing` must still be offered by
     `GET /api/purchase-orders`, or the late arrival has no route back in

@@ -314,7 +314,7 @@ describe('Listings', () => {
     renderPage()
     await openEditor(user)
     fireEvent.keyDown(document, { key: 's', ctrlKey: true })
-    // The whole payload, like its neighbours: the API is mocked here, so a
+    // The whole payload, like its neighbors: the API is mocked here, so a
     // shortcut that saved a different body than the button does would pass a
     // bare "was it called" every time.
     await waitFor(() =>

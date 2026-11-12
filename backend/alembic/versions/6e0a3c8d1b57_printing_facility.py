@@ -6,7 +6,7 @@
 The printing location, with the face and back plate
 numbers already on `currency_detail`, tells two Friedberg numbers apart --
 Washington's and Fort Worth's printings of one series are numbered
-separately -- so it is on the note and on the catalogue row, and part of the catalogue's identity index as
+separately -- so it is on the note and on the catalog row, and part of the catalog's identity index as
 `web_press` is. Every value starts empty; a note's is read from its face plate
 when one is recorded (`app.plates`).
 
@@ -38,7 +38,7 @@ _IDENTITY = (
 
 
 def upgrade() -> None:
-    """Add the column to the note and the catalogue, and to the identity."""
+    """Add the column to the note and the catalog, and to the identity."""
     for table in ("currency_detail", "friedberg_number"):
         op.add_column(table, sa.Column("printing_facility", sa.String(2), nullable=True))
         op.create_check_constraint(

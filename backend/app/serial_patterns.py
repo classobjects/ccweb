@@ -87,7 +87,7 @@ DIGIT_PATTERNS: frozenset[str] = frozenset(
 )
 
 
-#: Every designation `analyse` can return: the codes whose links this
+#: Every designation `analyze` can return: the codes whose links this
 #: module judges as its own, and the only ones it does.
 DESIGNATIONS: frozenset[str] = DIGIT_PATTERNS | {
     "low_serial",
@@ -158,7 +158,7 @@ def _pattern_designations(d: str) -> set[str]:
     return found
 
 
-def analyse(serial: str) -> set[str]:
+def analyze(serial: str) -> set[str]:
     """Every designation this serial earns, as `item_attribute` codes."""
     found: set[str] = set()
     if not serial:
@@ -256,7 +256,7 @@ def run(db: Session, *, commit: bool) -> tuple[Counter, list[tuple[str, str]]]:
     to_remove: list[tuple[int, int]] = []
 
     for item_id, item_code, serial in rows:
-        earned = analyse(serial) if serial else set()
+        earned = analyze(serial) if serial else set()
         earned_ids = {attribute_ids[c] for c in earned if c in attribute_ids}
         for stale_id in sorted(mine.get(item_id, set()) - earned_ids):
             stats[f"stale:{codes[stale_id]}"] += 1

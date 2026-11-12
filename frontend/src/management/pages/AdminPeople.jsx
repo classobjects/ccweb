@@ -199,7 +199,7 @@ function Accounts({ notify }) {
           <button onClick={() => setAdding(true)}>New account</button>
         </div>
       )}
-      {/* On a phone each row stacks into a card, a line per labelled cell. */}
+      {/* On a phone each row stacks into a card, a line per labeled cell. */}
       <table className="table stacks">
         <thead>
           <tr>
@@ -443,7 +443,7 @@ function Customers({ notify }) {
   return (
     <>
       {error && <p className="error">{error}</p>}
-      {/* On a phone each row stacks into a card, a line per labelled cell. */}
+      {/* On a phone each row stacks into a card, a line per labeled cell. */}
       <table className="table stacks">
         <thead>
           <tr>

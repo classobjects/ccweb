@@ -54,16 +54,16 @@ export default function OrderEditor({ order, onSaved, onClose }) {
   useSaveShortcut(save, !saving)
 
   useEffect(() => {
-    let cancelled = false
+    let canceled = false
     Promise.all([api.listCustomers(), api.listUsers()])
       .then(([customerRows, userRows]) => {
-        if (cancelled) return
+        if (canceled) return
         setCustomers(customerRows)
         setAccounts(
           userRows.filter((u) => !customerRows.some((c) => c.user_id === u.id)),
         )
       })
-      .catch((err) => !cancelled && setError(err.message))
+      .catch((err) => !canceled && setError(err.message))
     // Listing price and stock for lines already on the order, in one request
     // for every line. Any status: a line's listing may have ended since.
     const ids = (order?.items ?? []).map((item) => item.listing_id)
@@ -71,7 +71,7 @@ export default function OrderEditor({ order, onSaved, onClose }) {
       api
         .listListings({ ids, status: 'all' })
         .then((listings) => {
-          if (cancelled) return
+          if (canceled) return
           const byId = new Map(listings.map((listing) => [listing.id, listing]))
           setLines((current) =>
             current.map((line) => {
@@ -90,7 +90,7 @@ export default function OrderEditor({ order, onSaved, onClose }) {
           )
         })
         .catch((err) => {
-          if (cancelled) return
+          if (canceled) return
           setLines((current) =>
             current.map((line) =>
               ids.includes(line.listing_id)
@@ -101,7 +101,7 @@ export default function OrderEditor({ order, onSaved, onClose }) {
         })
     }
     return () => {
-      cancelled = true
+      canceled = true
     }
   }, [order])
 
@@ -235,7 +235,7 @@ export default function OrderEditor({ order, onSaved, onClose }) {
           </label>
         </div>
 
-        {/* On a phone each row stacks into a card, a line per labelled cell. */}
+        {/* On a phone each row stacks into a card, a line per labeled cell. */}
         <table className="table stacks">
           <thead>
             <tr>

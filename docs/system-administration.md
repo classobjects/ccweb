@@ -706,7 +706,7 @@ and when.
 covers one item or many, all or nothing.
 
 Four outcomes: `received`, `missing`, `returned`, `canceled`. `missing` means
-paid for, not cancelled, never arrived; a missing item can still be received
+paid for, not canceled, never arrived; a missing item can still be received
 when it turns up.
 
 - `arrived_on` is a **calendar date**, not a timestamp: a parcel that arrived
@@ -910,33 +910,33 @@ above is manager-only.
 ## Sales
 
 A sales order records what a customer bought, at what price, and where it is
-in fulfilment. **Sales** (`/management/sales`) lists every sales order, newest first: when it was placed, the customer (and
+in fulfillment. **Sales** (`/management/sales`) lists every sales order, newest first: when it was placed, the customer (and
 who entered it, when that was someone else), lines at the price paid, total
 and status (`GET /api/orders`). The shop's **Your
 orders** page is only the signed-in person's own (`GET /api/orders?mine=true`)
 and has no status control; order administration lives in the console alone.
 
 Status is changed from the order's row (`PATCH /api/orders/{id}`) through
-pending, paid, packed, shipped, delivered, cancelled, refunded.
+pending, paid, packed, shipped, delivered, canceled, refunded.
 
-**Cancelling is one way.** A cancelled order cannot move to any other status
-(409); place a new order instead. Re-sending `cancelled` is harmless.
-Cancelling an order that is pending or paid returns its stock to the catalog
+**Canceling is one way.** A canceled order cannot move to any other status
+(409); place a new order instead. Re-sending `canceled` is harmless.
+Canceling an order that is pending or paid returns its stock to the catalog
 -- which is why the order cannot come back: it would stand on stock already
-offered to the next buyer. Cancelling once it is packed, shipped or delivered
+offered to the next buyer. Canceling once it is packed, shipped or delivered
 returns no stock; that is how a refund is recorded.
 
 **Refunding works the same way.** Refunding a pending or paid order returns
-its stock (the page asks first), and the order can then only be cancelled,
+its stock (the page asks first), and the order can then only be canceled,
 never shipped. Refunding once it is packed, shipped or delivered returns no
 stock, and the order may still be moved on if the refund was a mistake.
 
-Two kinds of pending or paid order **cannot be cancelled or refunded**, because the
+Two kinds of pending or paid order **cannot be canceled or refunded**, because the
 listing they sold has already ended and there is nothing to put the stock
 back on: a sale recorded from an outside platform, and an order that bought a
 **sales lot**. The API refuses with a 409 naming what is in the way; the
-Sales page grays out **cancelled** and **refunded** on both. Once such an
-order is packed it can be cancelled like any other (no stock returns). There is no "undo an outside sale" path: if one falls through,
+Sales page grays out **canceled** and **refunded** on both. Once such an
+order is packed it can be canceled like any other (no stock returns). There is no "undo an outside sale" path: if one falls through,
 restore the item's status and disposition by hand and offer it again.
 
 **Placing an order for a customer.** **New order** opens an editor that
@@ -1016,7 +1016,7 @@ as `0%` or `$0.00`; a blank means nobody has looked the terms up.
 price a troy ounce of it is quoted at, when that was recorded, the fine
 ounces held, and what they melt for at that price. Held means in hand: items
 received and either held or listed, since a coin on offer is still in the
-drawer; one sold, returned, cancelled, missing or still on order is not
+drawer; one sold, returned, canceled, missing or still on order is not
 counted. That is wider on purpose than the **Precious metal** report's
 default of received and held, which leaves out what is on offer. A retired
 metal stays on the page while any of it is held. The
@@ -1188,7 +1188,7 @@ divided by cost basis, which keeps per-coin gain answerable. Each member's
 
 A lot once offered is never deleted; the **Offered, sold and dissolved** table
 keeps it, as the record of which coins went out together. Only a lot never
-offered can be discarded. An order that bought a lot cannot be cancelled
+offered can be discarded. An order that bought a lot cannot be canceled
 (see *Sales*); if the sale falls through, restore the coins by hand and group
 them again.
 
@@ -1207,7 +1207,7 @@ which `auction_lot` rows exist; `routers/auctions.py` creates a draft and
 edits wording, dates, lot numbers and reserves directly). An auction
 belongs to a platform (a live auction, an auction house, or a marketplace for
 a single timed auction) and moves `draft` -> `scheduled` -> [`consigned`] ->
-`closed` -> `settled`, or `cancelled`.
+`closed` -> `settled`, or `canceled`.
 
 - **Add lot...** offers an assembling sales lot, or a single item as a lot of
   one, in auction format, with the same refusals and pausing as any offer. Lot
@@ -1272,7 +1272,7 @@ parameters and its table. Groups appear in the order the API lists them:
 | `pr_received_items` | Purchasing and receiving | Received items | One row per item received, newest first: day, item, a coin's year and mint, a note's series and serial number, title, vendor, seller, order and total cost. Click an item to open it | From, To, Vendor (a vendor's name, or `all`, the default) |
 | `sl_offered` | Selling | On offer | Active and paused listings, items and sales lots, by venue: asking price against cost basis, and days listed | none |
 | `sl_sales` | Selling | Sales | Month x venue: orders, gross, fees, net, cost basis and gain, for sales orders placed in range | From, To |
-| `sl_fulfilment` | Selling | To ship | Orders still open and unshipped -- pending, paid or packed -- oldest first | none |
+| `sl_fulfillment` | Selling | To ship | Orders still open and unshipped -- pending, paid or packed -- oldest first | none |
 | `sl_aging` | Selling | Held and not offered | Live items received and held, not on offer or in an open lot, by months since received and kind | none |
 | `sl_auctions` | Selling | Auctions | One row per auction, by status; for a settled one: lots, sold, unsold, hammer total and fees | none |
 | `sl_ready` | Selling | Ready to sell | By kind: items in hand and not offered, and how many have an own photograph, a grade or weight, a location and a cost -- and all four | none |
@@ -2030,7 +2030,7 @@ python -m app.workbook_backup compare "postgresql+psycopg://ccwebdb:$PGPASSWORD@
 ```
 
 The import refuses a database at a different migration revision than the
-workbook's, the live database (recognised by the server, not by how the URL
+workbook's, the live database (recognized by the server, not by how the URL
 is spelled), and any database that already holds inventory items; it clears
 any other rows the migrations put there, loads everything in one transaction,
 and sets the item-code sequence past the highest code loaded: a refused row (a value that

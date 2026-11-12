@@ -28,7 +28,7 @@
     {"code": "canceled", "label": "Canceled", "sort_order": 30},
     {"code": "returned", "label": "Returned", "sort_order": 40},
     {"code": "missing", "label": "Missing", "sort_order": 50,
-     "_note": "Paid for, not cancelled, never arrived. Distinct from both."},
+     "_note": "Paid for, not canceled, never arrived. Distinct from both."},
     {"code": "unknown", "label": "Unknown", "sort_order": 60}
   ],
   "disposition": [
@@ -95,7 +95,7 @@
     {"code": "packed", "label": "Packed", "sort_order": 30},
     {"code": "shipped", "label": "Shipped", "sort_order": 40},
     {"code": "delivered", "label": "Delivered", "sort_order": 50},
-    {"code": "cancelled", "label": "Cancelled", "sort_order": 60},
+    {"code": "canceled", "label": "Canceled", "sort_order": 60},
     {"code": "refunded", "label": "Refunded", "sort_order": 70}
   ],
   "shipment_status": [

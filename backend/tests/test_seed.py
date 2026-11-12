@@ -122,7 +122,7 @@ def test_a_database_in_use_is_seeded_only_when_told_to(
 def test_the_first_administrator_is_stored_as_sign_in_looks_it_up(
     db: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The address normalised as registration would: domain in lower case."""
+    """The address normalized as registration would: domain in lower case."""
     monkeypatch.setattr(settings, "first_admin_email", "Owner@Example.COM")
     seed(db)
 

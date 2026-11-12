@@ -284,7 +284,7 @@ frontend, which would send `/api` to it.
 4. **Verifies**, and exits 1 if anything still holds a port or the database
    still accepts connections when it should not.
 
-An unrecognised argument is refused (exit 2) rather than ignored: Git Bash
+An unrecognized argument is refused (exit 2) rather than ignored: Git Bash
 rewrites `/keepdb` into a path, and ignoring it would stop a database the
 caller asked to keep. If the conda environment cannot be activated, or
 `.env` holds a setting it refuses, the servers in the PID file are still

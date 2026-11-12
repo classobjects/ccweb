@@ -49,14 +49,14 @@ skill specifies a different path, format, or workflow, this file wins.
   a new one is a new field there with today's value as its default, and a
   line in `.env.example`. A test refuses the old literals in the scripts.
 - **Documentation commands paste into their shell as written.** Fence them
-  as ```` ```console ````; one command per line; a stand-in is a CAPITALISED
+  as ```` ```console ````; one command per line; a stand-in is a CAPITALIZED
   word, and only where pasting it unchanged fails harmlessly — otherwise
   prose; a block that depends on its folder starts with `cd /d ...` (cmd) or
   `cd ~/...` (bash); anything that prompts (`set /p`, `read -rs`) stands
   alone in its block. Per-OS documents are `<topic>-windows.md` and
   `<topic>-linux.md`; a shared document shows a block that differs by OS in
-  both forms, each labelled. The owner's installation appears only as a
-  labelled example.
+  both forms, each labeled. The owner's installation appears only as a
+  labeled example.
 - Useful pure-cmd equivalents: `curl -s -f -o nul <url>` then `if errorlevel 1`
   for readiness checks; `ping -n 2 127.0.0.1 >nul` to sleep — `timeout` needs a
   real console and fails instantly, with no sleep at all, when stdin is

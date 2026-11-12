@@ -85,7 +85,7 @@ function ExistingPurchasePicker({ orders, filterText, openOnly, onPick }) {
   }
 
   return (
-    // On a phone each row stacks into a card, a line per labelled cell.
+    // On a phone each row stacks into a card, a line per labeled cell.
     <table className="table purchase-table stacks" aria-label="Purchases">
       <thead>
         <SortHeaders columns={PURCHASE_COLUMNS} sort={sort} onSort={setSort} />
@@ -357,38 +357,38 @@ export default function NewPurchase() {
   const [taxIncludesShipping, setTaxIncludesShipping] = useState('')
 
   useEffect(() => {
-    let cancelled = false
+    let canceled = false
     api
       .listVendors()
       .then((body) => {
-        if (!cancelled) {
+        if (!canceled) {
           setVendors(body)
           setVendorsError('')
         }
       })
       .catch((err) => {
-        if (!cancelled) setVendorsError(err.message)
+        if (!canceled) setVendorsError(err.message)
       })
     return () => {
-      cancelled = true
+      canceled = true
     }
   }, [])
 
   const loadOrders = useCallback(() => {
-    let cancelled = false
+    let canceled = false
     api
       .listPurchaseOrders()
       .then((body) => {
-        if (!cancelled) {
+        if (!canceled) {
           setOrders(body)
           setOrdersError('')
         }
       })
       .catch((err) => {
-        if (!cancelled) setOrdersError(err.message)
+        if (!canceled) setOrdersError(err.message)
       })
     return () => {
-      cancelled = true
+      canceled = true
     }
   }, [])
 

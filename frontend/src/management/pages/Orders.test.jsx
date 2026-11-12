@@ -57,7 +57,7 @@ const ORDERS = [
     customer_email: 'grace@example.com',
     sales_venue_code: 'store',
     sales_venue_name: 'Web store',
-    status: 'cancelled',
+    status: 'canceled',
     total_amount: '42.00',
     placed_at: '2026-09-13T15:00:00Z',
     version: 1,
@@ -137,7 +137,7 @@ describe('owner Orders', () => {
       'packed',
       'shipped',
       'delivered',
-      'cancelled',
+      'canceled',
       'refunded',
     ])
   })
@@ -160,10 +160,10 @@ describe('owner Orders', () => {
     expect(api.setOrderStatus).toHaveBeenLastCalledWith(12, 'delivered', 2)
   })
 
-  it('asks before cancelling, and sends nothing when declined', async () => {
+  it('asks before canceling, and sends nothing when declined', async () => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
     const user = await renderPage()
-    await user.selectOptions(within(rowFor(12)).getByRole('combobox'), 'cancelled')
+    await user.selectOptions(within(rowFor(12)).getByRole('combobox'), 'canceled')
 
     expect(confirm).toHaveBeenCalled()
     expect(api.setOrderStatus).not.toHaveBeenCalled()
@@ -174,8 +174,8 @@ describe('owner Orders', () => {
   it('cancels when confirmed', async () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true)
     const user = await renderPage()
-    await user.selectOptions(within(rowFor(12)).getByRole('combobox'), 'cancelled')
-    expect(api.setOrderStatus).toHaveBeenCalledWith(12, 'cancelled', 1)
+    await user.selectOptions(within(rowFor(12)).getByRole('combobox'), 'canceled')
+    expect(api.setOrderStatus).toHaveBeenCalledWith(12, 'canceled', 1)
   })
 
   it('asks before refunding an unshipped order, whose stock goes back', async () => {
@@ -203,7 +203,7 @@ describe('owner Orders', () => {
   /**
    * Choose `status` for order 12 and expect it refused on the page: nothing
    * sent, no confirmation asked, the reason shown, and every option still
-   * live -- a greyed-out choice cannot say why.
+   * live -- a grayed-out choice cannot say why.
    */
   async function expectRefusedHere(user, status, reason) {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
@@ -230,8 +230,8 @@ describe('owner Orders', () => {
     await expectRefusedHere(user, 'refunded', /Sold on eBay.*no stock to return/)
   })
 
-  it('says why a cancelled order cannot be moved on, and sends nothing', async () => {
-    const user = await renderOrders([{ ...ORDERS[0], status: 'cancelled' }])
+  it('says why a canceled order cannot be moved on, and sends nothing', async () => {
+    const user = await renderOrders([{ ...ORDERS[0], status: 'canceled' }])
     const select = within(rowFor(12)).getByRole('combobox')
     expect(select).toBeEnabled()
 
@@ -241,19 +241,19 @@ describe('owner Orders', () => {
       await screen.findByText(/canceled and its stock has been returned/),
     ).toBeInTheDocument()
     expect(api.setOrderStatus).not.toHaveBeenCalled()
-    expect(within(rowFor(12)).getByRole('combobox')).toHaveValue('cancelled')
+    expect(within(rowFor(12)).getByRole('combobox')).toHaveValue('canceled')
   })
 
-  it('says why cancelling a sale made on another platform is refused', async () => {
+  it('says why canceling a sale made on another platform is refused', async () => {
     // The server refuses the transition with a 409 (routers/orders.py); the
     // page says so itself rather than asking to confirm and then failing.
     const user = await renderOrders([
       { ...ORDERS[0], sales_venue_code: 'ebay', sales_venue_name: 'eBay' },
     ])
-    await expectRefusedHere(user, 'cancelled', /Sold on eBay.*no stock to return/)
+    await expectRefusedHere(user, 'canceled', /Sold on eBay.*no stock to return/)
   })
 
-  it('says why cancelling a shop order whose listing has ended is refused', async () => {
+  it('says why canceling a shop order whose listing has ended is refused', async () => {
     // A lot bought in the shop ends its listing at checkout; the server
     // refuses the cancellation for the same reason as an outside sale.
     const user = await renderOrders([
@@ -262,7 +262,7 @@ describe('owner Orders', () => {
         items: ORDERS[0].items.map((line) => ({ ...line, listing_ended: true })),
       },
     ])
-    await expectRefusedHere(user, 'cancelled', /listing has ended/)
+    await expectRefusedHere(user, 'canceled', /listing has ended/)
   })
 
   it('still offers cancel for an ordinary shop order', async () => {
@@ -274,7 +274,7 @@ describe('owner Orders', () => {
   it('does cancel an outside sale that has already shipped', async () => {
     // The refusal the tests above cover is the server's, and the server only
     // refuses a cancellation that would really return stock. A shipped order
-    // returns none, so cancelling one is allowed -- it is how a refund is
+    // returns none, so canceling one is allowed -- it is how a refund is
     // recorded. An `auction_house` sale is created `delivered`, so every one
     // arrives in this state; refusing it here would make that workflow
     // unreachable from the console.
@@ -288,9 +288,9 @@ describe('owner Orders', () => {
       },
     ])
 
-    await user.selectOptions(within(rowFor(12)).getByRole('combobox'), 'cancelled')
+    await user.selectOptions(within(rowFor(12)).getByRole('combobox'), 'canceled')
 
-    expect(api.setOrderStatus).toHaveBeenCalledWith(12, 'cancelled', 1)
+    expect(api.setOrderStatus).toHaveBeenCalledWith(12, 'canceled', 1)
     expect(screen.queryByText(/no stock to return/)).toBeNull()
   })
 
@@ -312,11 +312,11 @@ describe('owner Orders', () => {
     const user = await renderPage()
     expect(api.listOrders).toHaveBeenCalledWith({ status: '', limit: 100, offset: 0 })
 
-    await user.selectOptions(screen.getByLabelText(/show/i), 'cancelled')
+    await user.selectOptions(screen.getByLabelText(/show/i), 'canceled')
 
     await waitFor(() => expect(screen.queryByText('Ada Lovelace')).toBeNull())
     expect(api.listOrders).toHaveBeenLastCalledWith({
-      status: 'cancelled',
+      status: 'canceled',
       limit: 100,
       offset: 0,
     })

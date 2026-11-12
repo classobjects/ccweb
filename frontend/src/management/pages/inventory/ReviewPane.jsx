@@ -9,8 +9,8 @@ import ItemEditForm from './ItemEditForm'
  * Escape leaves the review, as it closes the editor opened from a row.
  *
  * On `document`, since focus may be anywhere in the form or on nothing. Not
- * an Escape something else took first -- an inline add form cancelling
- * (`isCancellingEscape`), the console menu closing its list -- nor one
+ * an Escape something else took first -- an inline add form canceling
+ * (`isCancelingEscape`), the console menu closing its list -- nor one
  * pressed while a dialog is open over the pane (a confirmation, an enlarged
  * photograph, the offer dialog): that Escape is the dialog's.
  */

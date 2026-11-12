@@ -83,7 +83,7 @@ removes.
 Keeping the tokens in `localStorage` is a trade-off. Any script running in
 the page can read them, so a cross-site scripting flaw would hand over the
 session, refresh token included, where an `HttpOnly` cookie would keep it
-out of a script's reach. The bearer token in return needs no CSRF defence,
+out of a script's reach. The bearer token in return needs no CSRF defense,
 since a browser never attaches it to a request on its own. What limits the
 exposure is everything that keeps a foreign script out of the page: React
 escapes what it renders, the pages load nothing from elsewhere but the

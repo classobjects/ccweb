@@ -269,4 +269,4 @@ item and so takes them the other way.
 - `tests/test_offer_races.py` also races two checkouts for one lot and a lot
   checkout against a receipt marking one of its coins missing;
   `tests/test_settlement_race.py` races settlement against settlement,
-  cancellation and receiving, and consigning against cancelling.
+  cancellation and receiving, and consigning against canceling.

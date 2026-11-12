@@ -24,7 +24,7 @@ from tests.conftest import build_item
 
 
 def _jpeg(color: tuple[int, int, int] = (10, 20, 30)) -> bytes:
-    """A tiny JPEG of one colour; a different colour is a different photograph."""
+    """A tiny JPEG of one color; a different color is a different photograph."""
     buffer = io.BytesIO()
     PILImage.new("RGB", (8, 8), color).save(buffer, format="JPEG")
     return buffer.getvalue()

@@ -144,7 +144,7 @@ describe('useImageDrop', () => {
     })
 
     it.each(['dragend', 'drop'])(
-      'ends when the drag is cancelled elsewhere (%s on the window)',
+      'ends when the drag is canceled elsewhere (%s on the window)',
       (type) => {
         const { result } = mount()
         act(() => result.current.target.onDragEnter(dragOf()))

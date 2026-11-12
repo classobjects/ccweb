@@ -164,7 +164,7 @@ Four structural filters join them:
 - `item_codes=<code>,<code>` -- exactly the items named, by whole code. How
   a report opens the items of one row as a list; the filter panel shows it as
   a chip ("Only these 3 items") that a click removes.
-- `deleted=no|only|any`, default `no`; an unrecognised value is a 422.
+- `deleted=no|only|any`, default `no`; an unrecognized value is a 422.
 
 A filter is never silently ignored.
 

@@ -25,7 +25,7 @@ const FORM = /^M?(\d+)[A-Za-z]?(?:-[A-L]m?)?\*?(?: (?:LGS|DGS))?$/
 // last, with space before them.
 const SHADE_LETTERS = /^(lgs|dgs)$/i
 // A district with a mule's m, the star typed either side of it: kept as
-// Em*, the m lower-case so capitalising the district cannot make it a
+// Em*, the m lower-case so capitalizing the district cannot make it a
 // second district letter.
 const MULE_DISTRICT = /^([a-l])(\*?)m(\*?)$/i
 // The optional letter after the digits, kept in capitals: the number is

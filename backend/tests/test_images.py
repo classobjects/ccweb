@@ -243,7 +243,7 @@ def test_a_non_image_is_refused() -> None:
 
 
 def _encoded(image_format: str, **options: object) -> bytes:
-    """A small one-colour picture in the named file format."""
+    """A small one-color picture in the named file format."""
     buffer = io.BytesIO()
     PILImage.new("RGB", (16, 12), (30, 60, 90)).save(
         buffer, format=image_format, **options
@@ -555,7 +555,7 @@ def test_the_original_is_not_reachable_over_http(
     assert client.get(f"/api/images/{body['id']}/full").status_code == 422
 
 
-def test_uploading_against_an_item_makes_it_the_catalogue_thumbnail(
+def test_uploading_against_an_item_makes_it_the_catalog_thumbnail(
     client: TestClient, admin_headers: dict[str, str], listing: Listing, db: Session
 ) -> None:
     before = client.get(f"/api/catalog/{listing.id}").json()

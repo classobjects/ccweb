@@ -1144,7 +1144,7 @@ def test_removing_a_consigned_lot_records_who_brought_it_back(
     assert move.moved_by_id == admin_user.id
 
 
-def test_cancelling_a_consigned_auction_records_who_brought_it_back(
+def test_canceling_a_consigned_auction_records_who_brought_it_back(
     client: TestClient,
     db: Session,
     admin_headers: dict[str, str],
@@ -1165,7 +1165,7 @@ def test_cancelling_a_consigned_auction_records_who_brought_it_back(
     assert move.moved_by_id == admin_user.id
 
 
-def test_closing_and_cancelling_an_auction(
+def test_closing_and_canceling_an_auction(
     client: TestClient, admin_headers: dict[str, str], scheduled_auction: Auction
 ) -> None:
     closed = client.post(
@@ -1174,16 +1174,16 @@ def test_closing_and_cancelling_an_auction(
     assert closed.status_code == 200, closed.text
     assert closed.json()["status"] == "closed"
 
-    cancelled = client.post(
+    canceled = client.post(
         f"/api/auctions/{scheduled_auction.id}/cancel",
         headers=admin_headers,
         json={},
     )
-    assert cancelled.status_code == 200, cancelled.text
-    assert cancelled.json()["status"] == "cancelled"
+    assert canceled.status_code == 200, canceled.text
+    assert canceled.json()["status"] == "canceled"
 
 
-def test_cancelling_an_already_cancelled_auction_is_refused(
+def test_canceling_an_already_canceled_auction_is_refused(
     client: TestClient, admin_headers: dict[str, str], scheduled_auction: Auction
 ) -> None:
     first = client.post(

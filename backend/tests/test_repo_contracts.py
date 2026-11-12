@@ -859,7 +859,7 @@ def test_status_reads_a_servers_frontend_through_its_own_caddy() -> None:
         assert "RUNNING   the build, served by Caddy" in script, name
 
 
-#: The copyright and licence lines every source file opens with, after its
+#: The copyright and license lines every source file opens with, after its
 #: comment marker (docs/code-quality.md).
 _HEADER = (
     "(c) Copyright 2026 Nathaniel Mills",

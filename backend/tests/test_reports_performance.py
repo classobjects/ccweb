@@ -305,7 +305,7 @@ def _build_modest_collection(db: Session, tag: str = "") -> None:
     listing_items[3].numismatic_value = Decimal("45.00")
     db.commit()
 
-    # `sl_sales` and `sl_fulfilment` read `sales_order_item_share`;
+    # `sl_sales` and `sl_fulfillment` read `sales_order_item_share`;
     # `sl_auctions` reads `auction`. Cheap to add one of each here so the
     # performance guard exercises both paths too.
     customer = Customer(display_name=f"Perf Customer{tag}", email=None)

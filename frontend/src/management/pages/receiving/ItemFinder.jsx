@@ -154,29 +154,29 @@ function searchInto(
   },
 ) {
   cancelRef.current?.()
-  let cancelled = false
+  let canceled = false
   cancelRef.current = () => {
-    cancelled = true
+    canceled = true
   }
   lastQueryRef.current = query
   runSearch(query)
     .then(({ rows, more }) => {
-      if (cancelled) return
+      if (canceled) return
       setResults(rows)
       setMore(more)
       setSearchedStatus(query.filters.status)
       setError('')
     })
     .catch((err) => {
-      if (cancelled) return
+      if (canceled) return
       setError(err.message)
       setResults(null)
     })
     .finally(() => {
-      if (!cancelled) setBusy(false)
+      if (!canceled) setBusy(false)
     })
   return () => {
-    cancelled = true
+    canceled = true
   }
 }
 
@@ -206,7 +206,7 @@ function searchInto(
  * leaves the "not yet arrived" list instead of staying clickable.
  *
  * `cancelRef` guards against a stale response: a search in flight sets a
- * `cancelled` flag a later search or kind switch flips before it lands, so
+ * `canceled` flag a later search or kind switch flips before it lands, so
  * two in-flight requests can never both write to `results`.
  *
  * `onPick(row)` receives the whole result row: the receipt dialog it opens

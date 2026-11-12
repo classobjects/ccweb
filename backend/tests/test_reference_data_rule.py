@@ -1,7 +1,7 @@
 # (c) Copyright 2026 Nathaniel Mills
 # Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
 # SPDX-License-Identifier: Apache-2.0
-"""No shipped seed file carries a publisher's catalogue number.
+"""No shipped seed file carries a publisher's catalog number.
 
 docs/reference-data.md: a Friedberg or Pick number is one publisher's
 arrangement, recorded per note by the owner and never shipped. Every key,
@@ -21,7 +21,7 @@ from app.seeding import DATA_DIR, iter_seed_files
 
 #: A Friedberg or Pick number as it is written: Fr. 9901, Fr 9901,
 #: Friedberg 9901, Pick 9901, P-9901.
-CATALOGUE_NUMBER = re.compile(
+CATALOG_NUMBER = re.compile(
     r"\bFr\.?\s*\d|Friedberg\s*\d|\bPick\s*\d|\bP-\d", re.IGNORECASE
 )
 
@@ -39,11 +39,11 @@ def _strings(node: object) -> Iterator[str]:
         yield node
 
 
-def _catalogue_numbers(path: Path) -> list[str]:
-    """Each catalogue-number-shaped text in one seed file."""
+def _catalog_numbers(path: Path) -> list[str]:
+    """Each catalog-number-shaped text in one seed file."""
     document = json.loads(path.read_text(encoding="utf-8"))
     return [
-        text for text in _strings(document) if CATALOGUE_NUMBER.search(text) is not None
+        text for text in _strings(document) if CATALOG_NUMBER.search(text) is not None
     ]
 
 
@@ -52,8 +52,8 @@ def test_the_seed_files_are_found() -> None:
 
 
 @pytest.mark.parametrize("path", list(iter_seed_files()), ids=lambda p: p.name)
-def test_no_seed_file_ships_a_catalogue_number(path: Path) -> None:
-    found = _catalogue_numbers(path)
+def test_no_seed_file_ships_a_catalog_number(path: Path) -> None:
+    found = _catalog_numbers(path)
     assert not found, f"{path.relative_to(DATA_DIR.parent)}: {found}"
 
 
@@ -67,7 +67,7 @@ def test_each_written_form_is_caught(text: str, tmp_path: Path) -> None:
         json.dumps({"_comment": ["x"], "note_issue": [{"variant": text}]}),
         encoding="utf-8",
     )
-    assert _catalogue_numbers(seed) == [text]
+    assert _catalog_numbers(seed) == [text]
 
 
 def test_a_key_or_comment_is_scanned_too(tmp_path: Path) -> None:
@@ -76,7 +76,7 @@ def test_a_key_or_comment_is_scanned_too(tmp_path: Path) -> None:
         json.dumps({"_comment": ["see Fr. 9901"], "Pick 9901": []}),
         encoding="utf-8",
     )
-    assert _catalogue_numbers(seed) == ["see Fr. 9901", "Pick 9901"]
+    assert _catalog_numbers(seed) == ["see Fr. 9901", "Pick 9901"]
 
 
 def test_ordinary_text_is_not_caught(tmp_path: Path) -> None:
@@ -85,4 +85,4 @@ def test_ordinary_text_is_not_caught(tmp_path: Path) -> None:
         json.dumps({"series": [{"label": "Franklin Half Dollar", "note": "PCGS 65"}]}),
         encoding="utf-8",
     )
-    assert _catalogue_numbers(seed) == []
+    assert _catalog_numbers(seed) == []

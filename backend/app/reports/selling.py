@@ -28,10 +28,10 @@ item two rows happen to name, which a lot listing (no `inventory_item_id`
 of its own) could not support anyway.
 
 `sl_sales`: month x venue, over orders placed in range whose status is a
-completed or in-progress sale -- never `cancelled` or `refunded` -- orders,
+completed or in-progress sale -- never `canceled` or `refunded` -- orders,
 gross, fees, net, cost basis and gain, the last two from
 `sales_order_item_share` (specific identification, spec Decisions) so an
-order's own gain is exactly the sum of its items'. `sl_fulfilment`: orders
+order's own gain is exactly the sum of its items'. `sl_fulfillment`: orders
 still open and unshipped (`sale_state.OPEN_ORDER_STATUSES`), oldest first.
 `sl_aging`: live items received, held, and not on offer or in an open lot,
 by months since received x kind -- the receipt itself read through
@@ -112,13 +112,13 @@ from .registry import register
 __all__ = [
     "SL_AGING",
     "SL_AUCTIONS",
-    "SL_FULFILMENT",
+    "SL_FULFILLMENT",
     "SL_OFFERED",
     "SL_READY",
     "SL_SALES",
     "AgingParams",
     "AuctionsParams",
-    "FulfilmentParams",
+    "FulfillmentParams",
     "OfferedParams",
     "ReadyParams",
     "SalesParams",
@@ -409,7 +409,7 @@ SL_OFFERED = register(
 
 #: `sales_order_status` codes (`backend/data/reference/operations.json`) that
 #: are a completed or in-progress sale, so its money counts as a sale
-#: -- never a `cancelled` order, whose sale never happened, and never
+#: -- never a `canceled` order, whose sale never happened, and never
 #: a `refunded` one, whose money went back. `pending`, `paid` and `packed`
 #: are `sale_state.OPEN_ORDER_STATUSES`
 #: -- reused, not restated, so this report and `sale_state`'s own "is this
@@ -485,7 +485,7 @@ def _counted_statuses_note(db: Session) -> str:
 def _excluded_order_count(db: Session, params: SalesParams) -> int:
     """Orders placed in range that `sl_sales` leaves out for their status.
 
-    A cancelled or refunded order today -- read from the same date bounds
+    A canceled or refunded order today -- read from the same date bounds
     `_sl_sales` itself applies, exactly (`_sales_prefilter` narrows the
     fetch, then `local_date` per row decides), so this count and the rows
     it explains always agree about what "in range" means.
@@ -639,10 +639,10 @@ SL_SALES = register(
 
 
 # ---------------------------------------------------------------------------
-# sl_fulfilment
+# sl_fulfillment
 # ---------------------------------------------------------------------------
 
-_FULFILMENT_COLUMNS = [
+_FULFILLMENT_COLUMNS = [
     Column("order", "Order", "text"),
     Column("placed", "Placed", "date"),
     Column("customer", "Customer", "text"),
@@ -652,11 +652,11 @@ _FULFILMENT_COLUMNS = [
 ]
 
 
-class FulfilmentParams(BaseModel):
-    """`sl_fulfilment` takes no parameters: every order still owed shipment."""
+class FulfillmentParams(BaseModel):
+    """`sl_fulfillment` takes no parameters: every order still owed shipment."""
 
 
-def _sl_fulfilment(db: Session, _params: FulfilmentParams) -> ReportResult:
+def _sl_fulfillment(db: Session, _params: FulfillmentParams) -> ReportResult:
     """One row per order still open and unshipped, oldest first.
 
     "Still owed shipment" is `sale_state.OPEN_ORDER_STATUSES` --
@@ -735,7 +735,7 @@ def _sl_fulfilment(db: Session, _params: FulfilmentParams) -> ReportResult:
 
     if not rows:
         return ReportResult(
-            columns=_FULFILMENT_COLUMNS,
+            columns=_FULFILLMENT_COLUMNS,
             rows=[],
             totals=None,
             drills=[],
@@ -761,7 +761,7 @@ def _sl_fulfilment(db: Session, _params: FulfilmentParams) -> ReportResult:
         )
 
     return ReportResult(
-        columns=_FULFILMENT_COLUMNS,
+        columns=_FULFILLMENT_COLUMNS,
         rows=rows,
         totals=totals,
         drills=drills,
@@ -769,15 +769,15 @@ def _sl_fulfilment(db: Session, _params: FulfilmentParams) -> ReportResult:
     )
 
 
-SL_FULFILMENT = register(
+SL_FULFILLMENT = register(
     Report(
-        id="sl_fulfilment",
+        id="sl_fulfillment",
         group="Selling",
         title="To ship",
         purpose="Orders still open and unshipped -- pending, paid or "
         "packed -- oldest first: customer, items, amount and days waiting.",
-        params=FulfilmentParams,
-        run=_sl_fulfilment,
+        params=FulfillmentParams,
+        run=_sl_fulfillment,
     )
 )
 
@@ -1016,7 +1016,7 @@ _AUCTIONS_COLUMNS = [
 ]
 
 #: `AuctionStatus`'s own declaration order is an auction's life story --
-#: draft, scheduled, consigned, closed, settled, cancelled -- and this
+#: draft, scheduled, consigned, closed, settled, canceled -- and this
 #: report's rows follow it rather than a second, hand-written order that
 #: could drift from the enum.
 _STATUS_RANK: dict[AuctionStatus, int] = {

@@ -131,7 +131,7 @@ def migrated_url() -> Iterator[str]:
     """A throwaway database built purely by running the migrations.
 
     Built and upgraded once for the module: every test here only reads it.
-    `_normalised` creates temporary views, but inside a transaction it rolls
+    `_normalized` creates temporary views, but inside a transaction it rolls
     back, so nothing a test does is seen by the next.
     """
     url = TEST_URL
@@ -412,12 +412,12 @@ def _expressions(url: str) -> dict[str, tuple[str, str, str]]:
         engine.dispose()
 
 
-def _normalised_expressions(
+def _normalized_expressions(
     url: str, found: dict[str, tuple[str, str, str]]
 ) -> dict[str, str]:
     """`found`'s definitions, each re-created once in `url` and rendered again.
 
-    The same round trip `_normalised` gives a view, for the same reason: the
+    The same round trip `_normalized` gives a view, for the same reason: the
     baseline holds `IN ('a', 'b')` on a varchar as printed text, which reads
     back as `ARRAY[('a'::varchar)::text, ...]`, while the test database holds
     it as parsed from the model -- one predicate, rendered two ways. A check
@@ -432,26 +432,26 @@ def _normalised_expressions(
                 if key.startswith("check "):
                     connection.execute(
                         text(
-                            f'ALTER TABLE "{table}" ADD CONSTRAINT _normalised '
+                            f'ALTER TABLE "{table}" ADD CONSTRAINT _normalized '
                             f"{definition} NOT VALID"
                         )
                     )
                     rendered = connection.execute(
                         text(
                             "SELECT pg_get_constraintdef(oid) FROM pg_constraint "
-                            "WHERE conname = '_normalised' "
+                            "WHERE conname = '_normalized' "
                             "AND conrelid = CAST(:t AS regclass)"
                         ),
                         {"t": table},
                     ).scalar_one()
                     connection.execute(
-                        text(f'ALTER TABLE "{table}" DROP CONSTRAINT _normalised')
+                        text(f'ALTER TABLE "{table}" DROP CONSTRAINT _normalized')
                     )
                     out[key] = str(rendered).removesuffix(" NOT VALID")
                 else:
                     connection.execute(
                         text(
-                            f'ALTER TABLE "{table}" ADD COLUMN _normalised {type_} '
+                            f'ALTER TABLE "{table}" ADD COLUMN _normalized {type_} '
                             f"GENERATED ALWAYS AS ({definition}) STORED"
                         )
                     )
@@ -460,13 +460,13 @@ def _normalised_expressions(
                             "SELECT pg_get_expr(d.adbin, d.adrelid) "
                             "FROM pg_attrdef d JOIN pg_attribute a "
                             "ON a.attrelid = d.adrelid AND a.attnum = d.adnum "
-                            "WHERE a.attname = '_normalised' "
+                            "WHERE a.attname = '_normalized' "
                             "AND a.attrelid = CAST(:t AS regclass)"
                         ),
                         {"t": table},
                     ).scalar_one()
                     connection.execute(
-                        text(f'ALTER TABLE "{table}" DROP COLUMN _normalised')
+                        text(f'ALTER TABLE "{table}" DROP COLUMN _normalized')
                     )
                     out[key] = str(rendered)
             connection.rollback()
@@ -486,8 +486,8 @@ def test_the_migrations_carry_every_check_and_generated_expression(
     or column present on one side only is reported too, though
     `test_migrations_match_models` would also catch it.
     """
-    built = _normalised_expressions(migrated_url, _expressions(migrated_url))
-    expected = _normalised_expressions(
+    built = _normalized_expressions(migrated_url, _expressions(migrated_url))
+    expected = _normalized_expressions(
         migrated_url,
         _expressions(engine.url.render_as_string(hide_password=False)),
     )
@@ -534,7 +534,7 @@ def _definitions(url: str) -> dict[str, str]:
         engine.dispose()
 
 
-def _normalised(url: str, found: dict[str, str]) -> dict[str, str]:
+def _normalized(url: str, found: dict[str, str]) -> dict[str, str]:
     """`found` with each view re-created once and rendered again.
 
     PostgreSQL stores `x IN ('a', 'b')` on a varchar as
@@ -551,12 +551,12 @@ def _normalised(url: str, found: dict[str, str]) -> dict[str, str]:
             for name, definition in found.items():
                 if name.startswith("view "):
                     connection.execute(
-                        text(f"CREATE TEMP VIEW _normalised AS {definition}")
+                        text(f"CREATE TEMP VIEW _normalized AS {definition}")
                     )
                     definition = connection.execute(
-                        text("SELECT pg_get_viewdef('_normalised'::regclass)")
+                        text("SELECT pg_get_viewdef('_normalized'::regclass)")
                     ).scalar_one()
-                    connection.execute(text("DROP VIEW _normalised"))
+                    connection.execute(text("DROP VIEW _normalized"))
                 out[name] = definition
             connection.rollback()
             return out
@@ -578,8 +578,8 @@ def test_the_baseline_views_and_functions_are_the_apps(
     # `engine` is the session's test database, built from the app's own
     # definitions by conftest. Both sides are normalized in the migrated
     # database, whose tables are the same.
-    built = _normalised(migrated_url, _definitions(migrated_url))
-    expected = _normalised(
+    built = _normalized(migrated_url, _definitions(migrated_url))
+    expected = _normalized(
         migrated_url,
         _definitions(engine.url.render_as_string(hide_password=False)),
     )

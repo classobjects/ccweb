@@ -58,7 +58,7 @@ DISTRICT_SQL_PATTERN = r"^M?[0-9]+[A-Za-z]?-([A-L])m?[*]?(?: (?:LGS|DGS))?$"
 #: ` LGS` / ` DGS`.
 _SHADE_LETTERS = re.compile(r"lgs|dgs", re.IGNORECASE)
 #: A district with a mule's `m`, the star typed either side of it: kept as
-#: `Em*`, the `m` lower-case so capitalising the district cannot turn it into
+#: `Em*`, the `m` lower-case so capitalizing the district cannot turn it into
 #: a second district letter.
 _MULE_DISTRICT = re.compile(r"(?P<district>[a-l])(?P<a>\*?)m(?P<b>\*?)", re.IGNORECASE)
 #: The optional letter after the digits, kept in capitals: the number is
@@ -70,7 +70,7 @@ _LETTER = re.compile(r"^([Mm]?)(\d+)([A-Za-z]?)", re.ASCII)
 
 
 def _fold_letter(match: re.Match[str]) -> str:
-    """The digits and their optional letter: capitalised, a mule's `m` lower."""
+    """The digits and their optional letter: capitalized, a mule's `m` lower."""
     letter = match[3].upper()
     if match[1]:
         return "M" + match[2] + letter.lower()

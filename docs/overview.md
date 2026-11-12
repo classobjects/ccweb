@@ -44,7 +44,7 @@ one of them:
 
 Equally deliberate is what it does **not** do: it runs no bidding (the
 auction platform does), takes no payments (orders are settled outside it),
-and never redistributes a publisher's catalogue numbering or price guide
+and never redistributes a publisher's catalog numbering or price guide
 (see [reference-data.md](reference-data.md)).
 
 ## How it works, in brief

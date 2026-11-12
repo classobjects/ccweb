@@ -1103,7 +1103,7 @@ def test_only_an_admin_may_read_the_history(
     assert client.get(url, headers=customer_headers).status_code == 403
 
 
-def test_cancelling_relists_an_item_that_had_sold_out(
+def test_canceling_relists_an_item_that_had_sold_out(
     client: TestClient,
     listing: Listing,
     customer_headers: dict[str, str],
@@ -1125,7 +1125,7 @@ def test_cancelling_relists_an_item_that_had_sold_out(
 
     response = client.patch(
         f"/api/orders/{order['id']}",
-        json={"status": "cancelled", "version": order["version"]},
+        json={"status": "canceled", "version": order["version"]},
         headers=admin_headers,
     )
 
@@ -1245,7 +1245,7 @@ def test_a_revision_that_removes_a_lot_line_is_refused(
 ) -> None:
     """The other way to hand a line's stock back, refused for the same reason.
 
-    Cancelling such an order is refused in `routers.orders`; removing the
+    Canceling such an order is refused in `routers.orders`; removing the
     line is the same act one screen along. The stock would go back to a
     listing this module ended when the lot was bought, where
     `_after_stock_change` cannot move the coins off `sold` -- so they would
@@ -1277,7 +1277,7 @@ def test_a_sale_recorded_from_another_platform_cannot_be_given_store_lines(
 ) -> None:
     """An order that records a sale made elsewhere takes no stock from the shop.
 
-    Such an order cannot be cancelled -- `routers.orders._no_stock_to_return`
+    Such an order cannot be canceled -- `routers.orders._no_stock_to_return`
     refuses any order that is not the store's -- so a store line added to it
     would hold shop stock on an order with no way to release it short of
     editing the line out again. The existing line is sent back unchanged, so

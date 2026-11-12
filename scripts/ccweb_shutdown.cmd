@@ -26,7 +26,7 @@ rem This script lives in scripts\, so the repo root is one level up.
 rem %%~fI resolves the "..\" to a real absolute path with no trailing slash.
 for %%I in ("%~dp0..") do set "REPO=%%~fI"
 
-rem An unrecognised argument is refused, never ignored, and before anything
+rem An unrecognized argument is refused, never ignored, and before anything
 rem is put in play, as in the bash twin. Git bash rewrites /keepdb into a
 rem path such as C:/Program Files/Git/keepdb, and ignoring that would stop a
 rem database the caller asked to keep running.
@@ -35,7 +35,7 @@ if /I "%~1"=="/keepdb" set "KEEPDB=1"
 if /I "%~1"=="--keepdb" set "KEEPDB=1"
 if "%~1"=="" goto :args_ok
 if defined KEEPDB goto :args_ok
-echo ERROR: unrecognised argument: %1
+echo ERROR: unrecognized argument: %1
 echo        usage: scripts\ccweb_shutdown.cmd [/keepdb ^| --keepdb]
 echo        from git bash write --keepdb: bash rewrites /keepdb into a path
 exit /b 2

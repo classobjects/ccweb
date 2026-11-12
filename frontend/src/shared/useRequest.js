@@ -44,19 +44,19 @@ export function useRequest(key, fetcher) {
 
   useEffect(() => {
     if (key === null) return undefined
-    let cancelled = false
+    let canceled = false
     request().then(
       (data) => {
-        if (!cancelled) setState({ key, data, error: '' })
+        if (!canceled) setState({ key, data, error: '' })
       },
       (err) => {
-        if (!cancelled) {
+        if (!canceled) {
           setState((s) => ({ key, data: s.data, error: err?.message ?? String(err) }))
         }
       },
     )
     return () => {
-      cancelled = true
+      canceled = true
     }
     // `round` is here only to repeat the request on reload().
   }, [key, round])

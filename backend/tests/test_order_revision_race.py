@@ -305,7 +305,7 @@ def test_a_cancel_and_an_edit_on_the_same_order_cannot_deadlock_or_corrupt_stock
         s = committed()
         try:
             admin = _present(s.get(User, admin_id))
-            payload = OrderStatusUpdate(status="cancelled", version=version)
+            payload = OrderStatusUpdate(status="canceled", version=version)
             barrier.wait(timeout=10)
             update_order_status(order_id, payload, s, admin)
             return "cancel"
@@ -367,7 +367,7 @@ def test_a_cancel_and_an_edit_on_the_same_order_cannot_deadlock_or_corrupt_stock
         assert final_items == [3], outcomes
         assert listing.quantity_available == 2, (outcomes, listing.quantity_available)
     else:
-        assert final_status == "cancelled", (outcomes, final_status)
+        assert final_status == "canceled", (outcomes, final_status)
         assert final_items == [2], outcomes
         assert listing.quantity_available == 5, (outcomes, listing.quantity_available)
 
@@ -457,7 +457,7 @@ def test_a_concurrently_edited_item_no_longer_refuses_a_cancellation(
 ) -> None:
     """The same false conflict cannot be reached through `return_stock`.
 
-    Two lines: the first listing's stock is fully sold, so cancelling flips
+    Two lines: the first listing's stock is fully sold, so canceling flips
     its item's disposition from `sold` back to `listed`, via the write
     `_after_stock_change` queues for it. Were that write unlocked, an item
     another session had edited meanwhile would raise `StaleDataError`
@@ -509,7 +509,7 @@ def test_a_concurrently_edited_item_no_longer_refuses_a_cancellation(
             session_b.commit()
 
         admin = _present(session_a.get(User, admin_id))
-        payload = OrderStatusUpdate(status="cancelled", version=version)
+        payload = OrderStatusUpdate(status="canceled", version=version)
         update_order_status(order_id, payload, session_a, admin)
 
     with committed() as session_c:
@@ -521,7 +521,7 @@ def test_a_concurrently_edited_item_no_longer_refuses_a_cancellation(
         item_c = _present(session_c.get(InventoryItem, item_id))
         item_description = item_c.description
         item_disposition = item_c.disposition.code
-    assert final_status == "cancelled"
+    assert final_status == "canceled"
     # Both lines' stock is back, not just the one whose item was contended.
     assert sold_out.quantity_available == 1
     assert other.quantity_available == 5
@@ -665,7 +665,7 @@ def test_a_stale_data_error_inside_a_cancellation_is_a_409_not_a_500(
 
         admin = _present(session.get(User, admin_id))
         monkeypatch.setattr(session, "flush", _stale_on_first_real_flush(session))
-        cancel = OrderStatusUpdate(status="cancelled", version=version)
+        cancel = OrderStatusUpdate(status="canceled", version=version)
         with pytest.raises(HTTPException) as excinfo:
             update_order_status(order_id, cancel, session, admin)
         monkeypatch.undo()

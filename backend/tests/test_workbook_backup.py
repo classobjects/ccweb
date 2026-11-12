@@ -404,7 +404,7 @@ def _unreachable_live(target_url: str, *, database: str | None = None) -> str:
 def test_an_unreachable_live_database_is_refused_by_its_url(
     pair: tuple[Engine, str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The live server cannot answer, so its URL, normalised, is compared.
+    """The live server cannot answer, so its URL, normalized, is compared.
 
     The target is spelled `127.0.0.1` with the default port left out; the live
     URL says `localhost` and the port. Both name one host, port and database.
@@ -471,7 +471,7 @@ def test_app_backup_finds_the_tables_no_model_describes(
     scratch database's tables have no models at all, so every one of them must be found.
     """
     source, _ = pair
-    found = [table.name for table in backup.unmodelled_tables(source)]
+    found = [table.name for table in backup.unmodeled_tables(source)]
     assert set(found) == {"alembic_version", "parent", "finish", "coinage", "child"}
     assert found.index("parent") < found.index("child")
     # And the copy's table list is the models' followed by these.
@@ -498,7 +498,7 @@ def test_app_backup_copies_a_row_that_points_at_a_later_row_of_its_table(
             )
         tables = [
             table
-            for table in backup.unmodelled_tables(source)
+            for table in backup.unmodeled_tables(source)
             if table.name != wb.VERSION_TABLE
         ]
 

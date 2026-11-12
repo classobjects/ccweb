@@ -4,7 +4,7 @@
 import { useEffect, useState } from 'react'
 
 import { api } from '../api'
-import { date, money, orderStatusText } from '../../shared/format'
+import { date, money } from '../../shared/format'
 import ModalDialog from '../ModalDialog'
 import HelpScope from '../HelpScope'
 import Pager from '../Pager'
@@ -27,12 +27,12 @@ const STATUSES = [
   'packed',
   'shipped',
   'delivered',
-  'cancelled',
+  'canceled',
   'refunded',
 ]
 
-//: The statuses from which cancelling returns no stock, mirroring
-//: `routers.orders.NO_STOCK_RETURN_STATUSES` (less `cancelled`, which is
+//: The statuses from which canceling returns no stock, mirroring
+//: `routers.orders.NO_STOCK_RETURN_STATUSES` (less `canceled`, which is
 //: disabled on its own). The goods have left, or the money went back, so
 //: nothing is put back and nothing can be stranded. Kept in the same order
 //: as STATUSES above for reading, not because anything here depends on it.
@@ -47,37 +47,37 @@ const PAGE_SIZE = 100
  * would not. Every option stays live; choosing a refused one sends nothing
  * and shows this instead, the reason the server's 409 would give.
  *
- * A cancelled order's stock is back on sale, so it cannot be moved on.
- * Cancelling or refunding an unshipped order returns its stock, which has
+ * A canceled order's stock is back on sale, so it cannot be moved on.
+ * Canceling or refunding an unshipped order returns its stock, which has
  * nowhere to go when a listing has ended: a sale recorded from another
  * platform ended its listing, and a lot bought in the shop ends its listing
  * at checkout (each line says so, `listing_ended`). Once shipped, either
- * returns no stock -- cancelling is how a refund is recorded, and an
+ * returns no stock -- canceling is how a refund is recorded, and an
  * `auction_house` sale is created `delivered` -- so it is not refused.
  * "Unshipped" is read here from the current status; the server reads the
  * order's history as well, so an order set back from `shipped` is refused
  * here though the server would take it.
  */
 function refusal(order, status) {
-  if (order.status === 'cancelled' && status !== 'cancelled') {
+  if (order.status === 'canceled' && status !== 'canceled') {
     return (
       `Order #${order.id} is canceled and its stock has been returned. ` +
       'Place a new order instead.'
     )
   }
-  const returnsStock = status === 'cancelled' || status === 'refunded'
+  const returnsStock = status === 'canceled' || status === 'refunded'
   if (!returnsStock || NO_STOCK_RETURN_STATUSES.has(order.status)) return null
   if (order.sales_venue_code !== 'store') {
     return (
       `Sold on ${order.sales_venue_name}, whose listing ended with the sale ` +
-      `-- there is no stock to return, so order #${order.id} cannot be ${orderStatusText(status)} ` +
+      `-- there is no stock to return, so order #${order.id} cannot be ${status} ` +
       'before it ships.'
     )
   }
   if (order.items.some((line) => line.listing_ended)) {
     return (
       'Its listing has ended (a lot ends when it is bought) -- there is no ' +
-      `stock to return, so order #${order.id} cannot be ${orderStatusText(status)} before it ships.`
+      `stock to return, so order #${order.id} cannot be ${status} before it ships.`
     )
   }
   return null
@@ -114,17 +114,17 @@ export default function Orders() {
   // Held here rather than in a `useRequest`, which would own the list: a
   // status change puts its one order back in place without asking again.
   useEffect(() => {
-    let cancelled = false
+    let canceled = false
     api
       .listOrders({ status: show, limit: PAGE_SIZE, offset })
       .then((answer) => {
-        if (cancelled) return
+        if (canceled) return
         setPage(answer)
         setLoadError('')
       })
-      .catch((err) => !cancelled && setLoadError(err.message))
+      .catch((err) => !canceled && setLoadError(err.message))
     return () => {
-      cancelled = true
+      canceled = true
     }
   }, [show, offset, reloads])
 
@@ -136,14 +136,14 @@ export default function Orders() {
       setActionError(refused)
       return
     }
-    // Cancelling an unshipped order puts its stock back on sale, and the
+    // Canceling an unshipped order puts its stock back on sale, and the
     // server then refuses to move the order on again -- so it is asked about.
     // Refunding one before it ships does the same.
     if (
-      status === 'cancelled' &&
+      status === 'canceled' &&
       !window.confirm(
         `Cancel order #${order.id} for ${order.customer_name}? Unshipped stock goes ` +
-          'back on sale, and a cancelled order cannot be reopened.',
+          'back on sale, and a canceled order cannot be reopened.',
       )
     ) {
       return
@@ -206,7 +206,7 @@ export default function Orders() {
               <option value="">every status</option>
               {STATUSES.map((s) => (
                 <option key={s} value={s}>
-                  {orderStatusText(s)}
+                  {s}
                 </option>
               ))}
             </select>
@@ -224,7 +224,7 @@ export default function Orders() {
         {shown.length === 0 && <p className="muted">No orders to show.</p>}
 
         {shown.length > 0 && (
-          // On a phone each row stacks into a card, a line per labelled cell.
+          // On a phone each row stacks into a card, a line per labeled cell.
           <table className="table stacks">
             <thead>
               <tr>
@@ -284,7 +284,7 @@ export default function Orders() {
                         is answered with its reason when chosen (`refusal`). */}
                       {STATUSES.map((s) => (
                         <option key={s} value={s}>
-                          {orderStatusText(s)}
+                          {s}
                         </option>
                       ))}
                     </select>

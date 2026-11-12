@@ -138,7 +138,7 @@ def _cleanup_race_rows(cleanup: Session) -> None:
     5. `sales_lot_item`, then `sales_lot`. **After** the listings, because
        `listing.sales_lot_id` is RESTRICT; **before** `inventory_item`,
        because `sales_lot_item.inventory_item_id` is. `lot_ids` is
-       materialised into a Python list *first*: it is derived from
+       materialized into a Python list *first*: it is derived from
        `sales_lot_item`, so as a live subquery it would read back empty the
        moment those membership rows were deleted, and every lot this file
        made would survive.

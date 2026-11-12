@@ -22,7 +22,7 @@ from tests.builders import ItemFactory, make_jpeg
 
 
 def _webp(color: str = "navy") -> bytes:
-    """A small WebP image of one colour."""
+    """A small WebP image of one color."""
     buffer = io.BytesIO()
     PILImage.new("RGB", (64, 40), color).save(buffer, format="WEBP")
     return buffer.getvalue()

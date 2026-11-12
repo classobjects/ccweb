@@ -64,7 +64,7 @@ router = APIRouter(prefix="/orders", tags=["orders"])
 #: Statuses that end an order and so return its stock when it has not
 #: shipped. A refund before shipping is a cancellation with the money gone
 #: back: its stock returns too, or the order would hold it for ever.
-STOCK_RETURNING_STATUSES = frozenset({"cancelled", "refunded"})
+STOCK_RETURNING_STATUSES = frozenset({"canceled", "refunded"})
 
 # The same 404 whether the order does not exist or belongs to another
 # customer, so order ids cannot be probed.
@@ -461,15 +461,15 @@ def _no_stock_to_return(db: Session, order: SalesOrder) -> str | None:
 def update_order_status(
     order_id: int, payload: OrderStatusUpdate, db: DbSession, admin: AdminUser
 ) -> OrderOut:
-    """Advance an order. Cancelling or refunding an unshipped one returns its stock.
+    """Advance an order. Canceling or refunding an unshipped one returns its stock.
 
     An **unshipped** order whose listing has already ended cannot be
-    cancelled or refunded -- a sale recorded from an outside platform, or a
+    canceled or refunded -- a sale recorded from an outside platform, or a
     lot bought in the shop -- because there is nothing to return the stock to
     (`_no_stock_to_return`). Once it has shipped, either returns no stock and
     so strands nothing -- and "has shipped" is read from its history
     (`order_writes.ever_shipped`), so setting the status back does not change the
-    answer. An order refunded before it shipped, like a cancelled
+    answer. An order refunded before it shipped, like a canceled
     one, cannot be moved on: its stock is back on sale.
 
     Locks and re-reads the `sales_order` row -- order first, listings second
@@ -487,7 +487,7 @@ def update_order_status(
     order = found_or_404(order, _ORDER_NOT_FOUND)
     # Compared on the freshly locked row: a status chosen from a page read
     # before someone else moved the order on would otherwise be applied over
-    # a change its chooser never saw -- a shipped order cancelled for good.
+    # a change its chooser never saw -- a shipped order canceled for good.
     if payload.version != order.version:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -497,10 +497,10 @@ def update_order_status(
         )
 
     previous = _status_code(db, order)
-    # Cancelling or refunding an order that has not shipped returns its stock
+    # Canceling or refunding an order that has not shipped returns its stock
     # to the catalog; a shipped order's goods have left, so either moves no
-    # stock. Re-sending `cancelled` on an
-    # already-cancelled order is a no-op. Shipped is asked of the order's
+    # stock. Re-sending `canceled` on an
+    # already-canceled order is a no-op. Shipped is asked of the order's
     # history as well as its status: one walked back from `shipped` to
     # `pending` is still an order whose coins have left.
     returns_stock = (
@@ -508,7 +508,7 @@ def update_order_status(
         and previous not in NO_STOCK_RETURN_STATUSES
         and not ever_shipped(db, order_id)
     )
-    # An order whose stock cannot be put back cannot be cancelled here --
+    # An order whose stock cannot be put back cannot be canceled here --
     # `_no_stock_to_return` says which shape it is and why, and is where the
     # whole argument lives. Refusing the transition is the only option that
     # leaves nothing stranded; undoing such a sale needs a path that re-offers
@@ -517,7 +517,7 @@ def update_order_status(
     # Asked only when this cancellation returns stock -- `returns_stock`,
     # the condition `return_stock` is called under below -- because nothing
     # can be stranded by a call that moves no stock: a shipped order is
-    # cancellable whatever state its listing is in.
+    # cancelable whatever state its listing is in.
     if returns_stock:
         blocked = _no_stock_to_return(db, order)
         if blocked is not None:
@@ -526,16 +526,16 @@ def update_order_status(
                 detail=f"Order #{order_id} {blocked}. "
                 f"It cannot be {payload.status} here.",
             )
-    # Cancelling an unshipped order put its stock back on sale. Moving it on
+    # Canceling an unshipped order put its stock back on sale. Moving it on
     # again would leave an order standing on stock already offered to the next
-    # buyer -- the same coins sold twice. Re-sending "cancelled" stays harmless.
-    if previous == "cancelled" and payload.status != "cancelled":
+    # buyer -- the same coins sold twice. Re-sending "canceled" stays harmless.
+    if previous == "canceled" and payload.status != "canceled":
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Order #{order_id} is canceled and its stock has been "
             "returned. Place a new order instead.",
         )
-    # The same for a refund that returned the stock. Cancelling it after is
+    # The same for a refund that returned the stock. Canceling it after is
     # harmless -- `refunded` returns nothing more -- and a refund recorded
     # after shipping moved no stock, so it may still be moved on.
     if (

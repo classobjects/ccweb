@@ -71,7 +71,7 @@ _CENTS = Decimal("0.01")
 
 #: How many `pending` orders one customer may hold before the shop refuses
 #: another, 409. Each pending order takes stock off sale until it is paid or
-#: cancelled, so without a ceiling one account could empty the shop by
+#: canceled, so without a ceiling one account could empty the shop by
 #: placing orders it never pays for. Asked by the shop's checkout
 #: (`routers.orders.create_order`) only: an order a manager places on a
 #: customer's behalf comes from the console, where the person placing it is
@@ -639,10 +639,10 @@ def ever_shipped(db: Session, order_id: int, *, before: int | None = None) -> bo
 
 
 #: Statuses a cancellation must not return stock from: the stock has left
-#: (`SHIPPED_STATUSES`), was already returned (`cancelled`), or the money went
+#: (`SHIPPED_STATUSES`), was already returned (`canceled`), or the money went
 #: back (`refunded`) -- a status that does not say whether the coins came
 #: back, and whose ordinary case is a refund after shipping.
-NO_STOCK_RETURN_STATUSES = SHIPPED_STATUSES | {"cancelled", "refunded"}
+NO_STOCK_RETURN_STATUSES = SHIPPED_STATUSES | {"canceled", "refunded"}
 
 
 def orders_holding_stock(db: Session, listing_id: int) -> list[int]:
@@ -749,7 +749,7 @@ def _refuse_stock_for_an_outside_sale(
     An order that records a sale made on another platform takes no stock
     here. The only listing a line could grow from is the shop's
     (`_refuse_unless_on_sale_in_shop`), and such an order can never be
-    cancelled (`routers.orders._no_stock_to_return`), so shop stock added
+    canceled (`routers.orders._no_stock_to_return`), so shop stock added
     to it would be held with no way to release it. Its prices, customer
     and notes may still be corrected.
     """
@@ -908,7 +908,7 @@ def revise_order(
     same as a checkout does (`_settle_sold_lots`). A line **removed** whose
     listing has already ended is refused instead, because its stock has
     nowhere to go back to -- the same refusal, for the same reason, that
-    `routers.orders` makes when such an order is cancelled.
+    `routers.orders` makes when such an order is canceled.
     """
     order = db.execute(
         select(SalesOrder)

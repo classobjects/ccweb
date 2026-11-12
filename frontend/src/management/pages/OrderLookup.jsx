@@ -134,7 +134,7 @@ export default function OrderLookup() {
                 : 'No purchase matches. Clear a box to widen the search.'}
             </p>
           ) : (
-            // On a phone each row stacks into a card, a line per labelled cell.
+            // On a phone each row stacks into a card, a line per labeled cell.
             <table className="table purchase-table stacks" aria-label="Purchases found">
               <thead>
                 <SortHeaders columns={COLUMNS} sort={sort} onSort={setSort} />

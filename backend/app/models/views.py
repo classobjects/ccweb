@@ -19,7 +19,7 @@ numbers, cost basis, or inventory photographs, and a test asserts that
 against `PUBLIC_CATALOG_FORBIDDEN_COLUMNS` so a later ``select *`` cannot
 quietly widen the view. But no request passes through it, so what actually
 keeps those columns away from a buyer is `to_catalog_item` plus
-`CatalogItemOut` -- see `test_catalogue_never_exposes_cost_basis_or_location`,
+`CatalogItemOut` -- see `test_catalog_never_exposes_cost_basis_or_location`,
 which is the enforcement rather than a second copy of it.
 
 Keeping the view honest is still worth doing: it is the schema's statement of

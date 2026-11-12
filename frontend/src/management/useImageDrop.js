@@ -49,7 +49,7 @@ export function useImageDrop({ onImages, disabled = false }) {
   // a dragleave on the target itself, since only the topmost element under
   // the pointer counts as "current" -- a flag would blink the hint off for
   // every child crossed. Active while the count is above zero; a drop or a
-  // cancelled drag (see the window listener below) resets it to zero rather
+  // canceled drag (see the window listener below) resets it to zero rather
   // than trusting the count to unwind on its own.
   const dragDepth = useRef(0)
 
@@ -114,7 +114,7 @@ export function useImageDrop({ onImages, disabled = false }) {
     addFiles(imageFiles)
   }
 
-  // A drag cancelled outright -- Escape, or a drop outside the browser
+  // A drag canceled outright -- Escape, or a drop outside the browser
   // window -- can leave the target's own dragleave never firing, since the
   // pointer never crosses its boundary again to trigger one. Both `dragend`
   // (fired on the source once the operation ends) and `drop` (fired wherever

@@ -198,13 +198,13 @@ export default function Lots() {
   const [discarding, setDiscarding] = useState(null)
 
   useEffect(() => {
-    let cancelled = false
+    let canceled = false
     // Two reads: every open lot, whatever its age, and the newest page of
     // everything for the history below it. Merged, the open ones from the
     // first read -- the second may have cut some of them off.
     Promise.all([api.listLots(ASSEMBLING_LOTS), api.listLots()])
       .then(([open, page]) => {
-        if (cancelled) return
+        if (canceled) return
         const past = (page?.lots ?? []).filter((lot) => lot.status !== 'assembling')
         const openCount = (page?.lots ?? []).length - past.length
         const stillOpen = (open?.lots ?? []).filter(
@@ -217,9 +217,9 @@ export default function Lots() {
         })
         setError('')
       })
-      .catch((err) => !cancelled && setError(err.message))
+      .catch((err) => !canceled && setError(err.message))
     return () => {
-      cancelled = true
+      canceled = true
     }
   }, [reloads])
 
@@ -391,7 +391,7 @@ export default function Lots() {
             </tbody>
           </table>
           {lot.members.length > 0 && (
-            // On a phone each row stacks into a card, a line per labelled cell.
+            // On a phone each row stacks into a card, a line per labeled cell.
             <table className="table stacks">
               <thead>
                 <tr>
@@ -489,7 +489,7 @@ export default function Lots() {
         <p className="muted">No lot has been offered yet.</p>
       )}
       {history.length > 0 && (
-        // On a phone each row stacks into a card, a line per labelled cell.
+        // On a phone each row stacks into a card, a line per labeled cell.
         <table className="table stacks">
           <thead>
             <tr>

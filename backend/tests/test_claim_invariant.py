@@ -320,9 +320,9 @@ def _settled_without_results(db: Session, lot: AuctionLot) -> None:
     lot.auction.status = AuctionStatus.settled
 
 
-def _cancelled_with_lots(db: Session, lot: AuctionLot) -> None:
+def _canceled_with_lots(db: Session, lot: AuctionLot) -> None:
     """Break the rule: cancel an auction that still has lots on offer."""
-    lot.auction.status = AuctionStatus.cancelled
+    lot.auction.status = AuctionStatus.canceled
 
 
 def _sold_without_a_buyer(db: Session, lot: AuctionLot) -> None:
@@ -365,7 +365,7 @@ def _detailing_a_fixed_price_listing(db: Session, lot: AuctionLot) -> None:
         (_result_before_settlement, "has a result on a scheduled auction"),
         (_ended_under_an_open_auction, "its listing is ended on a scheduled auction"),
         (_settled_without_results, "has no result on a settled auction"),
-        (_cancelled_with_lots, "survived its auction's cancellation"),
+        (_canceled_with_lots, "survived its auction's cancellation"),
         (_sold_without_a_buyer, "sold with no hammer price or no buyer"),
         (_money_on_an_unsold_lot, "carries a hammer price or buyer but did not sell"),
         (_consigned_on_a_scheduled_auction, "is scheduled but still consigned"),

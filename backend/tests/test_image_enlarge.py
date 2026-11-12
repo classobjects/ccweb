@@ -50,7 +50,7 @@ G = "https://i.ebayimg.com/images/g"
 
 
 def _picture(color: str, size: tuple[int, int]) -> bytes:
-    """A one-colour JPEG of this size, as a marketplace serves a photograph."""
+    """A one-color JPEG of this size, as a marketplace serves a photograph."""
     buffer = io.BytesIO()
     PILImage.new("RGB", size, color).save(buffer, format="JPEG")
     return buffer.getvalue()

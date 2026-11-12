@@ -87,7 +87,7 @@ def test_the_currency_inventory_shows_a_grade_by_its_label(
     assert row["grade_label"] == "Choice Uncirculated 64"
 
 
-def test_the_demo_catalogue_grades_its_banknotes_on_the_note_scale(db: Session) -> None:
+def test_the_demo_catalog_grades_its_banknotes_on_the_note_scale(db: Session) -> None:
     """`app.seed`'s demo notes follow the same rule as every other note.
 
     Its 1957-B Silver Certificate must carry the note scale's grade, not the

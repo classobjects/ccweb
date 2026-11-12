@@ -207,7 +207,7 @@ def test_the_district_is_read_from_the_number(
     number: str, district: str | None
 ) -> None:
     assert fr_district(number) == district
-    # The pattern a search reads it with says the same. Its own flavour of
+    # The pattern a search reads it with says the same. Its own flavor of
     # regular expression is close enough to Python's for these to agree;
     # `test_friedberg.py` asks the database itself.
     found = re.search(DISTRICT_SQL_PATTERN, number)

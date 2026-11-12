@@ -72,7 +72,7 @@ rewrites nothing already recorded.
 
 Facts that follow from what you entered are shown in the editor as
 *suggested* values as you type (`POST /api/inventory/{id}/preview`), filled
-in by Save, and never replace a value you chose: for a note, its type, seal colour, signature combination, Federal
+in by Save, and never replace a value you chose: for a note, its type, seal color, signature combination, Federal
 Reserve district and design series from its denomination, series and serial;
 for a coin, its metal and design series from its denomination, country and
 year.

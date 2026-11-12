@@ -32,7 +32,7 @@ def live_item() -> ColumnElement[bool]:
 
 
 #: The `item_status` codes that mean a purchased line has not yet been
-#: resolved: still `ordered`, or `missing` -- paid for, not cancelled, and
+#: resolved: still `ordered`, or `missing` -- paid for, not canceled, and
 #: sometimes turns up later, so it counts exactly as outstanding as one
 #: still `ordered`. Named once here so Receiving (`GET /api/purchase-orders`)
 #: and the `pr_outstanding` report read the same definition and can never

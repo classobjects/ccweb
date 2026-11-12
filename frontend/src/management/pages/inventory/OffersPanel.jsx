@@ -152,7 +152,7 @@ export default function OffersPanel({ item, onChanged }) {
       {error && <p className="error">{error}</p>}
       {listings.length === 0 && <p className="muted">Not offered anywhere yet.</p>}
       {listings.length > 0 && (
-        // On a phone each row stacks into a card, a line per labelled cell.
+        // On a phone each row stacks into a card, a line per labeled cell.
         <table className="stacks">
           <thead>
             <tr>

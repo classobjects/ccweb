@@ -158,7 +158,7 @@ function ReportTable({ result, onOpenItem }) {
     })
   }
 
-  // On a phone each row stacks into a card, a line per labelled cell.
+  // On a phone each row stacks into a card, a line per labeled cell.
   return (
     <table className="table report-table stacks">
       <thead data-help="report_sort">

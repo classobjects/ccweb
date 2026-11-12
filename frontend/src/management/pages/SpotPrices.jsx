@@ -146,7 +146,7 @@ export default function SpotPrices() {
       {said && <output className="notice status-line">{said}</output>}
       {!loaded.error && !loaded.data && <p className="muted">Loading...</p>}
       {rows.length > 0 && (
-        // On a phone each row stacks into a card, a line per labelled cell.
+        // On a phone each row stacks into a card, a line per labeled cell.
         <table className="table stacks" aria-label="Spot prices">
           <thead>
             <tr>
@@ -200,7 +200,7 @@ export default function SpotPrices() {
                           }))
                         }
                       />
-                      {/* Never greyed out for want of a price: a column of
+                      {/* Never grayed out for want of a price: a column of
                           dimmed buttons reads as a page that takes no
                           input. Pressed with nothing, or with something
                           that is not a price, it says what to type. */}

@@ -16,7 +16,7 @@ rem  (backend\app\gate_clock.py, keeping its times in the logs folder).
 rem ---------------------------------------------------------------------------
 setlocal enabledelayedexpansion
 
-rem  An unrecognised argument is refused, never ignored: a mistyped "fix"
+rem  An unrecognized argument is refused, never ignored: a mistyped "fix"
 rem  would otherwise run the plain check and report on files left unfixed.
 if not "%~1"=="" if /i not "%~1"=="fix" (
     echo ERROR: unknown argument %1

@@ -329,7 +329,7 @@ describe('ReferenceSelect adding a value by its label alone', () => {
     await user.type(screen.getByPlaceholderText('label'), '!!!')
 
     expect(document.querySelector('.derived-code')).toHaveTextContent('')
-    // Live, not greyed out: pressing it says what is missing.
+    // Live, not grayed out: pressing it says what is missing.
     expect(screen.getByRole('button', { name: 'Add' })).toBeEnabled()
     await user.click(screen.getByRole('button', { name: 'Add' }))
     expect(api.addReferenceValue).not.toHaveBeenCalled()

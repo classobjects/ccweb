@@ -190,7 +190,7 @@ def test_an_administrator_still_sees_an_ended_listing_in_full(
     assert allowed.json()["price"] == "189.00"
 
 
-def test_price_is_serialised_with_two_decimals(
+def test_price_is_serialized_with_two_decimals(
     client: TestClient, listing: Listing
 ) -> None:
     """Money must survive the round trip exactly -- no float drift."""
@@ -548,7 +548,7 @@ PRIVATE_FIELD_NAMES = (
 )
 
 
-def test_catalogue_never_exposes_cost_basis_or_location(
+def test_catalog_never_exposes_cost_basis_or_location(
     client: TestClient, listing: Listing
 ) -> None:
     """Cost basis and location must not reach a customer.
@@ -584,7 +584,7 @@ def _ebay(db: Session) -> int:
     return venue.id
 
 
-def test_the_catalogue_hides_other_platforms_and_auctions(
+def test_the_catalog_hides_other_platforms_and_auctions(
     client: TestClient,
     listing: Listing,
     make_listing: Callable[..., Listing],
@@ -646,7 +646,7 @@ def _buy(
     return dict(placed.json())
 
 
-def test_a_store_lot_appears_as_one_catalogue_entry(
+def test_a_store_lot_appears_as_one_catalog_entry(
     client: TestClient, db: Session, store_lot_listing: Listing
 ) -> None:
     """One thing for sale, with its members' public descriptions."""
@@ -907,7 +907,7 @@ def test_a_lot_entry_never_carries_cost_or_location(
     assert not leaked, f"leaked somewhere in the payload: {leaked}"
 
 
-def test_a_non_store_lot_listing_stays_out_of_the_catalogue(
+def test_a_non_store_lot_listing_stays_out_of_the_catalog(
     client: TestClient, db: Session, offered_lot_listing: Listing
 ) -> None:
     """`shop_listing_filters` is the rule, and a lot does not get an exemption.

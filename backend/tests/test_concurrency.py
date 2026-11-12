@@ -8,7 +8,7 @@ its requests through a single portal, so two "concurrent" client calls actually
 run one after another and would pass even with the row lock removed.
 
 Instead the order-creation handler is invoked directly from two threads, each
-with its own real session and connection, synchronised on a barrier so their
+with its own real session and connection, synchronized on a barrier so their
 transactions genuinely overlap. Removing the listing lock
 ``order_writes.place_order`` takes (``_lock_listings``) makes these tests fail,
 which is the point.

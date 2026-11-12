@@ -480,7 +480,7 @@ describe('Auctions', () => {
     await user.click(await screen.findByRole('button', { name: /^remove/i }))
     const dialog = screen.getByRole('dialog', { name: /remove lot/i })
     const confirm = within(dialog).getByRole('button', { name: 'Remove lot' })
-    // Live, not greyed out: a press with no location sends nothing and says
+    // Live, not grayed out: a press with no location sends nothing and says
     // what is missing.
     expect(confirm).toBeEnabled()
     const reason = 'Choose where the items come back to first.'
@@ -506,7 +506,7 @@ describe('Auctions', () => {
     const user = userEvent.setup()
     const row = auction({ status: 'consigned', consigned_on: '2026-10-01' })
     api.listAuctions.mockResolvedValue({ auctions: [row] })
-    api.cancelAuction.mockResolvedValue({ ...row, status: 'cancelled', lots: [] })
+    api.cancelAuction.mockResolvedValue({ ...row, status: 'canceled', lots: [] })
     renderWithProviders(<Auctions />, { strict: true })
 
     await user.click(await screen.findByRole('button', { name: 'View' }))

@@ -1,7 +1,7 @@
 # (c) Copyright 2026 Nathaniel Mills
 # Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
 # SPDX-License-Identifier: Apache-2.0
-"""`sl_offered`, `sl_sales`, `sl_fulfilment`, `sl_aging` and `sl_auctions`."""
+"""`sl_offered`, `sl_sales`, `sl_fulfillment`, `sl_aging` and `sl_auctions`."""
 
 from __future__ import annotations
 
@@ -41,12 +41,12 @@ from app.order_writes import Line
 from app.reports.selling import (
     SL_AGING,
     SL_AUCTIONS,
-    SL_FULFILMENT,
+    SL_FULFILLMENT,
     SL_OFFERED,
     SL_SALES,
     AgingParams,
     AuctionsParams,
-    FulfilmentParams,
+    FulfillmentParams,
     OfferedParams,
     SalesParams,
     _age_bucket,
@@ -807,13 +807,13 @@ def test_rows_are_grouped_by_month_and_venue(
     ]
 
 
-@pytest.mark.parametrize("status_code", ["cancelled", "refunded"])
-def test_a_cancelled_or_refunded_order_is_excluded(
+@pytest.mark.parametrize("status_code", ["canceled", "refunded"])
+def test_a_canceled_or_refunded_order_is_excluded(
     db: Session, make_item: ItemFactory, admin_user: User, status_code: str
 ) -> None:
     """A refund is not a sale: the money went back.
 
-    Neither a refunded order's returned money nor a cancelled
+    Neither a refunded order's returned money nor a canceled
     order's never-happened sale counts here -- the same exclusion, tested
     with one parametrized case each.
     """
@@ -840,7 +840,7 @@ def test_excluded_order_count_names_how_many_were_left_out(
 ) -> None:
     venue = _venue(db, "ebay")
     buyer = venue_buyer(db, venue, "amy")
-    for status_code in ("cancelled", "refunded"):
+    for status_code in ("canceled", "refunded"):
         listing = _offer_on(
             db,
             priced_item(make_item, status_code, Decimal("10.00")),
@@ -1097,7 +1097,7 @@ def test_sales_date_bounds_are_inclusive(
 def test_excluded_order_count_keeps_to_the_date_range(
     db: Session, make_item: ItemFactory, admin_user: User
 ) -> None:
-    """Only a cancelled order placed inside the range is named as left out."""
+    """Only a canceled order placed inside the range is named as left out."""
     venue = _venue(db, "ebay")
     buyer = venue_buyer(db, venue, "amy")
     for title, day in (
@@ -1118,7 +1118,7 @@ def test_excluded_order_count_keeps_to_the_date_range(
             [Line(listing_id=listing.id, quantity=1, unit_price=Decimal("50.00"))],
             admin_user,
             venue=venue,
-            status_code="cancelled",
+            status_code="canceled",
         )
         order.placed_at = _at_noon(day)
     db.commit()
@@ -1183,7 +1183,7 @@ def test_note_names_which_statuses_count(
         "Pending" in note and "Paid" in note and "Delivered" in note
         for note in result.notes
     )
-    assert not any("Cancelled" in note or "Refunded" in note for note in result.notes)
+    assert not any("Canceled" in note or "Refunded" in note for note in result.notes)
 
 
 def test_no_sales_in_range_returns_no_totals(db: Session) -> None:
@@ -1194,7 +1194,7 @@ def test_no_sales_in_range_returns_no_totals(db: Session) -> None:
 
 
 # ===========================================================================
-# sl_fulfilment
+# sl_fulfillment
 # ===========================================================================
 
 
@@ -1221,7 +1221,7 @@ def _placed(
     )
 
 
-def test_fulfilment_row_values_are_known(
+def test_fulfillment_row_values_are_known(
     db: Session, make_item: ItemFactory, admin_user: User
 ) -> None:
     venue = _venue(db, "ebay")
@@ -1237,7 +1237,7 @@ def test_fulfilment_row_values_are_known(
     order.placed_at = _at_noon(date.today() - timedelta(days=5))
     db.commit()
 
-    result = SL_FULFILMENT.run(db, FulfilmentParams())
+    result = SL_FULFILLMENT.run(db, FulfillmentParams())
     row = result.rows[0]
     assert row["order"] == f"#{order.id}"
     assert row["customer"] == "amy"
@@ -1248,9 +1248,9 @@ def test_fulfilment_row_values_are_known(
 
 
 @pytest.mark.parametrize(
-    "status_code", ["shipped", "delivered", "cancelled", "refunded"]
+    "status_code", ["shipped", "delivered", "canceled", "refunded"]
 )
-def test_shipped_delivered_cancelled_and_refunded_orders_are_excluded(
+def test_shipped_delivered_canceled_and_refunded_orders_are_excluded(
     db: Session, make_item: ItemFactory, admin_user: User, status_code: str
 ) -> None:
     venue = _venue(db, "ebay")
@@ -1264,7 +1264,7 @@ def test_shipped_delivered_cancelled_and_refunded_orders_are_excluded(
     )
     db.commit()
 
-    result = SL_FULFILMENT.run(db, FulfilmentParams())
+    result = SL_FULFILLMENT.run(db, FulfillmentParams())
     assert result.rows == []
 
 
@@ -1283,7 +1283,7 @@ def test_pending_paid_and_packed_orders_are_included(
     )
     db.commit()
 
-    result = SL_FULFILMENT.run(db, FulfilmentParams())
+    result = SL_FULFILLMENT.run(db, FulfillmentParams())
     assert len(result.rows) == 1
 
 
@@ -1311,7 +1311,7 @@ def test_oldest_first(db: Session, make_item: ItemFactory, admin_user: User) -> 
     older.placed_at = _at_noon(date.today() - timedelta(days=10))
     db.commit()
 
-    result = SL_FULFILMENT.run(db, FulfilmentParams())
+    result = SL_FULFILLMENT.run(db, FulfillmentParams())
     assert [r["order"] for r in result.rows] == [f"#{older.id}", f"#{newer.id}"]
 
 
@@ -1346,7 +1346,7 @@ def test_a_deleted_items_share_does_not_count_toward_items(
     deleted.deleted_at = utcnow()
     db.commit()
 
-    result = SL_FULFILMENT.run(db, FulfilmentParams())
+    result = SL_FULFILLMENT.run(db, FulfillmentParams())
     row = next(r for r in result.rows if r["order"] == f"#{order.id}")
     assert row["items"] == 1
     assert row["amount"] == Decimal("50.00")
@@ -1368,12 +1368,12 @@ def test_no_left_out_note_when_nothing_was_left_out(
     )
     db.commit()
 
-    result = SL_FULFILMENT.run(db, FulfilmentParams())
+    result = SL_FULFILLMENT.run(db, FulfillmentParams())
     assert len(result.rows) == 1
     assert result.notes == []
 
 
-def test_fulfilment_totals_amount_is_the_sum_of_the_rows(
+def test_fulfillment_totals_amount_is_the_sum_of_the_rows(
     db: Session, make_item: ItemFactory, admin_user: User
 ) -> None:
     venue = _venue(db, "ebay")
@@ -1397,7 +1397,7 @@ def test_fulfilment_totals_amount_is_the_sum_of_the_rows(
     )
     db.commit()
 
-    result = SL_FULFILMENT.run(db, FulfilmentParams())
+    result = SL_FULFILLMENT.run(db, FulfillmentParams())
     assert result.totals is not None
     assert len(result.rows) == 2  # orders count is the row count
     assert result.totals["amount"] == sum(
@@ -1407,7 +1407,7 @@ def test_fulfilment_totals_amount_is_the_sum_of_the_rows(
 
 
 def test_nothing_waiting_to_ship_returns_no_totals(db: Session) -> None:
-    result = SL_FULFILMENT.run(db, FulfilmentParams())
+    result = SL_FULFILLMENT.run(db, FulfillmentParams())
     assert result.rows == []
     assert result.totals is None
     assert result.drills == []

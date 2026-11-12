@@ -49,7 +49,7 @@ describe('ConfirmDialog', () => {
   })
 
   it('keeps the confirm button live, so an incomplete answer is explained on press', () => {
-    // A greyed-out button says nothing about why. The caller's `onConfirm`
+    // A grayed-out button says nothing about why. The caller's `onConfirm`
     // names what is missing instead, so nothing here can switch it off.
     confirm({ disabled: true })
     expect(

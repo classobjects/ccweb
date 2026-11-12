@@ -61,7 +61,7 @@ The binding conventions are written down; the most important:
   history; designs go in `docs/specs/<topic>-design.md`; command blocks are
   fenced as `console`, paste into their shell as written, and are given for
   both cmd and bash where they differ.
-- **Reference data** -- only facts may be shipped; a publisher's catalogue
+- **Reference data** -- only facts may be shipped; a publisher's catalog
   numbering or price guide may not ([docs/reference-data.md](docs/reference-data.md)).
 - **Test data** -- use `example.com` addresses, fictional names and
   synthetic identifiers; Friedberg numbers in tests are in the 9900s.
@@ -69,7 +69,7 @@ The binding conventions are written down; the most important:
 [docs/code-quality.md](docs/code-quality.md) explains the gates and their
 few exceptions.
 
-## Licence
+## License
 
 By contributing you agree that your contribution is licensed under the
 Apache License 2.0, as the rest of the project is ([LICENSE](LICENSE)).

@@ -1,7 +1,7 @@
 # (c) Copyright 2026 Nathaniel Mills
 # Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
 # SPDX-License-Identifier: Apache-2.0
-"""Characterisation tests for `series_match.run`.
+"""Characterization tests for `series_match.run`.
 
 test_series covers `build_rules` and `match`; this covers `run` -- the
 function that walks the collection and writes the classification, the part a
@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 from tests.builders import ItemFactory, code_id
 
 # Nothing in the seeded series vocabulary matches this.
-UNRECOGNISABLE = {"title": "Plain metal disc", "description": "No series here."}
+UNRECOGNIZABLE = {"title": "Plain metal disc", "description": "No series here."}
 
 
 def _series_id(db: Session, code: str) -> int:
@@ -29,7 +29,7 @@ def _series_id(db: Session, code: str) -> int:
     return db.execute(select(Series.id).where(Series.code == code)).scalar_one()
 
 
-def test_a_recognisable_description_is_matched(
+def test_a_recognizable_description_is_matched(
     db: Session, make_item: ItemFactory
 ) -> None:
     item = make_item(title="1881-S Morgan Silver Dollar", description="Nice strike.")
@@ -82,10 +82,10 @@ def test_a_nickname_covering_two_series_is_left_alone(
     assert item.series_id is None
 
 
-def test_an_unrecognisable_item_is_counted_not_guessed(
+def test_an_unrecognizable_item_is_counted_not_guessed(
     db: Session, make_item: ItemFactory
 ) -> None:
-    item = make_item(**UNRECOGNISABLE)
+    item = make_item(**UNRECOGNIZABLE)
 
     stats = run(db, commit=True)
 
@@ -133,7 +133,7 @@ def test_counts_cover_every_item_examined(db: Session, make_item: ItemFactory) -
     make_item(title="Cartwheel", description="b", year_start=1921)
     # Names a design not struck in the item's year.
     make_item(title="Franklin Half Dollar", description="c")
-    make_item(**UNRECOGNISABLE)
+    make_item(**UNRECOGNIZABLE)
 
     stats = run(db, commit=False)
 

@@ -403,7 +403,7 @@ describe('Vocabularies', () => {
     await openNoteTypes(user)
     await actions(user, 'Federal Reserve Note')
     const retire = screen.getByRole('button', { name: 'Retire Federal Reserve Note' })
-    // Live, not greyed out: pressing it says why nothing happens.
+    // Live, not grayed out: pressing it says why nothing happens.
     expect(retire).toBeEnabled()
     await user.click(retire)
 
@@ -457,7 +457,7 @@ describe('Vocabularies', () => {
     expect(within(choice).queryByText('National Bank Note')).toBeNull()
     const merge = screen.getByRole('button', { name: 'Merge' })
     expect(merge).toBeDisabled()
-    // Held back with its reason beside it, not greyed out in silence.
+    // Held back with its reason beside it, not grayed out in silence.
     const reason = 'Choose the value to merge into, to see what would move.'
     expect(screen.getByText(reason)).toBeVisible()
 

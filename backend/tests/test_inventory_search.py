@@ -49,7 +49,7 @@ def note(
     serial: str | None = None,
     **overrides: object,
 ) -> InventoryItem:
-    """A banknote and its currency detail, with this seal colour and serial."""
+    """A banknote and its currency detail, with this seal color and serial."""
     item = build_bare_item(
         db, item_kind_id=code_id(db, ItemKind, "currency"), **overrides
     )
@@ -568,7 +568,7 @@ def test_the_order_number_box_finds_a_number_typed_without_its_dashes(
         assert {r["id"] for r in found["rows"]} == {wanted.id}, typed
 
 
-def test_an_order_number_search_still_honours_the_other_filters(
+def test_an_order_number_search_still_honors_the_other_filters(
     client: TestClient, admin_headers: dict[str, str], db: Session
 ) -> None:
     order = build_purchase_order(db, vendor_name="ebay.com", order_number="22-1")

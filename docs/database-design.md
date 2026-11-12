@@ -45,7 +45,7 @@ filter, group or report is a reference table with a stable code. `$20 Bill`,
 copied onto the rows that use them, so a rename takes effect everywhere the
 moment it commits. Search speed comes from reading the base tables with only
 the joins a query needs, plus partial indexes on the facet columns (§11), not
-from denormalising.
+from denormalizing.
 
 **The owner's own words are kept.** `rating` holds the owner's rating as
 written and `weight_note` a weight that is not a single number, beside the
@@ -294,7 +294,7 @@ RESTRICT`, so a classifier in use cannot vanish.
 | `vendor_kind` | marketplace, auction, mint, dealer, private, unknown | |
 | `sales_venue_kind` | own_store, marketplace, live_auction, auction_house | |
 | `carrier` | USPS, UPS, FedEx, DHL | `tracking_url_template` |
-| `sales_order_status` | pending, paid, packed, shipped, delivered, cancelled, refunded | |
+| `sales_order_status` | pending, paid, packed, shipped, delivered, canceled, refunded | |
 | `sales_fee_kind` | commission, processing, listing, shipping_label, promotion, other | |
 | `shipment_status` | label_created, in_transit, delivered, lost, returned | |
 
@@ -531,7 +531,7 @@ inventory_item.status_id       ordered → received → (canceled | returned | m
 inventory_item.disposition_id  held → listed → sold → shipped → delivered; also returned_by_buyer
 ```
 
-`missing` means paid for, not cancelled, never arrived. Status is per item,
+`missing` means paid for, not canceled, never arrived. Status is per item,
 not per order: split shipments are normal and partial receipt leaves the rest
 `ordered`.
 
@@ -760,7 +760,7 @@ belong to `app.offering_writes`.
 
 | Table | Columns | Notes |
 |---|---|---|
-| `auction` | `sales_venue_id`, `title`, `external_id`, `starts_at`, `ends_at`, `status`, `consigned_on`, `notes`, `version` | status `draft` \| `scheduled` \| `consigned` \| `closed` \| `settled` \| `cancelled` |
+| `auction` | `sales_venue_id`, `title`, `external_id`, `starts_at`, `ends_at`, `status`, `consigned_on`, `notes`, `version` | status `draft` \| `scheduled` \| `consigned` \| `closed` \| `settled` \| `canceled` |
 | `auction_lot` | `auction_id`, `listing_id` (unique), `lot_number` (text), `reserve`, `result`, `hammer_price`, `buyer_customer_id` | unique `(auction_id, lot_number)`; `result` (`sold` \| `unsold` \| `withdrawn`) null until settled |
 
 An auction-format listing belongs to an auction; a timed eBay auction is an
@@ -840,7 +840,7 @@ against `PUBLIC_CATALOG_FORBIDDEN_COLUMNS`. The view selects no image column.
 What actually keeps those fields from a buyer is
 `routers/catalog.py:to_catalog_item`, which builds the public shape field by
 field, with `CatalogItemOut` and
-`test_catalogue_never_exposes_cost_basis_or_location`. The one photograph it
+`test_catalog_never_exposes_cost_basis_or_location`. The one photograph it
 adds is the item's primary one, as the URLs of its renditions
 (`image_derivative`, thumb and web). Every image's renditions are served
 publicly, to whoever holds its hash, and an original is never served; the
@@ -875,7 +875,7 @@ reference tables (§4).
 | `listing_status` | active, paused, ended | `listing`, `listing_status_history` |
 | `offer_claim_state` | active, paused, released | `offer_claim` |
 | `sales_lot_status` | assembling, offered, sold, dissolved | `sales_lot` |
-| `auction_status` | draft, scheduled, consigned, closed, settled, cancelled | `auction` |
+| `auction_status` | draft, scheduled, consigned, closed, settled, canceled | `auction` |
 | `auction_lot_result` | sold, unsold, withdrawn | `auction_lot` |
 | `address_kind` | shipping, billing | `address` |
 | `sales_order_change_kind` | placed, line_added, line_removed, quantity, unit_price, customer, notes, status, total | `sales_order_change` |

@@ -158,7 +158,7 @@ export default function InventoryTable({
 
   return (
     <HelpScope>
-      {/* On a phone each item stacks into a card, a line per labelled cell. */}
+      {/* On a phone each item stacks into a card, a line per labeled cell. */}
       <table className="table inventory-table stacks">
         <thead>
           <tr>

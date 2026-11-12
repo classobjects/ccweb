@@ -366,16 +366,16 @@ export default function Platforms() {
   const kindLabel = (code) => kinds.find((k) => k.code === code)?.label ?? code
 
   useEffect(() => {
-    let cancelled = false
+    let canceled = false
     Promise.all([api.listSalesVenues(), api.listVendors()])
       .then(([v, s]) => {
-        if (cancelled) return
+        if (canceled) return
         setVenues(v)
         setVendors(s)
       })
-      .catch((err) => !cancelled && setError(err.message))
+      .catch((err) => !canceled && setError(err.message))
     return () => {
-      cancelled = true
+      canceled = true
     }
   }, [])
 
@@ -410,7 +410,7 @@ export default function Platforms() {
         Where items are sold. Fees here are defaults for estimates.
       </p>
       <button onClick={() => setOpen('new')}>Add platform</button>
-      {/* On a phone each row stacks into a card, a line per labelled cell. */}
+      {/* On a phone each row stacks into a card, a line per labeled cell. */}
       <table className="stacks">
         <thead>
           <tr>

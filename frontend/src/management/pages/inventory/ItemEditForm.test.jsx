@@ -99,7 +99,7 @@ const writes = () =>
 
 /**
  * Save, live, pressed with `reason` in its way: it says so and writes
- * nothing. The button is never greyed out: the press is what explains.
+ * nothing. The button is never grayed out: the press is what explains.
  */
 async function expectSaveRefused(reason) {
   const save = screen.getByRole('button', { name: 'Save' })
@@ -2815,7 +2815,7 @@ describe('ItemEditForm: photographs wait for Save', () => {
   })
 
   it('files each held photograph with the role its own picker shows', async () => {
-    // The owner's case: two photographs added, then labelled where they
+    // The owner's case: two photographs added, then labeled where they
     // are listed. The label beside a photograph is the one it is filed with.
     const user = userEvent.setup()
     api.uploadImage.mockResolvedValue({})

@@ -695,7 +695,7 @@ def _named(url: URL) -> tuple[str, int, str]:
 
     Every loopback spelling is one host and an omitted port is PostgreSQL's
     default. Weaker than `_identity` -- another hostname for this machine is
-    not recognised -- so it serves only when the server cannot be asked.
+    not recognized -- so it serves only when the server cannot be asked.
     """
     host = (url.host or "localhost").lower()
     return (

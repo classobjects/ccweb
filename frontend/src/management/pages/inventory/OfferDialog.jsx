@@ -165,11 +165,11 @@ export default function OfferDialog({
   const itemIds = lot ? '' : items.map((item) => item.id).join(',')
   useEffect(() => {
     if (itemIds === '') return undefined
-    let cancelled = false
+    let canceled = false
     api
       .getOfferTitles(itemIds.split(',').map(Number))
       .then(({ titles }) => {
-        if (cancelled) return
+        if (canceled) return
         setRows((current) => {
           const next = { ...current }
           Object.entries(titles).forEach(([id, title]) => {
@@ -181,9 +181,9 @@ export default function OfferDialog({
           return next
         })
       })
-      .catch(() => !cancelled && setTitlesFailed(true))
+      .catch(() => !canceled && setTitlesFailed(true))
     return () => {
-      cancelled = true
+      canceled = true
     }
   }, [itemIds])
 
@@ -422,7 +422,7 @@ export default function OfferDialog({
         </button>
         {filled && <output className="notice">{filled}</output>}
       </div>
-      {/* On a phone each row stacks into a card, a line per labelled cell. */}
+      {/* On a phone each row stacks into a card, a line per labeled cell. */}
       <table className="stacks offer-rows">
         <thead>
           <tr>

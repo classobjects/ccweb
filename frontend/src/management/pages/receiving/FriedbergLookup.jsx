@@ -331,14 +331,14 @@ export default function FriedbergLookup({
   // after "Change search fields" supersedes it rather than racing it.
   useEffect(() => {
     if (!searchNow) return undefined
-    let cancelled = false
+    let canceled = false
     searchCancelRef.current = () => {
-      cancelled = true
+      canceled = true
     }
     api
       .searchFriedberg(searchFiltersOf(initial))
       .then((rows) => {
-        if (cancelled) return
+        if (canceled) return
         // Inlined, not `showResults`: the effect runs once, and a function
         // declared in the body would have to be one of its dependencies.
         setResults(rows)
@@ -348,13 +348,13 @@ export default function FriedbergLookup({
         setFocusAsked((n) => n + 1)
       })
       .catch((err) => {
-        if (!cancelled) setSearchError(err.message)
+        if (!canceled) setSearchError(err.message)
       })
       .finally(() => {
-        if (!cancelled) setSearching(false)
+        if (!canceled) setSearching(false)
       })
     return () => {
-      cancelled = true
+      canceled = true
     }
   }, [searchNow, initial, attachedId])
 
@@ -486,9 +486,9 @@ export default function FriedbergLookup({
       return
     }
     invalidatePendingSearch()
-    let cancelled = false
+    let canceled = false
     searchCancelRef.current = () => {
-      cancelled = true
+      canceled = true
     }
 
     setSearching(true)
@@ -498,14 +498,14 @@ export default function FriedbergLookup({
     setUsedId(null)
     try {
       const rows = await api.searchFriedberg(searchFiltersOf(facts))
-      if (cancelled) return
+      if (canceled) return
       showResults(rows)
     } catch (err) {
-      if (cancelled) return
+      if (canceled) return
       setSearchError(err.message)
       setResults(null)
     } finally {
-      if (!cancelled) setSearching(false)
+      if (!canceled) setSearching(false)
     }
   }
 
@@ -605,7 +605,7 @@ export default function FriedbergLookup({
     // seal is part of the type: the server refuses it without one.
     if (noteType && !sealColor && !NOTE_TYPES_WITHOUT_SEAL.has(noteType)) {
       setRecordError(
-        `Set the seal colour first: ${number} is new to the catalog, and the seal is part of its type.`,
+        `Set the seal color first: ${number} is new to the catalog, and the seal is part of its type.`,
       )
       return
     }

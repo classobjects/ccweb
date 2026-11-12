@@ -334,7 +334,7 @@ def search_inventory(
         ) from exc
     except ValueError as exc:
         # Different failures reach here: an unsortable column, an
-        # unrecognised `deleted` mode, text that is not a grade or a whole
+        # unrecognized `deleted` mode, text that is not a grade or a whole
         # number. Appending the sortable list to all of them sends the wrong
         # person looking in the wrong place.
         hint = f" Sortable: {sorted(spec.sortable)}" if "sort" in str(exc) else ""

@@ -412,7 +412,7 @@ def test_a_term_that_is_not_a_grade_is_refused(
     assert "not a grade" in response.json()["detail"]
 
 
-def test_the_catalogue_shows_the_composed_grade(
+def test_the_catalog_shows_the_composed_grade(
     client: TestClient, make_listing: Callable[..., Listing]
 ) -> None:
     """A compound grade set on the item is read back composed, via the shop."""

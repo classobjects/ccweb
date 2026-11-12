@@ -378,7 +378,7 @@ def test_an_order_says_which_platform_it_was_sold_on(
 ) -> None:
     """The Sales page cannot tell a shop sale from an outside one without it.
 
-    Its status dropdown offers `cancelled` behind a confirmation promising
+    Its status dropdown offers `canceled` behind a confirmation promising
     the stock goes back on sale -- which `routers/orders.py` then refuses
     with a 409. A confusing prompt, not a broken action, and the platform is
     what lets the page give the reason itself instead.
@@ -430,7 +430,7 @@ def test_changing_status_requires_signing_in(
 
     response = client.patch(
         f"/api/orders/{order['id']}",
-        json={"status": "cancelled", "version": order["version"]},
+        json={"status": "canceled", "version": order["version"]},
     )
 
     assert response.status_code == 401
@@ -491,7 +491,7 @@ def test_a_status_chosen_from_a_stale_page_is_refused(
     """A cancellation picked before someone else shipped the order is a 409.
 
     Taken at face value it would record a refund nobody made, on an order
-    whose cancelled status can never be moved again -- and the confirmation
+    whose canceled status can never be moved again -- and the confirmation
     the page showed promised stock back that a shipped order does not return.
     """
     order = post_order(client, customer_headers, listing.id, 2).json()
@@ -504,7 +504,7 @@ def test_a_status_chosen_from_a_stale_page_is_refused(
 
     stale = client.patch(
         f"/api/orders/{order['id']}",
-        json={"status": "cancelled", "version": order["version"]},
+        json={"status": "canceled", "version": order["version"]},
         headers=admin_headers,
     )
 
@@ -517,7 +517,7 @@ def test_a_status_chosen_from_a_stale_page_is_refused(
     assert listing.quantity_available == 3
 
 
-def test_cancelling_restores_stock(
+def test_canceling_restores_stock(
     client: TestClient,
     listing: Listing,
     customer_headers: dict[str, str],
@@ -528,13 +528,13 @@ def test_cancelling_restores_stock(
     db.refresh(listing)
     assert listing.quantity_available == 3
 
-    cancelled = _set_status(client, admin_headers, order["id"], "cancelled")
-    assert cancelled.status_code == 200, cancelled.text
+    canceled = _set_status(client, admin_headers, order["id"], "canceled")
+    assert canceled.status_code == 200, canceled.text
     db.refresh(listing)
     assert listing.quantity_available == 5
 
 
-def test_cancelling_with_no_store_platform_is_a_500_naming_the_fix(
+def test_canceling_with_no_store_platform_is_a_500_naming_the_fix(
     client: TestClient,
     listing: Listing,
     customer_headers: dict[str, str],
@@ -544,7 +544,7 @@ def test_cancelling_with_no_store_platform_is_a_500_naming_the_fix(
     """The live `routers/orders.py` case of the missing-reference-data handler.
 
     `update_order_status` -> `_no_stock_to_return` -> `store_venue_id` is a
-    **live** path: any admin cancelling an unshipped store order runs it,
+    **live** path: any admin canceling an unshipped store order runs it,
     with no code change needed to reach it, unlike `app.auctions.consign`
     which needs an auction house auction first. `app.main`'s handler for
     `errors.ReferenceDataMissing` -- the one that serves `consign` --
@@ -565,28 +565,28 @@ def test_cancelling_with_no_store_platform_is_a_500_naming_the_fix(
     )
     db.commit()
 
-    response = _set_status(client, admin_headers, order["id"], "cancelled")
+    response = _set_status(client, admin_headers, order["id"], "canceled")
     assert response.status_code == 500, response.text
     assert "alembic upgrade head" in response.json()["detail"]
 
 
-def test_cancelling_twice_does_not_double_restore(
+def test_canceling_twice_does_not_double_restore(
     client: TestClient,
     listing: Listing,
     customer_headers: dict[str, str],
     admin_headers: dict[str, str],
     db: Session,
 ) -> None:
-    """Re-sending 'cancelled' must be idempotent for stock."""
+    """Re-sending 'canceled' must be idempotent for stock."""
     order = post_order(client, customer_headers, listing.id, 2).json()
     for _ in range(2):
-        resent = _set_status(client, admin_headers, order["id"], "cancelled")
+        resent = _set_status(client, admin_headers, order["id"], "canceled")
         assert resent.status_code == 200, resent.text
     db.refresh(listing)
     assert listing.quantity_available == 5, "stock restored once, not twice"
 
 
-def test_cancelling_restores_stock_for_every_line(
+def test_canceling_restores_stock_for_every_line(
     client: TestClient,
     make_listing: Callable[..., Listing],
     customer_headers: dict[str, str],
@@ -610,7 +610,7 @@ def test_cancelling_restores_stock_for_every_line(
     db.refresh(second)
     assert (first.quantity_available, second.quantity_available) == (3, 2)
 
-    response = _set_status(client, admin_headers, order["id"], "cancelled")
+    response = _set_status(client, admin_headers, order["id"], "canceled")
     assert response.status_code == 200, response.text
 
     db.refresh(first)
@@ -618,20 +618,20 @@ def test_cancelling_restores_stock_for_every_line(
     assert (first.quantity_available, second.quantity_available) == (5, 5)
 
 
-def test_cancelling_after_shipping_does_not_return_stock(
+def test_canceling_after_shipping_does_not_return_stock(
     client: TestClient,
     listing: Listing,
     customer_headers: dict[str, str],
     admin_headers: dict[str, str],
     db: Session,
 ) -> None:
-    """Cancelling after shipping does not return stock.
+    """Canceling after shipping does not return stock.
 
     Stock that has already been posted is gone; returning it to the
     catalog would oversell the next buyer.
     """
     order = post_order(client, customer_headers, listing.id, 2).json()
-    _walk(client, admin_headers, order["id"], "paid", "shipped", "cancelled")
+    _walk(client, admin_headers, order["id"], "paid", "shipped", "canceled")
     db.refresh(listing)
     assert listing.quantity_available == 3
 
@@ -680,7 +680,7 @@ def test_a_refund_returns_stock_only_before_shipping(
     ("path", "available"),
     [(("refunded",), 5), (("shipped", "refunded"), 3)],
 )
-def test_cancelling_a_refunded_order_moves_no_more_stock(
+def test_canceling_a_refunded_order_moves_no_more_stock(
     path: tuple[str, ...],
     available: int,
     client: TestClient,
@@ -689,13 +689,13 @@ def test_cancelling_a_refunded_order_moves_no_more_stock(
     admin_headers: dict[str, str],
     db: Session,
 ) -> None:
-    """The refund already settled the stock; cancelling after it moves none.
+    """The refund already settled the stock; canceling after it moves none.
 
     Returned once already, or gone with the parcel: a second return would
     offer the next buyer coins that are not there.
     """
     order = post_order(client, customer_headers, listing.id, 2).json()
-    _walk(client, admin_headers, order["id"], *path, "cancelled")
+    _walk(client, admin_headers, order["id"], *path, "canceled")
     db.refresh(listing)
     assert listing.quantity_available == available
 
@@ -727,11 +727,11 @@ def test_an_order_refunded_before_shipping_cannot_be_moved_on(
     "path",
     [
         # Walked back to an unshipped status, then ended.
-        ("shipped", "pending", "cancelled"),
-        ("paid", "packed", "paid", "cancelled"),
+        ("shipped", "pending", "canceled"),
+        ("paid", "packed", "paid", "canceled"),
         ("delivered", "pending", "refunded"),
-        # A refund after shipping, taken back, then cancelled.
-        ("shipped", "refunded", "paid", "cancelled"),
+        # A refund after shipping, taken back, then canceled.
+        ("shipped", "refunded", "paid", "canceled"),
     ],
 )
 def test_an_order_that_ever_shipped_returns_no_stock_however_it_is_walked_back(
@@ -972,7 +972,7 @@ def test_a_line_s_snapshot_is_in_the_order_but_not_in_the_list(
 # --------------------------------------------------------------------------
 
 
-def test_a_listing_an_open_order_holds_cannot_be_ended_until_the_order_is_cancelled(
+def test_a_listing_an_open_order_holds_cannot_be_ended_until_the_order_is_canceled(
     client: TestClient,
     make_listing: Callable[..., Listing],
     customer_headers: dict[str, str],
@@ -993,7 +993,7 @@ def test_a_listing_an_open_order_holds_cannot_be_ended_until_the_order_is_cancel
     db.refresh(only_one)
     assert only_one.status is ListingStatus.active, "a refused End ends nothing"
 
-    _walk(client, admin_headers, order["id"], "cancelled")
+    _walk(client, admin_headers, order["id"], "canceled")
     ended = client.post(f"/api/listings/{only_one.id}/end", headers=admin_headers)
     assert ended.status_code == 200, ended.text
     assert ended.json()["status"] == "ended"
@@ -1030,7 +1030,7 @@ def test_an_ended_item_listing_s_refusal_does_not_blame_a_lot(
     offering_writes.end_offer(db, listing, sold=False)
     db.commit()
 
-    refused = _set_status(client, admin_headers, order["id"], "cancelled")
+    refused = _set_status(client, admin_headers, order["id"], "canceled")
     assert refused.status_code == 409, refused.text
     detail = refused.json()["detail"]
     assert f"holds listing #{listing.id}, which has ended, so its stock" in detail

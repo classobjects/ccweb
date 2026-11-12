@@ -199,7 +199,7 @@ describe('LocationSelect', () => {
       '__add__',
     )
     const add = screen.getByRole('button', { name: 'Add location' })
-    // Live, not greyed out: pressing it says what is missing.
+    // Live, not grayed out: pressing it says what is missing.
     expect(add).toBeEnabled()
     await user.click(add)
 

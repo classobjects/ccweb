@@ -139,7 +139,7 @@
             <stop offset="0" stop-color="#e6e7d2" />
             <stop offset="1" stop-color="#c4cbac" />
           </linearGradient>
-          <!-- A colour-shifting wash over each paper, as modern notes carry. -->
+          <!-- A color-shifting wash over each paper, as modern notes carry. -->
           <linearGradient id="tintA" x1="0" y1="0" x2="1" y2="0">
             <stop offset="0" stop-color="#eeac62" />
             <stop offset="0.45" stop-color="#f0deb6" />
@@ -273,7 +273,7 @@
         if (parent) parent.appendChild(node)
         return node
       }
-      // A small seeded random, so the fibres are the same on every render.
+      // A small seeded random, so the fibers are the same on every render.
       let seed = 1234567
       function rnd() {
         seed = (seed * 16807) % 2147483647
@@ -311,7 +311,7 @@
         return d
       }
 
-      // Each note's inks: the engraving, the coloured lathe-work, the seal and
+      // Each note's inks: the engraving, the colored lathe-work, the seal and
       // serials, and the tints of its counters, vignette and columns.
       const GREEN_NOTE = {
         ink: '#24452f',
@@ -352,7 +352,7 @@
           { width: W, height: H, rx: 7, fill: '#000', filter: 'url(#grain)' },
           g,
         )
-        // Fibres in the paper, red and blue.
+        // Fibers in the paper, red and blue.
         for (let i = 0; i < 70; i++) {
           const fx = 8 + rnd() * (W - 16)
           const fy = 8 + rnd() * (H - 16)

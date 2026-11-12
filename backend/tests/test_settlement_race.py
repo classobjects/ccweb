@@ -12,7 +12,7 @@ contending for behaves exactly like no lock at all.
 
 A third writer joins them: `app.auctions.cancel` is legal on a `closed`
 auction and takes the `auction` row first, as `settle` does.
-`test_cancelling_an_auction_races_settling_it` is that pair, and it
+`test_canceling_an_auction_races_settling_it` is that pair, and it
 measures `_lock_auction` from the *other* side -- the two-settlement test
 below cannot, because removing the lock from `cancel` leaves `settle`'s
 intact and the test still green.
@@ -142,7 +142,7 @@ def _cleanup_rows(cleanup: Session) -> None:
     6. `listing`, matched the same two ways, then `sales_lot_item` and
        `sales_lot`: `listing.sales_lot_id` is RESTRICT, so the listings go
        first, and `sales_lot_item.inventory_item_id` is RESTRICT, so they go
-       before the items. `lot_ids` is materialised into a Python list before
+       before the items. `lot_ids` is materialized into a Python list before
        anything is deleted, because it is derived from `sales_lot_item` and
        would read back empty once those rows were gone.
     7. `inventory_item`. `item_status_history` and `location_history` are
@@ -883,13 +883,13 @@ def test_settling_a_consigned_auction_races_a_coin_going_missing(
             assert item.storage_location_id == drawer_id
 
 
-def test_cancelling_an_auction_races_settling_it(
+def test_canceling_an_auction_races_settling_it(
     committed: sessionmaker[Session],
 ) -> None:
     """Cancel and settle the same closed auction at once: no deadlock, no 500.
 
     The race nothing else here covers: the two settlement tests above race
-    settle against settle and against a receipt, and nothing cancelled. Both
+    settle against settle and against a receipt, and nothing canceled. Both
     endpoints are admin-only, both buttons are present on a `closed` auction
     in the console, and `cancel` is legal on `closed` -- so two tabs, or two
     operators, is all it takes.
@@ -898,7 +898,7 @@ def test_cancelling_an_auction_races_settling_it(
     (`auctions._lock_auction`) and then the coins through
     `offering_writes.lock_for_sale`: auction -> lots -> items -> listings.
     `cancel` ends each lot's offer through `offering_writes` and writes
-    `UPDATE auction SET status='cancelled'`, so it must take the `auction`
+    `UPDATE auction SET status='canceled'`, so it must take the `auction`
     row first too: without `_lock_auction` as its first statement its order
     is lots -> items -> listings -> auction, the inverse of `settle`'s, and
     both are legal on a `closed` auction.
@@ -907,7 +907,7 @@ def test_cancelling_an_auction_races_settling_it(
     `auction = _lock_auction(db, auction.id)` line from `app.auctions.cancel`.
     It fails in two shapes:
 
-    - `AssertionError: ['cancelled', 'deadlock']`. `settle` is the victim,
+    - `AssertionError: ['canceled', 'deadlock']`. `settle` is the victim,
       `sqlalchemy.exc.OperationalError` wrapping
       `psycopg.errors.DeadlockDetected`, raised while locking a tuple in
       `sales_lot`. Neither router catches `OperationalError` --
@@ -1009,7 +1009,7 @@ def test_cancelling_an_auction_races_settling_it(
                 barrier.wait(timeout=10)
                 auctions.cancel(session, auction)
                 session.commit()
-                return "cancelled"
+                return "canceled"
             except AuctionRefused as exc:
                 session.rollback()
                 refusals.append(str(exc))
@@ -1038,13 +1038,13 @@ def test_cancelling_an_auction_races_settling_it(
     assert "deadlock" not in outcomes, outcomes
     assert "stale" not in outcomes, outcomes
     assert "lock_set_changed" not in outcomes, outcomes
-    assert outcomes in (["cancelled", "refused"], ["refused", "settled"]), outcomes
+    assert outcomes in (["canceled", "refused"], ["refused", "settled"]), outcomes
 
     settled_won = "settled" in outcomes
     expected = (
         f"auction #{auction_id} is already settled"
         if settled_won
-        else f"auction #{auction_id} is cancelled, so it cannot be settled"
+        else f"auction #{auction_id} is canceled, so it cannot be settled"
     )
     assert refusals == [expected], refusals
 
@@ -1063,9 +1063,9 @@ def test_cancelling_an_auction_races_settling_it(
             # got through would have deleted these rows.
             assert [row.result for row in lots] == [AuctionLotResult.unsold] * 6
         else:
-            assert auction.status is AuctionStatus.cancelled
+            assert auction.status is AuctionStatus.canceled
             # `remove_lot` deletes rather than marks, so a
-            # cancelled auction keeps none of its lot rows.
+            # canceled auction keeps none of its lot rows.
             assert lots == []
         assert auction.consigned_on is None
 
@@ -1118,7 +1118,7 @@ def test_cancelling_an_auction_races_settling_it(
         )
 
 
-def test_consigning_an_auction_races_cancelling_it(
+def test_consigning_an_auction_races_canceling_it(
     committed: sessionmaker[Session],
 ) -> None:
     """Consign and cancel the same scheduled auction at once: no deadlock.
@@ -1131,8 +1131,8 @@ def test_consigning_an_auction_races_cancelling_it(
     Two outcomes are legal and both are asserted: `consign` first, and the
     cancel that follows re-reads `consigned`, brings every coin back to the
     drawer and cancels; or `cancel` first, and `consign` re-reads
-    `cancelled` and is refused by name. Either way the auction ends
-    cancelled with no coin left at the house.
+    `canceled` and is refused by name. Either way the auction ends
+    canceled with no coin left at the house.
     """
     venue_id = _house_venue(committed, f"{RACE_PREFIX}-consign")
     drawer_id = _drawer(committed)
@@ -1170,7 +1170,7 @@ def test_consigning_an_auction_races_cancelling_it(
                 barrier.wait(timeout=10)
                 auctions.cancel(session, auction, returned_to_location_id=drawer_id)
                 session.commit()
-                return "cancelled"
+                return "canceled"
             except AuctionRefused as exc:
                 session.rollback()
                 refusals.append(str(exc))
@@ -1189,15 +1189,15 @@ def test_consigning_an_auction_races_cancelling_it(
 
     assert "deadlock" not in outcomes, outcomes
     assert "stale" not in outcomes, outcomes
-    assert outcomes in (["cancelled", "consigned"], ["cancelled", "refused"]), outcomes
+    assert outcomes in (["canceled", "consigned"], ["canceled", "refused"]), outcomes
     if "refused" in outcomes:
         assert refusals == [
-            f"auction #{auction_id} is cancelled, so it cannot be marked consigned"
+            f"auction #{auction_id} is canceled, so it cannot be marked consigned"
         ], refusals
 
     with committed() as verify:
         auction = verify.get_one(Auction, auction_id)
-        assert auction.status is AuctionStatus.cancelled
+        assert auction.status is AuctionStatus.canceled
         assert auction.consigned_on is None
         for item_id in item_ids:
             item = verify.get_one(InventoryItem, item_id)
@@ -1219,7 +1219,7 @@ def _auction_of_lots_added_newest_first(
     added to the auction **newest first**, so ascending `auction_lot.id` is
     descending `sales_lot.id`. That is an ordinary thing to do from the Lots
     page -- nothing ties the order lots are assembled in to the order they
-    are catalogued in -- and it is the only shape in which a writer walking
+    are cataloged in -- and it is the only shape in which a writer walking
     the auction's lots one at a time takes `sales_lot` rows in a different
     order from a writer that takes them all in one ascending statement.
     """
@@ -1259,7 +1259,7 @@ def _auction_of_lots_added_newest_first(
         return auction.id, item_ids
 
 
-def test_cancelling_an_auction_races_a_receipt_across_its_lots(
+def test_canceling_an_auction_races_a_receipt_across_its_lots(
     committed: sessionmaker[Session],
 ) -> None:
     """Cancel an auction while a receipt names a coin from every lot: no 500.
@@ -1300,7 +1300,7 @@ def test_cancelling_an_auction_races_a_receipt_across_its_lots(
                 barrier.wait(timeout=10)
                 auctions.cancel(session, auction)
                 session.commit()
-                return "cancelled"
+                return "canceled"
             except AuctionRefused:
                 session.rollback()
                 return "cancel_refused"
@@ -1357,10 +1357,10 @@ def test_cancelling_an_auction_races_a_receipt_across_its_lots(
     assert "deadlock" not in outcomes, outcomes
     assert "stale" not in outcomes, outcomes
     assert "lock_set_changed" not in outcomes, outcomes
-    assert outcomes in (["cancelled", "marked"], ["cancelled", "refused"]), outcomes
+    assert outcomes in (["canceled", "marked"], ["canceled", "refused"]), outcomes
 
     with committed() as verify:
-        assert verify.get_one(Auction, auction_id).status is AuctionStatus.cancelled
+        assert verify.get_one(Auction, auction_id).status is AuctionStatus.canceled
         assert (
             verify.scalar(
                 select(AuctionLot.id).where(AuctionLot.auction_id == auction_id)

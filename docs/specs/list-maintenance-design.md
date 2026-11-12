@@ -92,12 +92,12 @@ reason shown.
 
 - **Cleaned:** surrounding space and a `Fr.`, `Fr#` or `FR-` label in front
   of the digits are dropped, space around the hyphen is closed up, and the
-  optional letter and the district letter are capitalised --
+  optional letter and the district letter are capitalized --
   ` Fr. 9905-d ` is kept as `9905-D`, `9912a-b` as `9912A-B`. A mule's `m`
   stays lower-case whatever case it was typed in, after the digits or after
   the district, with any star after it: `9901M` is kept as `9901m`,
   `9907-EM` and `9907-e*m` as `9907-Em` and `9907-Em*`. A seal shade at the
-  end is capitalised after one space: `9908-b  lgs` is kept as
+  end is capitalized after one space: `9908-b  lgs` is kept as
   `9908-B LGS`. A Military Payment Certificate's `M` is a capital and the
   letter after its digits lower-case, as the catalog writes a replacement:
   `m9901R` is kept as `M9901r`.
@@ -142,7 +142,7 @@ recorded under another number.
 
 The seal is part of a type, so a number recorded with its note type is
 recorded with its seal: sent without one, it is refused (422, *"Set the seal
-colour before recording 9907-L: the seal is part of its type."*), and the
+color before recording 9907-L: the seal is part of its type."*), and the
 lookup says so before sending. Recorded sealless, the row would be offered
 to a note of any seal, and the next note of its type with its seal entered
 would record the same number again. Two kinds of number need no seal: a

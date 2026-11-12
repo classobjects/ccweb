@@ -10,7 +10,7 @@ messages.
 
 ## Reporting
 
-Report unacceptable behaviour privately to the maintainer at
+Report unacceptable behavior privately to the maintainer at
 support@classobjects.com. Reports are handled in
 confidence. The maintainer may remove, edit or reject contributions and
 comments that break this code, and may ban anyone who does so repeatedly.

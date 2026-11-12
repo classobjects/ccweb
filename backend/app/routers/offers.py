@@ -753,11 +753,11 @@ def end_listing(listing_id: int, db: DbSession, _admin: AdminUser) -> ListingOut
 def _refuse_held_by_an_order(db: Session, listing_id: int) -> None:
     """409 if an order holds stock of this listing that it could still return.
 
-    Cancelling or refunding such an order puts its stock back on the
+    Canceling or refunding such an order puts its stock back on the
     listing (`order_writes.return_stock`), and an ended listing has nowhere
     to put it: the cancellation would be refused for good
     (`routers.orders._no_stock_to_return`), stranding the order. So the
-    order is dealt with first -- shipped, or cancelled -- and the listing
+    order is dealt with first -- shipped, or canceled -- and the listing
     ended after.
 
     Asked after `end_offer`, inside the same transaction, because that call

@@ -294,7 +294,7 @@ def _refuse_partial(db: Session, item: InventoryItem) -> None:
     `offering_writes._refuse_sold` already defers to -- instead of two that
     can drift apart. A query restated here would have to rediscover its
     filter to `OPEN_ORDER_STATUSES`; without it an item would be refused
-    forever over an order since cancelled and its stock returned.
+    forever over an order since canceled and its stock returned.
     """
     over_listed = db.execute(
         select(Listing.id, Listing.quantity_available)

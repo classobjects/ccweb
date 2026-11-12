@@ -100,10 +100,10 @@ spacing are not part of a serial.
 | Id | Report | Rows, drill and totals |
 |---|---|---|
 | `sl_offered` | On offer | Active and paused listings -- items and sales lots -- by venue, then oldest listed first: listing, what it offers, status, asking price, currency, cost basis, days listed. A coin offered elsewhere or grouped into a lot keeps its paused store-listing row (status "Paused for `<venue>` listing"), but that row is left out of both totals so the coin counts once, on the listing that superseded it, not twice (noted by count); a listing not priced in USD is left out of the asking total only (also noted). Totals: asking (USD only) and cost basis. A row drills to the item's editor, or to `/lots` for a lot. |
-| `sl_sales` | Sales | Month x venue, over sales orders placed in range whose status is a completed or in-progress sale -- pending, paid, packed, shipped or delivered, never cancelled or refunded, since that money went back (a note names the counted statuses and how many orders in range were excluded): orders, gross, fees, net, cost basis and gain, the last two summed per item share (`sales_order_item_share`, specific identification) so a bucket's own gain is exactly the sum of its items'. Parameter: a date range on the order's own placement date. A row drills to `/sales`; an overall total. |
-| `sl_fulfilment` | To ship | One row per order still open and unshipped -- `pending`, `paid` or `packed`, the open-order statuses the sales side itself uses (`sale_state`), stated as an included list so a future status is never swept in by default -- oldest first: order (`#<id>`), placed, customer, items, amount, days waiting. A row drills to `/sales`; an overall total. A deleted or split item is left out of its order's own item count; a note counts them when there are any. |
+| `sl_sales` | Sales | Month x venue, over sales orders placed in range whose status is a completed or in-progress sale -- pending, paid, packed, shipped or delivered, never canceled or refunded, since that money went back (a note names the counted statuses and how many orders in range were excluded): orders, gross, fees, net, cost basis and gain, the last two summed per item share (`sales_order_item_share`, specific identification) so a bucket's own gain is exactly the sum of its items'. Parameter: a date range on the order's own placement date. A row drills to `/sales`; an overall total. |
+| `sl_fulfillment` | To ship | One row per order still open and unshipped -- `pending`, `paid` or `packed`, the open-order statuses the sales side itself uses (`sale_state`), stated as an included list so a future status is never swept in by default -- oldest first: order (`#<id>`), placed, customer, items, amount, days waiting. A row drills to `/sales`; an overall total. A deleted or split item is left out of its order's own item count; a note counts them when there are any. |
 | `sl_aging` | Held and not offered | Live items received and held, not on any active or paused listing and not an open member of a sales lot, by months since receipt (0-5, 6-11, 12-23, 24+, or "Unknown" when no receipt transition is found -- an item whose history holds only its opening row, which is not an arrival) x kind: items, total cost. A split child with no receipt of its own falls back to its split parent's; a piece detached from its lot has no parent to fall back to. No drills; an overall total. A note counts the "Unknown" items when there are any, and names both reasons. |
-| `sl_auctions` | Auctions | One row per auction, ordered by status (draft through settled, then cancelled): lots, sold, unsold (withdrawn counts as unsold), hammer total and fees -- shown only for a settled auction, since a closed one may carry a result mid-settlement. A row drills to `/auctions`. No totals row: the figures are not meaningful summed across different auctions and statuses. |
+| `sl_auctions` | Auctions | One row per auction, ordered by status (draft through settled, then canceled): lots, sold, unsold (withdrawn counts as unsold), hammer total and fees -- shown only for a settled auction, since a closed one may carry a result mid-settlement. A row drills to `/auctions`. No totals row: the figures are not meaningful summed across different auctions and statuses. |
 | `sl_ready` | Ready to sell | One row per kind, over live items received and held (not listed, sold or shipped): the items, then how many have each of the four things a listing needs -- an own photograph (one filed against the item with no web address on record: a seller's listing picture does not count), a grade or weight (a grade on a coin or a note; a fine weight on bullion, a medal or a token; a set and any other kind needs neither), a storage location, and a total cost above zero -- and how many have all four. One grouped query, so `ready` never exceeds another column. A row drills to that kind's search narrowed to received and held, the items it counts; the totals row adds the kinds. |
 
 ### Money -- what it cost and what it is worth
@@ -370,7 +370,7 @@ same page, with no report-specific code:
   and the report's notes follow the last row.
 - A report of more than six columns prints landscape (`report--wide`, which
   sets the `@page` size; `PORTRAIT_COLUMNS` in `ReportView.jsx`).
-- Black on white: nothing is carried by colour alone (an overdue row is
+- Black on white: nothing is carried by color alone (an overdue row is
   marked in words, in its own Overdue cell); money is right-aligned; a drill-down
   link prints as its plain text.
 - Page numbers and the date come from the browser's own print header and
@@ -399,7 +399,7 @@ its own.
   recorded it on an item, and no report derives, seeds or exports a price
   guide's values. `mn_value`'s recorded value is the owner's own manual
   entry, never a price-guide or vendor figure. A valuation source under
-  licence stays out of exports.
+  license stays out of exports.
 - **Kind-aware.** A field that does not apply to a kind (a note's metal, a
   coin's seal) is not "missing" for it; a note's year is its series year.
 - **Live rows only**, as above.
@@ -423,7 +423,7 @@ snapshots over time, which need history the database does not keep.
 | What grade bands does `cb_grades` use? | **Numbers**, not names: 1-49, 50-59, 60-64, 65-70, and "No numeric grade". The strike type (MS, PR) and the grading service are separate columns, not folded into the band. |
 | What counts as a purchase, for spending and tax totals? | One with **at least one live item** -- `pr_spend`, `pr_sources` and `mn_tax` all read the same rule, so a purchase whose only items are deleted or split is not silently counted by one report and not another. |
 | What counts as a receipt? | A status **transition to** `received` -- an opening row (a new item, a split child or a seed) is never an arrival. A split parent's receipt is attributed to its live children. |
-| Which sales orders are counted as sales? | **Pending, paid, packed, shipped or delivered** -- never cancelled or refunded, since that money went back. |
+| Which sales orders are counted as sales? | **Pending, paid, packed, shipped or delivered** -- never canceled or refunded, since that money went back. |
 | What does `mn_value` and the Collection reports default to? | **Received and held** -- what the owner has actually taken in and still has -- widened to `all` on request. |
 | Printed as well as shown? | **Yes**: every report prints (see Printing). |
 | Storage locations | **Optional.** A location is chosen on New item, in Receiving, or in the item editor, and changed whenever the piece moves; every move is kept in its location history. `dq_locations` reports "none recorded" as a row, not as an error. |

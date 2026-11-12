@@ -47,7 +47,7 @@ from .registry import REPORTS, register
 from .selling import (
     SL_AGING,
     SL_AUCTIONS,
-    SL_FULFILMENT,
+    SL_FULFILLMENT,
     SL_OFFERED,
     SL_READY,
     SL_SALES,
@@ -83,7 +83,7 @@ __all__ = [
     "REPORTS",
     "SL_AGING",
     "SL_AUCTIONS",
-    "SL_FULFILMENT",
+    "SL_FULFILLMENT",
     "SL_OFFERED",
     "SL_READY",
     "SL_SALES",

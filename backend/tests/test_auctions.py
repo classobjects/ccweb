@@ -102,7 +102,7 @@ def auction_lot(
 def auction_with_three_lots(
     db: Session, auction: Auction, make_item: ItemFactory
 ) -> Auction:
-    """A draft auction with three single-item lots, ready to be cancelled."""
+    """A draft auction with three single-item lots, ready to be canceled."""
     for number in range(1, 4):
         add_lot(
             db,
@@ -515,7 +515,7 @@ def test_a_removed_consigned_lot_s_items_are_stored_home_without_autoflush(
         assert stored_location_id(db, item_id) == home.id
 
 
-def test_a_cancelled_consigned_auction_s_items_are_stored_home_without_autoflush(
+def test_a_canceled_consigned_auction_s_items_are_stored_home_without_autoflush(
     db: Session, heritage_venue: SalesVenue, make_item: ItemFactory
 ) -> None:
     """Every lot's coins reach the return location, not only the last lot's.
@@ -592,7 +592,7 @@ def test_closing_a_closed_auction_is_refused(
         close(db, closed_auction)
 
 
-def test_cancelling_removes_every_lot(
+def test_canceling_removes_every_lot(
     db: Session, auction_with_three_lots: Auction
 ) -> None:
     """Nothing is left claimed by a sale that is not happening."""
@@ -601,7 +601,7 @@ def test_cancelling_removes_every_lot(
 
     cancel(db, auction_with_three_lots)
 
-    assert auction_with_three_lots.status is AuctionStatus.cancelled
+    assert auction_with_three_lots.status is AuctionStatus.canceled
     remaining = db.scalars(
         select(AuctionLot).where(AuctionLot.auction_id == auction_with_three_lots.id)
     ).all()
@@ -611,7 +611,7 @@ def test_cancelling_removes_every_lot(
         assert row.status is ListingStatus.ended
 
 
-def test_cancelling_a_closed_auction_is_allowed(
+def test_canceling_a_closed_auction_is_allowed(
     db: Session, auction_with_three_lots: Auction
 ) -> None:
     """A closed sale can still be abandoned.
@@ -626,13 +626,13 @@ def test_cancelling_a_closed_auction_is_allowed(
 
     cancel(db, auction_with_three_lots)
 
-    assert auction_with_three_lots.status is AuctionStatus.cancelled
+    assert auction_with_three_lots.status is AuctionStatus.canceled
     for row in listings:
         db.refresh(row)
         assert row.status is ListingStatus.ended
 
 
-def test_cancelling_a_settled_auction_is_refused(db: Session, auction: Auction) -> None:
+def test_canceling_a_settled_auction_is_refused(db: Session, auction: Auction) -> None:
     """A settled sale is a fact, not a draft to discard."""
     auction.status = AuctionStatus.settled
     db.flush()
@@ -640,16 +640,14 @@ def test_cancelling_a_settled_auction_is_refused(db: Session, auction: Auction) 
         cancel(db, auction)
 
 
-def test_cancelling_a_cancelled_auction_is_refused(
-    db: Session, auction: Auction
-) -> None:
+def test_canceling_a_canceled_auction_is_refused(db: Session, auction: Auction) -> None:
     """The other half of `cancel`'s refusal tuple."""
     cancel(db, auction)
-    with pytest.raises(AuctionRefused, match="cancelled"):
+    with pytest.raises(AuctionRefused, match="canceled"):
         cancel(db, auction)
 
 
-def test_cancelling_a_consigned_auction_requires_a_return_location(
+def test_canceling_a_consigned_auction_requires_a_return_location(
     db: Session, house_auction: Auction
 ) -> None:
     """Every lot needs somewhere to return its items to."""
@@ -658,7 +656,7 @@ def test_cancelling_a_consigned_auction_requires_a_return_location(
         cancel(db, house_auction)
 
 
-def test_cancelling_a_consigned_auction_with_no_lots_requires_a_return_location(
+def test_canceling_a_consigned_auction_with_no_lots_requires_a_return_location(
     db: Session, heritage_venue: SalesVenue
 ) -> None:
     """`cancel`'s own guard, not `_remove_lot`'s borrowed one.
@@ -677,7 +675,7 @@ def test_cancelling_a_consigned_auction_with_no_lots_requires_a_return_location(
         cancel(db, row)
 
 
-def test_cancelling_a_consigned_auction_returns_items_and_clears_consigned_on(
+def test_canceling_a_consigned_auction_returns_items_and_clears_consigned_on(
     db: Session, house_auction: Auction
 ) -> None:
     """Nothing is left claiming a house that no longer holds the coins."""
@@ -687,7 +685,7 @@ def test_cancelling_a_consigned_auction_returns_items_and_clears_consigned_on(
 
     cancel(db, house_auction, returned_to_location_id=home.id)
 
-    assert house_auction.status is AuctionStatus.cancelled
+    assert house_auction.status is AuctionStatus.canceled
     assert house_auction.consigned_on is None
     for item in items:
         db.refresh(item)
@@ -699,7 +697,7 @@ def test_cancelling_a_consigned_auction_returns_items_and_clears_consigned_on(
 # --------------------------------------------------------------------------
 
 
-def test_cancelling_a_closed_consigned_auction_requires_a_return_location(
+def test_canceling_a_closed_consigned_auction_requires_a_return_location(
     db: Session, house_auction: Auction
 ) -> None:
     """Custody is `consigned_on`, not the status.
@@ -708,7 +706,7 @@ def test_cancelling_a_closed_consigned_auction_requires_a_return_location(
     so after `consign -> close` the status reads `closed` while every coin
     is still at the house. A `cancel` keyed on `status == consigned` would
     skip the return-location requirement and leave every coin filed at the
-    house with nothing linking it back to the cancelled auction; it keys the
+    house with nothing linking it back to the canceled auction; it keys the
     requirement on `auction.consigned_on is not None`.
     """
     consign(db, house_auction, on_date=date(2026, 10, 1))
@@ -720,7 +718,7 @@ def test_cancelling_a_closed_consigned_auction_requires_a_return_location(
         cancel(db, house_auction)
 
 
-def test_cancelling_a_closed_consigned_auction_returns_items_and_clears_consigned_on(
+def test_canceling_a_closed_consigned_auction_returns_items_and_clears_consigned_on(
     db: Session, house_auction: Auction
 ) -> None:
     """Given a return location, the closed-but-consigned auction cancels cleanly."""
@@ -731,7 +729,7 @@ def test_cancelling_a_closed_consigned_auction_returns_items_and_clears_consigne
 
     cancel(db, house_auction, returned_to_location_id=home.id)
 
-    assert house_auction.status is AuctionStatus.cancelled
+    assert house_auction.status is AuctionStatus.canceled
     assert house_auction.consigned_on is None
     remaining = db.scalars(
         select(AuctionLot).where(AuctionLot.auction_id == house_auction.id)
@@ -825,12 +823,12 @@ def test_removing_a_lot_from_a_closed_auction_is_refused_even_if_consigned(
         remove_lot(db, auction_lot, returned_to_location_id=1)
 
 
-def test_cancelling_a_never_consigned_auction_still_needs_no_return_location(
+def test_canceling_a_never_consigned_auction_still_needs_no_return_location(
     db: Session, auction_with_three_lots: Auction
 ) -> None:
     """The predicate must not over-fire: no custody means no requirement.
 
-    Same scenario `test_cancelling_removes_every_lot` already exercises,
+    Same scenario `test_canceling_removes_every_lot` already exercises,
     named explicitly here as the other side of the custody rule:
     `auction_with_three_lots` was never consigned, so
     `auction.consigned_on is None` throughout, and `cancel` must still ask
@@ -838,7 +836,7 @@ def test_cancelling_a_never_consigned_auction_still_needs_no_return_location(
     """
     assert auction_with_three_lots.consigned_on is None
     cancel(db, auction_with_three_lots)  # must not raise
-    assert auction_with_three_lots.status is AuctionStatus.cancelled
+    assert auction_with_three_lots.status is AuctionStatus.canceled
 
 
 # --------------------------------------------------------------------------

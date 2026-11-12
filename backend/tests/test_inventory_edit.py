@@ -590,7 +590,7 @@ def test_a_retired_grade_sent_as_a_compound_grade_is_kept(
     assert "Retired grade" in refused.json()["detail"]
 
 
-def test_a_note_keeps_a_retired_seal_colour_it_already_holds(
+def test_a_note_keeps_a_retired_seal_color_it_already_holds(
     client: TestClient, admin_headers: dict[str, str], db: Session
 ) -> None:
     """The note fields resolve through `_note_changes`, which `keep` must reach."""

@@ -34,7 +34,7 @@ PUBLIC = [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))]
 
 
 def _webp(color: str = "navy") -> bytes:
-    """A small WebP image of one colour, as a marketplace serves photographs."""
+    """A small WebP image of one color, as a marketplace serves photographs."""
     buffer = io.BytesIO()
     PILImage.new("RGB", (64, 40), color).save(buffer, format="WEBP")
     return buffer.getvalue()

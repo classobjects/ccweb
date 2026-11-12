@@ -258,7 +258,7 @@ def list_purchase_orders(db: DbSession, _admin: AdminUser) -> list[PurchaseOrder
     """Every purchase order: its seller, its cost, and what has not yet arrived.
 
     "Not yet arrived" is `ordered` or `missing` -- a line written off as
-    missing is paid for, not cancelled, and sometimes turns up later, so it
+    missing is paid for, not canceled, and sometimes turns up later, so it
     is exactly as outstanding as one still `ordered`. Counting only `ordered`
     would make an order whose sole receivable line is `missing` report
     `outstanding=0`, as if nothing on it were still to come.

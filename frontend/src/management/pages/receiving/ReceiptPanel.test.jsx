@@ -760,7 +760,7 @@ describe('ReceiptPanel: drag-and-drop and paste for the photograph', () => {
     expect(zone).not.toHaveClass('photo-drop-active')
   })
 
-  it('clears the drop hint when the drag is cancelled outside the panel', async () => {
+  it('clears the drop hint when the drag is canceled outside the panel', async () => {
     const zone = await renderReceipt()
     const file = new File(['x'], 'obverse.jpg', { type: 'image/jpeg' })
 

@@ -875,7 +875,7 @@ class SalesOrderChange(Base):
 class Shipment(TimestampMixin, Base):
     """An outgoing parcel -- unused scaffolding.
 
-    Nothing in the application reads or writes it: an order's fulfilment is
+    Nothing in the application reads or writes it: an order's fulfillment is
     its `sales_order_status`. The shape is kept for when parcels are
     recorded: on the order rather than the item, because one parcel carries
     many lines, and one-to-many, so partial shipment would work the way

@@ -208,7 +208,7 @@ def test_receiving_twice_is_refused(
 def test_a_parcel_written_off_as_missing_can_still_turn_up(
     client: TestClient, admin_headers: dict[str, str], db: Session
 ) -> None:
-    """`missing` means paid for, not cancelled, never arrived.
+    """`missing` means paid for, not canceled, never arrived.
 
     And things that never arrived sometimes arrive.
     """

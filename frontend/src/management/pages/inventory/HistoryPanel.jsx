@@ -53,7 +53,7 @@ export default function HistoryPanel({ itemId, version, saves = 0 }) {
         <p className="muted">Nothing logged yet.</p>
       )}
       {rows.length > 0 && (
-        // On a phone each row stacks into a card, a line per labelled cell.
+        // On a phone each row stacks into a card, a line per labeled cell.
         <table className="stacks">
           <thead>
             <tr>

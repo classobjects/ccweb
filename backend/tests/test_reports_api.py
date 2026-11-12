@@ -294,7 +294,7 @@ def test_a_customer_s_name_is_a_text_cell_whatever_it_begins_with(
     )
     db.commit()
 
-    res = client.get("/api/reports/sl_fulfilment/workbook", headers=admin_headers)
+    res = client.get("/api/reports/sl_fulfillment/workbook", headers=admin_headers)
     assert res.status_code == 200, res.text
 
     sheet = load_workbook(BytesIO(res.content)).worksheets[0]

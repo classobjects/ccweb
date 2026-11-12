@@ -25,7 +25,7 @@ case "${1:-}" in
     "") ;;
     --keepdb) KEEPDB=1 ;;
     *)
-        echo "ERROR: unrecognised argument: $1"
+        echo "ERROR: unrecognized argument: $1"
         echo "       usage: ./scripts/ccweb_shutdown.sh [--keepdb]"
         exit 2 ;;
 esac

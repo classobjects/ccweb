@@ -40,7 +40,7 @@ import Pager from '../Pager'
  * edited while the auction is `draft`, `scheduled` or `consigned`
  * (`app.auctions.refuse_unless_lot_editable`), so the inputs below are
  * disabled outside that window rather than left live for a refusal to
- * explain; and cancelling or removing a lot from an auction whose items are
+ * explain; and canceling or removing a lot from an auction whose items are
  * at an auction house (`auction.consigned_on is not None`) requires a return
  * location, so `ReturnLocationConfirm` below sends nothing until one is
  * chosen and says so on press, where the API would only refuse without it.
@@ -65,7 +65,7 @@ const AUCTION_STATUS_LABEL = {
   consigned: 'Consigned',
   closed: 'Closed',
   settled: 'Settled',
-  cancelled: 'Canceled',
+  canceled: 'Canceled',
 }
 
 //: `app.auctions._LOTS_REMOVABLE` -- the identical boundary
@@ -430,7 +430,7 @@ function ConsignDialog({ auction, onSaved, onLateSaved, onClose }) {
 
 /**
  * The question asked before a lot is pulled out of its auction, or the whole
- * auction is cancelled.
+ * auction is canceled.
  *
  * `returned_to_location_id` is required whenever `auction.consigned_on` is
  * set -- the items physically left the premises and something has to say
@@ -513,7 +513,7 @@ function AuctionDetail({ auction, venues, onChanged }) {
   const [lotDrafts, setLotDrafts] = useState({})
   const [addingLot, setAddingLot] = useState(false)
   const [consigning, setConsigning] = useState(false)
-  const [cancelling, setCancelling] = useState(false)
+  const [canceling, setCanceling] = useState(false)
   const [removing, setRemoving] = useState(null)
 
   // Guards every async continuation below: switching to a different auction
@@ -525,7 +525,7 @@ function AuctionDetail({ auction, venues, onChanged }) {
   const isAuctionHouse = venue?.kind === 'auction_house'
   const editable = LOT_EDITABLE_STATUSES.has(auction.status)
   const addable = LOTS_ADDABLE_STATUSES.has(auction.status)
-  const cancellable = !['settled', 'cancelled'].includes(auction.status)
+  const cancelable = !['settled', 'canceled'].includes(auction.status)
 
   /**
    * One write to this auction: `action` returns the auction as saved, which
@@ -604,8 +604,8 @@ function AuctionDetail({ auction, venues, onChanged }) {
           auction.id,
           locationId ? { returned_to_location_id: locationId } : {},
         ),
-      'Auction cancelled.',
-      { settled: () => setCancelling(false) },
+      'Auction canceled.',
+      { settled: () => setCanceling(false) },
     )
   }
 
@@ -678,8 +678,8 @@ function AuctionDetail({ auction, venues, onChanged }) {
             Close
           </button>
         )}
-        {cancellable && (
-          <button className="link" disabled={busy} onClick={() => setCancelling(true)}>
+        {cancelable && (
+          <button className="link" disabled={busy} onClick={() => setCanceling(true)}>
             Cancel...
           </button>
         )}
@@ -695,7 +695,7 @@ function AuctionDetail({ auction, venues, onChanged }) {
       )}
       {auction.lots.length === 0 && <p className="muted">No lot has been added yet.</p>}
       {auction.lots.length > 0 && (
-        // On a phone each row stacks into a card, a line per labelled cell.
+        // On a phone each row stacks into a card, a line per labeled cell.
         <HelpScope>
           <table className="table stacks">
             <thead>
@@ -794,19 +794,19 @@ function AuctionDetail({ auction, venues, onChanged }) {
           onClose={() => setConsigning(false)}
         />
       )}
-      {cancelling && (
+      {canceling && (
         <ReturnLocationConfirm
           auction={auction}
           question={`Cancel ${auction.title}?`}
           confirmLabel="Cancel auction"
-          busyLabel="Cancelling..."
+          busyLabel="Canceling..."
           busy={busy}
           onConfirm={cancelThisAuction}
-          onCancel={() => setCancelling(false)}
+          onCancel={() => setCanceling(false)}
         >
           <p>
             Every lot still in this auction is withdrawn, the same way ending any offer
-            is. Nothing brings a cancelled auction back.
+            is. Nothing brings a canceled auction back.
           </p>
         </ReturnLocationConfirm>
       )}
@@ -845,18 +845,18 @@ export default function Auctions() {
   // Set in place by every write below, so held here rather than in a
   // `useRequest`, which would own it.
   useEffect(() => {
-    let cancelled = false
+    let canceled = false
     api
       .listAuctions({ limit: PAGE_SIZE, offset })
       .then((page) => {
-        if (cancelled) return
+        if (canceled) return
         setAuctions(page?.auctions ?? [])
         setTotal(page?.total ?? null)
         setAuctionsError('')
       })
-      .catch((err) => !cancelled && setAuctionsError(err.message))
+      .catch((err) => !canceled && setAuctionsError(err.message))
     return () => {
-      cancelled = true
+      canceled = true
     }
   }, [offset])
 
@@ -916,7 +916,7 @@ export default function Auctions() {
       {auctions === null && !error && <p className="muted">Loading...</p>}
 
       {auctions !== null && (
-        // On a phone each row stacks into a card, a line per labelled cell.
+        // On a phone each row stacks into a card, a line per labeled cell.
         <table className="table stacks">
           <thead>
             <tr>

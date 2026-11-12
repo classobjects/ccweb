@@ -657,14 +657,14 @@ describe('PhotosPanel: drag-and-drop and paste', () => {
     expect(zone).not.toHaveClass('photo-drop-active')
   })
 
-  it('clears the drop hint when the drag is cancelled outside the panel', async () => {
+  it('clears the drop hint when the drag is canceled outside the panel', async () => {
     const zone = await renderPanel()
     const file = new File(['x'], 'coin.jpg', { type: 'image/jpeg' })
 
     fireEvent.dragEnter(zone, { dataTransfer: dataTransferFor(file) })
     expect(zone).toHaveClass('photo-drop-active')
 
-    // A drag cancelled by Escape, or dropped outside the browser window
+    // A drag canceled by Escape, or dropped outside the browser window
     // entirely, never sends this panel another dragleave of its own --
     // dragend on the source is the only signal left, and it lands on the
     // window rather than on the panel.

@@ -183,7 +183,7 @@
   color: var(--accent);
 }
 
-.status-cancelled {
+.status-canceled {
   border-color: var(--danger);
   color: var(--danger);
 }

@@ -227,7 +227,7 @@ export default function SplitDialog({ item, onSplit, onClose }) {
             </select>
           </label>
         </div>
-        {/* On a phone each row stacks into a card, a line per labelled cell. */}
+        {/* On a phone each row stacks into a card, a line per labeled cell. */}
         <table className="stacks">
           <thead>
             <tr>

@@ -378,7 +378,7 @@ describe('OfferDialog', () => {
     const fill = screen.getByRole('button', { name: 'Fill blank prices' })
     expect(margin).toHaveValue('20')
 
-    // Live whatever is typed: a greyed-out button says nothing about why.
+    // Live whatever is typed: a grayed-out button says nothing about why.
     await user.clear(margin)
     expect(fill).toBeEnabled()
     await user.click(fill)
@@ -540,7 +540,7 @@ describe('OfferDialog', () => {
     await waitFor(() => expect(onOffered).toHaveBeenCalledWith([LISTING]))
   })
 
-  it('does not apply an offer the user cancelled before it resolved', async () => {
+  it('does not apply an offer the user canceled before it resolved', async () => {
     const user = userEvent.setup()
     const onOffered = vi.fn()
     let resolveOffer

@@ -15,7 +15,7 @@
  *
  * A fragment, not a row of its own, so a page can put it beside its
  * filters. A button is shown only where there is a page to go to, rather
- * than greyed out where there is none.
+ * than grayed out where there is none.
  */
 export default function Pager({
   offset,

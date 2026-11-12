@@ -365,7 +365,7 @@ def test_a_certificate_number_is_trimmed_and_never_blank(
     assert blank.status_code == 422, blank.text
 
 
-def test_a_single_year_is_normalised_to_start_equals_end(
+def test_a_single_year_is_normalized_to_start_equals_end(
     client: TestClient, admin_headers: dict[str, str], db: Session
 ) -> None:
     order = _purchase_order(db)

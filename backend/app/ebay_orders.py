@@ -114,7 +114,7 @@ def item_id_of(url: str | None) -> str | None:
 
 
 def vendor_key(vendor: Vendor) -> str:
-    """What a vendor is recognised by: its host, else its name, in lower case."""
+    """What a vendor is recognized by: its host, else its name, in lower case."""
     return (vendor.host or vendor.name or "").strip().lower()
 
 

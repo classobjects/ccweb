@@ -507,7 +507,7 @@ def test_an_item_with_both_errors_keeps_one(
         client,
         admin_headers,
         "error_type",
-        "Off Centre Test",
+        "Off Center Test",
         extra={"applies_to": "coin"},
     )
     slip_id = code_id(db, ErrorType, slip)
@@ -544,7 +544,7 @@ def test_a_dropped_errors_details_are_added_only_when_they_say_something_new(
         client,
         admin_headers,
         "error_type",
-        "Off Centre Same Test",
+        "Off Center Same Test",
         extra={"applies_to": "coin"},
     )
     slip_id = code_id(db, ErrorType, slip)

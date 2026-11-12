@@ -87,7 +87,7 @@ def test_well_known_issues(db: Session) -> None:
     }
 
 
-def test_a_class_has_one_seal_colour_per_issue(db: Session) -> None:
+def test_a_class_has_one_seal_color_per_issue(db: Session) -> None:
     seals: dict[tuple[str, int, str, str], set[str]] = defaultdict(set)
     for den, year, letter, cls, seal, _, _ in _issues(db):
         seals[(den, year, letter, cls)].add(seal)

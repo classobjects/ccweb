@@ -16,7 +16,7 @@ is how a mule is found (the web search's answer carries an "m" suffix then).
   given -- ``FW`` means Fort Worth, no prefix Washington -- so the two cannot
   disagree; set by hand only where no face plate is recorded.
 
-Facts of the note in hand, not a catalogue's arrangement
+Facts of the note in hand, not a catalog's arrangement
 (`docs/reference-data.md`).
 """
 

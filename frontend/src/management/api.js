@@ -266,7 +266,7 @@ export const api = {
     send(`/api/auctions/${id}/consign`, { method: 'POST', body: payload }),
   closeAuction: (id) => send(`/api/auctions/${id}/close`, { method: 'POST' }),
   // `AuctionCancelIn` takes one optional field, so an auction that was never
-  // consigned is cancelled with an empty body.
+  // consigned is canceled with an empty body.
   cancelAuction: (id, payload = {}) =>
     send(`/api/auctions/${id}/cancel`, { method: 'POST', body: payload }),
   addAuctionLot: (auctionId, payload) =>
@@ -282,7 +282,7 @@ export const api = {
       { method: 'DELETE' },
     ),
   // Renumbering a lot or changing its reserve. `app.auctions.refuse_unless_lot_editable`
-  // refuses this once the auction is closed, settled or cancelled; the page
+  // refuses this once the auction is closed, settled or canceled; the page
   // disables the inputs to match, but the refusal is still the real gate.
   updateAuctionLot: (auctionId, lotId, payload) =>
     send(`/api/auctions/${auctionId}/lots/${lotId}`, {

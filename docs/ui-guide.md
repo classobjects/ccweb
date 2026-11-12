@@ -79,7 +79,7 @@ The search and filters, as the help band explains each one:
 | **Search** |  | Finds items whose title, description, rating, item code or purchase order number contain what you type, ignoring case, and items whose series, mint, strike, designation, note type or attribute is called that. Several words are one phrase, in that order. % stands for any run of characters and _ for exactly one. Press Enter or leave the box to search. |
 | **Search tips** |  | Worked examples of the search box; click one to run it. |
 | **Denomination** |  | The face value printed on the note or coin -- $1, $5, a half dollar. |
-| **Series** |  | The one design this piece was struck or printed in, as collectors name it: Morgan Dollar, Walking Liberty Half Dollar, or for a note Funnyback. Each design is distinct, and an item has at most one. Price guides and population reports are organised by it, and for a coin it can decide the metal and weights. On a note it is not the series year printed on the face: in "SERIES 1935 A", 1935 is the series year. A private round or bar has no design series; say what it is with Bullion form. |
+| **Series** |  | The one design this piece was struck or printed in, as collectors name it: Morgan Dollar, Walking Liberty Half Dollar, or for a note Funnyback. Each design is distinct, and an item has at most one. Price guides and population reports are organized by it, and for a coin it can decide the metal and weights. On a note it is not the series year printed on the face: in "SERIES 1935 A", 1935 is the series year. A private round or bar has no design series; say what it is with Bullion form. |
 | **Kind** | Coins | What the item is: a coin, a banknote, bullion, a set, and so on. It decides which fields apply -- a note has no metal or strike type, a coin no serial number. |
 | **Metal** | Coins | What it is struck in: silver, gold, copper, copper-nickel clad, and so on. With the fineness and weight, it decides the melt value. |
 | **Strike type** | Coins | How the coin was made: a business strike, made for circulation and graded Mint State (MS), or a proof, struck with specially polished dies for collectors and graded PR. It decides whether a 65 reads MS65 or PR65. |
@@ -687,7 +687,7 @@ The fields of both tabs:
 
 The values the pickers offer: grades, denominations, series, storage forms and the
 rest. Choose a vocabulary to add a value or give one another name (an alias, which
-search and the pickers then recognise). The ⋮ menu on a row renames, retires, merges
+search and the pickers then recognize). The ⋮ menu on a row renames, retires, merges
 or edits it.
 
 ![The storage form vocabulary with a row's menu open, first rows](images/ui-guide/vocab_storage_form_1.png)

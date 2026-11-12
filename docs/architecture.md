@@ -92,7 +92,7 @@ pydantic settings.
 ## Backend layers
 
 ```
-routers/        HTTP: parse, authorise, resolve codes, call one writer, commit
+routers/        HTTP: parse, authorize, resolve codes, call one writer, commit
    |
 writers         the only code that changes a given table (flush, never commit)
 helpers         rules and queries shared by routers and writers
@@ -154,7 +154,7 @@ value a person typed or one marked as held: `classifier_defaults`,
 `photo_import`, `image_sources`, `image_enlarge`. Other command lines:
 `app.seeding` (load or export the reference data),
 `app.create_admin` (the first manager of a new installation), `app.seed`
-(a demonstration catalogue, refused on a real collection), `app.reports`,
+(a demonstration catalog, refused on a real collection), `app.reports`,
 and the backup tools below.
 
 ### Authentication
@@ -248,7 +248,7 @@ application reads the base tables.
 ## Frontend
 
 - **Shop** (`src/store/`): asks `/api/shop` whether it is open, then shows
-  the catalogue, a listing's page, sign-in and registration, the cart
+  the catalog, a listing's page, sign-in and registration, the cart
   (kept in `localStorage`) and the customer's orders.
 - **Console** (`src/management/`): every route but `/login` requires a
   manager. The menu groups Inventory, Procurement, Selling, Reports and
@@ -261,7 +261,7 @@ application reads the base tables.
 
 ## Request flows
 
-**A customer buys an item.** The catalogue lists the shop's own fixed-price
+**A customer buys an item.** The catalog lists the shop's own fixed-price
 active listings. At checkout `POST /api/orders` locks the listings and
 their items in the canonical order, refuses anything not on sale or out of
 stock or whose price changed since the cart showed it, records each line

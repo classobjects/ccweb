@@ -147,7 +147,7 @@ def _new_names(
     names = [source.label, source.code]
     names += aliases.aliases_by_row(db, model, row_id=source.id).get(source.id, [])
     once: dict[str, str] = {}
-    for name in (aliases.normalise(n) for n in names if n.strip()):
+    for name in (aliases.normalize(n) for n in names if n.strip()):
         once.setdefault(name.lower(), name)
     return list(once.values())
 

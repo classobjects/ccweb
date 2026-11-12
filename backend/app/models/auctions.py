@@ -60,7 +60,7 @@ class AuctionStatus(enum.StrEnum):
     consigned = "consigned"
     closed = "closed"
     settled = "settled"
-    cancelled = "cancelled"
+    canceled = "canceled"
 
 
 class AuctionLotResult(enum.StrEnum):
@@ -108,7 +108,7 @@ class Auction(VersionedMixin, TimestampMixin, Base):
         nullable=False,
     )
     #: When physical custody moved to the auction house. Null until
-    #: `status` becomes `consigned`, and again once it is settled or cancelled.
+    #: `status` becomes `consigned`, and again once it is settled or canceled.
     consigned_on: Mapped[date | None] = mapped_column(Date, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 

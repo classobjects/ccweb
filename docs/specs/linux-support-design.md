@@ -144,6 +144,6 @@ the same on both is shared:
   folder starts by changing to it, and anything that prompts stands alone
   in its block (`CLAUDE.md`, *Scripts and shell*).
 - A shared document shows a block that differs by OS in both forms, each
-  labelled; anything longer is in the OS documents and linked.
+  labeled; anything longer is in the OS documents and linked.
 - The per-OS documents describe "a server", "your domain", "a backup
-  folder"; an installation's own values appear only as labelled examples.
+  folder"; an installation's own values appear only as labeled examples.

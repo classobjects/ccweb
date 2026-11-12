@@ -474,7 +474,7 @@ describe('FriedbergLookup', () => {
     await userEvent.type(await screen.findByLabelText(/fr\. number/i), '9903-B')
     await userEvent.click(screen.getByRole('button', { name: /save as proposed/i }))
 
-    expect(await screen.findByText(/set the seal colour first/i)).toBeInTheDocument()
+    expect(await screen.findByText(/set the seal color first/i)).toBeInTheDocument()
     expect(api.createFriedbergNumber).not.toHaveBeenCalled()
   })
 
@@ -1112,7 +1112,7 @@ describe('FriedbergLookup: whether the note is a mule', () => {
         expect.objectContaining({ seal_color: 'blue', series_year: 1935 }),
       ),
     )
-    expect(screen.queryByText(/set the seal colour first/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/set the seal color first/i)).not.toBeInTheDocument()
   })
 
   it("says a mule's number makes it one as the number is typed", async () => {

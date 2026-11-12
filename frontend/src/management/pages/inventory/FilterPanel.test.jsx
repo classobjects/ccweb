@@ -118,7 +118,7 @@ describe('FilterPanel', () => {
     expect(props.apply).toHaveBeenCalledWith({ issue: '' })
   })
 
-  it('says which issue check is chosen, not only by its colour', () => {
+  it('says which issue check is chosen, not only by its color', () => {
     const { rerender, props } = setup()
     const chip = screen.getByRole('button', { name: /missing grade/i })
     expect(chip).toHaveAttribute('aria-pressed', 'false')

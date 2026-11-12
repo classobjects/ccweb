@@ -49,7 +49,7 @@ export function useInventorySearch(view) {
     // changed twice, pages clicked through -- and without this an early slow
     // response can land after a later fast one and overwrite newer results
     // with older ones.
-    let cancelled = false
+    let canceled = false
 
     api
       .searchInventory(view, {
@@ -58,12 +58,12 @@ export function useInventorySearch(view) {
         limit: PAGE_SIZE,
       })
       .then((body) => {
-        if (cancelled) return
+        if (canceled) return
         setResult({ query, body })
         setError('')
       })
       .catch((err) => {
-        if (cancelled) return
+        if (canceled) return
         // An answer to this query, though an empty one: the rows of the last
         // query do not stay up as if they matched this one, and nothing is
         // left loading.
@@ -72,7 +72,7 @@ export function useInventorySearch(view) {
       })
 
     return () => {
-      cancelled = true
+      canceled = true
     }
   }, [view, query, reloads])
 

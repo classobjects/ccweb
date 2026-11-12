@@ -91,7 +91,7 @@ describe('SellerField: a store address', () => {
     expect(api.createSeller).toHaveBeenCalledTimes(1)
   })
 
-  it('leaves the form empty again when an address-opened add is cancelled', async () => {
+  it('leaves the form empty again when an address-opened add is canceled', async () => {
     await open()
     await userEvent.type(address(), 'newhound.hibid.com{Enter}')
     await userEvent.click(screen.getByRole('button', { name: 'Cancel' }))

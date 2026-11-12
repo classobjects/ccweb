@@ -3,11 +3,11 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useRef, useState } from 'react'
 
-import { isCancellingEscape, useKeydownRef } from '../shared/add-option'
+import { isCancelingEscape, useKeydownRef } from '../shared/add-option'
 
 /**
  * The small form a picker opens from its "+ Add ..." option: the vendor,
- * seller and storage location pickers' shared state and behaviour.
+ * seller and storage location pickers' shared state and behavior.
  *
  * `blank` is the empty draft. `ready(draft)` says whether the draft holds
  * enough to send. `create(draft)` sends it and resolves to the row made;
@@ -70,7 +70,7 @@ export function useInlineAdd({ blank, ready, create, onCreated }) {
 
   function onKeyDown(e) {
     // Escape cancels this form, not the dialog it sits in.
-    if (isCancellingEscape(e)) {
+    if (isCancelingEscape(e)) {
       cancel()
       return
     }

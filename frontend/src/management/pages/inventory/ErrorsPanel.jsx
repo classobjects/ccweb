@@ -84,11 +84,11 @@ export default function ErrorsPanel({ itemId, kind, value, onChange, saleState }
 
   useEffect(() => {
     if (controlled) return
-    let cancelled = false
+    let canceled = false
     api
       .getItemErrors(itemId)
       .then((body) => {
-        if (cancelled) return
+        if (canceled) return
         const read = (body.errors ?? []).map((e) => ({
           error_type: e.error_type,
           details: e.details ?? '',
@@ -101,10 +101,10 @@ export default function ErrorsPanel({ itemId, kind, value, onChange, saleState }
       .catch((err) => {
         // A load failure must not leave the panel stuck showing "Loading...":
         // the reason, and a way to read again, is the recoverable state.
-        if (!cancelled) setUnread(err.message)
+        if (!canceled) setUnread(err.message)
       })
     return () => {
-      cancelled = true
+      canceled = true
     }
   }, [itemId, controlled, reading])
 
@@ -152,7 +152,7 @@ export default function ErrorsPanel({ itemId, kind, value, onChange, saleState }
   }
 
   function addRow() {
-    // Live with nothing chosen, and says what it wants rather than greying.
+    // Live with nothing chosen, and says what it wants rather than graying.
     if (!type) {
       setError('Choose the error first.')
       return

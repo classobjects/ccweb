@@ -43,7 +43,7 @@ export function AuthProvider({ children }) {
   // tokens, so they are kept for the next load rather than signing the
   // visitor out over a blip.
   useEffect(() => {
-    let cancelled = false
+    let canceled = false
     async function bootstrap() {
       if (!loadTokens()) {
         setLoading(false)
@@ -51,16 +51,16 @@ export function AuthProvider({ children }) {
       }
       try {
         const me = await api.me()
-        if (!cancelled) acceptProfile(me)
+        if (!canceled) acceptProfile(me)
       } catch {
         /* nobody signed in: a refusal has already signed out, a blip keeps the tokens */
       } finally {
-        if (!cancelled) setLoading(false)
+        if (!canceled) setLoading(false)
       }
     }
     bootstrap()
     return () => {
-      cancelled = true
+      canceled = true
     }
   }, [acceptProfile])
 

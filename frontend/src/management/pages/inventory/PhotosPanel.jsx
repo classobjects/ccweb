@@ -61,7 +61,7 @@ function withoutHeldPrimary(edits) {
 export default function PhotosPanel({
   itemId,
   // Photographs added here and held for the editor's Save, and the
-  // editor's handlers for adding one, re-labelling one and discarding one.
+  // editor's handlers for adding one, re-labeling one and discarding one.
   pending = [],
   onAdd = () => {},
   onRoleChange = () => {},
@@ -137,7 +137,7 @@ export default function PhotosPanel({
   /**
    * What choosing a file, dropping one, and pasting one all funnel into
    * (`useImageDrop`). Each file is held as the obverse, then the reverse,
-   * then unlabelled, counting whatever a batch has already claimed as it
+   * then unlabeled, counting whatever a batch has already claimed as it
    * goes.
    */
   function addImages(files) {

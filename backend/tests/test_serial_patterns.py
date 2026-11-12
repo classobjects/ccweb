@@ -14,7 +14,7 @@ from decimal import Decimal
 
 import pytest
 from app.models import CurrencyDetail, InventoryItem, ItemAttribute, ItemAttributeLink
-from app.serial_patterns import analyse, is_incomplete, run
+from app.serial_patterns import analyze, is_incomplete, run
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -58,7 +58,7 @@ STAR_SERIAL = "A38164927*"
     ],
 )
 def test_designations(serial: str, expected: set[str]) -> None:
-    assert analyse(serial) == expected
+    assert analyze(serial) == expected
 
 
 def test_a_star_is_not_a_fancy_serial() -> None:
@@ -67,12 +67,12 @@ def test_a_star_is_not_a_fancy_serial() -> None:
     A star swept into `fancy_serial` would be a claim about the note's digits
     that its digits do not support.
     """
-    plain_star = analyse("A19472856*")
+    plain_star = analyze("A19472856*")
     assert plain_star == {"star"}
     assert "fancy_serial" not in plain_star
 
     # A star note whose digits *are* patterned earns both, separately.
-    both = analyse("A12344321*")
+    both = analyze("A12344321*")
     assert {"star", "radar", "fancy_serial"} <= both
 
 
@@ -85,12 +85,12 @@ def test_short_serials_yield_no_pattern() -> None:
     """
     for serial in ("59", "887", "1791040", "99V7711"):
         assert is_incomplete(serial)
-        assert analyse(serial) - {"star"} == set()
+        assert analyze(serial) - {"star"} == set()
 
 
 def test_a_short_serial_still_shows_its_star() -> None:
     """The asterisk is not a digit pattern, so truncation does not hide it."""
-    assert analyse("*59") == {"star"}
+    assert analyze("*59") == {"star"}
 
 
 def test_consecutive_is_never_derived() -> None:
@@ -100,11 +100,11 @@ def test_consecutive_is_never_derived() -> None:
     could establish that, so this must not try.
     """
     for serial in ("A12345678B", "A00000001B", "M88888888"):
-        assert "consecutive" not in analyse(serial)
+        assert "consecutive" not in analyze(serial)
 
 
 def test_empty_serial_is_silent() -> None:
-    assert analyse("") == set()
+    assert analyze("") == set()
 
 
 # ---------------------------------------------------------------------------

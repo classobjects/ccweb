@@ -59,7 +59,7 @@ def _held(db: Session) -> dict[int, Decimal]:
     """Fine troy ounces in hand of each metal.
 
     Over live items that are `received` and either `held` or `listed`; one
-    sold, returned, cancelled, missing or still on order is not metal in
+    sold, returned, canceled, missing or still on order is not metal in
     hand. This is wider on purpose than the `cb_metal` report's default of
     received and held, which leaves out what is on offer. An item with no
     fine weight adds nothing, and a metal none of whose items has one is not

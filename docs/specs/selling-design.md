@@ -73,14 +73,14 @@ of one.
 |---|---|
 | **Offer** an item or lot (platform, format, price, public text, external id) | Refused if any affected item is deleted, split, or not `received`; is already sold (`sold`, `shipped`, `delivered`) or held by an unshipped order; is a member of an offered lot; is on offer on a **non-store** platform ("end it first"); or the platform is retired. An active **store** listing of an affected item is **paused**, with `paused_by_listing_id` set -- except that offering an item on the store while it is already there is refused. The new listing and its claims are `active`; items become `listed`; a lot becomes `offered`. A batch is all or nothing, lists every refused item with its reason, and refuses an item named twice. |
 | **Edit** a listing | Price, public title and description, external id. A web-store lot's title cannot be blanked: it is the only name a buyer sees. Once a listing has ended only its external id may change (through the API; the console edits active rows only): its terms are part of the sale's record. |
-| **End** a listing | `ended`, claims `released`. Store listings it paused **resume**. A lot listing's lot **dissolves** (members released). Items nothing else offers go back to `held`. Ending an ended listing changes nothing. A listing that is a lot of an auction is refused: it ends only through its auction. A listing whose stock an unshipped, uncancelled order still holds is refused, naming the order: ending it would leave nothing to return that stock to, so the order could never be cancelled. Ship or cancel the order first. |
+| **End** a listing | `ended`, claims `released`. Store listings it paused **resume**. A lot listing's lot **dissolves** (members released). Items nothing else offers go back to `held`. Ending an ended listing changes nothing. A listing that is a lot of an auction is refused: it ends only through its auction. A listing whose stock an unshipped, uncanceled order still holds is refused, naming the order: ending it would leave nothing to return that stock to, so the order could never be canceled. Ship or cancel the order first. |
 | **Record a sale** on an outside listing | One order on that platform: buyer (matched case-insensitively, or created; blank is the platform's undisclosed buyer), price, `external_order_id`, fee lines, shares, snapshot. The listing ends **sold**: claims released, the lot `sold`, members' paused store listings **ended** rather than resumed, items `sold`. Refused for a store listing and for a listing that is a lot of an auction, which sells through settlement. |
 | **Add to an auction** (`draft` or `scheduled`) | Offers the lot, or wraps one item in a new lot of one titled by the item's source title, with `format = auction`, and creates its `auction_lot`. Same refusals and pausing as Offer. |
 | **Remove from an auction** (`draft`, `scheduled` or `consigned`) | Ends the listing as for End and deletes the `auction_lot` row; if the house holds coins, they return to the chosen location first. |
 | **Schedule** | `draft` → `scheduled`. |
 | **Mark consigned** (auction houses only, from `scheduled`) | `consigned_on` set, status `consigned`; every member moves to the house's consigned location. |
-| **Close** (from `scheduled` or `consigned`) | `closed`; lot results may now be entered. A `draft` auction is cancelled, not closed. |
-| **Cancel** (any status but `settled` or `cancelled`) | Removes every lot as above, in lot id order; consigned coins return to the chosen location; `consigned_on` cleared; status `cancelled`. |
+| **Close** (from `scheduled` or `consigned`) | `closed`; lot results may now be entered. A `draft` auction is canceled, not closed. |
+| **Cancel** (any status but `settled` or `canceled`) | Removes every lot as above, in lot id order; consigned coins return to the chosen location; `consigned_on` cleared; status `canceled`. |
 | **Settle** (from `closed`) | One transaction. **Sold** lots: one order per buyer (usernames compared case-insensitively; the first spelling is kept) holding that buyer's lots, with that buyer's fees and the shares, as Record a sale. Every buyer's order carries the auction's sale number as `external_order_id`, which is what the house's statement is reconciled against. **Unsold / withdrawn**: coins return from the house first if it holds them, then as End -- lot dissolved, paused store listings resume at their old price, other members `held`. `consigned_on` cleared, status `settled`. |
 
 **Custody is `consigned_on is not None`, not the status.** `close` accepts a
@@ -217,7 +217,7 @@ withdrawal.
 - **`auction`**: `sales_venue_id` (`live_auction`, `auction_house`, or
   `marketplace` for a single timed eBay auction), `title`, `external_id`
   (sale number), `starts_at`, `ends_at`, `status` (`draft` → `scheduled` →
-  [`consigned`] → `closed` → `settled`, or `cancelled`), `consigned_on`,
+  [`consigned`] → `closed` → `settled`, or `canceled`), `consigned_on`,
   `notes`, `version`. `consigned` applies only to auction houses: an eBay or
   Whatnot auction never leaves the premises.
 - **`auction_lot`**: one row per auction listing (`listing_id` unique),
@@ -422,7 +422,7 @@ hand (`check_all_invariants`); `tests/test_order_revision_race.py` does not:
 
 The auction rules: from `draft` through `closed`, no lot has a result and
 every lot's listing is `active`; once `settled`, every lot has a result and
-an `ended` listing; a `cancelled` auction has no lots; a `sold` lot has a
+an `ended` listing; a `canceled` auction has no lots; a `sold` lot has a
 hammer price and a buyer and any other lot has neither; a lot details an
 auction-format listing; `consigned_on` is set on every `consigned` auction,
 may be set on a `closed` one, and on no other.
@@ -462,9 +462,9 @@ unit marks the item `sold` while its store listing stays active.
 
 ## Known limits
 
-- **An unshipped order holding an ended listing cannot be cancelled or
+- **An unshipped order holding an ended listing cannot be canceled or
   refunded** -- an outside sale, or a lot bought in the shop. There is nothing
-  to return the stock to. Once shipped it can be cancelled (no stock moves),
+  to return the stock to. Once shipped it can be canceled (no stock moves),
   which is how a refund is recorded. The Sales page disables both options
   where the server would refuse them (`listing_ended`). End refuses a
   listing while such an order holds its stock, so ending a listing by hand

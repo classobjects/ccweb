@@ -137,7 +137,7 @@ export default function Cart() {
   return (
     <section>
       <h1>Cart</h1>
-      {/* On a phone each row stacks into a card, a line per labelled cell. */}
+      {/* On a phone each row stacks into a card, a line per labeled cell. */}
       <table className="table stacks">
         <thead>
           <tr>

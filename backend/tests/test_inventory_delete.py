@@ -61,7 +61,7 @@ def test_a_deleted_item_is_findable_when_asked_for(
     assert both["total"] == 1
 
 
-def test_an_unrecognised_deleted_mode_is_refused(
+def test_an_unrecognized_deleted_mode_is_refused(
     client: TestClient, admin_headers: dict[str, str], db: Session
 ) -> None:
     """Consistent with every other filter: never silently ignored."""

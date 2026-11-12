@@ -178,21 +178,21 @@ export default function Photos() {
   const [error, setError] = useState('')
 
   useEffect(() => {
-    let cancelled = false
+    let canceled = false
     api
       .listUnattachedImages()
       .then((data) => {
-        if (cancelled) return
+        if (canceled) return
         setRows(data)
         setError('')
       })
       .catch((err) => {
-        if (cancelled) return
+        if (canceled) return
         setError(err.message)
         setRows([])
       })
     return () => {
-      cancelled = true
+      canceled = true
     }
   }, [])
 

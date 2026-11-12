@@ -200,7 +200,7 @@ export default function Listings() {
   // Held here rather than in a `useRequest`, which would own the list: a
   // save puts its row back in place without asking again.
   useEffect(() => {
-    let cancelled = false
+    let canceled = false
     api
       .listListingsPage({
         venue: filters.venue,
@@ -210,14 +210,14 @@ export default function Listings() {
         offset,
       })
       .then(({ rows, total: count }) => {
-        if (cancelled) return
+        if (canceled) return
         setListings(rows)
         setTotal(count)
         setListingsError('')
       })
-      .catch((err) => !cancelled && setListingsError(err.message))
+      .catch((err) => !canceled && setListingsError(err.message))
     return () => {
-      cancelled = true
+      canceled = true
     }
   }, [filters, offset, reloads])
 
@@ -375,7 +375,7 @@ export default function Listings() {
           later="Next"
         />
       </div>
-      {/* On a phone each row stacks into a card, a line per labelled cell. */}
+      {/* On a phone each row stacks into a card, a line per labeled cell. */}
       <table className="stacks">
         <thead>
           <tr>

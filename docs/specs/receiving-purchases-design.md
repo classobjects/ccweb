@@ -4,7 +4,7 @@ A package arrives. Somebody opens it, checks what is inside against what was
 bought, puts the objects somewhere, and records that this happened. Until
 then a purchase is only a promise: an item cannot be offered for sale until
 it is received, and a parcel that never comes has to be closed out as
-missing, returned or cancelled rather than left outstanding forever.
+missing, returned or canceled rather than left outstanding forever.
 
 The owner or a manager does this on the **Receiving** page
 (`/management/receiving`, **Receive** in the console menu), usually by
@@ -71,7 +71,7 @@ re-reads the row with `populate_existing` must flush in between;
   is not caught.
 - **The four outcomes are the four codes.** A page that can only record
   success cannot close out a line that never showed up; `missing` means "paid
-  for, not cancelled, never arrived".
+  for, not canceled, never arrived".
 - **`received` twice is refused (409)**, naming the item and the date it
   arrived, so an operator can tell a double submission from the wrong row.
   Correcting a receipt is `PATCH`, which records the correction. `ordered`
@@ -115,7 +115,7 @@ for coins `year_min`/`year_max` and `mint` (the mint's code, which for a US mint
 authorization boundary: a public listing that leaked the safe-deposit box
 holding an item would be a security failure. `routers/catalog.py`
 (`to_catalog_item`) builds every public response field by field, and
-`test_catalogue_never_exposes_cost_basis_or_location` tests it; the
+`test_catalog_never_exposes_cost_basis_or_location` tests it; the
 `public_catalog` view states the same rule (`docs/database-design.md` §10),
 and `test_public_catalog_never_exposes_private_columns` tests the view.
 

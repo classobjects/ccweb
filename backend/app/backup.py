@@ -40,7 +40,7 @@ so the copy's next item does not take a code already held.
 **Every table, not only the modeled ones.** `alembic_version` is
 Alembic's own, with no model; a copy driven by the models alone would leave
 it out, and could not be migrated. Such tables are read from the
-source database itself (`unmodelled_tables`), created in the copy and
+source database itself (`unmodeled_tables`), created in the copy and
 copied after the rest.
 """
 
@@ -95,7 +95,7 @@ __all__ = [
     "run",
     "stored_columns",
     "timestamped_name",
-    "unmodelled_tables",
+    "unmodeled_tables",
 ]
 
 #: Rows read and written per round trip. Large enough to be quick, small
@@ -143,7 +143,7 @@ def stored_columns(table: Table) -> list[Column[Any]]:
     return [c for c in table.columns if c.computed is None]
 
 
-def unmodelled_tables(source: Engine) -> list[Table]:
+def unmodeled_tables(source: Engine) -> list[Table]:
     """The source's tables that no model describes, in foreign-key order.
 
     Reflected from the database itself, so a table added by a migration and
@@ -155,8 +155,8 @@ def unmodelled_tables(source: Engine) -> list[Table]:
 
 
 def all_tables(source: Engine) -> list[Table]:
-    """The modeled tables in foreign-key order, then the unmodelled ones."""
-    return [*Base.metadata.sorted_tables, *unmodelled_tables(source)]
+    """The modeled tables in foreign-key order, then the unmodeled ones."""
+    return [*Base.metadata.sorted_tables, *unmodeled_tables(source)]
 
 
 def timestamped_name(prefix: str = "ccwebdb_bak") -> str:
@@ -219,7 +219,7 @@ def copy_rows(
 
     `sorted_tables` is the topological order, so a row never arrives before
     the row it references in another table. Copying alphabetically would
-    fail on the first foreign key. The unmodelled tables come last: they
+    fail on the first foreign key. The unmodeled tables come last: they
     reference modeled ones, never the reverse.
 
     Two things the order alone does not settle:
@@ -460,7 +460,7 @@ def run(target_url: str | None, *, name: str | None = None) -> tuple[str, int]:
     Base.metadata.create_all(target)
     if target.dialect.name == "postgresql":
         _build_beside_the_models(target)
-    extra = unmodelled_tables(source)
+    extra = unmodeled_tables(source)
     if extra:
         # Their own reflected definitions; the modeled tables they point at
         # exist now, so their foreign keys resolve.
