@@ -89,12 +89,16 @@ Three rules add links, each recorded `derived` with its rule in `derived_by`:
 
 - **Serial patterns** (`app.serial_patterns`, `serial_pattern`): star, radar,
   repeater, binary, solid, ladder, low serial and the rest are properties of
-  the serial, so a batch pass derives them (`python -m app.serial_patterns`,
-  `--commit` to write). Patterns need a full eight-digit serial; a shorter one
-  is reported as incomplete. Consecutive is never derived: it describes a run
-  of notes, which no single serial shows. The pass also takes back a link it
-  added, still in force, that the serial no longer earns (a serial corrected
-  since). It runs only by hand, never on a save.
+  the serial, and Duplicate Serial is a property of the serial within the
+  note's type, face and series. Every save derives them for the items saved
+  (`serial_patterns.derive`, called last in
+  `classifier_defaults.refresh_items`, in the save's transaction): the
+  editor, bulk edit and item creation. A batch pass applies the same rules to
+  every note (`python -m app.serial_patterns`, `--commit` to write). Patterns
+  need a full eight-digit serial; a shorter one is reported as incomplete.
+  Consecutive is never derived: it describes a run of notes, which no single
+  serial shows. Both take back a link this rule added, still in force, that
+  the note no longer earns (its serial or series corrected).
 - **Attributes from facts** (`attribute_rule`), below.
 - **Gift** (`no_cost`), below.
 

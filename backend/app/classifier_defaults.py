@@ -47,7 +47,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from . import aliases, attribute_rules
+from . import aliases, attribute_rules, serial_patterns
 from .composition import (
     Run,
     composition_of,
@@ -1138,7 +1138,9 @@ def refresh_items(db: Session, item_ids: Collection[int]) -> None:
 
     Called when an item is created or edited, so a note entered today has its
     class now rather than at the next batch run, and a corrected series year
-    corrects the class that was derived from it.
+    corrects the class that was derived from it. A note's serial
+    designations follow last (`serial_patterns.derive`): Duplicate Serial
+    reads the note type this may just have filled.
     """
     if not item_ids:
         return
@@ -1149,6 +1151,7 @@ def refresh_items(db: Session, item_ids: Collection[int]) -> None:
     changed = refresh_series(db, item_ids)
     if changed:
         apply(db, classify(db, changed), commit=False)
+    serial_patterns.derive(db, item_ids)
 
 
 def suggest(db: Session, note: NoteFacts) -> dict[str, int]:

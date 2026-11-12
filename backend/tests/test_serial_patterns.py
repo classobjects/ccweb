@@ -13,13 +13,20 @@ from __future__ import annotations
 from decimal import Decimal
 
 import pytest
-from app.models import CurrencyDetail, InventoryItem, ItemAttribute, ItemAttributeLink
+from app.models import (
+    CurrencyDetail,
+    Denomination,
+    InventoryItem,
+    ItemAttribute,
+    ItemAttributeLink,
+    NoteType,
+)
 from app.serial_patterns import analyze, is_incomplete, run
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from tests.builders import ItemFactory
+from tests.builders import ItemFactory, code_id
 
 #: A star and nothing else: no ladder, repeater or fancy digits.
 STAR_SERIAL = "A38164927*"
@@ -243,3 +250,193 @@ def test_links_merged_into_a_designation_the_pass_derives_stay_its_own(
     assert merged.status_code == 200, merged.text
 
     assert ("repeater", "serial_pattern") in _links(db, note)
+
+
+# ---------------------------------------------------------------------------
+# On save
+# ---------------------------------------------------------------------------
+
+RADAR_SERIAL = "A12344321B"
+PLAIN_SERIAL = "A19472856B"
+
+
+def _patch(
+    client: TestClient,
+    headers: dict[str, str],
+    item: InventoryItem,
+    changes: dict[str, object],
+) -> None:
+    """Save these changes through the item editor's endpoint."""
+    path = f"/api/inventory/{item.id}"
+    version = client.get(path, headers=headers).json()["version"]
+    response = client.patch(path, json={**changes, "version": version}, headers=headers)
+    assert response.status_code == 200, response.text
+
+
+def test_saving_a_serial_derives_its_designations(
+    client: TestClient,
+    admin_headers: dict[str, str],
+    make_item: ItemFactory,
+    db: Session,
+) -> None:
+    """A serial saved in the editor gets its designations in the same save."""
+    note = _note(db, make_item, PLAIN_SERIAL)
+
+    _patch(client, admin_headers, note, {"serial_number": RADAR_SERIAL})
+
+    db.expire_all()
+    links = _links(db, note)
+    assert ("radar", "serial_pattern") in links
+    assert ("fancy_serial", "serial_pattern") in links
+
+
+def test_correcting_the_serial_takes_back_what_was_derived(
+    client: TestClient,
+    admin_headers: dict[str, str],
+    make_item: ItemFactory,
+    db: Session,
+) -> None:
+    """A serial corrected to an ordinary number loses the radar it was given."""
+    note = _note(db, make_item, PLAIN_SERIAL)
+    _patch(client, admin_headers, note, {"serial_number": RADAR_SERIAL})
+
+    _patch(client, admin_headers, note, {"serial_number": PLAIN_SERIAL})
+
+    db.expire_all()
+    codes = {code for code, _ in _links(db, note)}
+    assert "radar" not in codes
+    assert "fancy_serial" not in codes
+
+
+def test_a_removed_designation_is_not_put_back_on_save(
+    client: TestClient,
+    admin_headers: dict[str, str],
+    make_item: ItemFactory,
+    db: Session,
+) -> None:
+    """A designation a person removed stays removed through later saves."""
+    note = _note(db, make_item, PLAIN_SERIAL)
+    _patch(client, admin_headers, note, {"serial_number": RADAR_SERIAL})
+    db.expire_all()
+    kept = [code for code, _ in _links(db, note) if code != "radar"]
+    _patch(client, admin_headers, note, {"attributes": kept})
+
+    _patch(client, admin_headers, note, {"rating": "looked at again"})
+
+    db.expire_all()
+    assert "radar" not in {code for code, _ in _links(db, note)}
+
+
+def test_a_bulk_edit_derives_too(
+    client: TestClient,
+    admin_headers: dict[str, str],
+    make_item: ItemFactory,
+    db: Session,
+) -> None:
+    """A serial set by a bulk edit is derived on every note it reaches."""
+    notes = [_note(db, make_item, PLAIN_SERIAL) for _ in range(2)]
+
+    response = client.post(
+        "/api/inventory/bulk",
+        json={
+            "ids": [n.id for n in notes],
+            "changes": {"serial_number": RADAR_SERIAL},
+        },
+        headers=admin_headers,
+    )
+    assert response.status_code == 200, response.text
+
+    db.expire_all()
+    for note in notes:
+        assert ("radar", "serial_pattern") in _links(db, note)
+
+
+#: A Series 2013 $1 New York star in the first printed-twice range.
+DUPLICATE_SERIAL = "B00000002*"
+
+
+def _series_2013_dollar(changes: dict[str, object]) -> dict[str, object]:
+    """These changes, on a Series 2013 $1 Federal Reserve Note."""
+    return {
+        "note_type": "frn",
+        "denomination": "usd_note_1",
+        "series_year": 2013,
+        **changes,
+    }
+
+
+def test_series_2013_b_star_gets_duplicate_on_save(
+    client: TestClient,
+    admin_headers: dict[str, str],
+    make_item: ItemFactory,
+    db: Session,
+) -> None:
+    """Duplicate Serial is derived on save with the star, from the note's class."""
+    note = _note(db, make_item, PLAIN_SERIAL)
+
+    _patch(
+        client,
+        admin_headers,
+        note,
+        _series_2013_dollar({"serial_number": DUPLICATE_SERIAL}),
+    )
+
+    db.expire_all()
+    links = _links(db, note)
+    assert ("duplicate_serial", "serial_pattern") in links
+    assert ("star", "serial_pattern") in links
+
+
+def test_correcting_the_series_takes_back_duplicate_serial(
+    client: TestClient,
+    admin_headers: dict[str, str],
+    make_item: ItemFactory,
+    db: Session,
+) -> None:
+    """A series corrected out of the range loses Duplicate Serial."""
+    note = _note(db, make_item, PLAIN_SERIAL)
+    _patch(
+        client,
+        admin_headers,
+        note,
+        _series_2013_dollar({"serial_number": DUPLICATE_SERIAL}),
+    )
+
+    _patch(client, admin_headers, note, {"series_year": 2017})
+
+    db.expire_all()
+    codes = {code for code, _ in _links(db, note)}
+    assert "duplicate_serial" not in codes
+    assert "star" in codes
+
+
+def test_the_pass_keeps_and_adds_duplicate_serial(
+    client: TestClient,
+    admin_headers: dict[str, str],
+    make_item: ItemFactory,
+    db: Session,
+) -> None:
+    """The pass by hand judges Duplicate Serial as the save does.
+
+    It neither takes back the link a save added nor misses a note that was
+    never saved through the editor.
+    """
+    saved = _note(db, make_item, PLAIN_SERIAL)
+    _patch(
+        client,
+        admin_headers,
+        saved,
+        _series_2013_dollar({"serial_number": DUPLICATE_SERIAL}),
+    )
+    unsaved = _note(db, make_item, "B00000003*")
+    unsaved.denomination_id = code_id(db, Denomination, "usd_note_1")
+    detail = db.get_one(CurrencyDetail, unsaved.id)
+    detail.note_type_id = code_id(db, NoteType, "frn")
+    detail.series_year = 2013
+    db.commit()
+
+    run(db, commit=True)
+
+    db.expire_all()
+    assert ("duplicate_serial", "serial_pattern") in _links(db, saved)
+    assert ("duplicate_serial", "serial_pattern") in _links(db, unsaved)

@@ -20,10 +20,17 @@ digits, so a naive binary test calls it a binary note. It is not a note at
 all, it is a truncated field. Pattern designations therefore require a
 full-length serial, and a short one is reported as incomplete instead.
 
-The pass takes back what it derived and the serial no longer earns: a serial
-corrected from a radar to an ordinary number loses the radar this module gave
-it. A designation a person set is theirs, and one a person removed stays
-removed. Nothing here runs on a save; the pass is run by hand.
+Duplicate Serial is derived beside them (`designations`): it is a property of
+the serial too, but only within a note's class -- type, face and series.
+
+Every save of an item derives its designations (`derive`, called from
+`classifier_defaults.refresh_items`), in the save's own transaction, so the
+editor, bulk edit and item creation all keep them current. It takes back what
+it derived and the note no longer earns: a serial corrected from a radar to
+an ordinary number loses the radar this module gave it, and a series
+corrected out of a printed-twice range loses Duplicate Serial. A designation
+a person set is theirs, and one a person removed stays removed. The pass
+below (`run`) applies the same rules to every note at once.
 
 `consecutive` is deliberately never derived. It describes a *run* of notes --
 three sequential serials bought together -- which no single serial can show.
@@ -38,6 +45,8 @@ import argparse
 import re
 import sys
 from collections import Counter
+from collections.abc import Collection
+from dataclasses import dataclass, field
 from decimal import Decimal
 from itertools import pairwise
 
@@ -48,9 +57,11 @@ from .database import SessionLocal
 from .duplicate_serials import is_duplicate
 from .models import (
     CurrencyDetail,
+    Denomination,
     InventoryItem,
     ItemAttribute,
     ItemAttributeLink,
+    NoteType,
     ProvenanceSource,
 )
 
@@ -92,7 +103,7 @@ DIGIT_PATTERNS: frozenset[str] = frozenset(
 )
 
 
-#: Every designation `analyze` can return: the codes whose links this
+#: Every designation `designations` can return: the codes whose links this
 #: module judges as its own, and the only ones it does.
 DESIGNATIONS: frozenset[str] = DIGIT_PATTERNS | {
     "low_serial",
@@ -279,79 +290,144 @@ def _attributes(db: Session) -> tuple[dict[str, int], set[str]]:
     return attribute_ids, retired
 
 
-def _links_in_force_from_this_rule(db: Session) -> dict[int, set[int]]:
-    """The links in force this module added, by item: the only ones it may take back."""
+def _links_in_force_from_this_rule(
+    db: Session, item_ids: Collection[int] | None
+) -> dict[int, set[int]]:
+    """The links in force this module added, by item: the only ones it may take back.
+
+    `item_ids` of None means every item.
+    """
+    query = select(
+        ItemAttributeLink.inventory_item_id,
+        ItemAttributeLink.item_attribute_id,
+    ).where(
+        ItemAttributeLink.derived_by == RULE,
+        ItemAttributeLink.removed_at.is_(None),
+    )
+    if item_ids is not None:
+        query = query.where(ItemAttributeLink.inventory_item_id.in_(item_ids))
     mine: dict[int, set[int]] = {}
-    for item_id, derived_id in db.execute(
-        select(
-            ItemAttributeLink.inventory_item_id,
-            ItemAttributeLink.item_attribute_id,
-        ).where(
-            ItemAttributeLink.derived_by == RULE,
-            ItemAttributeLink.removed_at.is_(None),
-        )
-    ).tuples():
+    for item_id, derived_id in db.execute(query).tuples():
         mine.setdefault(item_id, set()).add(derived_id)
     return mine
 
 
-def run(db: Session, *, commit: bool) -> tuple[Counter, list[tuple[str, str]]]:
-    """Report, and optionally record, the designations every serial earns.
+def _every_link(db: Session, item_ids: Collection[int] | None) -> set[tuple[int, int]]:
+    """Every (item, attribute) link, removed ones included.
 
-    A designation this module added, still in force, that the serial no
-    longer earns -- the serial was corrected -- is taken back with it. One a
+    A designation a person took away keeps its row, marked removed, so it
+    is found here and not put back. `item_ids` of None means every item.
+    """
+    query = select(
+        ItemAttributeLink.inventory_item_id,
+        ItemAttributeLink.item_attribute_id,
+    )
+    if item_ids is not None:
+        query = query.where(ItemAttributeLink.inventory_item_id.in_(item_ids))
+    return set(db.execute(query).tuples().all())
+
+
+def _notes(
+    db: Session, item_ids: Collection[int] | None
+) -> list[tuple[int, str, str | None, str | None, Decimal | None, int | None]]:
+    """Each unsplit note's id, code, serial, note type, face and series year.
+
+    One query. An item without a currency detail row is not a note and is
+    not returned. `item_ids` of None means every note.
+    """
+    query = (
+        select(
+            InventoryItem.id,
+            InventoryItem.item_code,
+            CurrencyDetail.serial_number,
+            NoteType.code,
+            Denomination.face_value,
+            CurrencyDetail.series_year,
+        )
+        .join(CurrencyDetail, CurrencyDetail.inventory_item_id == InventoryItem.id)
+        .outerjoin(NoteType, NoteType.id == CurrencyDetail.note_type_id)
+        .outerjoin(Denomination, Denomination.id == InventoryItem.denomination_id)
+        .where(InventoryItem.split_at.is_(None))
+    )
+    if item_ids is not None:
+        query = query.where(InventoryItem.id.in_(item_ids))
+    return list(db.execute(query).tuples())
+
+
+@dataclass
+class _Plan:
+    """What a pass would write, and what it found on the way."""
+
+    stats: Counter = field(default_factory=Counter)
+    incomplete: list[tuple[str, str]] = field(default_factory=list)
+    to_add: list[ItemAttributeLink] = field(default_factory=list)
+    to_remove: list[tuple[int, int]] = field(default_factory=list)
+
+
+def _plan(db: Session, item_ids: Collection[int] | None) -> _Plan:
+    """Work out the links to add and take back for these notes, writing nothing.
+
+    A designation this module added, still in force, that the note no longer
+    earns -- its serial or series was corrected -- is taken back. One a
     person set, or removed, is never touched. A retired designation is not
     added anywhere, and the links it already has are left as they are.
     """
     attribute_ids, retired = _attributes(db)
     codes = {ident: code for code, ident in attribute_ids.items()}
-    mine = _links_in_force_from_this_rule(db)
-    # Every link, removed ones included: a designation a person took away
-    # is not put back.
-    existing: set[tuple[int, int]] = set(
-        db.execute(
-            select(
-                ItemAttributeLink.inventory_item_id,
-                ItemAttributeLink.item_attribute_id,
-            )
+    mine = _links_in_force_from_this_rule(db, item_ids)
+    existing = _every_link(db, item_ids)
+    plan = _Plan()
+
+    for item_id, item_code, serial, note_type, face, series_year in _notes(
+        db, item_ids
+    ):
+        earned = designations(
+            serial, note_type=note_type, face=face, series_year=series_year
         )
-        .tuples()
-        .all()
-    )
-
-    rows = db.execute(
-        select(InventoryItem.id, InventoryItem.item_code, CurrencyDetail.serial_number)
-        .join(CurrencyDetail, CurrencyDetail.inventory_item_id == InventoryItem.id)
-        .where(InventoryItem.split_at.is_(None))
-    ).all()
-
-    stats: Counter = Counter()
-    incomplete: list[tuple[str, str]] = []
-    to_add: list[ItemAttributeLink] = []
-    to_remove: list[tuple[int, int]] = []
-
-    for item_id, item_code, serial in rows:
-        earned = analyze(serial) if serial else set()
         earned_ids = {attribute_ids[c] for c in earned if c in attribute_ids}
         for stale_id in sorted(mine.get(item_id, set()) - earned_ids):
-            stats[f"stale:{codes[stale_id]}"] += 1
-            to_remove.append((item_id, stale_id))
+            plan.stats[f"stale:{codes[stale_id]}"] += 1
+            plan.to_remove.append((item_id, stale_id))
         if not serial:
             continue
         if is_incomplete(serial):
-            stats["incomplete_serial"] += 1
-            incomplete.append((item_code, serial))
-        to_add += _missing_links(
-            item_id, earned - retired, attribute_ids, existing, stats
+            plan.stats["incomplete_serial"] += 1
+            plan.incomplete.append((item_code, serial))
+        plan.to_add += _missing_links(
+            item_id, earned - retired, attribute_ids, existing, plan.stats
         )
         for code in sorted(earned & retired):
             # Retired: no new use of it, but the links it has stay as they are.
-            stats[f"retired_attribute:{code}"] += 1
+            plan.stats[f"retired_attribute:{code}"] += 1
+    return plan
 
-    if commit and (to_add or to_remove):
-        _write(db, to_add, to_remove, stats)
 
-    return stats, incomplete
+def derive(db: Session, item_ids: Collection[int]) -> Counter:
+    """Bring these notes' serial designations up to date, without committing.
+
+    Called on every save (`classifier_defaults.refresh_items`), inside the
+    caller's transaction. Adds what each note's serial and class earn and it
+    lacks, and takes back what this module added that they no longer earn,
+    under the rules of `_plan`. Items that are not notes are passed over.
+    """
+    if not item_ids:
+        return Counter()
+    plan = _plan(db, item_ids)
+    _stage(db, plan)
+    return plan.stats
+
+
+def run(db: Session, *, commit: bool) -> tuple[Counter, list[tuple[str, str]]]:
+    """Report, and optionally record, the designations every note earns.
+
+    `derive` over every unsplit note, with the report: the same rules as a
+    save. Nothing is written unless `commit` is true.
+    """
+    plan = _plan(db, None)
+    if commit and (plan.to_add or plan.to_remove):
+        _stage(db, plan)
+        db.commit()
+    return plan.stats, plan.incomplete
 
 
 def _missing_links(
@@ -387,23 +463,20 @@ def _missing_links(
     return links
 
 
-def _write(
-    db: Session,
-    to_add: list[ItemAttributeLink],
-    to_remove: list[tuple[int, int]],
-    stats: Counter,
-) -> None:
-    """Delete the stale links, add the missing ones, commit, and count both."""
-    for key in to_remove:
+def _stage(db: Session, plan: _Plan) -> None:
+    """Delete the stale links and add the missing ones, and count both.
+
+    Staged in the session only: the caller commits.
+    """
+    for key in plan.to_remove:
         stale = db.get(ItemAttributeLink, key)
         if stale is not None:
             db.delete(stale)
-    db.add_all(to_add)
-    db.commit()
-    if to_add:
-        stats["written"] = len(to_add)
-    if to_remove:
-        stats["taken_back"] = len(to_remove)
+    db.add_all(plan.to_add)
+    if plan.to_add:
+        plan.stats["written"] = len(plan.to_add)
+    if plan.to_remove:
+        plan.stats["taken_back"] = len(plan.to_remove)
 
 
 def main(argv: list[str] | None = None) -> int:
