@@ -523,3 +523,19 @@ def test_moving_an_item_that_is_for_sale_asks_for_no_acknowledgement(
 
     assert response.status_code == 200, response.text
     assert len(_moves(db, item.id)) == 1
+
+
+def test_bulk_edit_does_not_write_descriptions(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    item = build_bare_item(db, description="", year_start=1878)
+
+    response = client.post(
+        "/api/inventory/bulk",
+        json={"ids": [item.id], "changes": {"year_start": 1964}},
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 200
+    db.refresh(item)
+    assert item.description == ""

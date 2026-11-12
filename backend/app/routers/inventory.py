@@ -1330,6 +1330,7 @@ def create_item(payload: ItemCreate, db: DbSession, admin: AdminUser) -> ItemDet
     # Whatever the form did not fill, the facts may: a coin's composition, a
     # note's signatures. Nothing the person sent is replaced.
     refresh_items(db, [item.id])
+    _fill_blank_description(db, item)
     # No Gift rule here (`app.gift_rule`): the row is made before its cost is
     # typed, so $0 means "not entered yet". The editor's first save decides.
     db.commit()
@@ -3514,9 +3515,10 @@ def _finish_edit(
     forget(db, [item.id], [_column(field) for field in data])
     hold(db, [item.id], _emptied(data))
     refresh_items(db, [item.id])
+    db.flush()
+    written = ["description"] if _fill_blank_description(db, item) else []
     # A note saved at no cost is a gift: the fields that moves are logged
     # with the ones sent.
-    db.flush()
     by_the_gift_rule = gift_rule.apply(db, item)
     if by_the_gift_rule:
         # The link is another table: touching the item moves its version.
@@ -3536,11 +3538,28 @@ def _finish_edit(
         field_values(db, item),
         _logged_fields(
             dict.fromkeys(
-                [f for f in sent if f != "storage_location_id"] + by_the_gift_rule
+                [f for f in sent if f != "storage_location_id"]
+                + written
+                + by_the_gift_rule
             )
         ),
         user_id=user_id,
     )
+
+
+def _fill_blank_description(db: Session, item: InventoryItem) -> bool:
+    """Write the suggested description when the item has none; True if written.
+
+    Whitespace alone is none. The item is read as saved, so call this after
+    `refresh_items`. Nothing is written when the record holds nothing to say.
+    """
+    if (item.description or "").strip():
+        return False
+    suggested = suggested_description(db, item)
+    if not suggested:
+        return False
+    item.description = suggested
+    return True
 
 
 def _denomination_misfit(db: Session, code: str, is_currency: bool) -> str | None:

@@ -633,8 +633,11 @@ repeats the series year, the class or an attribute already said
 another country names it after the year ("1882 Spain Peseta", "1970 Spain 100
 Pesetas S/N ..."); with no series or face value
 recorded, the year and country are what it is ("MS62 1913 Denmark. Gold,
-0.1296 ozt fine."). The United States and Unknown are not named. It writes nothing; Save
-keeps it. It is never disabled: unsaved edits, photographs and errors
+0.1296 ozt fine."). The United States and Unknown are not named. The button writes nothing; Save
+keeps it. Saving the item from the editor, as a new item or an edit, with the
+Description empty or only spaces writes this description for it and logs the
+change under the person saving; bulk edit, receiving and splitting do not. It
+is never disabled: unsaved edits, photographs and errors
 are described as shown. The server makes a dry run of Save, defaults
 included, and rolls it back, so the wording matches what Save would give
 and nothing is kept; the item's row is locked only for that request. A listing's

@@ -13,6 +13,7 @@ from collections.abc import Callable, Iterable
 from decimal import Decimal
 
 import pytest
+from app.item_descriptions import suggested_description
 from app.models import (
     AppliesTo,
     CoinDetail,
@@ -22,6 +23,7 @@ from app.models import (
     Grade,
     InventoryItem,
     ItemError,
+    ItemFieldChange,
     ItemKind,
     ItemStatus,
     Metal,
@@ -29,6 +31,7 @@ from app.models import (
     SealColor,
     Series,
     StrikeType,
+    User,
 )
 from fastapi.testclient import TestClient
 from httpx import Response
@@ -686,7 +689,10 @@ def test_the_rating_is_shown_and_corrected_like_any_text(
 def _note(db: Session, **detail: object) -> InventoryItem:
     """A banknote with its currency detail row, holding these detail columns."""
     note = build_bare_item(
-        db, item_kind_id=code_id(db, ItemKind, "currency"), year_start=None
+        db,
+        item_kind_id=code_id(db, ItemKind, "currency"),
+        year_start=None,
+        description="A note.",
     )
     db.add(CurrencyDetail(inventory_item_id=note.id, **detail))
     db.commit()
@@ -1066,3 +1072,53 @@ def test_an_edit_that_fails_while_saving_leaves_nothing_written(
 
     db.expire_all()
     assert db.get_one(InventoryItem, item.id).source_title == "wrong"
+
+
+def test_an_edit_that_empties_the_description_writes_one(
+    client: TestClient,
+    admin_headers: dict[str, str],
+    admin_user: User,
+    db: Session,
+) -> None:
+    item = _note(db, serial_number="A11111111A")
+    item.description = "Old words"
+    db.commit()
+
+    response = patch_current(
+        client,
+        f"/api/inventory/{item.id}",
+        json={"description": "   "},
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 200, response.text
+    db.expire_all()
+    item = db.get_one(InventoryItem, item.id)
+    assert item.description.strip() != ""
+    assert item.description == suggested_description(db, item)
+    logged = db.scalars(
+        select(ItemFieldChange).where(
+            ItemFieldChange.inventory_item_id == item.id,
+            ItemFieldChange.field_name == "description",
+        )
+    ).all()
+    assert [(c.old_value, c.new_value, c.changed_by_id) for c in logged] == [
+        ("Old words", item.description, admin_user.id)
+    ]
+
+
+def test_a_typed_description_is_kept(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    item = build_bare_item(db, description="")
+
+    response = patch_current(
+        client,
+        f"/api/inventory/{item.id}",
+        json={"description": "My words"},
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 200, response.text
+    db.expire_all()
+    assert db.get_one(InventoryItem, item.id).description == "My words"

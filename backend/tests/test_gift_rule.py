@@ -86,7 +86,7 @@ def test_a_note_entered_at_no_cost_is_a_gift_and_described_as_one(
     )
 
 
-def test_a_row_just_made_is_no_gift_yet_and_has_no_description(
+def test_a_row_just_made_is_no_gift_yet_and_is_described_by_its_facts(
     client: TestClient, admin_headers: Headers, db: Session
 ) -> None:
     """Its cost has not been typed: $0 here means nothing was entered."""
@@ -104,7 +104,7 @@ def test_a_row_just_made_is_no_gift_yet_and_has_no_description(
     )
     assert made["item_cost"] == "0.00"
     assert _gift(made) is None
-    assert made["description"] == ""
+    assert made["description"] == "1957."
     assert made["source_title"] == "Gift $1 Bill"
 
 
@@ -113,7 +113,9 @@ def test_a_note_entered_at_a_cost_is_no_gift(
 ) -> None:
     item = _enter(client, admin_headers, db, item_cost="20.00")
     assert _gift(item) is None
-    assert item["description"] == ""
+    assert (
+        item["description"] == "1957B $1 S/N A38164927B. Silver Certificate Blue Seal."
+    )
 
 
 def test_a_coin_entered_at_no_cost_is_a_gift_too(

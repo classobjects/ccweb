@@ -149,7 +149,8 @@ Everything recorded about one item is here. Changes are held until **Save**.
 
 - A value marked *suggested* was worked out from the facts, and typing over it
   makes it yours, so nothing fills that field again.
-- **Suggest description** writes a description from what the form shows.
+- **Suggest description** writes a description from what the form shows. Save
+  with the Description left empty writes the suggested one for you.
 - **Photographs** adds pictures from a file or a web address, and sets which is
   primary.
 - **Offers** shows where the item has been offered, and **History** shows who

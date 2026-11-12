@@ -244,6 +244,11 @@ page:
   metal and fine weight a save fills from the composition, are there --
   describes the item as that left it, and rolls everything back. The button
   never waits for Save. `GET` on the same path describes the saved record.
+  Save itself fills a Description that is empty or only whitespace: after
+  `refresh_items`, `POST /api/inventory` and `PATCH /api/inventory/{id}` call
+  `_fill_blank_description`, which writes `suggested_description` of the item
+  as saved, and the edit logs `description` under the person saving. Bulk edit,
+  receiving and splitting write no description.
 - **A coin dated outside its series** is said beside the year in the editor:
   "Morgan Dollar runs 1878-1921; 1800 is outside it. Check the year."
   (`management/series-years.js`, from the series' own

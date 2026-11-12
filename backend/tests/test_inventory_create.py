@@ -12,6 +12,7 @@ from decimal import Decimal
 
 import pytest
 from app.config import settings
+from app.item_descriptions import suggested_description
 from app.models import (
     CoinDetail,
     CurrencyDetail,
@@ -788,3 +789,24 @@ def test_the_listing_web_address_is_edited_and_cleared(
     assert cleared.status_code == 200, cleared.text
     body = client.get(f"/api/inventory/{item_id}", headers=admin_headers).json()
     assert body["listing_url"] is None
+
+
+def test_a_new_item_without_a_description_gets_one(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    order = _purchase_order(db)
+    res = client.post(
+        "/api/inventory",
+        json=_coin_payload(
+            order.id,
+            source_title="1921-S Morgan Dollar",
+            year_start=1921,
+            description="",
+        ),
+        headers=admin_headers,
+    )
+    assert res.status_code == 201, res.text
+    body = res.json()
+    item = db.get_one(InventoryItem, body["id"])
+    assert body["description"].strip() != ""
+    assert body["description"] == suggested_description(db, item)

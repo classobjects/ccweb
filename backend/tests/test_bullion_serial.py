@@ -40,7 +40,9 @@ def _patch(
 
 def _bullion(db: Session, serial: str | None = None) -> InventoryItem:
     """A bullion item with its coin detail row, holding `serial`."""
-    item = build_bare_item(db, item_kind_id=code_id(db, ItemKind, "bullion"))
+    item = build_bare_item(
+        db, item_kind_id=code_id(db, ItemKind, "bullion"), description="A bar."
+    )
     db.add(CoinDetail(inventory_item_id=item.id, serial_number=serial))
     db.commit()
     return item
