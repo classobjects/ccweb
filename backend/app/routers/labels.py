@@ -47,6 +47,7 @@ from ..schemas import (
     LabelRunsOut,
     LabelSheetOut,
     LabelSource,
+    LabelsPrintedIn,
     LabelsRecordedOut,
 )
 from ._resolve import get_or_404, unprocessable
@@ -205,41 +206,33 @@ def remove_from_batch(db: DbSession, _admin: AdminUser, item_id: int) -> Respons
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@router.post(
-    "/printed",
-    responses={422: unprocessable("the run the labels printed from is not said")},
-)
+@router.post("/printed")
 def record_printed(
-    db: DbSession, _admin: AdminUser, payload: LabelItemsIn
+    db: DbSession, _admin: AdminUser, payload: LabelsPrintedIn
 ) -> LabelsRecordedOut:
-    """Record that these items' labels printed correctly.
+    """Record that these labels printed correctly, with what each says.
 
-    Each labelable item named is labeled now, with the text it prints now;
-    an item named that is not labelable is passed over. Printing from the
-    batch empties it of the items recorded. Recording twice records once:
-    an item already labeled with the same text, and not stale, keeps the
-    time it was first labeled. `recorded` counts the labelable items named.
+    The text recorded is the lines sent -- what is on the sheet -- not what
+    the item reads now: an item edited between the run and this answer is
+    recorded as needing a new label. An item named that is not labelable is
+    passed over. Printing from the batch empties it of the items recorded.
+    Recording twice records once: an item already labeled with the same
+    text keeps the time it was first labeled. `recorded` counts the
+    labelable items named.
     """
-    if payload.source is None:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="Say which run printed: source is batch, unlabeled or stale.",
-        )
-    ids = list(dict.fromkeys(payload.item_ids))
-    items = label_items(db, InventoryItem.id.in_(ids), labelable_clause())
-    lines = labels_of(db, items)
+    printed = {label.item_id: label_text(label.lines) for label in payload.labels}
+    items = label_items(db, InventoryItem.id.in_(printed), labelable_clause())
+    current = labels_of(db, items)
     now = utcnow()
     changes: dict[InventoryItem, dict[str, object]] = {}
     for item in items:
-        text = label_text(lines[item.id])
+        text = printed[item.id]
+        stale = text != label_text(current[item.id])
         change: dict[str, object] = {}
-        current = (
-            item.label_printed_at is not None
-            and item.label_text == text
-            and not item.label_stale
-        )
-        if not current:
-            change.update(label_printed_at=now, label_text=text, label_stale=False)
+        if item.label_printed_at is None or item.label_text != text:
+            change.update(label_printed_at=now, label_text=text, label_stale=stale)
+        elif item.label_stale != stale:
+            change["label_stale"] = stale
         if payload.source == _BATCH and item.in_label_batch:
             change["in_label_batch"] = False
         if change:

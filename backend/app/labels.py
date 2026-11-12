@@ -128,8 +128,10 @@ _LIST_JOIN = " · "
 
 #: The attribute groups line 3 of a note draws from.
 _NOTE_GROUPS = frozenset({"serial", "variety"})
-#: Line 4 carries the errors, so the attribute that only says "has one" is left out.
-_ERROR_ATTRIBUTE = "error"
+#: Attributes line 3 leaves out: Error Note, because line 4 carries the
+#: errors themselves; Gift, because it is how the item was acquired, and a
+#: label is read by customers.
+_UNPRINTED_ATTRIBUTES = frozenset({"error", "gift"})
 
 _STATUS = "received"
 _DISPOSITIONS = ("held", "listed")
@@ -294,7 +296,9 @@ def write_quietly(
     flush would move it, and a form open on the item would then fail its
     save as a conflict over a flag its user never touched) and keeps
     `updated_at`. The loaded items are given the new values as already
-    saved, so the session agrees with the database without a reload.
+    saved, so the session agrees with the database without a reload. A
+    pending, unflushed change to the same columns on a loaded item is
+    overwritten.
     """
     table = InventoryItem.__table__
     assert isinstance(table, Table)
@@ -386,7 +390,7 @@ def _note_lines(db: Session, item: InventoryItem, facts: _Facts) -> list[str]:
     held = [
         h
         for h in facts.held.get(item.id, [])
-        if h.group in _NOTE_GROUPS and h.code != _ERROR_ATTRIBUTE
+        if h.group in _NOTE_GROUPS and h.code not in _UNPRINTED_ATTRIBUTES
     ]
     if fancy_is_redundant(h.code for h in held):
         held = [h for h in held if h.code != FANCY_SERIAL]

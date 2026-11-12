@@ -156,7 +156,7 @@ def test_note_lines(db: Session, make_item: ItemFactory) -> None:
         a.code: a.label
         for a in db.scalars(
             select(ItemAttribute).where(
-                ItemAttribute.code.in_(["star", "wide", "partial_ladder", "gift"])
+                ItemAttribute.code.in_(["star", "wide", "partial_ladder"])
             )
         )
     }
@@ -165,8 +165,9 @@ def test_note_lines(db: Session, make_item: ItemFactory) -> None:
     assert label_lines(db, item) == [
         f"{printed_number(item.item_code)}  Fr 9901*  Cool 96.9%",
         name,
-        # vocabulary order; CAC (verification group) and Fancy Serial are left out
-        " · ".join(labels[c] for c in ("star", "partial_ladder", "wide", "gift")),
+        # vocabulary order; CAC (verification group), Fancy Serial and Gift
+        # (customers read labels; how it was bought is not theirs) are left out
+        " · ".join(labels[c] for c in ("star", "partial_ladder", "wide")),
         " · ".join(e.label for e in errors),
     ]
     assert label_text(label_lines(db, item)).count("\n") == 3

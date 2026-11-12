@@ -3186,17 +3186,39 @@ class LabelRunsOut(BaseModel):
     skipped: list[str]
 
 
+#: A whole collection's run is a few thousand labels; the cap only stops an
+#: unbounded request.
+_MOST_LABELS = 20_000
+
+
 class LabelItemsIn(BaseModel):
-    """Items to add to the batch, or whose labels printed correctly."""
+    """Items to add to the print batch."""
 
     model_config = ConfigDict(extra="forbid")
 
-    #: A whole collection's run is a few thousand labels; the cap only stops
-    #: an unbounded request.
-    item_ids: list[int] = Field(min_length=1, max_length=20_000)
-    #: The run the labels were printed from, on `/printed`: printing the batch
-    #: empties it of what printed. Not read when adding to the batch.
-    source: LabelSource | None = None
+    item_ids: list[int] = Field(min_length=1, max_length=_MOST_LABELS)
+
+
+class PrintedLabelIn(BaseModel):
+    """One label as it printed: the lines its run returned, unchanged."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    item_id: int
+    lines: list[str]
+
+
+class LabelsPrintedIn(BaseModel):
+    """Labels that printed correctly, and the run they were printed from."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    #: Printing the batch empties it of what printed.
+    source: LabelSource
+    #: What each label says on the sheet. Recorded as sent, not as the item
+    #: reads now: an edit made between the run and the answer leaves the
+    #: printed label needing a new one.
+    labels: list[PrintedLabelIn] = Field(min_length=1, max_length=_MOST_LABELS)
 
 
 class LabelsRecordedOut(BaseModel):

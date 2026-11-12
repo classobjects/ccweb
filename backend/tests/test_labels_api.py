@@ -23,7 +23,7 @@ from app.models import (
 )
 from app.models.reference import Disposition
 from fastapi.testclient import TestClient
-from sqlalchemy import event
+from sqlalchemy import event, select
 from sqlalchemy.engine import Connection
 from sqlalchemy.orm import Session
 
@@ -96,11 +96,13 @@ def _add(client: TestClient, headers: dict[str, str], *ids: int) -> None:
 
 
 def _printed(
-    client: TestClient, headers: dict[str, str], source: str, *ids: int
+    db: Session, client: TestClient, headers: dict[str, str], source: str, *ids: int
 ) -> int:
+    """Say these items' labels printed, each with the lines it reads now."""
+    labels = [{"item_id": i, "lines": label_lines(db, _fresh(db, i))} for i in ids]
     done = client.post(
         f"{_API}/printed",
-        json={"item_ids": list(ids), "source": source},
+        json={"labels": labels, "source": source},
         headers=headers,
     )
     assert done.status_code == 200, done.text
@@ -136,10 +138,11 @@ def test_a_customer_cannot_read_labels(
     assert client.get(f"{_API}/sheets", headers=h).status_code == 403
     assert client.get(f"{_API}/run?source=unlabeled", headers=h).status_code == 403
     assert client.get(f"{_API}/batch", headers=h).status_code == 403
-    body = {"item_ids": [item.id], "source": "batch"}
+    body = {"item_ids": [item.id]}
     assert client.post(f"{_API}/batch", json=body, headers=h).status_code == 403
     assert client.delete(f"{_API}/batch/{item.id}", headers=h).status_code == 403
-    assert client.post(f"{_API}/printed", json=body, headers=h).status_code == 403
+    printed = {"labels": [{"item_id": item.id, "lines": ["x"]}], "source": "batch"}
+    assert client.post(f"{_API}/printed", json=printed, headers=h).status_code == 403
     assert client.get(f"{_API}/sheets").status_code == 401
 
 
@@ -338,7 +341,7 @@ def test_printing_the_unlabeled_run_leaves_the_batch_alone(
 ) -> None:
     item = _coin(db, make_item)
     _add(client, admin_headers, item.id)
-    assert _printed(client, admin_headers, "unlabeled", item.id) == 1
+    assert _printed(db, client, admin_headers, "unlabeled", item.id) == 1
 
     after = _fresh(db, item.id)
     assert after.in_label_batch is True
@@ -358,7 +361,7 @@ def test_printing_the_batch_empties_it_but_not_of_skipped_items(
     _add(client, admin_headers, kept.id, gone.id)
     _sold(db, gone)
 
-    assert _printed(client, admin_headers, "batch", kept.id, gone.id) == 1
+    assert _printed(db, client, admin_headers, "batch", kept.id, gone.id) == 1
     assert _fresh(db, kept.id).in_label_batch is False
     after_gone = _fresh(db, gone.id)
     assert after_gone.in_label_batch is True
@@ -376,14 +379,14 @@ def test_printed_twice_records_once(
     _sold(db, other)
     _add(client, admin_headers, item.id)
 
-    assert _printed(client, admin_headers, "batch", item.id, other.id) == 1
+    assert _printed(db, client, admin_headers, "batch", item.id, other.id) == 1
     first = _fresh(db, item.id)
     stamped: datetime | None = first.label_printed_at
     text = first.label_text
     assert stamped is not None and text
     assert first.in_label_batch is False
 
-    assert _printed(client, admin_headers, "batch", item.id, other.id) == 1
+    assert _printed(db, client, admin_headers, "batch", item.id, other.id) == 1
     second = _fresh(db, item.id)
     assert (second.label_printed_at, second.label_text) == (stamped, text)
     assert second.in_label_batch is False
@@ -403,11 +406,67 @@ def test_printing_a_stale_label_records_the_new_text(
     old = _fresh(db, item.id).label_printed_at
     assert old is not None
 
-    assert _printed(client, admin_headers, "stale", item.id) == 1
+    assert _printed(db, client, admin_headers, "stale", item.id) == 1
     after = _fresh(db, item.id)
     assert after.label_text == label_text(label_lines(db, after))
     assert after.label_stale is False
     assert after.label_printed_at is not None and after.label_printed_at > old
+
+
+def test_the_text_recorded_is_the_text_that_printed(
+    db: Session,
+    make_item: ItemFactory,
+    client: TestClient,
+    admin_headers: dict[str, str],
+) -> None:
+    """An edit between printing and Yes leaves the label needing a new one.
+
+    The sheet carries what the run returned, so that is what is recorded;
+    the item now reads differently, so it is stale from the start.
+    """
+    item = _coin(db, make_item)
+    run = _run(client, admin_headers, "unlabeled")
+    runs = run["runs"]
+    assert isinstance(runs, list)
+    printed = next(
+        lb["lines"] for r in runs for lb in r["labels"] if lb["item_id"] == item.id
+    )
+    detail = db.scalars(
+        select(CoinDetail).where(CoinDetail.inventory_item_id == item.id)
+    ).one()
+    detail.mint_id = code_id(db, Mint, "D")
+    db.commit()
+
+    done = client.post(
+        f"{_API}/printed",
+        json={
+            "source": "unlabeled",
+            "labels": [{"item_id": item.id, "lines": printed}],
+        },
+        headers=admin_headers,
+    )
+    assert done.status_code == 200, done.text
+    assert done.json() == {"recorded": 1}
+    after = _fresh(db, item.id)
+    assert after.label_text == label_text(printed)
+    assert after.label_stale is True
+    assert after.label_printed_at is not None
+
+
+def test_printed_without_its_source_is_refused(
+    db: Session,
+    make_item: ItemFactory,
+    client: TestClient,
+    admin_headers: dict[str, str],
+) -> None:
+    item = _coin(db, make_item)
+    done = client.post(
+        f"{_API}/printed",
+        json={"labels": [{"item_id": item.id, "lines": ["x"]}]},
+        headers=admin_headers,
+    )
+    assert done.status_code == 422
+    assert _fresh(db, item.id).label_printed_at is None
 
 
 def test_label_bookkeeping_does_not_move_the_item_version(
@@ -429,7 +488,7 @@ def test_label_bookkeeping_does_not_move_the_item_version(
     assert (_fresh(db, item.id).version, _fresh(db, item.id).updated_at) == mark
     client.delete(f"{_API}/batch/{item.id}", headers=admin_headers)
     _add(client, admin_headers, item.id)
-    _printed(client, admin_headers, "batch", item.id)
+    _printed(db, client, admin_headers, "batch", item.id)
     after = _fresh(db, item.id)
     assert after.label_printed_at is not None
     assert (after.version, after.updated_at) == mark

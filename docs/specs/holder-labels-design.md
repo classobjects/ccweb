@@ -254,7 +254,9 @@ not `unknown` or `conflicting`. Line 2: what the note is
 vocabulary labels;
 Fancy Serial is left out where a named digit pattern is shown, as
 `item_descriptions` already does; Error Note is left out, line 4 being the
-errors. *My call.* Line 4: its errors.
+errors. *My call.* Gift is left out too (the owner's ruling): it is how
+the note was acquired, a purchasing matter, and labels are read by
+customers. Line 4: its errors.
 
 **Set** (SL564), the owner's list:
 
@@ -335,9 +337,11 @@ no save saw -- a vocabulary label renamed -- is caught too.
 
 Recording a label, joining or leaving the batch, and the needs-a-new-label
 flag are bookkeeping, not edits of the item: none of them moves the item's
-version or last-changed time, so a form open on an item still saves. *Yes*
-on a run already recorded records nothing new: an item whose label already
-matches keeps the time it was first labeled.
+version or last-changed time, so a form open on an item still saves. The
+text recorded is what the page printed, sent back with *Yes*, so an item
+edited between printing and *Yes* is recorded as needing a new label.
+*Yes* on a run already recorded records nothing new: an item whose label
+already holds that text keeps the time it was first labeled.
 
 ### Volume
 
