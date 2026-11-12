@@ -421,6 +421,24 @@ class InventoryItem(VersionedMixin, TimestampMixin, Base):
         DateTime(timezone=True), index=True, nullable=True
     )
 
+    # -- holder label -----------------------------------------------------
+    #: When the item's label was last printed; null while it never was.
+    label_printed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    #: The text that label carried (`app.labels.label_text`), kept to tell
+    #: whether the item has changed since.
+    label_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: The item's label text now differs from `label_text`. Never set for an
+    #: item that was not labeled.
+    label_stale: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false"), nullable=False
+    )
+    #: Waiting in the batch of labels to print next.
+    in_label_batch: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false"), nullable=False
+    )
+
     # -- description ------------------------------------------------------
     #: A number the owner assigned by their own scheme, before this system
     #: existed. Distinct from `item_code`: not unique, not issued here, and
@@ -617,6 +635,11 @@ class InventoryItem(VersionedMixin, TimestampMixin, Base):
         UniqueConstraint("item_code", name="uq_inventory_item_code"),
         # The primary browse path: "show me my coins that have arrived".
         Index("ix_inventory_item_kind_status", "item_kind_id", "status_id"),
+        Index(
+            "ix_inventory_item_in_label_batch",
+            "id",
+            postgresql_where=text("in_label_batch"),
+        ),
         # Partial indexes for the search panel's facet counts.
         #
         # A plain index on each of these already exists (for the kind,

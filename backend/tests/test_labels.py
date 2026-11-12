@@ -1,3 +1,6 @@
+# (c) Copyright 2026 Nathaniel Mills
+# Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+# SPDX-License-Identifier: Apache-2.0
 """Sheet layouts and the text each item's label carries (holder-labels spec, 4)."""
 
 from __future__ import annotations
@@ -13,6 +16,7 @@ from app.labels import (
     label_text,
     labelable_clause,
     printed_number,
+    refresh_stale,
 )
 from app.models import (
     CoinDetail,
@@ -33,10 +37,12 @@ from app.models import (
     utcnow,
 )
 from app.models.reference import Disposition, ItemStatus
-from sqlalchemy import select
+from fastapi.testclient import TestClient
+from sqlalchemy import event, select
+from sqlalchemy.engine import Connection
 from sqlalchemy.orm import Session
 
-from tests.builders import ItemFactory, code_id
+from tests.builders import ItemFactory, code_id, patch_current
 
 
 def test_each_layout_fills_letter_exactly() -> None:
@@ -269,3 +275,132 @@ def test_labelable(db: Session, make_item: ItemFactory) -> None:
     for item, expected in cases:
         assert is_labelable(db, item) is expected
         assert (item.id in in_force) is expected
+
+
+def _labeled_coin(db: Session, make_item: ItemFactory) -> InventoryItem:
+    """A coin whose label was printed with the text it carries now."""
+    item = _coin(db, make_item)
+    db.add(CoinDetail(inventory_item_id=item.id, mint_id=code_id(db, Mint, "S")))
+    db.flush()
+    db.refresh(item)
+    item.label_printed_at = utcnow()
+    item.label_text = label_text(label_lines(db, item))
+    db.commit()
+    return item
+
+
+def _stale_after(db: Session, item_id: int) -> bool:
+    """The item's stale flag as the database now holds it."""
+    db.expire_all()
+    found = db.get(InventoryItem, item_id)
+    assert found is not None
+    return found.label_stale
+
+
+def test_an_edit_that_changes_the_label_marks_it_stale(
+    db: Session,
+    make_item: ItemFactory,
+    client: TestClient,
+    admin_headers: dict[str, str],
+) -> None:
+    item = _labeled_coin(db, make_item)
+    saved = patch_current(
+        client, f"/api/inventory/{item.id}", json={"mint": "D"}, headers=admin_headers
+    )
+    assert saved.status_code == 200, saved.text
+    assert _stale_after(db, item.id) is True
+
+
+def test_an_edit_that_does_not_change_the_label_leaves_it(
+    db: Session,
+    make_item: ItemFactory,
+    client: TestClient,
+    admin_headers: dict[str, str],
+) -> None:
+    item = _labeled_coin(db, make_item)
+    saved = patch_current(
+        client,
+        f"/api/inventory/{item.id}",
+        json={"description": "A note on the piece"},
+        headers=admin_headers,
+    )
+    assert saved.status_code == 200, saved.text
+    assert _stale_after(db, item.id) is False
+
+
+def test_an_unlabeled_item_is_never_stale(
+    db: Session,
+    make_item: ItemFactory,
+    client: TestClient,
+    admin_headers: dict[str, str],
+) -> None:
+    item = _coin(db, make_item)
+    db.add(CoinDetail(inventory_item_id=item.id, mint_id=code_id(db, Mint, "S")))
+    db.commit()
+    saved = patch_current(
+        client, f"/api/inventory/{item.id}", json={"mint": "D"}, headers=admin_headers
+    )
+    assert saved.status_code == 200, saved.text
+    assert _stale_after(db, item.id) is False
+    refresh_stale(db, [item.id])
+    assert _stale_after(db, item.id) is False
+
+
+def test_a_label_that_reads_the_same_again_is_fresh_again(
+    db: Session, make_item: ItemFactory
+) -> None:
+    item = _labeled_coin(db, make_item)
+    item.label_text = "something else"
+    refresh_stale(db, [item.id])
+    assert item.label_stale is True
+    item.label_text = label_text(label_lines(db, item))
+    refresh_stale(db, [item.id])
+    assert item.label_stale is False
+
+
+def _count_queries(db: Session, ids: list[int]) -> int:
+    """How many statements `refresh_stale` sends for these items."""
+    counted: list[str] = []
+
+    def count(_conn: Connection, _cur: object, statement: str, *_rest: object) -> None:
+        counted.append(statement)
+
+    engine = db.get_bind()
+    event.listen(engine, "before_cursor_execute", count)
+    try:
+        refresh_stale(db, ids)
+    finally:
+        event.remove(engine, "before_cursor_execute", count)
+    return len(counted)
+
+
+def _labeled_notes(db: Session, make_item: ItemFactory, n: int) -> list[int]:
+    """`n` notes, each labeled with text that no longer matches."""
+    ids = []
+    for _ in range(n):
+        item = _note(db, make_item)
+        _link(db, item, "star")
+        item.label_printed_at = utcnow()
+        item.label_text = "old text"
+        ids.append(item.id)
+    db.commit()
+    db.expire_all()
+    return ids
+
+
+def test_refresh_stale_loads_its_items_together(
+    db: Session, make_item: ItemFactory
+) -> None:
+    """The items and their kind and details come in a handful of statements.
+
+    What `label_lines` asks per item (its attributes, its errors, its stamped
+    version bump) remains a few statements each, so the bound is per item.
+    """
+    few = _labeled_notes(db, make_item, 5)
+    many = _labeled_notes(db, make_item, 20)
+    small = _count_queries(db, few)
+    db.expire_all()
+    large = _count_queries(db, many)
+    per_item = (large - small) / 15
+    assert per_item <= 6, (small, large)
+    assert small - 5 * per_item <= 8, (small, large)

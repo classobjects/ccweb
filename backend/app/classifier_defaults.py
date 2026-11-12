@@ -47,7 +47,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from . import aliases, attribute_rules, serial_patterns
+from . import aliases, attribute_rules, labels, serial_patterns
 from .composition import (
     Run,
     composition_of,
@@ -1152,6 +1152,8 @@ def refresh_items(db: Session, item_ids: Collection[int]) -> None:
     if changed:
         apply(db, classify(db, changed), commit=False)
     serial_patterns.derive(db, item_ids)
+    # The label reads the attributes derived just above.
+    labels.refresh_stale(db, item_ids)
 
 
 def suggest(db: Session, note: NoteFacts) -> dict[str, int]:

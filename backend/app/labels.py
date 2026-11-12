@@ -14,11 +14,12 @@ say which items are offered a label at all.
 from __future__ import annotations
 
 import re
+from collections.abc import Collection
 from dataclasses import dataclass
 from decimal import Decimal
 
 from sqlalchemy import ColumnElement, and_, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from . import item_attributes
 from .item_descriptions import FANCY_SERIAL, fancy_is_redundant, saved_features
@@ -36,6 +37,7 @@ __all__ = [
     "label_text",
     "labelable_clause",
     "printed_number",
+    "refresh_stale",
 ]
 
 
@@ -161,6 +163,37 @@ def label_lines(db: Session, item: InventoryItem) -> list[str]:
     else:
         lines = _coin_lines(db, item)
     return [line for line in lines if line]
+
+
+def refresh_stale(db: Session, item_ids: Collection[int]) -> None:
+    """Set `label_stale` on the labeled items among these, without committing.
+
+    A labeled item is stale when its label would now read differently from
+    the text it was printed with. An item never labeled is left alone, and
+    is never stale. This is derived bookkeeping, not an edit: nothing is
+    logged. The items are loaded together with what `label_lines` reads
+    first, so a pass over every labeled item is not a round trip per fact.
+    """
+    if not item_ids:
+        return
+    items = db.scalars(
+        select(InventoryItem)
+        .where(
+            InventoryItem.id.in_(item_ids),
+            InventoryItem.label_printed_at.is_not(None),
+        )
+        .options(
+            selectinload(InventoryItem.item_kind),
+            selectinload(InventoryItem.metal),
+            selectinload(InventoryItem.set_form),
+            selectinload(InventoryItem.coin_detail),
+            selectinload(InventoryItem.currency_detail),
+        )
+    ).all()
+    for item in items:
+        stale = item.label_text != label_text(label_lines(db, item))
+        if item.label_stale != stale:
+            item.label_stale = stale
 
 
 def _coin_lines(db: Session, item: InventoryItem) -> list[str]:
