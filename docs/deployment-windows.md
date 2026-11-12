@@ -511,6 +511,12 @@ example installation, with the repository under an account named `YOU`, the
 result, comments left out, is:
 
 ```
+{
+	log {
+		output file C:/caddy/logs/caddy.log
+	}
+}
+
 classobjects.com {
 	tls C:/caddy/certs/fullchain.pem C:/caddy/certs/classobjects.com.key
 	encode gzip

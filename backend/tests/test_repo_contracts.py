@@ -24,6 +24,7 @@ from app.config import Settings
 from app.runtime_settings import (
     REPO_ROOT,
     RuntimeSettings,
+    log_directive,
     render,
     render_values,
     tls_directive,
@@ -311,7 +312,7 @@ def test_every_template_renders_completely(template: Path) -> None:
 def _documented_caddyfile() -> str:
     """The Caddyfile the Windows deployment document shows for its example."""
     doc = (REPO_ROOT / "docs" / "deployment-windows.md").read_text(encoding="utf-8")
-    blocks = re.findall(r"```\n(classobjects\.com \{.*?)```", doc, re.DOTALL)
+    blocks = re.findall(r"```\n(\{\n\tlog \{.*?)```", doc, re.DOTALL)
     assert len(blocks) == 1, "the example Caddyfile is no longer one block"
     return blocks[0]
 
@@ -344,6 +345,7 @@ def test_the_rendered_caddyfile_is_the_documented_one() -> None:
     values = _site_values(
         "C:\\caddy\\certs\\fullchain.pem", "C:\\caddy\\certs\\classobjects.com.key"
     )
+    values["CCWEB_CADDY_LOG_DIRECTIVE"] = log_directive("C:\\caddy\\logs\\caddy.log")
     assert _rendered_caddyfile(values) == _documented_caddyfile().strip()
 
 
