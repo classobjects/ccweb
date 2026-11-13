@@ -19,8 +19,10 @@ one. This pass does the same for items already stored, in three steps:
   each row whose description should give way.
 - `apply` reads that workbook back and replaces the description of each
   marked row with the suggestion *as computed now*. A row whose `current` is
-  no longer the item's description (it was edited since the export) is
-  skipped and named, as is a code no item holds.
+  no longer the item's description (it was edited since the export; line
+  endings aside) is skipped and named, as is a code no live item holds -- one
+  deleted or split since. A `replace` holding anything but `x` is ignored,
+  and the rows so ignored are counted.
 
 Each change is logged in the item's History under the person named by
 `--by`. Nothing is written without `--commit`.
@@ -131,7 +133,10 @@ def export(db: Session, path: Path) -> int:
         if not suggestion or suggestion == current:
             continue
         count += 1
-        for column, value in enumerate((item.item_code, current, suggestion), 1):
+        # Line endings as `\n`: a carriage return does not survive the
+        # workbook as written, and `apply` compares with them so read.
+        row = (item.item_code, _lines(current), suggestion)
+        for column, value in enumerate(row, 1):
             keep_text(sheet.cell(row=count + 1, column=column, value=value))
     for index, width in enumerate(_WIDTHS):
         sheet.column_dimensions[chr(ord("A") + index)].width = width
@@ -147,7 +152,18 @@ class Replace:
     #: (item id, item code) of each description to replace.
     items: list[tuple[int, str]] = field(default_factory=list)
     changed_since: list[str] = field(default_factory=list)
+    #: Marked codes no unsplit, undeleted item holds.
     unknown: list[str] = field(default_factory=list)
+    #: Rows whose `replace` holds something other than x or nothing.
+    unrecognized: int = 0
+
+
+def _lines(text: str) -> str:
+    """The text with every line ending written as a line feed.
+
+    A spreadsheet may save a line break as CRLF; that is not an edit.
+    """
+    return text.replace("\r\n", "\n").replace("\r", "\n")
 
 
 def plan_apply(db: Session, path: Path) -> Replace:
@@ -155,12 +171,17 @@ def plan_apply(db: Session, path: Path) -> Replace:
     sheet = load_workbook(path, read_only=True).active
     assert sheet is not None
     marked: dict[str, str] = {}
+    todo = Replace()
     for code, current, _suggested, mark in sheet.iter_rows(
         min_row=2, max_col=4, values_only=True
     ):
-        if code and str(mark or "").strip().lower() == "x":
+        said = str(mark or "").strip().lower()
+        if not code:
+            continue
+        if said == "x":
             marked[str(code).strip()] = "" if current is None else str(current)
-    todo = Replace()
+        elif said:
+            todo.unrecognized += 1
     if not marked:
         return todo
     items = {
@@ -177,7 +198,7 @@ def plan_apply(db: Session, path: Path) -> Replace:
         item = items.get(code)
         if item is None:
             todo.unknown.append(code)
-        elif (item.description or "") != current:
+        elif _lines(item.description or "") != _lines(current):
             todo.changed_since.append(code)
         else:
             todo.items.append((item.id, code))
@@ -240,7 +261,9 @@ def _run(db: Session, args: argparse.Namespace) -> int:
     for code in replace.changed_since:
         print(f"  skipped, changed since the export: {code}")
     for code in replace.unknown:
-        print(f"  no such item: {code}")
+        print(f"  no live item: {code}")
+    if replace.unrecognized:
+        print(f"  {replace.unrecognized} rows with an unrecognized mark ignored")
     return pass_cli.commit_or_report(
         db, args, lambda user_id: apply_replace(db, replace, user_id)
     )

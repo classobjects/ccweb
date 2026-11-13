@@ -31,6 +31,7 @@ from .. import (
     grades,
     item_attributes,
     item_kinds,
+    labels,
     listing_links,
     lot_writes,
     offering_writes,
@@ -1332,6 +1333,9 @@ def create_item(payload: ItemCreate, db: DbSession, admin: AdminUser) -> ItemDet
     # Whatever the form did not fill, the facts may: a coin's composition, a
     # note's signatures. Nothing the person sent is replaced.
     refresh_items(db, [item.id])
+    # The description reads the links just derived; production's session does
+    # not autoflush.
+    db.flush()
     _fill_blank_description(db, item)
     # No Gift rule here (`app.gift_rule`): the row is made before its cost is
     # typed, so $0 means "not entered yet". The editor's first save decides.
@@ -3852,6 +3856,10 @@ def set_item_errors(
             # its version, which an open editor watches to notice a change
             # made elsewhere; the same set sent again moves nothing.
             item.updated_at = datetime.now(UTC)
+        # A note's label prints its errors. Flushed first: production's
+        # session does not autoflush, and the label reads the rows above.
+        db.flush()
+        labels.refresh_stale(db, [item.id])
 
     return ItemErrorsOut(inventory_item_id=item.id, errors=_item_errors(db, item.id))
 

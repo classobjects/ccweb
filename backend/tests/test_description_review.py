@@ -177,3 +177,79 @@ def test_apply_skips_a_row_changed_since_the_export(
     assert _description(db, item) == "Edited since"
     assert item.item_code in capsys.readouterr().out
     assert not _changes(db, item)
+
+
+@pytest.mark.parametrize(
+    "stored", ["Line one\r\nLine two", "One\rTwo"], ids=["CRLF", "CR"]
+)
+def test_apply_reads_line_endings_as_one(
+    db: Session, admin_user: User, tmp_path: Path, stored: str
+) -> None:
+    """A description's line endings, through the workbook, are not an edit.
+
+    A workbook does not carry a carriage return back as it was written, so
+    the row is compared with every line ending read as one.
+    """
+    item = _dollar(db, description=stored)
+    db.commit()
+    path = tmp_path / "review.xlsx"
+    assert main(["export", str(path)], db=db) == 0
+    book = load_workbook(path)
+    sheet = book.active
+    assert sheet is not None
+    sheet["D2"] = "x"
+    book.save(path)
+
+    assert main(["apply", str(path), "--commit", "--by", admin_user.email], db=db) == 0
+
+    assert _description(db, item) == suggested_description(db, item)
+
+
+def test_apply_names_a_marked_code_no_live_item_holds(
+    db: Session,
+    admin_user: User,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A deleted item, like a code never issued, is not replaced, and is named."""
+    from datetime import UTC, datetime
+
+    gone = _dollar(db, description="Old", deleted_at=datetime.now(UTC))
+    db.commit()
+    path = tmp_path / "marked.xlsx"
+    _marked(path, {gone.item_code: "x"}, {gone.item_code: "Old"})
+
+    assert main(["apply", str(path), "--commit", "--by", admin_user.email], db=db) == 0
+
+    assert f"no live item: {gone.item_code}" in capsys.readouterr().out
+    assert _description(db, gone) == "Old"
+
+
+def test_apply_counts_the_marks_it_does_not_read(
+    db: Session,
+    admin_user: User,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Only x replaces; any other mark is ignored, and how many is said."""
+    yes = _dollar(db, description="Old one")
+    odd = _dollar(db, description="Old two")
+    other = _dollar(db, description="Old three")
+    db.commit()
+    path = tmp_path / "marked.xlsx"
+    _marked(
+        path,
+        {yes.item_code: "x", odd.item_code: "yes", other.item_code: "/"},
+        {
+            yes.item_code: "Old one",
+            odd.item_code: "Old two",
+            other.item_code: "Old three",
+        },
+    )
+
+    assert main(["apply", str(path), "--commit", "--by", admin_user.email], db=db) == 0
+
+    assert "2 rows with an unrecognized mark ignored" in capsys.readouterr().out
+    assert _description(db, yes) == suggested_description(db, yes)
+    assert _description(db, odd) == "Old two"
+    assert _description(db, other) == "Old three"

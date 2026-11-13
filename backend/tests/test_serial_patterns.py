@@ -13,6 +13,7 @@ from __future__ import annotations
 from decimal import Decimal
 
 import pytest
+from app.labels import label_lines, label_text
 from app.models import (
     CurrencyDetail,
     Denomination,
@@ -20,13 +21,14 @@ from app.models import (
     ItemAttribute,
     ItemAttributeLink,
     NoteType,
+    utcnow,
 )
 from app.serial_patterns import analyze, is_incomplete, run
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from tests.builders import ItemFactory, code_id
+from tests.builders import ItemFactory, build_purchase_order, code_id
 
 #: A star and nothing else: no ladder, repeater or fancy digits.
 STAR_SERIAL = "A38164927*"
@@ -440,3 +442,92 @@ def test_the_pass_keeps_and_adds_duplicate_serial(
     db.expire_all()
     assert ("duplicate_serial", "serial_pattern") in _links(db, saved)
     assert ("duplicate_serial", "serial_pattern") in _links(db, unsaved)
+
+
+# ---------------------------------------------------------------------------
+# On save, as production runs it
+# ---------------------------------------------------------------------------
+#
+# `SessionLocal` (app/database.py) sets `autoflush=False`; the test session
+# does not. What reads the links a save has just derived -- the description,
+# Duplicate Serial, the label's stale flag -- must see them without a query
+# having flushed them first.
+
+
+def test_a_new_note_s_description_names_the_designations_its_save_derived(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    """A note entered with no description is described with its star and radar."""
+    order = build_purchase_order(db, vendor_name="Serial Pattern Vendor")
+    payload = {
+        "purchase_order_id": order.id,
+        "item_kind": "currency",
+        "source_title": "1999 $1 Federal Reserve Note",
+        "item_cost": "20.00",
+        "note_type": "frn",
+        "denomination": "usd_note_1",
+        "series_year": 1999,
+        "serial_number": "A12344321*",
+        "description": "",
+    }
+    db.autoflush = False
+    try:
+        made = client.post("/api/inventory", json=payload, headers=admin_headers)
+    finally:
+        db.autoflush = True
+    assert made.status_code == 201, made.text
+
+    assert "Star Note, Radar" in made.json()["description"]
+
+
+def test_a_labeled_note_given_a_radar_serial_is_marked_stale(
+    client: TestClient,
+    admin_headers: dict[str, str],
+    make_item: ItemFactory,
+    db: Session,
+) -> None:
+    """The stale flag reads the radar the same save derived."""
+    note = _note(db, make_item, PLAIN_SERIAL)
+    note.label_printed_at = utcnow()
+    note.label_text = label_text(label_lines(db, note))
+    db.commit()
+
+    db.autoflush = False
+    try:
+        _patch(client, admin_headers, note, {"serial_number": RADAR_SERIAL})
+    finally:
+        db.autoflush = True
+
+    db.expire_all()
+    assert db.get_one(InventoryItem, note.id).label_stale is True
+
+
+def test_duplicate_serial_reads_the_note_type_its_save_filled(
+    client: TestClient,
+    admin_headers: dict[str, str],
+    make_item: ItemFactory,
+    db: Session,
+) -> None:
+    """A Series 2013 $1 saved without its class gets FRN, then Duplicate Serial."""
+    note = _note(db, make_item, PLAIN_SERIAL)
+
+    db.autoflush = False
+    try:
+        _patch(
+            client,
+            admin_headers,
+            note,
+            {
+                "denomination": "usd_note_1",
+                "series_year": 2013,
+                "serial_number": DUPLICATE_SERIAL,
+            },
+        )
+    finally:
+        db.autoflush = True
+
+    db.expire_all()
+    assert db.get_one(CurrencyDetail, note.id).note_type_id == code_id(
+        db, NoteType, "frn"
+    )
+    assert ("duplicate_serial", "serial_pattern") in _links(db, note)

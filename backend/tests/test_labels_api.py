@@ -10,10 +10,13 @@ from __future__ import annotations
 
 from datetime import datetime
 
+import pytest
 from app.labels import label_lines, label_text, printed_number
 from app.models import (
+    AppliesTo,
     CoinDetail,
     CurrencyDetail,
+    ErrorType,
     GradingService,
     InventoryItem,
     Metal,
@@ -451,6 +454,62 @@ def test_the_text_recorded_is_the_text_that_printed(
     assert after.label_text == label_text(printed)
     assert after.label_stale is True
     assert after.label_printed_at is not None
+
+
+@pytest.mark.parametrize("autoflush", [True, False])
+def test_an_error_added_to_a_labeled_note_marks_its_label_stale(
+    db: Session,
+    make_item: ItemFactory,
+    client: TestClient,
+    admin_headers: dict[str, str],
+    autoflush: bool,
+) -> None:
+    """The errors are saved apart from the item, and still change its label.
+
+    Run both ways: production's session does not autoflush.
+    """
+    note = _note(db, make_item)
+    _label(db, note)
+    note_error = db.scalars(
+        select(ErrorType.code)
+        .where(ErrorType.applies_to == AppliesTo.currency, ErrorType.is_active)
+        .order_by(ErrorType.id)
+    ).first()
+    assert note_error is not None
+
+    db.autoflush = autoflush
+    try:
+        saved = client.put(
+            f"/api/inventory/{note.id}/errors",
+            json={"errors": [{"error_type": note_error}]},
+            headers=admin_headers,
+        )
+    finally:
+        db.autoflush = True
+    assert saved.status_code == 200, saved.text
+
+    assert _fresh(db, note.id).label_stale is True
+
+
+@pytest.mark.parametrize(
+    "lines", [["x"] * 9, ["x" * 501]], ids=["too many lines", "too long a line"]
+)
+def test_a_printed_label_larger_than_any_label_is_refused(
+    db: Session,
+    make_item: ItemFactory,
+    client: TestClient,
+    admin_headers: dict[str, str],
+    lines: list[str],
+) -> None:
+    """No label holds more than eight lines of a few hundred characters."""
+    item = _coin(db, make_item)
+    done = client.post(
+        f"{_API}/printed",
+        json={"source": "unlabeled", "labels": [{"item_id": item.id, "lines": lines}]},
+        headers=admin_headers,
+    )
+    assert done.status_code == 422, done.text
+    assert _fresh(db, item.id).label_printed_at is None
 
 
 def test_printed_without_its_source_is_refused(

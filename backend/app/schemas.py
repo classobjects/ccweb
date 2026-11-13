@@ -3205,7 +3205,8 @@ class PrintedLabelIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     item_id: int
-    lines: list[str]
+    #: Bounded well above any label: none runs past four lines.
+    lines: Annotated[list[Annotated[str, Field(max_length=500)]], Field(max_length=8)]
 
 
 class LabelsPrintedIn(BaseModel):
