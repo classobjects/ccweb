@@ -15,6 +15,7 @@ from decimal import Decimal
 import pytest
 from app.item_descriptions import _without_serial, suggested_description
 from app.models import (
+    BullionForm,
     CoinDetail,
     Country,
     Currency,
@@ -256,7 +257,8 @@ def test_a_coin_leads_with_its_name_then_its_metal(db: Session) -> None:
 def test_a_bullion_serial_ends_the_first_sentence(db: Session) -> None:
     """As a note's does: what identifies the piece, then its metal.
 
-    A year with nothing to name is not written, as for any coin-side item.
+    Its year is written though nothing names the piece: the owner does not
+    want a description to lose the year.
     """
     item = build_item(
         db,
@@ -270,8 +272,58 @@ def test_a_bullion_serial_ends_the_first_sentence(db: Session) -> None:
     db.flush()
     db.refresh(item)
     assert suggested_description(db, item) == (
-        f"S/N PAMP-0042. {_label(db, Metal, 'gold')}, 1 ozt fine."
+        f"2024 S/N PAMP-0042. {_label(db, Metal, 'gold')}, 1 ozt fine."
     )
+
+
+def test_a_round_is_named_by_its_bullion_form(db: Session) -> None:
+    """``Copper Round``: the form is what a piece with no series is."""
+    item = build_item(
+        db,
+        kind="bullion",
+        bullion_form_id=code_id(db, BullionForm, "copper_round"),
+        metal_id=code_id(db, Metal, "copper"),
+        fine_weight_ozt=Decimal("0.999000"),
+        year_start=None,
+        grading_service_id=None,
+        grade_id=None,
+    )
+    assert suggested_description(db, item) == (
+        f"{_label(db, BullionForm, 'copper_round')}. "
+        f"{_label(db, Metal, 'copper')}, 0.999 ozt fine."
+    )
+    assert _label(db, BullionForm, "copper_round") in suggested_title(db, item)
+
+
+def test_a_round_carrying_a_coins_design_is_still_a_round(db: Session) -> None:
+    """A Walking Liberty round is not a half dollar: its form follows the series."""
+    item = build_item(
+        db,
+        kind="bullion",
+        series_id=code_id(db, Series, "walking_liberty_half"),
+        bullion_form_id=code_id(db, BullionForm, "copper_round"),
+        metal_id=code_id(db, Metal, "copper"),
+        year_start=None,
+        grading_service_id=None,
+        grade_id=None,
+    )
+    series = _label(db, Series, "walking_liberty_half")
+    form = _label(db, BullionForm, "copper_round")
+    assert suggested_description(db, item).startswith(f"{series} {form}. ")
+
+
+def test_a_bullion_product_is_not_named_twice(db: Session) -> None:
+    """A Silver Eagle form beside a series already naming it adds nothing."""
+    item = build_item(
+        db,
+        kind="bullion",
+        series_id=code_id(db, Series, "morgan_dollar"),
+        bullion_form_id=code_id(db, BullionForm, "silver_eagle"),
+        year_start=None,
+        grading_service_id=None,
+        grade_id=None,
+    )
+    assert suggested_description(db, item) == f"{_label(db, Series, 'morgan_dollar')}."
 
 
 def _designation(db: Session, code: str, label: str) -> int:
@@ -388,7 +440,7 @@ def test_no_country_is_named_at_home_or_when_it_is_not_known(
         grading_service_id=None,
         grade_id=None,
     )
-    assert suggested_description(db, item) == f"{_label(db, Metal, 'gold')}."
+    assert suggested_description(db, item) == f"1912. {_label(db, Metal, 'gold')}."
 
 
 def test_an_item_with_nothing_recorded_gets_an_empty_suggestion(db: Session) -> None:

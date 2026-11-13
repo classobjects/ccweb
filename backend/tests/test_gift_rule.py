@@ -143,8 +143,8 @@ def test_a_coin_entered_at_no_cost_is_a_gift_too(
         "derived_by": "no_cost",
     }
     assert coin["source_title"] == "1881-S Morgan Dollar"
-    # Nothing else is known of it yet: the description is the Gift alone.
-    assert coin["description"] == "Gift."
+    # Nothing else is known of it yet: the description is the Gift and its year.
+    assert coin["description"] == "Gift 1881."
 
 
 def test_a_coin_given_a_cost_loses_the_gift_the_rule_gave_it(

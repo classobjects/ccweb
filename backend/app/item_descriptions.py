@@ -23,7 +23,9 @@ for one piece kept singly.
 
 A coin of another country names it after the year -- "1882 Spain Peseta" --
 and where no series or face value is recorded, the year and country are
-what it is: "MS62 1913 Denmark. Gold, 0.1296 ozt fine."
+what it is: "MS62 1913 Denmark. Gold, 0.1296 ozt fine." -- at home the
+year alone, since a description never loses the year. Bullion is named by
+its form: "Copper Round. Copper, 0.999 ozt fine. Tube of 20."
 
 The district and signatures are left out -- they follow from the serial and
 series, and a buyer does not search by them -- and so is the grading
@@ -333,7 +335,7 @@ def _coin(db: Session, item: InventoryItem, given: Features | None) -> list[str]
     if grade := _grade(item):
         first.append(grade)
     first.extend(_features(db, item, given))
-    if (name := name_of(db, item, country_names=True)) is not None:
+    if (name := name_of(db, item, dated=True)) is not None:
         first.append(name)
     # Only bullion holds one (the item edit refuses it for another kind).
     if item.coin_detail is not None and item.coin_detail.serial_number:
@@ -347,6 +349,9 @@ def _coin(db: Session, item: InventoryItem, given: Features | None) -> list[str]
         sentences.append(metal)
     if (packed := _packaging(db, item, sentences)) is not None:
         sentences.append(packed)
+    # The year is kept beside other facts, but alone it describes nothing.
+    if sentences == [name] and name_of(db, item) is None and not foreign_country(item):
+        return []
     return sentences
 
 

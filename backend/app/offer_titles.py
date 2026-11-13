@@ -30,6 +30,7 @@ database's own vocabularies (see `docs/reference-data.md`).
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 
 from sqlalchemy import select
@@ -144,13 +145,46 @@ def _coin_date(db: Session, item: InventoryItem) -> str | None:
 
 
 def _coin_name(db: Session, item: InventoryItem) -> str | None:
-    """What says which coin it is: its set form, else series, else face value."""
+    """What says which coin it is: its set form, else series, else face value.
+
+    Bullion is named by its form where nothing else names it -- ``Copper
+    Round``, ``Silver Eagle``. A round or bar carrying a coin's design as its
+    series is still a round or bar, so that form follows the series:
+    ``Walking Liberty Half Dollar Copper Round``.
+    """
     if item.set_form is not None:
         return item.set_form.label
     name = _series_label(db, item)
     if name is None and item.denomination is not None:
         name = item.denomination.label
+    return _with_bullion_form(item, name)
+
+
+#: The last word of a bullion form that is a shape, not a product: a piece of
+#: this form is not the coin whose design it carries.
+_SHAPES = frozenset({"Round", "Bar"})
+
+
+def _with_bullion_form(item: InventoryItem, name: str | None) -> str | None:
+    """The name with the item's bullion form where it says what the piece is."""
+    form = item.bullion_form
+    if form is None:
+        return name
+    label = form.label
+    shape = label.split()[-1] in _SHAPES
+    # The plain "Round" says nothing of the metal its piece is struck in.
+    if label in _SHAPES and item.metal is not None:
+        label = f"{item.metal.label} {label}"
+    if name is None:
+        return label
+    if shape and _plain(label) not in _plain(name):
+        return f"{name} {label}"
     return name
+
+
+def _plain(text: str) -> str:
+    """Text as compared for repetition: letters and digits, one case."""
+    return re.sub(r"[^0-9a-z]", "", text.lower())
 
 
 def _note_title(db: Session, item: InventoryItem) -> tuple[list[str], bool]:
@@ -188,23 +222,21 @@ def _note_title(db: Session, item: InventoryItem) -> tuple[list[str], bool]:
     return parts, named
 
 
-def name_of(
-    db: Session, item: InventoryItem, *, country_names: bool = False
-) -> str | None:
+def name_of(db: Session, item: InventoryItem, *, dated: bool = False) -> str | None:
     """What the item is, without its grade; None when no fact names it.
 
     ``1921-S Morgan Dollar``, ``Series 1935A $1 Silver Certificate``.
-    With `country_names`, another country's coin that nothing else names is
-    its year and country, ``1912 Austria`` -- enough for a description of
-    it, though not for a title a buyer searches by. A note is never named
-    by its country.
+    With `dated`, a coin-side piece that nothing else names is its year and
+    country, ``2012`` or ``1912 Austria`` -- the year is not lost from a
+    description, though alone it is no title a buyer searches by. A note is
+    never named by its country.
     """
     if item.item_kind.code == _CURRENCY_KIND:
         described, named = _note_title(db, item)
     else:
         described, named = _coin_title(db, item)
-        named = named or (country_names and foreign_country(item) is not None)
-    return " ".join(described) if named else None
+        named = named or dated
+    return " ".join(described) if named and described else None
 
 
 def suggested_title(db: Session, item: InventoryItem) -> str:

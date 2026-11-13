@@ -694,7 +694,13 @@ repeats the series year, the class or an attribute already said
 another country names it after the year ("1882 Spain Peseta", "1970 Spain 100
 Pesetas S/N ..."); with no series or face value
 recorded, the year and country are what it is ("MS62 1913 Denmark. Gold,
-0.1296 ozt fine."). The United States and Unknown are not named. The button writes nothing; Save
+0.1296 ozt fine."), and at home the year alone ("2012. Silver, 1 ozt fine.
+Proof Set.") -- a description never loses the year. Bullion is named by its
+form where nothing else names it ("Copper Round. Copper, 0.999 ozt fine.
+Tube of 20."), and a round or bar carrying a coin's design keeps its form
+after the series ("Walking Liberty Half Dollar Copper Round"); the listing
+title and the holder label name it the same way. The United States and
+Unknown are not named. The button writes nothing; Save
 keeps it. Saving the item from the editor, as a new item or an edit, with the
 Description empty or only spaces writes this description for it and logs the
 change under the person saving; bulk edit, receiving and splitting do not. It
