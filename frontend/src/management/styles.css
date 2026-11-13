@@ -506,6 +506,17 @@ fieldset.identify {
   grid-template-columns: 9rem minmax(12rem, 24rem) auto;
   margin-bottom: 0.4rem;
 }
+/* On a phone the three columns (label, box, note) need more than the dialog
+   has: each field stacks, its label over its box, and the box takes the
+   width it is given. A single `minmax(0, 1fr)` track, not `1fr`, so a long
+   value or a wide control cannot hold the column open. */
+@media (max-width: 40rem) {
+  .edit-form .field {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.25rem;
+    margin-bottom: 0.8rem;
+  }
+}
 /* One lot being assembled, as a card.
    The Lots page stacks these, and without a boundary one lot's Discard
    button sits directly under the next lot's heading -- which is exactly the
