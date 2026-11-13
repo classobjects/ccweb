@@ -490,8 +490,11 @@ export default function ItemEditForm({
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState('')
   const [labeling, setLabeling] = useState(false)
-  const [labelError, setLabelError] = useState('')
-  const [labelNote, setLabelNote] = useState('')
+  // What Add to label batch last said, and for which item: a form that
+  // moves to another item does not show it there.
+  const [labelSaid, setLabelSaid] = useState({ itemId: null, note: '', error: '' })
+  const labelNote = labelSaid.itemId === itemId ? labelSaid.note : ''
+  const labelError = labelSaid.itemId === itemId ? labelSaid.error : ''
   // Counts the saves made here. The history is read again on this as well
   // as on the item's version: a save whose read-back failed leaves the
   // version the form holds where it was.
@@ -1255,14 +1258,14 @@ export default function ItemEditForm({
   // The item joins the print batch as saved; an item that cannot be labeled
   // (sold, say) is refused in the server's words.
   async function addToLabelBatch() {
+    const forItem = itemId
     setLabeling(true)
-    setLabelError('')
-    setLabelNote('')
+    setLabelSaid({ itemId: forItem, note: '', error: '' })
     try {
       await api.addToLabelBatch([item.id])
-      setLabelNote('Added to the label batch')
+      setLabelSaid({ itemId: forItem, note: 'Added to the label batch', error: '' })
     } catch (err) {
-      setLabelError(err.message)
+      setLabelSaid({ itemId: forItem, note: '', error: err.message })
     } finally {
       setLabeling(false)
     }
@@ -1803,10 +1806,6 @@ export default function ItemEditForm({
               )}
             </>
           )}
-          {/* For a row that should never have existed -- one purchase entered
-              twice. Asked about first, and the server refuses what must
-              stay: a lot with pieces, an item ever offered, one in a sales
-              lot. Its reason is shown under this row. */}
           <button
             type="button"
             data-help="add_to_label_batch"
@@ -1815,6 +1814,12 @@ export default function ItemEditForm({
           >
             Add to label batch
           </button>
+          {labelError && <span className="error">{labelError}</span>}
+          {labelNote && <output className="muted">{labelNote}</output>}
+          {/* For a row that should never have existed -- one purchase entered
+              twice. Asked about first, and the server refuses what must
+              stay: a lot with pieces, an item ever offered, one in a sales
+              lot. Its reason is shown under this row. */}
           <button
             type="button"
             data-help="delete_item"
@@ -1825,8 +1830,6 @@ export default function ItemEditForm({
           </button>
         </div>
         {deleteError && <p className="error">{deleteError}</p>}
-        {labelError && <p className="error">{labelError}</p>}
-        {labelNote && <output className="muted status-line">{labelNote}</output>}
         {splitting && (
           <SplitDialog
             item={item}

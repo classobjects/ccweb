@@ -1,10 +1,9 @@
 # Holder labels, serial patterns and fancy-serial lookups
 
-*2026-11-12. Design approved by the owner; not yet built.*
+*2026-11-12. The labels spec: what the console does.*
 
-Four pieces, built in this order, and a one-time review of the existing
-records. Each piece is useful on its own; each later one uses what the
-earlier ones record.
+Four pieces and a review of the existing records. Each piece is useful on
+its own; each later one uses what the earlier ones record.
 
 1. **A description written on save** when the item has none.
 2. **Serial patterns derived on save**, with Ladder split into three, and
@@ -71,23 +70,28 @@ On the item editor's saves -- `POST /api/inventory` and `PATCH
 empty or only whitespace, the save stores `suggested_description` of the
 item as saved, in the same transaction. Every item kind. A description the
 owner typed is never touched. The field change is recorded like any other
-(`app.field_changes`), under the person saving. *My call: on the server,
-in those two endpoints only. Bulk edit, receiving and splitting do not
+(`app.field_changes`), under the person saving. It is done on the server,
+in those two endpoints only: bulk edit, receiving and splitting do not
 write descriptions, so a bulk move of 500 older items does not write 500 of
-them; the review in section 5 handles the items already saved without one.*
+them; the review in section 5 handles the items already saved without one.
+The description is written after the save's derived links (section 2), so
+it names the designations the same save derived.
 
 ## 2. Serial patterns derived on save
 
 `app/serial_patterns.py` already derives Star, Solid, Binary, Trinary,
 Radar, Repeater, Double Quad, Ladder, Birthday, Low Serial, High Serial and
 Fancy Serial from a note's serial, as derived links (`derived_by`
-`serial_pattern`) that a person may remove and that then stay removed. Today
-it runs only by hand (`python -m app.serial_patterns --commit`).
+`serial_pattern`) that a person may remove and that then stay removed.
 
-**On save:** the same derivation runs for the item whenever any save --
-the editor's, bulk edit, receiving -- sets or changes a note's serial
-number, with the same rules for taking back what it added and for leaving
-alone what a person set or removed.
+**On every save:** every save of an item -- the editor's, bulk edit, item
+creation -- derives its designations in the save's own transaction
+(`serial_patterns.derive`, called from `classifier_defaults.refresh_items`),
+after the note's class is filled, so Duplicate Serial reads a note type the
+same save set. It takes back what it added and the note no longer earns,
+and leaves alone what a person set or removed. For the records already
+stored the same rules run by hand, over every note:
+`python -m app.serial_patterns`, then `--commit` (section 5).
 
 **Ladder becomes three attributes.** The owner's definitions, checked
 against the Banknote Serial Checker guide
@@ -167,16 +171,13 @@ never reads them.
 
 The owner's examples: `.../fancy-serial-number-checker/00003333`,
 `.../star-notes/lookup/1/2021/F01011010*`. Face value is the denomination's
-whole-dollar amount (`1`); the serial is as recorded, letters and star
-included, spaces removed.
-
-**Not yet known, for the builder to settle by trying it in a browser:**
-- whether a series with a letter (2017A, 1935-D) is passed as the year
-  alone (`2017`) or whole (`2017A`);
-- whether a star at the start of the serial (`*12345678A`, older notes)
-  works as recorded.
-If the site cannot answer for some series, the button is still shown and
-the site says so.
+whole-dollar amount (`1`); the series is passed as its year digits alone
+(`2017` for 2017A, `1935` for 1935-D); the serial is as recorded, letters
+and star included, spaces removed (`frontend/src/management/mcc-links.js`).
+Whether the site answers for a lettered series given as its year, and for
+a star at the start of the serial (`*12345678A`, older notes), is for the
+owner to confirm in a browser. If the site cannot answer for some series,
+the button is still shown and the site says so.
 
 **Two new fields on the note** (`currency_detail`), each typed by the
 owner, each with help text:
@@ -203,8 +204,7 @@ certification number: stored per note, never seeded or shipped.
 Both are US Letter, 8.5" x 11", from sheetlabels.com; the inkjet material
 ("Spectacle White Matte Inkjet") suits the Epson. Measured from the
 products' pages (https://www.sheetlabels.com/labels/SL597,
-https://www.sheetlabels.com/labels/SL564); the sums of labels, gaps and
-margins come to the sheet exactly.
+https://www.sheetlabels.com/labels/SL564).
 
 | | SL597 | SL564 |
 |---|---|---|
@@ -215,8 +215,15 @@ margins come to the sheet exactly.
 | Gap across / down | 0.176" / 0.1556" | 0 / 0 |
 | Used for | coins | notes and sets |
 
+The published figures do not sum to the sheet exactly: SL597's rows come
+to 11.003" down, SL564's columns to 8.498" across (and its rows to
+11.001"). Each cell's place is computed from the margins, label size and
+gaps for that cell alone, so the difference does not accumulate across the
+sheet.
+
 Cells are numbered left to right, top to bottom, from 1. The layouts are
-data in one place, so a third product is a new entry, not new code.
+data in one place (`app.labels` and the `GET /api/labels/sheets` the page
+reads), so a third product is a new entry, not new code.
 
 ### What each label says
 
@@ -225,8 +232,7 @@ prints without the prefix: `004521` for `CC-004521`, `000412_02` for a piece
 of a split lot -- `ITEM_CODE_PREFIX` and its dash removed, zeros kept, so
 typing the printed number into the inventory search finds exactly that item.
 
-**Coin** (SL597), three lines -- the owner's list (*my call: version A of the
-mockup, without the series name, as the owner listed*):
+**Coin** (SL597), three lines -- the owner's list, without the series name:
 
 ```
 004521
@@ -254,7 +260,7 @@ not `unknown` or `conflicting`. Line 2: what the note is
 vocabulary labels;
 Fancy Serial is left out where a named digit pattern is shown, as
 `item_descriptions` already does; Error Note is left out, line 4 being the
-errors. *My call.* Gift is left out too (the owner's ruling): it is how
+errors. Gift is left out too (the owner's ruling): it is how
 the note was acquired, a purchasing matter, and labels are read by
 customers. Line 4: its errors.
 
@@ -271,13 +277,17 @@ mint where the record holds one; the piece count.
 
 **Fitting:** text keeps 0.06" inside each label's edge on every side (the
 safe border), so a small drift stays on the label. A line too long for the
-width is set smaller, down to a minimum size the builder picks after a test
-print, and then cut with an ellipsis -- never wrapped onto a line the label
-does not have.
+width is set smaller, down to 5pt, and then cut with an ellipsis -- never
+wrapped onto a line the label does not have. Text starts at the top of the
+label, so a label with more lines than fit loses its bottom line, never the
+item number. Type is 7pt on SL597 and 7.5pt on SL564
+(`frontend/src/management/pages/labels/labels.css`), provisional until the
+owner's test print on the Epson sets them. The pages are HTML and CSS laid
+out in inches.
 
 ### Printing
 
-A **Labels** page in the console:
+A **Labels** page in the console, in the Inventory menu (`/labels`):
 
 1. **What to print**, one of:
    - *The print batch* (below);
@@ -316,6 +326,13 @@ everything not yet labeled neither reads nor empties it.
    records every item in the run as labeled. *No* records nothing; the run
    can be printed again from any cell.
 
+The page reads a run from `GET /api/labels/run?source=batch|unlabeled|stale`:
+one list of labels per sheet product (`runs`, each a `sheet` code and its
+labels' lines in item-number order) and, for the batch, the item codes no
+longer labelable (`skipped`), which are not printed and stay in the batch.
+*Yes* posts the lines each label printed to `POST /api/labels/printed`,
+with the run's source.
+
 A **test page** prints the same layout on plain paper with every label's
 outline, to hold against a sheet and check alignment before using labels.
 
@@ -326,7 +343,7 @@ on its label. An item **needs a new label** when the text its label would
 have now differs from the text printed -- a corrected mint mark, an added
 error, a new Coolness index. Comparing the text, rather than watching
 fields, means anything that changes the label is noticed and nothing else
-is. *My call; the owner asked for the tracking, not for this mechanism.*
+is. Every save of an item, and a save of its errors, rechecks its flag.
 
 The inventory gains a filter for *Labeled* / *Not labeled* / *Needs a new
 label* (`label=labeled|unlabeled|stale`), each among labelable items only:
@@ -351,40 +368,30 @@ and items already sold are left out.
 
 ## 5. Reviewing the existing records
 
-Once, after pieces 1 to 3 are released, with the owner's word and under the
-live-write procedure (dump, rehearsal, live, verify):
+Run once, with the owner's word and under the live-write procedure (dump,
+rehearsal, live, verify), in this order; the commands are in
+`docs/system-administration.md` (*Bringing records up to date*):
 
 - **Serial attributes:** `python -m app.serial_patterns --commit` over every
-  note, adding Scattered and Partial Ladder and any designation the
-  existing notes earn but lack. Its report is shown to the owner before the
-  commit.
-- **Descriptions, where there is none:** every item with an empty
-  description gets `suggested_description`, recorded as a field change.
+  note, adding Scattered and Partial Ladder, Duplicate Serial and any
+  designation the existing notes earn but lack. Its dry-run report is shown
+  to the owner before the commit.
+- **Descriptions, where there is none:** `python -m app.description_review
+  fill` gives every item with an empty description `suggested_description`,
+  recorded as a field change.
 - **Descriptions already written:** never replaced without the owner seeing
-  them. A review lists each item whose description differs from what would
-  be suggested now, the two side by side, and the owner ticks the ones to
-  replace. *My call on the form of the review* -- a console page or a
-  workbook, whichever the builder finds simpler to read through for a few
-  thousand rows.
+  them. `description_review export` writes a workbook listing each item
+  whose description differs from what would be suggested now, the two side
+  by side; the owner marks `x` on the ones to replace, and
+  `description_review apply` replaces those with the suggestion as computed
+  then, skipping and naming a row edited since the export.
 
 ## Constraints
 
 - Every change follows the project's rules in `CLAUDE.md` and
   `docs/code-quality.md`; the gate (`scripts\ccweb_check.cmd`) passes.
-- Schema changes ship as one Alembic migration per release, applied to live
-  by the release procedure in `docs/system-administration.md`.
+- The schema for all four pieces ships as one Alembic migration
+  (`a4d7c2e9b1f6_holder_labels`), one release, applied to live by the
+  release procedure in `docs/system-administration.md`.
 - Serial-rule tests use the synthetic serials already used in tests.
-- Documentation describes the result as built; on completion the
-  specs this touches -- `item-attributes-design.md`,
-  `entry-panels-design.md`, `database-design.md` -- the UI guide and the
-  system administration guide are brought up to date, and this document
-  becomes the labels spec.
-
-## Left to the builder
-
-- Fonts and point sizes, chosen from a test print on the Epson.
-- How the label pages are produced (HTML and CSS in inches is the expected
-  route; a PDF is acceptable if the browser's print scaling defeats it).
-- Where the Labels page sits in the console's navigation.
-- Whether pieces 1 to 3 ship in one schema release or several.
-- The exact wording of help texts, within what section 3 requires.
+- Help texts are in `frontend/src/management/fieldHelp.js`.

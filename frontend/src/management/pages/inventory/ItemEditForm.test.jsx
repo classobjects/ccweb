@@ -202,6 +202,20 @@ describe('ItemEditForm', () => {
     expect(await screen.findByText(/Not labelable: C-012/)).toBeVisible()
   })
 
+  it('does not carry what the label button said over to the next item', async () => {
+    const user = userEvent.setup()
+    api.addToLabelBatch.mockResolvedValueOnce([{}])
+    const { rerender } = render(
+      <ItemEditForm itemId={12} onSaved={vi.fn()} onClose={vi.fn()} />,
+    )
+    await user.click(await screen.findByRole('button', { name: 'Add to label batch' }))
+    expect(await screen.findByText('Added to the label batch')).toBeVisible()
+
+    rerender(<ItemEditForm itemId={13} onSaved={vi.fn()} onClose={vi.fn()} />)
+
+    expect(screen.queryByText('Added to the label batch')).toBeNull()
+  })
+
   it('deletes the item once asked, and closes over a list read again', async () => {
     const user = userEvent.setup()
     const onSaved = vi.fn()

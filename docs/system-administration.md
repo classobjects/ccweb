@@ -253,7 +253,8 @@ Three passes bring stored items in line with what the editor now does on a
 save. Run them in this order, each to completion before the next, because a
 description is suggested from the record as the earlier passes leave it:
 
-1. `app.serial_patterns` -- the dry run, then `--commit --by EMAIL`.
+1. `app.serial_patterns` -- the dry run, then `--commit` (it takes no
+   `--by`).
 2. `app.description_review fill` -- the dry run, then `--commit --by EMAIL`.
    Every unsplit, undeleted item whose description is empty gets the
    description the editor's Suggest would write; an item whose record holds
@@ -265,8 +266,9 @@ description is suggested from the record as the earlier passes leave it:
    run `app.description_review apply` on it -- the dry run, then
    `--commit --by EMAIL`. The suggestion is computed again at that moment. A
    row whose `current` is no longer the item's description (it was edited
-   after the export) is skipped, and so is a code no item holds; both are
-   named.
+   after the export; line endings aside) is skipped, and so is a code no live
+   item holds -- one deleted or split since; both are named. A `replace`
+   holding anything but `x` is ignored, and the rows so ignored are counted.
 
 ```console
 cd /d %USERPROFILE%\dev\ccweb\backend
@@ -932,8 +934,9 @@ label's edge, so a small drift stays on the label.
 
 **What printed.** When the print dialog closes the page asks whether the
 labels printed correctly. **Yes** records, for every item in the run, when
-it was labeled and the text printed on it, and takes those items out of the
-print batch; **No** records nothing. Recording is bookkeeping, not an edit:
+it was labeled and the text printed on it and, when the run was printed
+from the print batch, takes those items out of the batch; **No** records
+nothing. Recording is bookkeeping, not an edit:
 the item's version and last-changed time do not move, so a form open on it
 still saves. An item **needs a new label** when the text its label would
 have now differs from the text printed; the *Needs a new label* run rechecks

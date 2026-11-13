@@ -236,8 +236,9 @@ export default function BulkEditBar({
   const acknowledged = acknowledgedFor === selection
   const [offering, setOffering] = useState(false)
   const [grouping, setGrouping] = useState(false)
-  // What the last grouping did, so the bar says so where the selection is.
-  const [grouped, setGrouped] = useState('')
+  // What the last grouping or Add to label batch did, so the bar says so
+  // where the selection is.
+  const [notice, setNotice] = useState('')
 
   if (ids.length === 0) return null
 
@@ -285,11 +286,11 @@ export default function BulkEditBar({
   /** Add the selection to the print batch: all of it, or none and say which. */
   async function addToLabelBatch() {
     setBusy(true)
-    setGrouped('')
+    setNotice('')
     try {
       await api.addToLabelBatch(ids)
       setError('')
-      setGrouped(`${ids.length} added`)
+      setNotice(`${ids.length} added`)
     } catch (err) {
       // The server names every item it refused, in its message.
       setError(err.message)
@@ -353,7 +354,7 @@ export default function BulkEditBar({
       </button>
       <button
         onClick={() => {
-          setGrouped('')
+          setNotice('')
           setGrouping(true)
         }}
       >
@@ -374,7 +375,7 @@ export default function BulkEditBar({
         action="Change the items for sale too"
       />
       {error && <span className="error">{error}</span>}
-      {grouped && <span className="notice">{grouped}</span>}
+      {notice && <span className="notice">{notice}</span>}
 
       {grouping && (
         <GroupIntoLot
@@ -386,7 +387,7 @@ export default function BulkEditBar({
             // item's disposition -- a coin in an assembling lot is still in
             // stock and still editable -- so the rows the operator was
             // working through are still the rows they were working through.
-            setGrouped(`${ids.length} item(s) are in ${title}.`)
+            setNotice(`${ids.length} item(s) are in ${title}.`)
           }}
           onClose={() => setGrouping(false)}
         />
