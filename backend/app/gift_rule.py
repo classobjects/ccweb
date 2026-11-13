@@ -5,10 +5,11 @@
 
 docs/specs/item-attributes-design.md, section 2, "Attributes from facts: Gift".
 An item saved in the item editor at an item cost of $0 is a gift, so the save
-gives it the attribute, takes the word out of its title -- the attribute
-says it now -- and writes the description again where the description was
-the generated one. Making the row (`POST /api/inventory`) does not run this:
-a new item is made before its cost is typed, and opens in the editor.
+gives it the attribute and takes the word out of its title -- the attribute
+says it now. A description never names it: how an item was acquired is not
+for the customers who read one. Making the row (`POST /api/inventory`)
+does not run this: a new item is made before its cost is typed, and opens
+in the editor.
 Anything can be given, so the rule reaches every item whose kind the
 attribute's `applies_to` admits: with Gift's `any`, coins and notes alike.
 
@@ -28,7 +29,6 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .item_attributes import allowed_scopes
-from .item_descriptions import suggested_description
 from .models import (
     InventoryItem,
     ItemAttribute,
@@ -36,7 +36,7 @@ from .models import (
     ProvenanceSource,
 )
 
-__all__ = ["GIFT", "RULE", "apply", "earns", "without_the_word", "would_add"]
+__all__ = ["GIFT", "RULE", "apply", "earns", "without_the_word"]
 
 #: The attribute's code.
 GIFT = "gift"
@@ -77,16 +77,6 @@ def _link(
     return db.get(ItemAttributeLink, (item.id, attribute.id))
 
 
-def would_add(db: Session, item: InventoryItem) -> bool:
-    """Whether a save of the item as it stands would give it Gift."""
-    attribute = _attribute(db)
-    return (
-        attribute is not None
-        and earns(db, item, attribute)
-        and _link(db, item, attribute) is None
-    )
-
-
 def _separator(char: str) -> bool:
     """Whether `char` sets a word apart: white space, a dash, colon or comma."""
     return char.isspace() or char in _SEPARATORS
@@ -122,11 +112,9 @@ def apply(db: Session, item: InventoryItem) -> list[str]:
 
     Called by a save once everything else is written and flushed. Returns
     the names, as the change log knows them, of what this changed:
-    `attributes`, `description`, `source_title`.
-
-    The description is written again only when the link changes and the one
-    held is empty or is the one generated before the change, so a person's
-    own words are never replaced.
+    `attributes`, `source_title`. The description is left alone: Gift is a
+    purchasing fact, and no description names it
+    (`item_descriptions.UNDESCRIBED_ATTRIBUTES`).
     """
     attribute = _attribute(db)
     if attribute is None:
@@ -138,7 +126,6 @@ def apply(db: Session, item: InventoryItem) -> list[str]:
     adds = free and link is None
     takes_back = not free and held and link is not None and link.derived_by == RULE
     if adds or takes_back:
-        generated = suggested_description(db, item)
         if adds:
             db.add(
                 ItemAttributeLink(
@@ -153,9 +140,6 @@ def apply(db: Session, item: InventoryItem) -> list[str]:
         db.flush()
         held = adds
         moved.append("attributes")
-        if (item.description or "").strip() in ("", generated):
-            item.description = suggested_description(db, item)
-            moved.append("description")
     if free and held and _drop_the_word(item):
         moved.append("source_title")
     return moved

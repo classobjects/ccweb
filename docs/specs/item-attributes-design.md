@@ -222,24 +222,20 @@ alone.
 | Has a cost, or is no longer a kind Gift applies to, and holds the rule's own Gift | takes it back |
 | Has a cost, holds a Gift a person set | nothing |
 
-Two things follow a link the rule adds or takes back:
+The change log records `attributes` and `source_title` where the rule moved
+them, though the edit sent neither, and the item's version moves.
 
-- **The description** is written again (`suggested_description`) when the one
-  held is empty or is exactly the one generated before the change. A
-  description a person wrote is kept as it is.
-- The change log records `attributes`, `description` and `source_title`
-  where they moved, though the edit sent none of them, and the item's
-  version moves.
+**The description never names Gift** (the owner's ruling): how an item was
+acquired is a purchasing fact, and a description is what customers read, on
+a listing and on the holder's label. `suggested_description` leaves it out
+however the item holds it (`item_descriptions.UNDESCRIBED_ATTRIBUTES`), so
+the rule does not touch the description at all.
 
 **The title.** An item at $0 that holds Gift, however it came by it, has the
 word taken out of its title on every such save -- "Gift $1 Bill Green Seal"
 becomes "$1 Bill Green Seal" -- since the attribute now says it. Only the
 whole word goes ("Gifted" stays), with the dashes and commas that set it
 apart, and a title that is nothing but the word is left.
-
-The editor's **Suggest** describes the item as Save would leave it, so an
-item at $0 that Save would give Gift is suggested with it.
-
 ## 3. The grade vocabulary
 
 **A grade is a strike type plus a Sheldon number, optionally with a plus.**

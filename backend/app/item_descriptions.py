@@ -70,6 +70,7 @@ from .serial_patterns import DIGIT_PATTERNS
 
 __all__ = [
     "FANCY_SERIAL",
+    "UNDESCRIBED_ATTRIBUTES",
     "Features",
     "fancy_is_redundant",
     "saved_errors_of",
@@ -79,6 +80,11 @@ __all__ = [
 
 #: The attribute that says only "some digit pattern": left out beside one.
 FANCY_SERIAL = "fancy_serial"
+
+#: Attributes a description never names. Gift is how the item was acquired,
+#: a purchasing fact: a description is what customers read, on a listing
+#: and on the holder's label.
+UNDESCRIBED_ATTRIBUTES = frozenset({"gift"})
 
 
 @dataclass(frozen=True)
@@ -167,7 +173,11 @@ def saved_errors_of(
 
 def saved_attributes(db: Session, item: InventoryItem) -> list[str]:
     """A saved item's attribute labels, in the order a description lists them."""
-    held = item_attributes.held_attributes(db, item.id)
+    held = [
+        h
+        for h in item_attributes.held_attributes(db, item.id)
+        if h.code not in UNDESCRIBED_ATTRIBUTES
+    ]
     if fancy_is_redundant(h.code for h in held):
         held = [h for h in held if h.code != FANCY_SERIAL]
     return [h.label for h in held]

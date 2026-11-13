@@ -1657,8 +1657,9 @@ also editable in Receiving's "Confirm or correct fields" pane.
 An attribute marked **read** was found by a rule (the serial, the rating, the
 series, the cost) rather than set by a person. The cost's rule is **Gift**: any
 item -- coin or note -- saved in the editor at an item cost of $0 is given
-it, the word Gift leaves its title, and a description the system generated
-is written again to say so. An item later given a cost loses the Gift the
+it and the word Gift leaves its title. No description names Gift: it is how
+the item was acquired, not something for the customers who read a
+description or a label. An item later given a cost loses the Gift the
 rule gave it and keeps one a person set. The rule reaches the kinds of item
 Gift's **Applies to** admits, which **Edit details...** on the Vocabularies
 page changes (`docs/specs/item-attributes-design.md`). **Removing one keeps it removed**: no

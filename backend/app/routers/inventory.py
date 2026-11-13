@@ -66,6 +66,7 @@ from ..inventory_search import (
 )
 from ..item_descriptions import (
     FANCY_SERIAL,
+    UNDESCRIBED_ATTRIBUTES,
     Features,
     fancy_is_redundant,
     saved_features,
@@ -1770,6 +1771,7 @@ def _attribute_labels(db: Session, codes: Sequence[str]) -> list[str]:
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=f"Unknown attribute: {', '.join(unknown)}",
         )
+    rows = [row for row in rows if row.code not in UNDESCRIBED_ATTRIBUTES]
     if fancy_is_redundant(row.code for row in rows):
         rows = [row for row in rows if row.code != FANCY_SERIAL]
     return [row.label for row in rows]
@@ -1900,15 +1902,6 @@ def suggest_description_for(
         # item back as the dry run left it.
         db.expire_all()
         item = _get_item(db, item_id)
-        # Save would give an item at no cost its Gift: describe it with one.
-        if gift_rule.would_add(db, item):
-            held = (
-                attributes
-                if attributes is not None
-                else [h.code for h in item_attributes.held_attributes(db, item.id)]
-            )
-            if gift_rule.GIFT not in held:
-                attributes = [*held, gift_rule.GIFT]
         saved = saved_features(db, item)
         features = Features(
             attributes=(

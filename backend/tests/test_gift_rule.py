@@ -70,9 +70,10 @@ def _gift(item: dict) -> dict | None:
     return next((a for a in item["attributes"] if a["code"] == gift_rule.GIFT), None)
 
 
-def test_a_note_entered_at_no_cost_is_a_gift_and_described_as_one(
+def test_a_note_entered_at_no_cost_is_a_gift_not_described_as_one(
     client: TestClient, admin_headers: Headers, db: Session
 ) -> None:
+    """Gift is how it was acquired: customers read the description."""
     item = _enter(client, admin_headers, db)
     assert _gift(item) == {
         "code": "gift",
@@ -81,8 +82,8 @@ def test_a_note_entered_at_no_cost_is_a_gift_and_described_as_one(
         "source": "derived",
         "derived_by": "no_cost",
     }
-    assert item["description"] == (
-        "Gift 1957B $1 S/N A38164927B. Silver Certificate Blue Seal."
+    assert (
+        item["description"] == "1957B $1 S/N A38164927B. Silver Certificate Blue Seal."
     )
 
 
@@ -143,8 +144,8 @@ def test_a_coin_entered_at_no_cost_is_a_gift_too(
         "derived_by": "no_cost",
     }
     assert coin["source_title"] == "1881-S Morgan Dollar"
-    # Nothing else is known of it yet: the description is the Gift and its year.
-    assert coin["description"] == "Gift 1881."
+    # Nothing but its year is known yet, and a year alone describes nothing.
+    assert not coin["description"]
 
 
 def test_a_coin_given_a_cost_loses_the_gift_the_rule_gave_it(
@@ -233,7 +234,7 @@ def test_a_note_edited_down_to_no_cost_becomes_a_gift_and_the_log_says_so(
     saved = _save(client, admin_headers, item, item_cost="0.00")
     assert _gift(saved) is not None
     assert saved["source_title"] == "$1 Bill"
-    assert saved["description"].startswith("Gift 1957B $1")
+    assert saved["description"] == item["description"]
     assert saved["version"] > item["version"]
 
     history = client.get(
@@ -242,7 +243,7 @@ def test_a_note_edited_down_to_no_cost_becomes_a_gift_and_the_log_says_so(
     logged = {e["field"]: e["new_value"] for e in history if e["kind"] == "field"}
     assert logged["attributes"] == ["Gift"]
     assert logged["source_title"] == "$1 Bill"
-    assert logged["description"] == saved["description"]
+    assert "description" not in logged
 
 
 def test_the_rule_takes_its_own_gift_back_when_the_note_gets_a_cost(
@@ -276,17 +277,19 @@ def test_a_gift_a_person_removed_stays_removed(
     assert again["source_title"] == "Gift $1 Bill"
 
 
-def test_suggest_describes_a_note_at_no_cost_as_the_gift_save_will_make_it(
+def test_suggest_never_names_the_gift(
     client: TestClient, admin_headers: Headers, db: Session
 ) -> None:
+    """Neither the Gift a save would give nor one the screen holds."""
     item = _enter(client, admin_headers, db, item_cost="20.00")
-    res = client.post(
-        f"/api/inventory/{item['id']}/suggested-description",
-        json={"changes": {"item_cost": "0.00", "attributes": []}},
-        headers=admin_headers,
-    )
-    assert res.status_code == 200, res.text
-    assert res.json()["description"].startswith("Gift 1957B $1")
+    for attributes in ([], ["gift"]):
+        res = client.post(
+            f"/api/inventory/{item['id']}/suggested-description",
+            json={"changes": {"item_cost": "0.00", "attributes": attributes}},
+            headers=admin_headers,
+        )
+        assert res.status_code == 200, res.text
+        assert res.json()["description"].startswith("1957B $1")
     # Nothing was written.
     after = client.get(f"/api/inventory/{item['id']}", headers=admin_headers).json()
     assert _gift(after) is None
