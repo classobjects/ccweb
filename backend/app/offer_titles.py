@@ -120,7 +120,13 @@ def _coin_title(db: Session, item: InventoryItem) -> tuple[list[str], bool]:
     if (name := _coin_name(db, item)) is not None:
         parts.append(name)
         named = True
-    if detail is not None and detail.variety:
+    # A variety in the name's own words ("Egyptian Eye of Ra" as both series
+    # and variety) says nothing more, and is not said twice.
+    if (
+        detail is not None
+        and detail.variety
+        and not (name is not None and _plain(detail.variety) in _plain(name))
+    ):
         parts.append(detail.variety)
         named = True
     return parts, named

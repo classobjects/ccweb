@@ -19,7 +19,7 @@ then what it is, with no field labels:
 
 The last sentence is how the pieces are packed, by storage form and count:
 "Roll of 50", "Strap of 100"; "12 pieces" where they are loose, and nothing
-for one piece kept singly.
+for one piece kept singly or in an album.
 
 A coin of another country names it after the year -- "1882 Spain Peseta" --
 and where no series or face value is recorded, the year and country are
@@ -106,8 +106,10 @@ _SHORT_GRADE_WORDS = ((re.compile(r"\bUncirculated\b"), "Unc"),)
 #: otherwise ("Solid Serial Number", "Star Note") is written whole.
 _SERIAL_NOUN = "Serial"
 
-#: The storage form a description leaves unsaid: one piece, kept singly.
-_SINGLE = "single"
+#: The storage forms a description leaves unsaid, telling only a count: one
+#: piece kept singly, and an album, which is where the owner keeps a coin, not
+#: what it is sold in.
+_UNSAID_FORMS = frozenset({"single", "album"})
 
 
 def _without_serial(label: str) -> str:
@@ -369,9 +371,10 @@ def _packaging(db: Session, item: InventoryItem, said: list[str]) -> str | None:
     """``Roll of 50``, ``Strap of 100``: how the pieces are packed, and how many.
 
     The storage form by its label, with the piece count after it; ``12
-    pieces`` where they are loose. Nothing for one piece kept singly, which
-    is every item that says nothing about it, and nothing more than the
-    count where the label is already said -- a Proof Set kept as a proof set.
+    pieces`` where they are loose or in an album. Nothing for one piece kept
+    singly or in an album -- singly is every item that says nothing about it
+    -- and nothing more than the count where the label is already said -- a
+    Proof Set kept as a proof set.
     """
     count = item.piece_count or 1
     form = (
@@ -379,7 +382,7 @@ def _packaging(db: Session, item: InventoryItem, said: list[str]) -> str | None:
         if item.storage_form_id is not None
         else None
     )
-    if form is None or form.code == _SINGLE:
+    if form is None or form.code in _UNSAID_FORMS:
         return f"{count} pieces" if count > 1 else None
     if _plain(form.label) in _plain(" ".join(said)):
         return f"{count} pieces" if count > 1 else None

@@ -395,6 +395,28 @@ def test_a_coins_variety_follows_its_name(db: Session) -> None:
     assert "Morgan Dollar O/S" in suggested_title(db, item)
 
 
+def test_a_variety_the_name_already_says_is_not_said_twice(db: Session) -> None:
+    """A variety entered as the series' own words adds nothing after it.
+
+    CC-005959 held "Egyptian Eye of Ra" as both series and variety, and read
+    "2025 Egyptian Eye of Ra Egyptian Eye of Ra".
+    """
+    item = build_item(
+        db,
+        year_start=1900,
+        series_id=code_id(db, Series, "morgan_dollar"),
+        grading_service_id=None,
+        grade_id=None,
+    )
+    db.add(CoinDetail(inventory_item_id=item.id, variety="morgan dollar"))
+    db.commit()
+    db.refresh(item)
+
+    name = _label(db, Series, "morgan_dollar")
+    assert suggested_description(db, item) == f"1900 {name}."
+    assert suggested_title(db, item) == f"1900 {name}"
+
+
 def test_a_foreign_coin_names_its_country_before_what_it_is(db: Session) -> None:
     item = build_item(
         db,
@@ -542,7 +564,11 @@ def test_a_roll_of_coins_says_so_after_its_metal(db: Session) -> None:
         # Loose: a count and no form.
         ("single", 12, "Morgan Dollar. 12 pieces."),
         # A holder with one piece in it is named without a count.
-        ("album", 1, "Morgan Dollar. Album."),
+        ("box", 1, "Morgan Dollar. Box."),
+        # An album is where the owner keeps a coin, not what it is sold in:
+        # it goes unsaid, as a single does, and only a count is told.
+        ("album", 1, "Morgan Dollar."),
+        ("album", 12, "Morgan Dollar. 12 pieces."),
     ],
 )
 def test_packaging_is_said_only_where_it_says_something(
@@ -558,7 +584,7 @@ def test_packaging_is_said_only_where_it_says_something(
         piece_count=pieces,
     )
     expected = ending.replace("Morgan Dollar", _label(db, Series, "morgan_dollar"))
-    expected = expected.replace("Album", _label(db, StorageForm, "album"))
+    expected = expected.replace("Box", _label(db, StorageForm, "box"))
     assert suggested_description(db, item) == expected
 
 
