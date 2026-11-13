@@ -1,12 +1,22 @@
 # Deploying on a Windows server
 
-Last revised: 2026-10-29.
+Last revised: 2026-11-13.
 
 How to run the system on a Windows server the public can reach over
 `https://` at a domain of your own. The development machine runs everything
 from `scripts\ccweb_startup.cmd` with Vite serving the frontend; a server
 runs none of that. Every command here is cmd; none is PowerShell. For an
 Ubuntu server, see [deployment-linux.md](deployment-linux.md).
+
+**This document is for the server only.** The Windows services it creates
+(`ccwebdb-postgres`, `ccwebdb-api`, `caddy`) exist on the server and
+nowhere else; a development computer has none of them and never needs them.
+A development computer is set up by
+[environment-setup-windows.md](environment-setup-windows.md), and its
+`.env` leaves `CCWEB_SITE_DOMAIN`, `CCWEB_TLS_CERT` and `CCWEB_TLS_KEY`
+unset. A computer that only edits code and runs the tests needs no
+collection database at all: the tests run on their own cluster
+(`scripts\ccweb_testdb.cmd`).
 
 **The example installation.** Where a value has to be shown, it is the
 owner's: a server named `classobjects` serving `https://classobjects.com`,
