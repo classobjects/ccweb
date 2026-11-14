@@ -1809,7 +1809,9 @@ One command does what the sections below describe step by step
    before each schema release or live write
    (`ccwebdb_pre_<change>_<date>.dump`), all but the newest: that one is the
    way back from the latest change, and the proved workbook covers the rest.
-   A dump under any other name stays.
+   None goes while that newest one is under an hour old (it may still be
+   being written) or is not a whole `pg_dump` archive; the run says so and
+   the next one tidies. A dump under any other name stays.
 
 When any step fails nothing is removed -- the workbooks already there are
 the proved ones -- the reason is printed, and the exit code is 1 (2 when the

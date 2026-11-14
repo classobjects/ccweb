@@ -425,10 +425,44 @@ def _dumps(folder: Path, *names: str) -> list[Path]:
     made = []
     for day, name in enumerate(names):
         path = folder / name
-        path.write_bytes(b"a pg_dump")
+        path.write_bytes(b"PGDMP a pg_dump")
         os.utime(path, (1_790_000_000 + day * 86_400,) * 2)
         made.append(path)
     return made
+
+
+def test_no_dump_goes_while_the_newest_may_still_be_being_written(
+    engine: Engine, tmp_path: Path
+) -> None:
+    """A pg_dump taken as the backup runs is newest, and may yet fail."""
+    folder = tmp_path / "backup"
+    made = _dumps(folder, "ccwebdb_pre_a_20261101.dump", "ccwebdb_pre_b_20261102.dump")
+    made[-1].touch()
+
+    done = run(engine, folder, stamp="20261114_200000", prove=_proved)
+
+    assert done.removed_dumps == []
+    assert done.dumps_kept == "ccwebdb_pre_b_20261102.dump was written in the last hour"
+    assert all(path.is_file() for path in made)
+
+
+def test_no_dump_goes_when_the_newest_is_not_a_whole_archive(
+    engine: Engine, tmp_path: Path
+) -> None:
+    """A failed pg_dump leaves an empty or partial file; it must not survive alone."""
+    folder = tmp_path / "backup"
+    made = _dumps(folder, "ccwebdb_pre_a_20261101.dump", "ccwebdb_pre_b_20261102.dump")
+    stamp = made[-1].stat().st_mtime
+    made[-1].write_bytes(b"")
+    os.utime(made[-1], (stamp, stamp))
+
+    done = run(engine, folder, stamp="20261114_200000", prove=_proved)
+
+    assert done.removed_dumps == []
+    assert (
+        done.dumps_kept == "ccwebdb_pre_b_20261102.dump is not a whole pg_dump archive"
+    )
+    assert all(path.is_file() for path in made)
 
 
 def test_a_proved_backup_removes_all_but_the_newest_dump(

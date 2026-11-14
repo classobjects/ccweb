@@ -55,6 +55,7 @@ from __future__ import annotations
 import argparse
 import re
 import sys
+import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -83,6 +84,13 @@ WORKBOOK = re.compile(r"ccwebdb_\d{8}_\d{6}\.xlsx")
 #: was, then its date. Any other dump is a person's and is never removed.
 PRE_CHANGE_DUMP = re.compile(r"ccwebdb_pre_\w+_\d{8}\.dump")
 
+#: The first bytes of every `pg_dump -Fc` archive.
+DUMP_SIGNATURE = b"PGDMP"
+
+#: How long the newest dump must have been left alone before the older
+#: ones may go: long enough that it is not one still being written.
+DUMP_SETTLE_SECONDS = 3600
+
 
 @dataclass
 class BackupRun:
@@ -102,6 +110,8 @@ class BackupRun:
     removed: list[Path] = field(default_factory=list)
     #: Pre-change dumps removed, all but the newest.
     removed_dumps: list[Path] = field(default_factory=list)
+    #: Why the older dumps were left in a proved run, when they were.
+    dumps_kept: str | None = None
     #: Why the photograph copy was left unpruned in a proved run, when it was.
     not_pruned: str | None = None
 
@@ -254,7 +264,21 @@ def run(
     for path in older[max(keep - 1, 0) :]:
         path.unlink()
         done.removed.append(path)
-    # Newest by time, not name: a name begins with what the change was.
+    _tidy_dumps(folder, done)
+    return done
+
+
+def _tidy_dumps(folder: Path, done: BackupRun) -> None:
+    """Remove all but the newest pre-change dump, when that one can be trusted.
+
+    Newest by time, not name: a name begins with what the change was. The
+    one kept is the only way back from the latest change, so nothing goes
+    unless it is a finished `pg_dump -Fc` archive: begun with the format's
+    signature, and not written to for `DUMP_SETTLE_SECONDS` -- a dump still
+    being taken, or one that failed part way, would otherwise survive while
+    the good ones before it were deleted. A file that cannot be removed
+    stops the tidy and is reported; the run stays proved.
+    """
     dumps = sorted(
         (
             path
@@ -264,10 +288,23 @@ def run(
         key=lambda path: path.stat().st_mtime,
         reverse=True,
     )
+    if len(dumps) < 2:
+        return
+    newest = dumps[0]
+    if time.time() - newest.stat().st_mtime < DUMP_SETTLE_SECONDS:
+        done.dumps_kept = f"{newest.name} was written in the last hour"
+        return
+    with newest.open("rb") as file:
+        if file.read(len(DUMP_SIGNATURE)) != DUMP_SIGNATURE:
+            done.dumps_kept = f"{newest.name} is not a whole pg_dump archive"
+            return
     for path in dumps[1:]:
-        path.unlink()
+        try:
+            path.unlink()
+        except OSError as exc:
+            done.dumps_kept = f"{path.name} could not be removed: {exc}"
+            return
         done.removed_dumps.append(path)
-    return done
 
 
 def _image_rows(db: Session) -> tuple[tuple[int, int | None], ...]:
@@ -308,6 +345,8 @@ def _report(done: BackupRun) -> None:
         print(f"removed the older workbook {path.name}")
     for path in done.removed_dumps:
         print(f"removed the older dump {path.name}")
+    if done.dumps_kept is not None:
+        print(f"older dumps kept: {done.dumps_kept}")
 
 
 def main(argv: Sequence[str] | None = None, *, live: Engine | None = None) -> int:
