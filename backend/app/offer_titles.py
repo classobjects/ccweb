@@ -75,6 +75,17 @@ def _years(item: InventoryItem) -> str | None:
     return str(start)
 
 
+def named_service(item: InventoryItem) -> str | None:
+    """``PCGS``: the grading service a buyer would recognize, or None.
+
+    Not the owner's own grading (`_SELF_GRADED`), which no buyer looks up.
+    """
+    service = item.grading_service
+    if service is None or service.code == _SELF_GRADED:
+        return None
+    return service.code
+
+
 def _graded(item: InventoryItem) -> list[str]:
     """``["PMG", "64 EPQ"]``: service, then grade with its designation.
 
@@ -83,9 +94,8 @@ def _graded(item: InventoryItem) -> list[str]:
     (`grades.display_designated`).
     """
     parts: list[str] = []
-    service = item.grading_service
-    if service is not None and service.code != _SELF_GRADED:
-        parts.append(service.code)
+    if (service := named_service(item)) is not None:
+        parts.append(service)
     grade = grades.display_designated(item)
     if grade:
         parts.append(grade)

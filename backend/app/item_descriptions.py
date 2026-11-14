@@ -27,9 +27,14 @@ what it is: "MS62 1913 Denmark. Gold, 0.1296 ozt fine." -- at home the
 year alone, since a description never loses the year. Bullion is named by
 its form: "Copper Round. Copper, 0.999 ozt fine. Tube of 20."
 
+A graded piece names its grading service right after the grade, and its
+certificate number in a sentence of its own before the packaging, the way
+a buyer looks it up: "PR70 DCAM PCGS 1975-S Roosevelt Dime. Copper-Nickel
+Clad. Cert #44012345." The owner's own grading is no service and is not
+named.
+
 The district and signatures are left out -- they follow from the serial and
-series, and a buyer does not search by them -- and so is the grading
-service, which the holder shows. Errors are promoted beside the
+series, and a buyer does not search by them. Errors are promoted beside the
 attributes, right after the grade: they are what an error note sells on --
 "Error Note, Misaligned Print (Reverse) 1963A $1".
 
@@ -59,13 +64,14 @@ from .models import (
     CurrencyDetail,
     ErrorType,
     InventoryItem,
+    ItemCertification,
     ItemError,
     NoteType,
     SealColor,
     Series,
     StorageForm,
 )
-from .offer_titles import foreign_country, name_of
+from .offer_titles import foreign_country, name_of, named_service
 from .serial_patterns import DIGIT_PATTERNS
 
 __all__ = [
@@ -144,6 +150,33 @@ def _grade(item: InventoryItem) -> str | None:
     return grade
 
 
+def _graded(item: InventoryItem) -> list[str]:
+    """``["PR70 DCAM", "PCGS"]``: the grade, then the service that gave it."""
+    return [part for part in (_grade(item), named_service(item)) if part]
+
+
+def _certificates(db: Session, item: InventoryItem) -> str | None:
+    """``Cert #44012345``, ``Certs #1, #2``: the holders' numbers, or None.
+
+    In the order they were recorded. Read from the table, so a dry run of
+    the editor's changes (`routers.inventory._dry_run_save`) is read as it
+    left them.
+    """
+    if item.id is None:
+        return None
+    numbers = list(
+        db.scalars(
+            select(ItemCertification.cert_number)
+            .where(ItemCertification.inventory_item_id == item.id)
+            .order_by(ItemCertification.id)
+        )
+    )
+    if not numbers:
+        return None
+    noun = "Cert" if len(numbers) == 1 else "Certs"
+    return f"{noun} " + ", ".join(f"#{n}" for n in numbers)
+
+
 def saved_features(db: Session, item: InventoryItem) -> Features:
     """A saved item's attributes and errors, as `Features` holds a form's."""
     return Features(
@@ -213,12 +246,10 @@ def _features(db: Session, item: InventoryItem, given: Features | None) -> list[
 
 
 def _note(db: Session, item: InventoryItem, given: Features | None) -> list[str]:
-    """``[grade attributes year face S/N serial, note type seal, packaging]``."""
+    """``[grade service features year face S/N serial, type seal, certs, packing]``."""
     detail = item.currency_detail
     assert detail is not None
-    first: list[str] = []
-    if grade := _grade(item):
-        first.append(grade)
+    first = _graded(item)
     first.extend(_features(db, item, given))
     designation = _designation(detail)
     year = designation or (
@@ -246,6 +277,8 @@ def _note(db: Session, item: InventoryItem, given: Features | None) -> list[str]
 
     second = _class_and_seal(db, detail, note_type)
     sentences = [" ".join(part) for part in (first, second) if part]
+    if (certs := _certificates(db, item)) is not None:
+        sentences.append(certs)
     if (packed := _packaging(db, item, sentences)) is not None:
         sentences.append(packed)
     return sentences
@@ -342,10 +375,8 @@ def _plain(text: str) -> str:
 
 
 def _coin(db: Session, item: InventoryItem, given: Features | None) -> list[str]:
-    """``[grade attributes name, metal and fine weight, packaging]``."""
-    first: list[str] = []
-    if grade := _grade(item):
-        first.append(grade)
+    """``[grade service attributes name, metal and fine weight, certs, packaging]``."""
+    first = _graded(item)
     first.extend(_features(db, item, given))
     if (name := name_of(db, item, dated=True)) is not None:
         first.append(name)
@@ -359,6 +390,8 @@ def _coin(db: Session, item: InventoryItem, given: Features | None) -> list[str]
         if fine is not None and fine > 0:
             metal += f", {fine.normalize():f} ozt fine"
         sentences.append(metal)
+    if (certs := _certificates(db, item)) is not None:
+        sentences.append(certs)
     if (packed := _packaging(db, item, sentences)) is not None:
         sentences.append(packed)
     # The year is kept beside other facts, but alone it describes nothing.

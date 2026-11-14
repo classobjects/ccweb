@@ -1837,10 +1837,15 @@ def _dry_run_save(db: Session, item: InventoryItem, data: dict[str, Any]) -> Non
     disposition are not applied.
     """
     coin_changes = _take_coin_changes(db, data, item)
+    certs = data.pop("cert_numbers", None)
     _split_grade(data)
     no_date = _no_date_after(item, data)
     worked_out = _refuse_fine_above_gross(db, [item], data)
     _dry_run_classifiers(db, item, data)
+    # After the classifiers, as Save does: a new certificate takes the
+    # grading service this same edit sets. A description names them.
+    if certs is not None:
+        _set_certifications(db, item, certs)
     note_changes = _note_changes(db, data, item.currency_detail)
     if coin_changes:
         _set_coin_detail(db, item, coin_changes)

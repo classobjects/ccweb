@@ -682,11 +682,15 @@ separated) beside the grade; each change is logged in `item_field_change`.
 **Suggest description** under the Description box fills the draft with a
 description written from what the editor shows, unsaved changes included
 (`POST /api/inventory/{id}/suggested-description`, `app.item_descriptions`),
-in the owner's style: grade, designation and attributes first, then what it
-is -- "Superb Gem Unc 67 EPQ Radar 1999 $1 S/N F12344321R. Federal Reserve
-Note Green Seal." for a note, "MS64 First Strike 1921-S Morgan Dollar.
-Silver, 0.7734 ozt fine." for a coin -- with recorded errors beside the attributes, right after the grade ("Error Note, Misaligned Print (Reverse) 1963A $1 ..."). No field
-labels, district, signatures or grading service. A note's design series
+in the owner's style: grade, designation, grading service and attributes
+first, then what it is -- "Superb Gem Unc 67 EPQ PMG Radar 1999 $1 S/N
+F12344321R. Federal Reserve Note Green Seal." for a note, "MS64 First Strike
+1921-S Morgan Dollar. Silver, 0.7734 ozt fine." for a coin -- with recorded errors beside the attributes, right after the grade ("Error Note, Misaligned Print (Reverse) 1963A $1 ..."). The
+certificate numbers follow in a sentence of their own, before the packaging
+("PR70 DCAM PCGS 1975-S Roosevelt Dime. Copper-Nickel Clad. Cert
+#44012345."), including numbers typed in the editor and not yet saved. The
+owner's own grading (SELF) is not named. No field labels, district or
+signatures. A note's design series
 follows its face value ("1963B $1 Barr Note S/N ..."), or takes the place of
 the face value's unit when named for it ("½ Florida Goldback"), unless it only
 repeats the series year, the class or an attribute already said

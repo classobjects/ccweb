@@ -3,9 +3,9 @@
 # SPDX-License-Identifier: Apache-2.0
 """The description the item editor's Suggest button offers (`app.item_descriptions`).
 
-In the owner's style: grade, designation and attributes first,
-then year, face value and serial, then the note type and seal -- no field
-labels, no district, signatures or grading service.
+In the owner's style: grade, designation, grading service and attributes
+first, then year, face value and serial, then the note type and seal, then
+the certificate numbers -- no field labels, district or signatures.
 """
 
 from __future__ import annotations
@@ -29,6 +29,7 @@ from app.models import (
     InventoryItem,
     ItemAttribute,
     ItemAttributeLink,
+    ItemCertification,
     ItemError,
     Metal,
     NoteType,
@@ -105,7 +106,7 @@ def test_a_note_reads_as_the_owner_writes_it(db: Session) -> None:
     radar = _link(db, item, "radar")
     assert radar.endswith(" Serial")
     assert suggested_description(db, item) == (
-        f"{_short(_label(db, Grade, 'N67'))} EPQ Radar 1999 $1 S/N F12344321R. "
+        f"{_short(_label(db, Grade, 'N67'))} EPQ PMG Radar 1999 $1 S/N F12344321R. "
         f"{_label(db, NoteType, 'frn')} {_label(db, SealColor, 'green')}."
     )
 
@@ -177,7 +178,7 @@ def test_a_design_series_that_only_repeats_the_note_is_left_out(
     db.flush()
     item = _note(db, series_id=series.id)
     assert suggested_description(db, item) == (
-        f"{_short(_label(db, Grade, 'N67'))} EPQ 1999 $1 S/N F12344321R. "
+        f"{_short(_label(db, Grade, 'N67'))} EPQ PMG 1999 $1 S/N F12344321R. "
         f"{_label(db, NoteType, 'frn')} {_label(db, SealColor, 'green')}."
     )
 
@@ -187,14 +188,14 @@ def test_fancy_serial_is_left_out_beside_the_pattern_it_sums_up(db: Session) -> 
     radar = _link(db, item, "radar").removesuffix(" Serial")
     _link(db, item, "fancy_serial")
     text = suggested_description(db, item)
-    assert f"EPQ {radar} 1999" in text
+    assert f"EPQ PMG {radar} 1999" in text
     assert "Fancy" not in text
 
 
 def test_fancy_serial_alone_is_still_said(db: Session) -> None:
     item = _note(db)
     fancy = _link(db, item, "fancy_serial").removesuffix(" Serial")
-    assert f"EPQ {fancy} 1999" in suggested_description(db, item)
+    assert f"EPQ PMG {fancy} 1999" in suggested_description(db, item)
 
 
 def test_fancy_serial_is_said_beside_an_attribute_that_is_no_digit_pattern(
@@ -211,10 +212,67 @@ def test_fancy_serial_is_said_beside_an_attribute_that_is_no_digit_pattern(
     assert fancy in text
 
 
-def test_no_district_signatures_service_or_labels(db: Session) -> None:
+def test_no_district_signatures_or_labels(db: Session) -> None:
     text = suggested_description(db, _note(db))
-    for left_out in ("District", "signatures", "PMG", "Serial number", "Graded"):
+    for left_out in ("District", "signatures", "Serial number", "Graded"):
         assert left_out not in text
+
+
+def test_the_grading_service_follows_the_grade(db: Session) -> None:
+    text = suggested_description(db, _note(db))
+    assert text.startswith(f"{_short(_label(db, Grade, 'N67'))} EPQ PMG 1999 $1 ")
+
+
+def test_the_owners_own_grading_is_no_service_to_name(db: Session) -> None:
+    item = _note(db, grading_service_id=code_id(db, GradingService, "SELF"))
+    text = suggested_description(db, item)
+    assert text.startswith(f"{_short(_label(db, Grade, 'N67'))} EPQ 1999 $1 ")
+
+
+def test_the_certificate_number_is_its_own_sentence_before_the_packing(
+    db: Session,
+) -> None:
+    item = _note(db, storage_form_id=code_id(db, StorageForm, "strap"), piece_count=2)
+    db.add(ItemCertification(inventory_item_id=item.id, cert_number="8012345-001"))
+    db.flush()
+    text = suggested_description(db, item)
+    strap = _label(db, StorageForm, "strap")
+    assert text.endswith(f"Green Seal. Cert #8012345-001. {strap} of 2.")
+
+
+def test_several_certificates_are_listed_in_the_order_recorded(db: Session) -> None:
+    item = build_item(
+        db,
+        year_start=1975,
+        series_id=code_id(db, Series, "roosevelt_dime"),
+        grading_service_id=code_id(db, GradingService, "PCGS"),
+        grade_id=None,
+    )
+    for number in ("44012345", "00012"):
+        db.add(ItemCertification(inventory_item_id=item.id, cert_number=number))
+    db.flush()
+    text = suggested_description(db, item)
+    assert text.startswith("PCGS 1975 ")
+    assert text.endswith(" Certs #44012345, #00012.")
+
+
+def test_the_editor_suggests_from_certificates_not_yet_saved(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    item_id = _note(db).id
+    db.commit()
+    response = client.post(
+        f"/api/inventory/{item_id}/suggested-description",
+        headers=admin_headers,
+        json={"changes": {"cert_numbers": ["8012345-001"]}},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["description"].endswith(" Cert #8012345-001.")
+    db.expire_all()
+    held = db.scalars(
+        select(ItemCertification).where(ItemCertification.inventory_item_id == item_id)
+    ).all()
+    assert held == []
 
 
 def test_errors_are_promoted_beside_the_attributes(db: Session) -> None:
@@ -229,8 +287,8 @@ def test_errors_are_promoted_beside_the_attributes(db: Session) -> None:
     grade = _short(_label(db, Grade, "N67"))
     # Right after the grade, before what the note is: the attributes, then
     # the error with its details.
-    assert text.startswith(f"{grade} EPQ ")
-    features = text.removeprefix(f"{grade} EPQ ").split(" 1999 $1")[0]
+    assert text.startswith(f"{grade} EPQ PMG ")
+    features = text.removeprefix(f"{grade} EPQ PMG ").split(" 1999 $1")[0]
     assert features in (
         f"{star}, {radar}, {error.label} (left)",
         f"{radar}, {star}, {error.label} (left)",
