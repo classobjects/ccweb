@@ -194,7 +194,8 @@ written from stored text are always text, never a formula.
   database in one transaction.
 - `app.backup_run` exports, restores the export into a scratch database and
   compares every row of every table, checks the photograph copy, and only
-  then removes older workbooks and photographs nothing names.
+  then removes older workbooks, photographs nothing names, and all but the
+  newest pre-change `pg_dump`.
 - `app.backup` copies database to database; `app.media_backup` copies,
   checks and prunes photograph bytes.
 

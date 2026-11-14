@@ -16,7 +16,10 @@ unattended:
 4. Only when all of that held: **remove the older workbooks**, keeping the
    newest `--keep` of them, and -- when the new one is the only one kept,
    and no photograph's row was added or removed since the export began --
-   **prune** the photograph files no image names any more.
+   **prune** the photograph files no image names any more. The
+   `ccwebdb_pre_<change>_<date>.dump` files taken before each schema
+   release or live write go too, all but the newest: it is the way back
+   from the latest change, and the proved workbook stands for the rest.
 
 When any step fails nothing is removed: the new workbook is left beside the
 old ones, the reason is printed, and the command exits 1. So the folder
@@ -75,6 +78,11 @@ __all__ = ["BackupRun", "main", "prove_workbook", "run"]
 #: person chose begins the same way and must not match.
 WORKBOOK = re.compile(r"ccwebdb_\d{8}_\d{6}\.xlsx")
 
+#: The name of the `pg_dump` taken before a schema release or a live write
+#: (system-administration.md, *Applying a schema release*): what the change
+#: was, then its date. Any other dump is a person's and is never removed.
+PRE_CHANGE_DUMP = re.compile(r"ccwebdb_pre_\w+_\d{8}\.dump")
+
 
 @dataclass
 class BackupRun:
@@ -92,6 +100,8 @@ class BackupRun:
     #: Obsolete photograph files and older workbooks removed.
     pruned: int = 0
     removed: list[Path] = field(default_factory=list)
+    #: Pre-change dumps removed, all but the newest.
+    removed_dumps: list[Path] = field(default_factory=list)
     #: Why the photograph copy was left unpruned in a proved run, when it was.
     not_pruned: str | None = None
 
@@ -244,6 +254,19 @@ def run(
     for path in older[max(keep - 1, 0) :]:
         path.unlink()
         done.removed.append(path)
+    # Newest by time, not name: a name begins with what the change was.
+    dumps = sorted(
+        (
+            path
+            for path in folder.iterdir()
+            if path.is_file() and PRE_CHANGE_DUMP.fullmatch(path.name)
+        ),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    for path in dumps[1:]:
+        path.unlink()
+        done.removed_dumps.append(path)
     return done
 
 
@@ -283,6 +306,8 @@ def _report(done: BackupRun) -> None:
         print(f"photographs not pruned: {done.not_pruned}")
     for path in done.removed:
         print(f"removed the older workbook {path.name}")
+    for path in done.removed_dumps:
+        print(f"removed the older dump {path.name}")
 
 
 def main(argv: Sequence[str] | None = None, *, live: Engine | None = None) -> int:

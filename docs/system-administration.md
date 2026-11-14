@@ -1805,7 +1805,11 @@ One command does what the sections below describe step by step
    the photograph files no image names. With `--keep` above 1 nothing is
    pruned: the older workbooks kept still name those photographs. Only
    workbooks named `ccwebdb_<date>_<time>.xlsx` are ever removed; one saved
-   under any other name stays.
+   under any other name stays. It also removes the `pg_dump` files taken
+   before each schema release or live write
+   (`ccwebdb_pre_<change>_<date>.dump`), all but the newest: that one is the
+   way back from the latest change, and the proved workbook covers the rest.
+   A dump under any other name stays.
 
 When any step fails nothing is removed -- the workbooks already there are
 the proved ones -- the reason is printed, and the exit code is 1 (2 when the

@@ -14,6 +14,7 @@ or restore. The proof itself, `prove_workbook`, is run for real in
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -412,6 +413,88 @@ def test_an_export_that_is_refused_exits_1_and_removes_nothing(
     assert "vendor id 3, notes" in printed.err
     assert "Nothing was removed" in printed.err
     assert _names(folder) == ["ccwebdb_20260101_000000.xlsx"]
+
+
+def _dumps(folder: Path, *names: str) -> list[Path]:
+    """Pre-change dumps in `folder`, each a day older than the one after it.
+
+    Their times, not their names, say which is newest: the names begin with
+    what the change was, so they do not sort by when it was made.
+    """
+    folder.mkdir(parents=True, exist_ok=True)
+    made = []
+    for day, name in enumerate(names):
+        path = folder / name
+        path.write_bytes(b"a pg_dump")
+        os.utime(path, (1_790_000_000 + day * 86_400,) * 2)
+        made.append(path)
+    return made
+
+
+def test_a_proved_backup_removes_all_but_the_newest_dump(
+    engine: Engine, tmp_path: Path
+) -> None:
+    folder = tmp_path / "backup"
+    _dumps(
+        folder,
+        "ccwebdb_pre_wheat_metal_20261112.dump",
+        "ccwebdb_pre_odd_certs_20261114.dump",
+        "ccwebdb_pre_label_applied_20261114.dump",
+    )
+
+    done = run(engine, folder, stamp="20261114_200000", prove=_proved)
+
+    assert _names(folder) == [
+        "ccwebdb_20261114_200000.xlsx",
+        "ccwebdb_pre_label_applied_20261114.dump",
+    ]
+    assert sorted(path.name for path in done.removed_dumps) == [
+        "ccwebdb_pre_odd_certs_20261114.dump",
+        "ccwebdb_pre_wheat_metal_20261112.dump",
+    ]
+
+
+def test_a_backup_that_is_not_proved_removes_no_dump(
+    engine: Engine, tmp_path: Path
+) -> None:
+    folder = tmp_path / "backup"
+    made = _dumps(folder, "ccwebdb_pre_a_20261101.dump", "ccwebdb_pre_b_20261102.dump")
+
+    done = run(engine, folder, stamp="20261114_200000", prove=_differs)
+
+    assert done.removed_dumps == []
+    assert all(path.is_file() for path in made)
+
+
+def test_only_pre_change_dumps_are_ever_removed(engine: Engine, tmp_path: Path) -> None:
+    """A dump under any other name is a person's, and takes no place either."""
+    folder = tmp_path / "backup"
+    kept = ["my_copy.dump", "ccwebdb.dump", "ccwebdb_pre_x_20261101.dump.bak"]
+    _dumps(folder, *kept, "ccwebdb_pre_a_20261101.dump", "ccwebdb_pre_b_20261102.dump")
+
+    done = run(engine, folder, stamp="20261114_200000", prove=_proved)
+
+    assert [path.name for path in done.removed_dumps] == ["ccwebdb_pre_a_20261101.dump"]
+    assert _names(folder) == sorted(
+        [*kept, "ccwebdb_20261114_200000.xlsx", "ccwebdb_pre_b_20261102.dump"]
+    )
+
+
+def test_the_command_says_which_dumps_it_removed(
+    engine: Engine,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(backup_run, "prove_workbook", _proved)
+    folder = tmp_path / "backup"
+    _dumps(folder, "ccwebdb_pre_a_20261101.dump", "ccwebdb_pre_b_20261102.dump")
+
+    assert main([str(folder)], live=engine) == 0
+
+    assert (
+        "removed the older dump ccwebdb_pre_a_20261101.dump" in capsys.readouterr().out
+    )
 
 
 def test_keeping_no_workbook_at_all_is_refused(
