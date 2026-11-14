@@ -20,6 +20,8 @@ unattended:
    `ccwebdb_pre_<change>_<date>.dump` files taken before each schema
    release or live write go too, all but the newest: it is the way back
    from the latest change, and the proved workbook stands for the rest.
+   They are in the archive folder (`CCWEB_ARCHIVE_DIR`, where the guide's
+   `pg_dump` writes them), which need not be `FOLDER`.
 
 When any step fails nothing is removed: the new workbook is left beside the
 old ones, the reason is printed, and the command exits 1. So the folder
@@ -205,12 +207,14 @@ def run(
     keep: int = 1,
     stamp: str | None = None,
     prove: Callable[..., list[str]] | None = None,
+    dumps: Path | None = None,
 ) -> BackupRun:
     """Export to `folder`, prove the copy, and tidy only if it is proved.
 
     `keep` is how many workbooks stay, the new one among them. `stamp` names
     the workbook and the scratch database; `prove` is the proof,
-    `prove_workbook` unless another is given.
+    `prove_workbook` unless another is given. `dumps` is the folder whose
+    pre-change dumps are tidied; none are when it is not given.
     """
     stamp = stamp or local_now().strftime("%Y%m%d_%H%M%S")
     folder.mkdir(parents=True, exist_ok=True)
@@ -264,7 +268,8 @@ def run(
     for path in older[max(keep - 1, 0) :]:
         path.unlink()
         done.removed.append(path)
-    _tidy_dumps(folder, done)
+    if dumps is not None and dumps.is_dir():
+        _tidy_dumps(dumps, done)
     return done
 
 
@@ -367,7 +372,9 @@ def main(argv: Sequence[str] | None = None, *, live: Engine | None = None) -> in
 
     engine = live or create_engine(settings.database_url)
     try:
-        done = run(engine, args.folder, keep=args.keep)
+        done = run(
+            engine, args.folder, keep=args.keep, dumps=settings.ccweb_archive_dir
+        )
     except workbook_backup.WorkbookError as exc:
         # The export itself was refused: no workbook was written, so there
         # is nothing to prove and nothing older may go.

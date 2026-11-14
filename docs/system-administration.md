@@ -1807,7 +1807,10 @@ One command does what the sections below describe step by step
    workbooks named `ccwebdb_<date>_<time>.xlsx` are ever removed; one saved
    under any other name stays. It also removes the `pg_dump` files taken
    before each schema release or live write
-   (`ccwebdb_pre_<change>_<date>.dump`), all but the newest: that one is the
+   (`ccwebdb_pre_<change>_<date>.dump`, in the archive folder
+   `CCWEB_ARCHIVE_DIR` -- `ccwebdb-backups` beside the repository, where
+   *Applying a schema release* writes them -- whatever the backup folder
+   is), all but the newest: that one is the
    way back from the latest change, and the proved workbook covers the rest.
    None goes while that newest one is under an hour old (it may still be
    being written) or is not a whole `pg_dump` archive; the run says so and

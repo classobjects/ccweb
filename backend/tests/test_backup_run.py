@@ -40,6 +40,14 @@ def exported(monkeypatch: pytest.MonkeyPatch) -> list[Path]:
     return written
 
 
+@pytest.fixture(autouse=True)
+def archive(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """The archive folder the command tidies dumps in: never the real one."""
+    folder = tmp_path / "archive"
+    monkeypatch.setattr(backup_run.settings, "ccweb_archive_dir", folder)
+    return folder
+
+
 def _proved(*_args: object, **_kwargs: object) -> list[str]:
     """A proof that finds the workbook right."""
     return []
@@ -439,7 +447,7 @@ def test_no_dump_goes_while_the_newest_may_still_be_being_written(
     made = _dumps(folder, "ccwebdb_pre_a_20261101.dump", "ccwebdb_pre_b_20261102.dump")
     made[-1].touch()
 
-    done = run(engine, folder, stamp="20261114_200000", prove=_proved)
+    done = run(engine, folder, stamp="20261114_200000", prove=_proved, dumps=folder)
 
     assert done.removed_dumps == []
     assert done.dumps_kept == "ccwebdb_pre_b_20261102.dump was written in the last hour"
@@ -456,7 +464,7 @@ def test_no_dump_goes_when_the_newest_is_not_a_whole_archive(
     made[-1].write_bytes(b"")
     os.utime(made[-1], (stamp, stamp))
 
-    done = run(engine, folder, stamp="20261114_200000", prove=_proved)
+    done = run(engine, folder, stamp="20261114_200000", prove=_proved, dumps=folder)
 
     assert done.removed_dumps == []
     assert (
@@ -476,7 +484,7 @@ def test_a_proved_backup_removes_all_but_the_newest_dump(
         "ccwebdb_pre_label_applied_20261114.dump",
     )
 
-    done = run(engine, folder, stamp="20261114_200000", prove=_proved)
+    done = run(engine, folder, stamp="20261114_200000", prove=_proved, dumps=folder)
 
     assert _names(folder) == [
         "ccwebdb_20261114_200000.xlsx",
@@ -494,7 +502,7 @@ def test_a_backup_that_is_not_proved_removes_no_dump(
     folder = tmp_path / "backup"
     made = _dumps(folder, "ccwebdb_pre_a_20261101.dump", "ccwebdb_pre_b_20261102.dump")
 
-    done = run(engine, folder, stamp="20261114_200000", prove=_differs)
+    done = run(engine, folder, stamp="20261114_200000", prove=_differs, dumps=folder)
 
     assert done.removed_dumps == []
     assert all(path.is_file() for path in made)
@@ -506,7 +514,7 @@ def test_only_pre_change_dumps_are_ever_removed(engine: Engine, tmp_path: Path) 
     kept = ["my_copy.dump", "ccwebdb.dump", "ccwebdb_pre_x_20261101.dump.bak"]
     _dumps(folder, *kept, "ccwebdb_pre_a_20261101.dump", "ccwebdb_pre_b_20261102.dump")
 
-    done = run(engine, folder, stamp="20261114_200000", prove=_proved)
+    done = run(engine, folder, stamp="20261114_200000", prove=_proved, dumps=folder)
 
     assert [path.name for path in done.removed_dumps] == ["ccwebdb_pre_a_20261101.dump"]
     assert _names(folder) == sorted(
@@ -516,15 +524,21 @@ def test_only_pre_change_dumps_are_ever_removed(engine: Engine, tmp_path: Path) 
 
 def test_the_command_says_which_dumps_it_removed(
     engine: Engine,
+    archive: Path,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    """The dumps are where pg_dump wrote them, not in the backup folder."""
     monkeypatch.setattr(backup_run, "prove_workbook", _proved)
     folder = tmp_path / "backup"
-    _dumps(folder, "ccwebdb_pre_a_20261101.dump", "ccwebdb_pre_b_20261102.dump")
+    _dumps(archive, "ccwebdb_pre_a_20261101.dump", "ccwebdb_pre_b_20261102.dump")
+    _dumps(folder, "ccwebdb_pre_c_20261101.dump", "ccwebdb_pre_d_20261102.dump")
 
     assert main([str(folder)], live=engine) == 0
+
+    assert _names(archive) == ["ccwebdb_pre_b_20261102.dump"]
+    assert "ccwebdb_pre_c_20261101.dump" in _names(folder)
 
     assert (
         "removed the older dump ccwebdb_pre_a_20261101.dump" in capsys.readouterr().out
