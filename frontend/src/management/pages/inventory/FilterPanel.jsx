@@ -16,6 +16,7 @@ const DEFAULT_PLACEHOLDER = 'Search title, description, item code or order numbe
 const LABEL_STATES = [
   ['', 'Any'],
   ['labeled', 'Labeled'],
+  ['printed', 'Printed, not applied'],
   ['unlabeled', 'Not labeled'],
   ['stale', 'Needs a new label'],
 ]
@@ -218,7 +219,7 @@ export default function FilterPanel({
             </label>
           ))}
 
-          {/* The same four states on both views, so they are not facets: no
+          {/* The same five states on both views, so they are not facets: no
             count to show, and nothing to be unrecorded. No letter, as the
             seller's item id has none. */}
           <label data-help="label_filter">

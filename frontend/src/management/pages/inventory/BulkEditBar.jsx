@@ -236,7 +236,7 @@ export default function BulkEditBar({
   const acknowledged = acknowledgedFor === selection
   const [offering, setOffering] = useState(false)
   const [grouping, setGrouping] = useState(false)
-  // What the last grouping or Add to label batch did, so the bar says so
+  // What the last grouping, Add to label batch or Mark label applied did, so the bar says so
   // where the selection is.
   const [notice, setNotice] = useState('')
 
@@ -293,6 +293,25 @@ export default function BulkEditBar({
       setNotice(`${ids.length} added`)
     } catch (err) {
       // The server names every item it refused, in its message.
+      setError(err.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /** Mark the selection's waiting labels as on their holders; name the rest. */
+  async function markLabelApplied() {
+    setBusy(true)
+    setNotice('')
+    try {
+      const answer = await api.markLabelsApplied(ids)
+      setError('')
+      const others = answer.not_waiting.length
+        ? `; no label was waiting for ${answer.not_waiting.join(', ')}`
+        : ''
+      setNotice(`${answer.done} marked applied${others}`)
+      onApplied?.()
+    } catch (err) {
       setError(err.message)
     } finally {
       setBusy(false)
@@ -362,6 +381,9 @@ export default function BulkEditBar({
       </button>
       <button disabled={busy} onClick={addToLabelBatch}>
         Add to label batch
+      </button>
+      <button disabled={busy} onClick={markLabelApplied} data-help="mark_label_applied">
+        Mark label applied
       </button>
       <button className="link" onClick={onClear}>
         Clear selection

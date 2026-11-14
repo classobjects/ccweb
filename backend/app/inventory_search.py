@@ -835,14 +835,21 @@ def _item_codes_clause(params: dict[str, Any], bound: dict[str, Any]) -> str | N
 
 #: The `label=` filter: each state of an item's holder label. Every state
 #: is among labelable items only (`app.labels.labelable_clause`) -- a sold
-#: coin is never offered a label, so it is not "not labeled" either.
+#: coin is never offered a label, so it is not "not labeled" either. An item
+#: is in one state only, the first that fits: a printed label waiting to be
+#: applied comes before what its holder carries.
 LABEL_STATES: dict[str, str] = {
-    # Printed, and its text is what it would print now.
-    "labeled": "i.label_printed_at IS NOT NULL AND NOT i.label_stale",
-    # Never printed.
-    "unlabeled": "i.label_printed_at IS NULL",
-    # Printed, and it would now read differently: needs a new label.
-    "stale": "i.label_stale",
+    # Printed, not yet applied: on a sheet, not on the holder.
+    "printed": "i.label_waiting_at IS NOT NULL",
+    # Nothing on the holder, and nothing waiting.
+    "unlabeled": "i.label_applied_at IS NULL AND i.label_waiting_at IS NULL",
+    # On the holder, and it would now read differently: needs a new label.
+    "stale": "i.label_stale AND i.label_waiting_at IS NULL",
+    # On the holder, with the text it would print now.
+    "labeled": (
+        "i.label_applied_at IS NOT NULL AND NOT i.label_stale "
+        "AND i.label_waiting_at IS NULL"
+    ),
 }
 
 

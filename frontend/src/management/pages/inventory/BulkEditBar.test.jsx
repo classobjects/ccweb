@@ -9,6 +9,7 @@ vi.mock('../../api', () => ({
   api: {
     bulkEditInventory: vi.fn(),
     addToLabelBatch: vi.fn(),
+    markLabelsApplied: vi.fn(),
     // The location picker's own call.
     listStorageLocations: vi.fn(),
     // OfferDialog's own calls, reachable once "Offer for sale..." is pressed.
@@ -95,6 +96,21 @@ describe('BulkEditBar', () => {
     await user.click(screen.getByRole('button', { name: 'Add to label batch' }))
     expect(await screen.findByText(/Not labelable: CC-000002/)).toBeVisible()
     expect(screen.queryByText('2 added')).toBeNull()
+  })
+
+  it('marks the selected labels applied and names those not waiting', async () => {
+    const user = userEvent.setup()
+    const onApplied = vi.fn()
+    api.markLabelsApplied.mockResolvedValue({ done: 1, not_waiting: ['CC-000002'] })
+    render(
+      <BulkEditBar view="coins" ids={[1, 2]} onApplied={onApplied} onClear={vi.fn()} />,
+    )
+    await user.click(screen.getByRole('button', { name: 'Mark label applied' }))
+    expect(api.markLabelsApplied).toHaveBeenCalledWith([1, 2])
+    expect(
+      await screen.findByText('1 marked applied; no label was waiting for CC-000002'),
+    ).toBeVisible()
+    expect(onApplied).toHaveBeenCalled()
   })
 
   it('offers a note selection no Year, and starts it on another field', () => {

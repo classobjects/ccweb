@@ -91,7 +91,7 @@ The search and filters, as the help band explains each one:
 | **Series year** | Currency | The year after the word SERIES on the face, near the signatures -- "SERIES 1963 A" is 1963. It is the year the design was adopted, not the year the note was printed: notes of one series are often printed for years afterwards. |
 | **Status** |  | Shows only the items at this point in buying: ordered (bought, not yet arrived), received (in hand), canceled (the order was called off), returned (sent back to the seller), missing (paid for, never arrived) or unknown. Any shows every status. |
 | **Disposition** |  | What has become of the item once it is yours: held, listed, sold, shipped, delivered, returned. Status says whether it has arrived; disposition says where it stands in selling. |
-| **Label** |  | Narrows to items by their holder label: Labeled (printed, and it still reads the same), Not labeled (never printed) or Needs a new label (printed, but the item has changed since). Items that are sold or not in the collection are never labeled, so no state includes them. |
+| **Label** |  | Narrows to items by their holder label: Labeled (on the holder, and it still reads the same), Printed, not applied (printed and waiting to go on the holder), Not labeled (nothing on the holder) or Needs a new label (on the holder, but the item has changed since). Items that are sold or not in the collection are never labeled, so no state includes them. |
 | **Error** |  | Only items with this printing or minting error recorded on them. The list is of the errors the matching items carry, each with how many. |
 | **Attribute** |  | Only items carrying this attribute: Star Note, Radar, First Strike, CAC and the like. The list is of the attributes the matching items carry, each with how many. |
 | **Serial number** |  | All or part of a serial, anywhere in it. _ stands for exactly one character, so B1234567_ finds a run of consecutive notes; % for any run. On coins it is a bar's, round's or Goldback's own serial. |
@@ -134,6 +134,7 @@ The bulk bar's fields:
 | **New value: Storage location** |  | Where the piece is kept -- a safe, a bank box, home. Optional: choose it when it is known, and change it whenever the piece moves; every move is kept in the item's history. It never shows to a buyer. |
 | **Group into lot: Lot** |  | Where the selected items go: a new lot, or one still being assembled. A lot is offered and sold as one thing. Grouping changes nothing else about an item, which stays in stock. |
 | **Group into lot: Title** | a new lot | What the new lot is called: the Lots page lists it by this, and its offer starts from it. |
+| **Mark label applied** |  | Records that the printed labels of the selected items are now on their holders, and says "N marked applied". Only an item with a printed label waiting is marked; the bar names any other and leaves it as it was. |
 | **Add to label batch** |  | Puts every selected item on the list of labels to print next, and says "N added". All or none: if any item is sold or otherwise takes no label, nothing is added and the refusal names each such item. The Labels page prints the batch. |
 
 A search that finds a single item opens it in the editor straight away. Once
@@ -256,8 +257,8 @@ starts at any cell.
 
 **What to print** is one of three: **The print batch**, the items you added
 for the next small run; **Not yet labeled**, every item that takes a holder
-label and has never had one; **Needs a new label**, items whose label no
-longer says what the item does. Once chosen, a source shows how many labels it
+label and has none on its holder or waiting to be applied; **Needs a new
+label**, items whose label no longer says what the item does. Once chosen, a source shows how many labels it
 prints. The batch's items that no longer take a label -- sold since they
 were added, say -- are named above the sheets; they do not print and stay in
 the batch until removed.
@@ -270,12 +271,22 @@ cell 1. **Print** opens the browser's print dialog on the labels alone, one
 page per sheet; print at 100% -- "Actual size", not "Fit to page" -- with
 headers and footers turned off. When the dialog closes the page asks **Did
 these labels print correctly?** **Yes** records every label in the run as
-printed, with the text on it, and empties the batch of what printed; **No**
-records nothing, and the run can be printed again from any cell. **Print a
+printed, with the text on it, waiting in **To apply**, and empties the batch
+of what printed; **No** records nothing, and the run can be printed again
+from any cell. **Print a
 test page** prints the same layout with every cell's outline, on plain
 paper, to hold against a sheet; it asks nothing after.
 
-**The print batch**, under the sheets, lists its items with a **Remove**
+**To apply**, under the sheets, lists the labels printed and not yet on
+their holders: one list per print and sheet, newest first, in the order
+they are on the sheet, each with a tick box, none ticked -- finding the
+coins can take days. Tick a label once it is on its holder; **Select all**
+and **Deselect all**, above the lists and on each, tick or clear them
+together. **Applied** records the ticked labels as on their holders. **Not
+used** returns them -- spoiled, lost or set aside -- so the next run prints
+them again. Unticked labels stay.
+
+**The print batch**, under To apply, lists its items with a **Remove**
 beside each. Type an item's number in **Item number** and press **Add to
 batch**.
 
@@ -283,7 +294,8 @@ Its fields:
 
 | Field | What it is |
 |---|---|
-| **What to print** | The print batch: the items you added for the next small run. Not yet labeled: every item that takes a holder label and has never had one. Needs a new label: items whose label no longer says what the item does. The number is how many labels that choice prints. |
+| **What to print** | The print batch: the items you added for the next small run. Not yet labeled: every item that takes a holder label and has none on its holder or waiting in To apply. Needs a new label: items whose label no longer says what the item does. The number is how many labels that choice prints. |
+| **To apply** | Labels printed and not yet on their holders, one list per print, newest first, in the order they are on the sheet. Tick each label once it is on its holder -- Select all and Deselect all tick or clear a whole list -- then Applied. Not used returns the ticked labels so the next run prints them again; unticked labels stay here. |
 | **Item number** | The number of an item to add to the print batch, as on its label (004521) or with the prefix (CC-004521). Press Add to batch or Enter. Only an item that takes a holder label can be added. |
 
 #### Photos

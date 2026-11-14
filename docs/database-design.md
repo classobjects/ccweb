@@ -138,9 +138,11 @@ One row per acquired item or lot.
 | `parent_item_id` | fk null → `inventory_item` | the lot this piece was split from |
 | `split_at` | timestamptz null | set on a lot when it is broken into pieces |
 | `deleted_at` | timestamptz null | soft delete: the row should never have existed |
-| `label_printed_at` | timestamptz null | when the item's holder label was last printed; null while it never was |
-| `label_text` | text null | the text that label carried (`labels.label_text`), kept to tell whether the item has changed since |
-| `label_stale` | boolean, default false | the label would now read differently from `label_text`; set by `labels.refresh_stale` on every save, never for an item that was not labeled, and not a logged field change |
+| `label_applied_at` | timestamptz null | when the label now on the holder was applied; null while the holder carries none |
+| `label_text` | text null | the text the holder's label carries (`labels.label_text`), kept to tell whether the item has changed since |
+| `label_stale` | boolean, default false | the holder's label would now read differently from `label_text`; set by `labels.refresh_stale` on every save, never for an item whose holder carries no label, and not a logged field change |
+| `label_waiting_at` | timestamptz null | when a label printed for the item and not yet applied printed (one *Yes* stamps its whole run alike); null while none waits |
+| `label_waiting_text` | text null | the text that waiting label carries; it becomes `label_text` when applied |
 | `in_label_batch` | boolean, default false | waiting in the batch of labels to print next; partial index `ix_inventory_item_in_label_batch` on `id WHERE in_label_batch` |
 | `local_catalog_number` | varchar(64) null, indexed | the owner's own earlier numbering; not unique |
 | `source_title` | varchar(500) | what the seller called the item, kept verbatim |

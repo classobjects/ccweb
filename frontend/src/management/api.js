@@ -442,6 +442,14 @@ export const api = {
   // server records what is on the sheet, not what the item reads now.
   recordPrintedLabels: (source, labels) =>
     send('/api/labels/printed', { method: 'POST', body: { source, labels } }),
+  // Printed labels not yet on their holders: `{printed_at, sheet, labels}`
+  // per Yes and sheet, newest first.
+  labelsWaiting: () => send('/api/labels/waiting'),
+  // `{done, not_waiting}`: items with no label waiting are named, untouched.
+  markLabelsApplied: (itemIds) =>
+    send('/api/labels/applied', { method: 'POST', body: { item_ids: itemIds } }),
+  markLabelsUnused: (itemIds) =>
+    send('/api/labels/unused', { method: 'POST', body: { item_ids: itemIds } }),
 
   // accounts -- who can sign in
   customerForUser: (userId) =>

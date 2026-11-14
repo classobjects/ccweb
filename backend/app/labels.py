@@ -335,9 +335,11 @@ def refresh_stale(db: Session, item_ids: Collection[int]) -> None:
     """Set `label_stale` on the labeled items among these, without committing.
 
     A labeled item is stale when its label would now read differently from
-    the text it was printed with. An item never labeled is left alone, and
-    is never stale. This is derived bookkeeping, not an edit: nothing is
-    logged, and the item's version does not move (`write_quietly`).
+    the text on its holder. An item whose holder carries no label is left
+    alone, and is never stale; a printed label still waiting to be applied
+    is not on the holder, so it is not compared. This is derived
+    bookkeeping, not an edit: nothing is logged, and the item's version
+    does not move (`write_quietly`).
     """
     if item_ids:
         _refresh(db, InventoryItem.id.in_(item_ids))
@@ -354,7 +356,7 @@ def refresh_every_stale(db: Session) -> None:
 
 def _refresh(db: Session, which: ColumnElement[bool]) -> None:
     """Bring `label_stale` up to date on the labeled items `which` selects."""
-    items = label_items(db, which, InventoryItem.label_printed_at.is_not(None))
+    items = label_items(db, which, InventoryItem.label_applied_at.is_not(None))
     lines = labels_of(db, items)
     flips: dict[InventoryItem, Mapping[str, object]] = {}
     for item in items:

@@ -284,7 +284,7 @@ def _labeled_coin(db: Session, make_item: ItemFactory) -> InventoryItem:
     db.add(CoinDetail(inventory_item_id=item.id, mint_id=code_id(db, Mint, "S")))
     db.flush()
     db.refresh(item)
-    item.label_printed_at = utcnow()
+    item.label_applied_at = utcnow()
     item.label_text = label_text(label_lines(db, item))
     db.commit()
     return item
@@ -406,7 +406,7 @@ def _labeled_notes(db: Session, make_item: ItemFactory, n: int) -> list[int]:
     for _ in range(n):
         item = _note(db, make_item)
         _link(db, item, "star")
-        item.label_printed_at = utcnow()
+        item.label_applied_at = utcnow()
         item.label_text = "old text"
         ids.append(item.id)
     db.commit()

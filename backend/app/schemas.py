@@ -3192,7 +3192,7 @@ _MOST_LABELS = 20_000
 
 
 class LabelItemsIn(BaseModel):
-    """Items to add to the print batch."""
+    """Items to add to the print batch, or whose waiting labels to settle."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -3226,3 +3226,25 @@ class LabelsRecordedOut(BaseModel):
     """How many of the items named were labelable, and so are recorded."""
 
     recorded: int
+
+
+class LabelWaitingRunOut(BaseModel):
+    """Printed labels of one sheet product from one *Yes*, not yet applied."""
+
+    #: When they printed: one *Yes* stamps every label of its run alike.
+    printed_at: datetime
+    #: A `LabelSheetOut.code`.
+    sheet: str
+    #: In item-number order, the order they printed on the sheet; the lines
+    #: are those printed, not what the item reads now.
+    labels: list[LabelOut]
+
+
+class LabelsAppliedOut(BaseModel):
+    """What *Applied* or *Not used* did."""
+
+    #: How many waiting labels were applied, or returned.
+    done: int
+    #: The items named that had no printed label waiting, by item code:
+    #: left as they were.
+    not_waiting: list[str]

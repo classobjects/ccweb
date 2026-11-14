@@ -11,6 +11,7 @@ import { findItemByNumber } from '../item-search'
 import { useRequest } from '../../shared/useRequest'
 import LabelSheets from './labels/LabelSheets'
 import SheetPicker from './labels/SheetPicker'
+import ToApply from './labels/ToApply'
 import './labels/labels.css'
 
 //: What a run is drawn from (`LabelSource`), as the page offers it.
@@ -158,7 +159,9 @@ function PrintBatch({ batch, onChanged }) {
  * opens the browser's dialog. When the dialog closes (`afterprint`) the
  * page asks whether the labels printed correctly: Yes sends back the lines
  * each label carried, as printed, and the server records them; No records
- * nothing, and the run can be printed again from any cell. The test page
+ * nothing, and the run can be printed again from any cell. Printed labels
+ * then wait in To apply (`ToApply`) until each is marked on its holder. The
+ * test page
  * prints the same layout with every cell outlined, for plain paper, and
  * asks nothing.
  */
@@ -179,6 +182,7 @@ export default function Labels() {
   const sheets = useRequest('label-sheets', () => api.labelSheets())
   const run = useRequest(source, () => api.labelRun(source))
   const batch = useRequest('label-batch', () => api.labelBatch())
+  const waiting = useRequest('labels-waiting', () => api.labelsWaiting())
   const answer = run.busy ? null : run.data
   const sheetByCode = Object.fromEntries((sheets.data ?? []).map((s) => [s.code, s]))
 
@@ -223,10 +227,14 @@ export default function Labels() {
         asking.source,
         asking.labels.map(({ item_id, lines }) => ({ item_id, lines })),
       )
-      setSaid(`${labelsWord(asking.labels.length)} recorded as printed.`)
+      setSaid(
+        `${labelsWord(asking.labels.length)} recorded as printed: tick them in To ` +
+          'apply once they are on their holders.',
+      )
       setAsking(null)
       run.reload()
       batch.reload()
+      waiting.reload()
     } catch (err) {
       setAskError(err.message)
     } finally {
@@ -306,6 +314,18 @@ export default function Labels() {
           )
         })}
 
+      <ToApply
+        runs={waiting.data}
+        sheetNames={Object.fromEntries(
+          (sheets.data ?? []).map((s) => [s.code, s.name]),
+        )}
+        onChanged={() => {
+          waiting.reload()
+          run.reload()
+        }}
+      />
+      {waiting.error && <p className="error">{waiting.error}</p>}
+
       <PrintBatch batch={batch.data} onChanged={batchChanged} />
       {batch.error && <p className="error">{batch.error}</p>}
 
@@ -334,8 +354,9 @@ export default function Labels() {
         >
           <p>
             Yes records {labelsWord(asking.labels.length)} as printed
-            {asking.source === 'batch' ? ' and takes them out of the batch' : ''}. No
-            records nothing: the run can be printed again from any cell.
+            {asking.source === 'batch' ? ' and takes them out of the batch' : ''}; they
+            wait in To apply until you mark them on their holders. No records nothing:
+            the run can be printed again from any cell.
           </p>
           {askError && <p className="error">{askError}</p>}
         </ConfirmDialog>

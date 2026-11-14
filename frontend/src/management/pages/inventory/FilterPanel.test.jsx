@@ -197,7 +197,13 @@ describe('FilterPanel label filter', () => {
     const { props } = setup()
     const picker = screen.getByRole('combobox', { name: 'Label' })
     const names = [...picker.options].map((o) => o.textContent)
-    expect(names).toEqual(['Any', 'Labeled', 'Not labeled', 'Needs a new label'])
+    expect(names).toEqual([
+      'Any',
+      'Labeled',
+      'Printed, not applied',
+      'Not labeled',
+      'Needs a new label',
+    ])
     await userEvent.selectOptions(picker, 'Needs a new label')
     expect(props.apply).toHaveBeenCalledWith({ label: 'stale' })
   })

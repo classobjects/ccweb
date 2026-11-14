@@ -37,7 +37,8 @@ sheet.
   inkjet from the console.
 - A whole-collection run, and a small batch of items gathered beforehand,
   each starting at any cell of a part-used sheet.
-- The system knows which items carry a current label.
+- The system knows which items carry a current label **on the holder**:
+  printed, and then confirmed applied.
 - Fancy-serial designations that follow from the serial are recorded
   without anyone typing them.
 - An item saved with an empty description gets one.
@@ -54,6 +55,9 @@ sheet.
 - Text that runs onto a neighboring label when the printer drifts a little.
   SL564 labels touch edge to edge.
 - Marking items labeled when the sheet did not print correctly.
+- Counting an item labeled while its label is still on the sheet: a
+  printed label is not an applied one, and *Not labeled* must be a list the
+  owner can trust when picking up the next coins.
 - The software fetching, parsing or storing a website's results. Forbidden
   by `docs/reference-data.md`: the owner reads the page and types what they
   choose to record.
@@ -323,7 +327,8 @@ everything not yet labeled neither reads nor empties it.
    one page per sheet. The page tells the owner to print at 100% ("Actual
    size", not "Fit to page") with no headers or footers.
 4. **Did these labels print correctly?** asked when the dialog closes. *Yes*
-   records every item in the run as labeled. *No* records nothing; the run
+   records every item in the run as printed, waiting to be applied
+   (below). *No* records nothing; the run
    can be printed again from any cell.
 
 The page reads a run from `GET /api/labels/run?source=batch|unlabeled|stale`:
@@ -336,29 +341,57 @@ with the run's source.
 A **test page** prints the same layout on plain paper with every label's
 outline, to hold against a sheet and check alignment before using labels.
 
+### Applying
+
+A printed label is on a sheet, not on a holder. The owner confirms each one
+once it is stuck on, in either of two places:
+
+- **To apply**, on the Labels page: every run answered *Yes* and not yet
+  fully applied, newest first, each label listed in the order it printed
+  (the order on the sheet) with its item number and lines, each with a
+  tick box, unticked: finding the coins can take days, and a label is
+  marked applied only when the owner ticks it. *Select all* and *Deselect
+  all* tick or clear the whole list, and each run has the same pair. The
+  owner ticks the labels stuck on and presses *Applied*. *Not used*
+  instead returns the ticked ones -- a label spoiled, lost or set aside --
+  and each goes back to what its holder carries, so the next run prints it
+  again. Unticked labels stay in the list.
+- **The inventory**: with the label filter on *Printed, not applied*, the
+  ticked rows' *Mark label applied* action. Only items with a printed label
+  waiting are marked; any other ticked row is named and left alone.
+
+*Applied* records **when** the label went on and **its text** as the label
+the holder carries. Until then the holder carries whatever it carried
+before: nothing, or its earlier label.
+
 ### Knowing what is labeled
 
-On *Yes*, each item records **when** it was labeled and **the text printed**
-on its label. An item **needs a new label** when the text its label would
-have now differs from the text printed -- a corrected mint mark, an added
-error, a new Coolness index. Comparing the text, rather than watching
-fields, means anything that changes the label is noticed and nothing else
-is. Every save of an item, and a save of its errors, rechecks its flag.
+Each labelable item is in exactly one label state, the first that fits:
 
-The inventory gains a filter for *Labeled* / *Not labeled* / *Needs a new
-label* (`label=labeled|unlabeled|stale`), each among labelable items only:
-labeled is printed with the text it would print now, not labeled is never
-printed, needs a new label is printed with text that no longer matches.
-The *Needs a new label* run first rechecks every labeled item, so a change
-no save saw -- a vocabulary label renamed -- is caught too.
+1. **Printed, not applied** -- a label answered *Yes* and not yet applied
+   or returned.
+2. **Not labeled** -- nothing on the holder.
+3. **Needs a new label** -- the text the holder's label would have now
+   differs from the text applied: a corrected mint mark, an added error, a
+   new Coolness index. Comparing the text, rather than watching fields,
+   means anything that changes the label is noticed and nothing else is.
+   Every save of an item, and a save of its errors, rechecks its flag.
+4. **Labeled** -- applied, with the text it would print now.
 
-Recording a label, joining or leaving the batch, and the needs-a-new-label
-flag are bookkeeping, not edits of the item: none of them moves the item's
-version or last-changed time, so a form open on an item still saves. The
-text recorded is what the page printed, sent back with *Yes*, so an item
-edited between printing and *Yes* is recorded as needing a new label.
-*Yes* on a run already recorded records nothing new: an item whose label
-already holds that text keeps the time it was first labeled.
+The inventory's label filter offers all four
+(`label=printed|unlabeled|stale|labeled`), each among labelable items only.
+The *Not yet labeled* and *Needs a new label* runs print items in those
+states, so a label waiting to be applied is never printed twice. The
+*Needs a new label* run first rechecks every labeled item, so a change no
+save saw -- a vocabulary label renamed -- is caught too.
+
+Printing, applying or returning a label, joining or leaving the batch, and
+the needs-a-new-label flag are bookkeeping, not edits of the item: none of
+them moves the item's version or last-changed time, so a form open on an
+item still saves. The text recorded is what the page printed, sent back
+with *Yes*, so an item edited between printing and applying is recorded as
+needing a new label once applied. *Yes* on a run already recorded records
+nothing new.
 
 ### Volume
 
@@ -390,8 +423,9 @@ rehearsal, live, verify), in this order; the commands are in
 
 - Every change follows the project's rules in `CLAUDE.md` and
   `docs/code-quality.md`; the gate (`scripts\ccweb_check.cmd`) passes.
-- The schema for all four pieces ships as one Alembic migration
-  (`a4d7c2e9b1f6_holder_labels`), one release, applied to live by the
+- The schema for all four pieces ships as Alembic migrations
+  `a4d7c2e9b1f6_holder_labels` and `b7e1d4a9c3f2_label_applied` (the
+  waiting label), each applied to live by the
   release procedure in `docs/system-administration.md`.
 - Serial-rule tests use the synthetic serials already used in tests.
 - Help texts are in `frontend/src/management/fieldHelp.js`.

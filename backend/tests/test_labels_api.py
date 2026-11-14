@@ -62,7 +62,7 @@ def _note(db: Session, make_item: ItemFactory) -> InventoryItem:
 
 def _label(db: Session, item: InventoryItem, text: str | None = None) -> None:
     """Record the item as labeled, with its text now unless another is given."""
-    item.label_printed_at = utcnow()
+    item.label_applied_at = utcnow()
     item.label_text = text if text is not None else label_text(label_lines(db, item))
     db.commit()
 
@@ -111,6 +111,23 @@ def _printed(
     assert done.status_code == 200, done.text
     recorded: int = done.json()["recorded"]
     return recorded
+
+
+def _settle(
+    client: TestClient, headers: dict[str, str], how: str, *ids: int
+) -> dict[str, object]:
+    """Mark these items' waiting labels `applied` or `unused`."""
+    done = client.post(f"{_API}/{how}", json={"item_ids": list(ids)}, headers=headers)
+    assert done.status_code == 200, done.text
+    body: dict[str, object] = done.json()
+    return body
+
+
+def _waiting(client: TestClient, headers: dict[str, str]) -> list[dict[str, object]]:
+    got = client.get(f"{_API}/waiting", headers=headers)
+    assert got.status_code == 200, got.text
+    body: list[dict[str, object]] = got.json()
+    return body
 
 
 # --- sheets -----------------------------------------------------------------
@@ -348,9 +365,8 @@ def test_printing_the_unlabeled_run_leaves_the_batch_alone(
 
     after = _fresh(db, item.id)
     assert after.in_label_batch is True
-    assert after.label_printed_at is not None
-    assert after.label_text == label_text(label_lines(db, after))
-    assert after.label_stale is False
+    assert after.label_waiting_at is not None
+    assert after.label_waiting_text == label_text(label_lines(db, after))
 
 
 def test_printing_the_batch_empties_it_but_not_of_skipped_items(
@@ -368,7 +384,7 @@ def test_printing_the_batch_empties_it_but_not_of_skipped_items(
     assert _fresh(db, kept.id).in_label_batch is False
     after_gone = _fresh(db, gone.id)
     assert after_gone.in_label_batch is True
-    assert after_gone.label_printed_at is None
+    assert after_gone.label_waiting_at is None
 
 
 def test_printed_twice_records_once(
@@ -384,36 +400,50 @@ def test_printed_twice_records_once(
 
     assert _printed(db, client, admin_headers, "batch", item.id, other.id) == 1
     first = _fresh(db, item.id)
-    stamped: datetime | None = first.label_printed_at
-    text = first.label_text
+    stamped: datetime | None = first.label_waiting_at
+    text = first.label_waiting_text
     assert stamped is not None and text
     assert first.in_label_batch is False
 
     assert _printed(db, client, admin_headers, "batch", item.id, other.id) == 1
     second = _fresh(db, item.id)
-    assert (second.label_printed_at, second.label_text) == (stamped, text)
+    assert (second.label_waiting_at, second.label_waiting_text) == (stamped, text)
     assert second.in_label_batch is False
-    assert _fresh(db, other.id).label_printed_at is None
+    assert _fresh(db, other.id).label_waiting_at is None
 
 
-def test_printing_a_stale_label_records_the_new_text(
+def test_a_reprint_keeps_the_old_label_until_applied(
     db: Session,
     make_item: ItemFactory,
     client: TestClient,
     admin_headers: dict[str, str],
 ) -> None:
+    """The holder carries its old label until the new one is on it."""
     item = _coin(db, make_item)
     _label(db, item, "old text")
     item.label_stale = True
     db.commit()
-    old = _fresh(db, item.id).label_printed_at
+    old = _fresh(db, item.id).label_applied_at
     assert old is not None
 
     assert _printed(db, client, admin_headers, "stale", item.id) == 1
+    printed = _fresh(db, item.id)
+    assert (printed.label_applied_at, printed.label_text) == (old, "old text")
+    assert printed.label_stale is True
+    assert printed.label_waiting_text == label_text(label_lines(db, printed))
+    stale = _run(client, admin_headers, "stale")["runs"]
+    assert isinstance(stale, list)
+    assert item.item_code not in [code for run in stale for code in _codes(run)]
+
+    assert _settle(client, admin_headers, "applied", item.id) == {
+        "done": 1,
+        "not_waiting": [],
+    }
     after = _fresh(db, item.id)
     assert after.label_text == label_text(label_lines(db, after))
     assert after.label_stale is False
-    assert after.label_printed_at is not None and after.label_printed_at > old
+    assert after.label_applied_at is not None and after.label_applied_at > old
+    assert (after.label_waiting_at, after.label_waiting_text) == (None, None)
 
 
 def test_the_text_recorded_is_the_text_that_printed(
@@ -425,7 +455,7 @@ def test_the_text_recorded_is_the_text_that_printed(
     """An edit between printing and Yes leaves the label needing a new one.
 
     The sheet carries what the run returned, so that is what is recorded;
-    the item now reads differently, so it is stale from the start.
+    the item now reads differently, so once applied it is stale at once.
     """
     item = _coin(db, make_item)
     run = _run(client, admin_headers, "unlabeled")
@@ -450,10 +480,15 @@ def test_the_text_recorded_is_the_text_that_printed(
     )
     assert done.status_code == 200, done.text
     assert done.json() == {"recorded": 1}
+    waiting = _fresh(db, item.id)
+    assert waiting.label_waiting_text == label_text(printed)
+    assert waiting.label_applied_at is None and waiting.label_stale is False
+
+    _settle(client, admin_headers, "applied", item.id)
     after = _fresh(db, item.id)
     assert after.label_text == label_text(printed)
     assert after.label_stale is True
-    assert after.label_printed_at is not None
+    assert after.label_applied_at is not None
 
 
 @pytest.mark.parametrize("autoflush", [True, False])
@@ -509,7 +544,7 @@ def test_a_printed_label_larger_than_any_label_is_refused(
         headers=admin_headers,
     )
     assert done.status_code == 422, done.text
-    assert _fresh(db, item.id).label_printed_at is None
+    assert _fresh(db, item.id).label_waiting_at is None
 
 
 def test_printed_without_its_source_is_refused(
@@ -525,7 +560,7 @@ def test_printed_without_its_source_is_refused(
         headers=admin_headers,
     )
     assert done.status_code == 422
-    assert _fresh(db, item.id).label_printed_at is None
+    assert _fresh(db, item.id).label_waiting_at is None
 
 
 def test_label_bookkeeping_does_not_move_the_item_version(
@@ -534,7 +569,7 @@ def test_label_bookkeeping_does_not_move_the_item_version(
     client: TestClient,
     admin_headers: dict[str, str],
 ) -> None:
-    """Joining the batch, leaving it and being printed are not edits of the item.
+    """Batch, printed, applied and not used are not edits of the item.
 
     A form open on the item while the owner prints must save without a
     conflict, so none of these moves its version or its last-changed time.
@@ -548,9 +583,149 @@ def test_label_bookkeeping_does_not_move_the_item_version(
     client.delete(f"{_API}/batch/{item.id}", headers=admin_headers)
     _add(client, admin_headers, item.id)
     _printed(db, client, admin_headers, "batch", item.id)
+    assert _fresh(db, item.id).label_waiting_at is not None
+    _settle(client, admin_headers, "unused", item.id)
+    _printed(db, client, admin_headers, "unlabeled", item.id)
+    _settle(client, admin_headers, "applied", item.id)
     after = _fresh(db, item.id)
-    assert after.label_printed_at is not None
+    assert after.label_applied_at is not None
     assert (after.version, after.updated_at) == mark
+
+
+# --- applying ---------------------------------------------------------------
+
+
+def test_yes_leaves_labels_waiting_not_labeled(
+    db: Session,
+    make_item: ItemFactory,
+    client: TestClient,
+    admin_headers: dict[str, str],
+) -> None:
+    """A printed label is on the sheet: printed, not applied, and not reprinted."""
+    item = _coin(db, make_item)
+    _printed(db, client, admin_headers, "unlabeled", item.id)
+
+    after = _fresh(db, item.id)
+    assert after.label_applied_at is None and after.label_text is None
+    unlabeled = _run(client, admin_headers, "unlabeled")["runs"]
+    assert isinstance(unlabeled, list)
+    assert item.item_code not in [code for run in unlabeled for code in _codes(run)]
+    found = client.get(
+        "/api/inventory/coins/search",
+        params={"label": "printed"},
+        headers=admin_headers,
+    )
+    assert found.status_code == 200, found.text
+    assert [row["id"] for row in found.json()["rows"]] == [item.id]
+
+
+def test_waiting_runs_are_grouped_newest_first(
+    db: Session,
+    make_item: ItemFactory,
+    client: TestClient,
+    admin_headers: dict[str, str],
+) -> None:
+    """One run per Yes and sheet, the lines as printed, newest Yes first."""
+    early = _coin(db, make_item)
+    _printed(db, client, admin_headers, "unlabeled", early.id)
+    coin, note = _coin(db, make_item), _note(db, make_item)
+    _printed(db, client, admin_headers, "unlabeled", coin.id, note.id)
+
+    runs = _waiting(client, admin_headers)
+    assert [(r["sheet"], _codes(r)) for r in runs] == [
+        ("SL597", [coin.item_code]),
+        ("SL564", [note.item_code]),
+        ("SL597", [early.item_code]),
+    ]
+    assert runs[0]["printed_at"] == runs[1]["printed_at"]
+    assert str(runs[0]["printed_at"]) > str(runs[2]["printed_at"])
+    first = runs[2]["labels"]
+    assert isinstance(first, list)
+    assert first[0]["lines"] == [printed_number(early.item_code), "1921-S", "Silver"]
+
+
+def test_applied_moves_the_waiting_label_onto_the_holder(
+    db: Session,
+    make_item: ItemFactory,
+    client: TestClient,
+    admin_headers: dict[str, str],
+) -> None:
+    item = _coin(db, make_item)
+    _printed(db, client, admin_headers, "unlabeled", item.id)
+    printed = _fresh(db, item.id).label_waiting_text
+
+    assert _settle(client, admin_headers, "applied", item.id) == {
+        "done": 1,
+        "not_waiting": [],
+    }
+    after = _fresh(db, item.id)
+    assert after.label_applied_at is not None
+    assert (after.label_text, after.label_stale) == (printed, False)
+    assert (after.label_waiting_at, after.label_waiting_text) == (None, None)
+    assert _waiting(client, admin_headers) == []
+
+
+def test_applied_names_items_not_waiting(
+    db: Session,
+    make_item: ItemFactory,
+    client: TestClient,
+    admin_headers: dict[str, str],
+) -> None:
+    """A mix is settled for the waiting ones; the others are named, untouched."""
+    waiting, never = _coin(db, make_item), _coin(db, make_item)
+    _printed(db, client, admin_headers, "unlabeled", waiting.id)
+
+    assert _settle(client, admin_headers, "applied", waiting.id, never.id) == {
+        "done": 1,
+        "not_waiting": [never.item_code],
+    }
+    assert _fresh(db, never.id).label_applied_at is None
+
+
+def test_settling_an_unknown_item_is_refused(
+    db: Session,
+    make_item: ItemFactory,
+    client: TestClient,
+    admin_headers: dict[str, str],
+) -> None:
+    item = _coin(db, make_item)
+    _printed(db, client, admin_headers, "unlabeled", item.id)
+    done = client.post(
+        f"{_API}/applied", json={"item_ids": [item.id, 999999]}, headers=admin_headers
+    )
+    assert done.status_code == 422
+    assert "999999" in done.json()["detail"]
+    assert _fresh(db, item.id).label_applied_at is None
+
+
+def test_unused_returns_the_item_to_what_its_holder_carries(
+    db: Session,
+    make_item: ItemFactory,
+    client: TestClient,
+    admin_headers: dict[str, str],
+) -> None:
+    """A spoiled label is forgotten: the next run prints the item again."""
+    fresh = _coin(db, make_item)
+    relabeled = _coin(db, make_item)
+    _label(db, relabeled, "old text")
+    relabeled.label_stale = True
+    db.commit()
+    _printed(db, client, admin_headers, "unlabeled", fresh.id)
+    _printed(db, client, admin_headers, "stale", relabeled.id)
+
+    assert _settle(client, admin_headers, "unused", fresh.id, relabeled.id) == {
+        "done": 2,
+        "not_waiting": [],
+    }
+    assert _fresh(db, fresh.id).label_waiting_at is None
+    kept = _fresh(db, relabeled.id)
+    assert (kept.label_text, kept.label_stale) == ("old text", True)
+    assert kept.label_waiting_at is None
+    unlabeled = _run(client, admin_headers, "unlabeled")["runs"]
+    stale = _run(client, admin_headers, "stale")["runs"]
+    assert isinstance(unlabeled, list) and isinstance(stale, list)
+    assert fresh.item_code in [code for run in unlabeled for code in _codes(run)]
+    assert relabeled.item_code in [code for run in stale for code in _codes(run)]
 
 
 # --- cost of a run ----------------------------------------------------------

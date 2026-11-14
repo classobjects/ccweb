@@ -422,18 +422,26 @@ class InventoryItem(VersionedMixin, TimestampMixin, Base):
     )
 
     # -- holder label -----------------------------------------------------
-    #: When the item's label was last printed; null while it never was.
-    label_printed_at: Mapped[datetime | None] = mapped_column(
+    #: When the label now on the holder was applied; null while the holder
+    #: carries none.
+    label_applied_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
-    #: The text that label carried (`app.labels.label_text`), kept to tell
-    #: whether the item has changed since.
+    #: The text the holder's label carries (`app.labels.label_text`), kept
+    #: to tell whether the item has changed since.
     label_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     #: The item's label text now differs from `label_text`. Never set for an
-    #: item that was not labeled.
+    #: item whose holder carries no label.
     label_stale: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default=text("false"), nullable=False
     )
+    #: When a label printed for the item and not yet applied printed; null
+    #: while none waits. A printed label is on a sheet, not on the holder.
+    label_waiting_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    #: The text that waiting label carries.
+    label_waiting_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     #: Waiting in the batch of labels to print next.
     in_label_batch: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default=text("false"), nullable=False

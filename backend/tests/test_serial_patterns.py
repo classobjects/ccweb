@@ -488,7 +488,7 @@ def test_a_labeled_note_given_a_radar_serial_is_marked_stale(
 ) -> None:
     """The stale flag reads the radar the same save derived."""
     note = _note(db, make_item, PLAIN_SERIAL)
-    note.label_printed_at = utcnow()
+    note.label_applied_at = utcnow()
     note.label_text = label_text(label_lines(db, note))
     db.commit()
 

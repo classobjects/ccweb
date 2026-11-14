@@ -167,10 +167,18 @@ export const FIELD_HELP = {
   label_filter: {
     title: 'Label',
     text:
-      'Narrows to items by their holder label: labeled (printed, and it still ' +
-      'reads the same), not labeled (never printed) or needs a new label ' +
-      '(printed, but the item has changed since). Items that are sold or not ' +
-      'in the collection are never labeled, so no state includes them.',
+      'Narrows to items by their holder label: labeled (on the holder, and it ' +
+      'still reads the same), printed, not applied (printed and waiting to go ' +
+      'on the holder), not labeled (nothing on the holder) or needs a new label ' +
+      '(on the holder, but the item has changed since). Items that are sold or ' +
+      'not in the collection are never labeled, so no state includes them.',
+  },
+  mark_label_applied: {
+    title: 'Mark label applied',
+    text:
+      'Records that the printed labels of the ticked items are now on their ' +
+      'holders. Only an item with a printed label waiting is marked; the bar ' +
+      'names any other and leaves it as it was.',
   },
   add_to_label_batch: {
     title: 'Add to label batch',
@@ -1388,9 +1396,19 @@ export const FIELD_HELP = {
     title: 'What to print',
     text:
       'The print batch: the items you added for the next small run. Not yet ' +
-      'labeled: every item that takes a holder label and has never had one. ' +
+      'labeled: every item that takes a holder label and has none on its ' +
+      'holder or waiting in To apply. ' +
       'Needs a new label: items whose label no longer says what the item does. ' +
       'The number is how many labels that choice prints.',
+  },
+  labels_to_apply: {
+    title: 'To apply',
+    text:
+      'Labels printed and not yet on their holders, one list per print, newest ' +
+      'first, in the order they are on the sheet. Tick each label once it is on ' +
+      'its holder -- Select all and Deselect all tick or clear a whole list -- ' +
+      'then Applied. Not used returns the ticked labels so the next run prints ' +
+      'them again; unticked labels stay here.',
   },
   label_item_number: {
     title: 'Item number',

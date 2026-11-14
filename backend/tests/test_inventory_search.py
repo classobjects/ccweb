@@ -1386,13 +1386,23 @@ def test_inventory_filter_label_stale(
     """
     sold = code_id(db, Disposition, "sold")
     unlabeled = coin(db)
-    labeled = coin(db, label_printed_at=_PRINTED, label_text="x")
-    stale = coin(db, label_printed_at=_PRINTED, label_text="x", label_stale=True)
+    labeled = coin(db, label_applied_at=_PRINTED, label_text="x")
+    stale = coin(db, label_applied_at=_PRINTED, label_text="x", label_stale=True)
+    # A reprint waiting to be applied: printed, whatever its holder carries.
+    waiting = coin(db, label_waiting_at=_PRINTED, label_waiting_text="x")
+    reprint = coin(
+        db,
+        label_applied_at=_PRINTED,
+        label_text="x",
+        label_stale=True,
+        label_waiting_at=_PRINTED,
+        label_waiting_text="y",
+    )
     coin(db, disposition_id=sold)
     coin(
         db,
         disposition_id=sold,
-        label_printed_at=_PRINTED,
+        label_applied_at=_PRINTED,
         label_text="x",
         label_stale=True,
     )
@@ -1404,14 +1414,15 @@ def test_inventory_filter_label_stale(
     assert ids("unlabeled") == {unlabeled.id}
     assert ids("labeled") == {labeled.id}
     assert ids("stale") == {stale.id}
+    assert ids("printed") == {waiting.id, reprint.id}
 
 
 def test_an_unknown_label_state_is_refused_naming_the_known_ones(
     client: TestClient, admin_headers: dict[str, str], db: Session
 ) -> None:
     coin(db)
-    response = search(client, "coins", admin_headers, label="printed")
+    response = search(client, "coins", admin_headers, label="applied")
     assert response.status_code == 422
     detail = response.json()["detail"]
-    for state in ("labeled", "unlabeled", "stale"):
+    for state in ("labeled", "unlabeled", "stale", "printed"):
         assert state in detail

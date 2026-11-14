@@ -943,15 +943,26 @@ outlines should sit on the labels' edges. Text keeps 0.06" inside each
 label's edge, so a small drift stays on the label.
 
 **What printed.** When the print dialog closes the page asks whether the
-labels printed correctly. **Yes** records, for every item in the run, when
-it was labeled and the text printed on it and, when the run was printed
-from the print batch, takes those items out of the batch; **No** records
-nothing. Recording is bookkeeping, not an edit:
-the item's version and last-changed time do not move, so a form open on it
-still saves. An item **needs a new label** when the text its label would
-have now differs from the text printed; the *Needs a new label* run rechecks
-every labeled item first, so a change no save saw -- a vocabulary label
-renamed -- is caught too.
+labels printed correctly. **Yes** records, for every item in the run, the
+time and the text printed as a label **waiting to be applied** and, when the
+run was printed from the print batch, takes those items out of the batch;
+**No** records nothing. A waiting label is on the sheet, not the holder:
+the holder keeps whatever it carried, and the *Not yet labeled* and *Needs a
+new label* runs leave the item out, so it is not printed twice.
+
+**What is on the holder.** **To apply**, on the Labels page, lists the
+waiting labels, one list per *Yes* and sheet, newest first, unticked. Tick
+each once it is stuck on (**Select all** / **Deselect all** for a list or
+the whole page) and press **Applied**: the label becomes the holder's, with
+the time. **Not used** forgets a spoiled or lost label, so the next run
+prints the item again. In the inventory, the label filter's *Printed, not
+applied* and the selection's **Mark label applied** do the same for
+stragglers. All of it is bookkeeping, not an edit: the item's version and
+last-changed time do not move, so a form open on it still saves. An item
+**needs a new label** when the text its holder's label would have now
+differs from the text applied; the *Needs a new label* run rechecks every
+labeled item first, so a change no save saw -- a vocabulary label renamed --
+is caught too.
 
 **Font sizes** are in `frontend/src/management/pages/labels/labels.css`: 7pt
 on SL597 and 7.5pt on SL564, a long line set smaller down to 5pt and then

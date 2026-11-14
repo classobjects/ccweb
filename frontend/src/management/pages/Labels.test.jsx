@@ -13,6 +13,9 @@ vi.mock('../api', () => ({
     addToLabelBatch: vi.fn(),
     removeFromLabelBatch: vi.fn(),
     recordPrintedLabels: vi.fn(),
+    labelsWaiting: vi.fn(),
+    markLabelsApplied: vi.fn(),
+    markLabelsUnused: vi.fn(),
     searchInventory: vi.fn(),
   },
 }))
@@ -47,8 +50,18 @@ const BATCH_RUN = {
   skipped: ['CC-009909'],
 }
 
-function open({ run = BATCH_RUN, batch = [COIN, COIN_2, NOTE] } = {}) {
+const WAITING = [
+  { printed_at: '2026-11-14T18:00:00Z', sheet: 'SL597', labels: [COIN, COIN_2] },
+  { printed_at: '2026-11-13T18:00:00Z', sheet: 'SL564', labels: [NOTE] },
+]
+
+function open({
+  run = BATCH_RUN,
+  batch = [COIN, COIN_2, NOTE],
+  waiting = WAITING,
+} = {}) {
   api.labelSheets.mockResolvedValue([SL597, SL564])
+  api.labelsWaiting.mockResolvedValue(waiting)
   api.labelRun.mockResolvedValue(run)
   api.labelBatch.mockResolvedValue(batch)
   renderWithProviders(<Labels />)
@@ -160,7 +173,14 @@ describe('Labels', () => {
       { item_id: 12, lines: ['009902', '1922', 'Silver'] },
     ])
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
-    expect(screen.getByText('2 labels recorded as printed.')).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        '2 labels recorded as printed: tick them in To apply once they are on ' +
+          'their holders.',
+      ),
+    ).toBeInTheDocument()
+    // And To apply is drawn again: they wait there now.
+    expect(api.labelsWaiting).toHaveBeenCalledTimes(2)
     // The run and the batch are drawn again: what printed has left them.
     expect(api.labelRun).toHaveBeenCalledWith('batch')
     expect(api.labelBatch).toHaveBeenCalled()
@@ -273,6 +293,64 @@ describe('Labels', () => {
     await user.type(box, 'CC-000005{Enter}')
     expect(
       await screen.findByText('Not labelable: CC-000005. Nothing was added.'),
+    ).toBeInTheDocument()
+  })
+
+  it('lists the labels waiting to be applied, none ticked', async () => {
+    open()
+    const list = await screen.findByRole('region', { name: 'To apply: 3 labels' })
+    const boxes = within(list).getAllByRole('checkbox')
+    expect(boxes).toHaveLength(3)
+    for (const box of boxes) expect(box).not.toBeChecked()
+    expect(within(list).getByRole('button', { name: 'Applied (0)' })).toBeDisabled()
+    expect(within(list).getByRole('button', { name: 'Not used (0)' })).toBeDisabled()
+  })
+
+  it('selects and deselects the whole list, or one run', async () => {
+    const user = open()
+    const list = await screen.findByRole('region', { name: 'To apply: 3 labels' })
+    const [selectAll] = within(list).getAllByRole('button', { name: 'Select all' })
+    await user.click(selectAll)
+    expect(within(list).getByRole('button', { name: 'Applied (3)' })).toBeEnabled()
+    const [deselectAll] = within(list).getAllByRole('button', { name: 'Deselect all' })
+    await user.click(deselectAll)
+    expect(within(list).getByRole('button', { name: 'Applied (0)' })).toBeDisabled()
+
+    const [coinRun] = within(list).getAllByRole('group')
+    await user.click(within(coinRun).getByRole('button', { name: 'Select all' }))
+    expect(within(list).getByRole('button', { name: 'Applied (2)' })).toBeEnabled()
+    expect(screen.getByLabelText('CC-009903 is on its holder')).not.toBeChecked()
+  })
+
+  it('marks the ticked labels applied and says so', async () => {
+    const user = open()
+    await screen.findByRole('region', { name: 'To apply: 3 labels' })
+    api.markLabelsApplied.mockResolvedValue({ done: 1, not_waiting: [] })
+    await user.click(screen.getByLabelText('CC-009902 is on its holder'))
+    await user.click(screen.getByRole('button', { name: 'Applied (1)' }))
+    expect(api.markLabelsApplied).toHaveBeenCalledWith([12])
+    expect(await screen.findByText('1 label marked applied.')).toBeInTheDocument()
+    expect(api.labelsWaiting).toHaveBeenCalledTimes(2)
+  })
+
+  it('returns the ticked labels with Not used', async () => {
+    const user = open()
+    await screen.findByRole('region', { name: 'To apply: 3 labels' })
+    api.markLabelsUnused.mockResolvedValue({ done: 1, not_waiting: ['CC-009903'] })
+    await user.click(screen.getByLabelText('CC-009903 is on its holder'))
+    await user.click(screen.getByRole('button', { name: 'Not used (1)' }))
+    expect(api.markLabelsUnused).toHaveBeenCalledWith([21])
+    expect(
+      await screen.findByText(
+        '1 label returned to print again. No label was waiting for CC-009903.',
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('says when no label waits to be applied', async () => {
+    open({ waiting: [] })
+    expect(
+      await screen.findByText('No printed labels are waiting.'),
     ).toBeInTheDocument()
   })
 
