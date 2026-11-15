@@ -184,14 +184,17 @@ one that no other computer can start
 database, two computers*). Then start it:
 
 ```console
-sc start ccwebdb-postgres
+sc.exe start ccwebdb-postgres
 pg_isready -h localhost -p 5432
 ```
 
 `pg_isready` says `accepting connections` within a few seconds; run it again
-if it says `no response` at first. (The cluster folder and port shown are
+if it says `no response` at first. The service tool is written `sc.exe`
+here and throughout, never `sc`: pasted into PowerShell -- Windows
+Terminal's default tab -- a bare `sc` is `Set-Content`, which writes a file
+named `start` and never reaches the service. (The cluster folder and port shown are
 the defaults; with `CCWEB_DB_CLUSTER_DIR` or another port in `DATABASE_URL`,
-use those.) `sc qc ccwebdb-postgres` shows what was registered. The service
+use those.) `sc.exe qc ccwebdb-postgres` shows what was registered. The service
 runs as `LocalSystem`, which can read a cluster in the user's folder, and
 runs `pg_ctl.exe` from the conda environment by its full path: re-creating
 the `ccwebdb` environment breaks it until the service is registered again
@@ -434,8 +437,8 @@ restart it when it fails:
 
 ```console
 C:\ccwebdb-api\ccwebdb-api-service.exe install
-sc config ccwebdb-api obj= "NT SERVICE\ccwebdb-api"
-sc failure ccwebdb-api reset= 3600 actions= restart/10000/restart/30000/restart/60000
+sc.exe config ccwebdb-api obj= "NT SERVICE\ccwebdb-api"
+sc.exe failure ccwebdb-api reset= 3600 actions= restart/10000/restart/30000/restart/60000
 ```
 
 Grant the account what the API uses. The checkout's own folder is granted
@@ -656,14 +659,14 @@ copy the line rather than retype it:
 sc.exe create caddy start= auto binPath= "C:\caddy\caddy.exe run --config C:\caddy\Caddyfile"
 ```
 
-It prints `[SC] CreateService SUCCESS`. `sc` wants a space after each `=`
+It prints `[SC] CreateService SUCCESS`. `sc.exe` wants a space after each `=`
 and nothing else there: `start= auto`, exactly; a misspelt value is refused
 as an `Invalid start= field`. Start it and check it, with your domain in
 place of `YOUR_DOMAIN`:
 
 ```console
 sc.exe start caddy
-sc query caddy
+sc.exe query caddy
 curl -s -o nul -w "%{http_code}\n" https://YOUR_DOMAIN/
 ```
 
@@ -680,7 +683,7 @@ sc.exe start caddy
 
 | What it says | What it means |
 |---|---|
-| `StartService FAILED 2: The system cannot find the file specified` | the program named in the service is not there. `sc qc caddy` shows the path it runs (`BINARY_PATH_NAME`); put `caddy.exe` there, or point the service at where it is with `sc.exe config caddy binPath= "..."` |
+| `StartService FAILED 2: The system cannot find the file specified` | the program named in the service is not there. `sc.exe qc caddy` shows the path it runs (`BINARY_PATH_NAME`); put `caddy.exe` there, or point the service at where it is with `sc.exe config caddy binPath= "..."` |
 | `CreateService FAILED 5: Access is denied` | in a window that is not elevated, that is all it means: open one as administrator. In an elevated one, the name is still held by a service deleted while something had it open -- see below |
 | `CreateService FAILED 1073: The specified service already exists` | `sc.exe delete caddy` first |
 | `FAILED 1072: The specified service has been marked for deletion` | the same held name, said plainly -- see below |
@@ -740,19 +743,19 @@ cmd, stop the site, API first:
 
 ```console
 net stop ccwebdb-api
-sc stop caddy
-sc stop ccwebdb-postgres
+sc.exe stop caddy
+sc.exe stop ccwebdb-postgres
 ```
 
 Start it again, database first:
 
 ```console
-sc start ccwebdb-postgres
+sc.exe start ccwebdb-postgres
 net start ccwebdb-api
-sc start caddy
+sc.exe start caddy
 ```
 
-`sc query ccwebdb-postgres` and `sc query caddy` say `RUNNING` when they
+`sc.exe query ccwebdb-postgres` and `sc.exe query caddy` say `RUNNING` when they
 are up; step 9 checks the whole site.
 
 - **A certificate Caddy obtained itself** (*No certificate to buy*) is
@@ -808,13 +811,13 @@ anything it writes to one is lost:
   `conda activate ccwebdb` run in it, typed or pasted into the window
   rather than run from a `.cmd` file, which would drop the `%a`. The API
   service depends on the database's, so it stops first and starts last:
-  the site is down for about a minute. Stop both, and wait until `sc query
+  the site is down for about a minute. Stop both, and wait until `sc.exe query
   ccwebdb-postgres` says `STOPPED`:
 
   ```console
   net stop ccwebdb-api
-  sc stop ccwebdb-postgres
-  sc query ccwebdb-postgres
+  sc.exe stop ccwebdb-postgres
+  sc.exe query ccwebdb-postgres
   ```
 
   Then register the database again and start both. Neither `pg_ctl` line
@@ -824,7 +827,7 @@ anything it writes to one is lost:
   ```console
   pg_ctl unregister -N ccwebdb-postgres
   pg_ctl register -N ccwebdb-postgres -D "%USERPROFILE%\dev\ccweb\.pgdata" -S auto -o "-p 5432 -c logging_collector=on -c log_filename=postgresql-%a.log -c log_truncate_on_rotation=on"
-  sc start ccwebdb-postgres
+  sc.exe start ccwebdb-postgres
   net start ccwebdb-api
   ```
 

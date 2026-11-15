@@ -791,6 +791,29 @@ def test_every_relative_markdown_link_resolves() -> None:
     assert broken == []
 
 
+#: The service tool by its bare name, followed by one of its verbs.
+_BARE_SC = re.compile(
+    r"(?<![.\w-])sc (start|stop|query|qc|config|failure|create|delete)\b"
+)
+
+
+def test_documents_name_the_service_tool_sc_exe() -> None:
+    """A service command pasted into PowerShell must reach the service.
+
+    There `sc` is `Set-Content`: `sc start ccwebdb-postgres` writes a file
+    named `start` and starts nothing, and the `pg_isready` that follows
+    reads as a slow start. `sc.exe` is the same command in cmd and cannot be
+    taken for it.
+    """
+    bare = [
+        f"{doc.relative_to(REPO_ROOT).as_posix()}:{n}: {line.strip()}"
+        for doc in _tracked("*.md")
+        for n, line in enumerate(doc.read_text(encoding="utf-8").splitlines(), 1)
+        if _BARE_SC.search(line)
+    ]
+    assert bare == []
+
+
 #: A document a script or source file names, as `docs\x.md` or `docs/x.md`.
 _DOC_NAMED = re.compile(r"docs[\\/]([\w./-]+\.md)")
 

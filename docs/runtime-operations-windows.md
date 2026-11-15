@@ -604,7 +604,7 @@ When the other computer has certainly stopped and the file is still there
 (a crash leaves it too), delete it and start again. The `ccwebdb-postgres`
 service does not go through that script: registered to start with the
 machine, it would start under the other computer after any reboot. A
-shared cluster's service has to start by hand (`sc config
+shared cluster's service has to start by hand (`sc.exe config
 ccwebdb-postgres start= demand`, from an administrator cmd), so the server
 is down after every reboot until someone starts it.
 
