@@ -25,6 +25,11 @@ classifiers = [
 dependencies = [
     "alembic>=1.19.1",
     "argon2-cffi>=25.1.0",
+    # Not imported here: email-validator's, named only for its floor.
+    # Below 2.9.2 it carries GHSA-vvf4-9x63-8xvv (excessive memory and CPU
+    # use), and nothing in email-validator's own requirement keeps a
+    # resolve from pyproject.toml -- pip, or a re-lock -- off it.
+    "dnspython>=2.9.2",
     "email-validator>=2.3.0",
     "fastapi>=0.141.1",
     "httpx>=0.28.1",
