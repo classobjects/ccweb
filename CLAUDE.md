@@ -1,5 +1,11 @@
 # CLAUDE.md — ccweb
 
+> **⛔ NO HEREDOCS. EVER.** No `<<` in any shell command — not `cat > f <<EOF`,
+> not `python - <<'X'`, not `git commit -F - <<EOF`. A hook blocks every one,
+> so the call is wasted. Instead: **Write** the file (a script goes in the
+> scratchpad), then run it by path or pipe it with `<`. Edit for small changes.
+> Details under *Writing files* below.
+
 Project conventions. **These override any skill's or tool's defaults.** If a
 skill specifies a different path, format, or workflow, this file wins.
 
