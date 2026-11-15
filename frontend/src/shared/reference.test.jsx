@@ -304,6 +304,22 @@ describe('ReferenceSelect adding a value by its label alone', () => {
     expect(screen.getByPlaceholderText('label')).toBeInTheDocument()
   })
 
+  it('puts the cursor in the label box when Add is chosen', async () => {
+    // The code is optional and derived from the label, so the label is what
+    // is typed first, in both forms.
+    const user = userEvent.setup()
+    renderPicker()
+    await openAddForm(user, 'series')
+    expect(screen.getByPlaceholderText('label')).toHaveFocus()
+  })
+
+  it('puts the cursor in the label box of a label-only add form', async () => {
+    const user = userEvent.setup()
+    renderAttributePicker()
+    await openAddForm(user)
+    expect(screen.getByPlaceholderText('label')).toHaveFocus()
+  })
+
   it('adds by the label alone when the code box is left empty', async () => {
     // A label with the code box left empty is enough: the code is derived
     // from the label, so Add must not stay disabled.

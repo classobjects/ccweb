@@ -861,6 +861,10 @@ class SplitPieceIn(BaseModel):
     grade: str | None = Field(default=None, max_length=64)
     strike_type: str | None = Field(default=None, max_length=64)
     metal: str | None = Field(default=None, max_length=64)
+    #: The piece's design series, by code -- each quarter of a set of five
+    #: designs is its own. Of the lot's side: a coin lot's pieces take a
+    #: coin's series, a note lot's a note's. Omitted, the piece has none.
+    series: str | None = Field(default=None, max_length=64)
     year_start: int | None = Field(default=None, ge=-3000, le=2200)
     #: What this piece is, in the owner's words -- "1980 US Proof Set" out of
     #: a lot of nine. Omitted, the piece keeps the lot's description.

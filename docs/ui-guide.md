@@ -246,6 +246,7 @@ The split dialog's fields:
 | **Divide the cost** |  | Equally gives every item the same share -- nine proof sets, a tube of rounds. By value divides in proportion to a value you give each piece -- face, melt or a price guide -- so a half dollar does not carry the cost of a cent. Shipping is divided the same way. |
 | **Description (each row)** |  | What this piece is, in your words: "1980 US Proof Set". Left as it is, the piece keeps the lot's description. The seller's title stays the lot's. |
 | **Year (each row)** | not a note | This piece's year. Blank keeps the lot's. |
+| **Series (each row)** |  | This piece's design series -- each quarter of a set of designs is its own. Its name is added to the end of the piece's description, so pieces that would read alike can be told apart; another pick replaces it. Blank leaves the piece with no series. |
 | **Items (each row)** |  | How many items this row holds, usually 1. A row of 3 takes three shares of the cost and stays one item of 3 pieces. |
 | **Value of one (each row)** | dividing by value | What one item of this row is worth, on whatever basis you choose -- the same basis for every row. Only the proportions matter: it divides the lot's cost and is kept on the piece. |
 

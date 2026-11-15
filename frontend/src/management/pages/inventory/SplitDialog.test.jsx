@@ -2,7 +2,7 @@
 // Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
 // SPDX-License-Identifier: Apache-2.0
 import userEvent from '@testing-library/user-event'
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../../api', () => ({
@@ -11,7 +11,7 @@ vi.mock('../../api', () => ({
 
 import { api } from '../../api'
 import { FIELD_HELP } from '../../fieldHelp'
-import { renderWithProviders } from '../../../test/helpers'
+import { emptyReference, renderWithProviders } from '../../../test/helpers'
 import SplitDialog from './SplitDialog'
 
 // The nine proof sets of order 49-49494-94949, bought as one listing.
@@ -214,6 +214,82 @@ describe('SplitDialog', () => {
     await user.click(screen.getByRole('button', { name: 'Split into 2 pieces' }))
     expect(await screen.findByText('CC-000041 appears in an order')).toBeInTheDocument()
     expect(onSplit).not.toHaveBeenCalled()
+  })
+
+  describe('a series per piece', () => {
+    const series = (code, label, appliesTo = 'coin') => ({
+      code,
+      label,
+      sort_order: 0,
+      aliases: [],
+      extra: { applies_to: appliesTo },
+    })
+    const SERIES = [
+      series('lowell', 'Lowell'),
+      series('frank_church', 'Frank Church'),
+      series('funnyback', 'Funnyback', 'currency'),
+    ]
+
+    function openWithSeries(item = { ...LOT, piece_count: 2 }) {
+      renderWithProviders(
+        <SplitDialog item={item} onSplit={vi.fn()} onClose={vi.fn()} />,
+        { reference: emptyReference({ tables: { series: SERIES } }) },
+      )
+    }
+
+    const picker = (n) => screen.getByRole('combobox', { name: `Series of piece ${n}` })
+
+    it("adds the series' name to the description and sends its code", async () => {
+      const user = userEvent.setup()
+      openWithSeries()
+      await user.selectOptions(picker(1), 'lowell')
+      await user.selectOptions(picker(2), 'frank_church')
+
+      expect(descriptions()[0]).toHaveValue('US Proof Set. Lowell')
+      expect(descriptions()[1]).toHaveValue('US Proof Set. Frank Church')
+      await user.click(screen.getByRole('button', { name: 'Split into 2 pieces' }))
+      const sent = api.splitItem.mock.calls[0][1]
+      expect(sent.pieces.map((piece) => [piece.series, piece.description])).toEqual([
+        ['lowell', 'US Proof Set. Lowell'],
+        ['frank_church', 'US Proof Set. Frank Church'],
+      ])
+    })
+
+    it('replaces the name it added when another is picked, and drops it on blank', async () => {
+      const user = userEvent.setup()
+      openWithSeries()
+      await user.selectOptions(picker(1), 'lowell')
+      await user.selectOptions(picker(1), 'frank_church')
+      expect(descriptions()[0]).toHaveValue('US Proof Set. Frank Church')
+      await user.selectOptions(picker(1), '')
+      expect(descriptions()[0]).toHaveValue('US Proof Set')
+    })
+
+    it("keeps a description typed over, adding the series' name after it", async () => {
+      const user = userEvent.setup()
+      openWithSeries()
+      await user.clear(descriptions()[0])
+      await user.type(descriptions()[0], '2019-S Quarter.')
+      await user.selectOptions(picker(1), 'lowell')
+      expect(descriptions()[0]).toHaveValue('2019-S Quarter. Lowell')
+    })
+
+    it("offers only the lot's side's series", () => {
+      openWithSeries()
+      const offered = within(picker(1))
+        .getAllByRole('option')
+        .map((o) => o.textContent)
+      expect(offered).toContain('Lowell')
+      expect(offered).not.toContain('Funnyback')
+    })
+
+    it('sends no series for a piece left blank', async () => {
+      const user = userEvent.setup()
+      openWithSeries()
+      await user.click(screen.getByRole('button', { name: 'Split into 2 pieces' }))
+      const sent = api.splitItem.mock.calls[0][1]
+      expect(sent.pieces.every((piece) => !('series' in piece))).toBe(true)
+    })
   })
 
   it('explains every control, in both modes', async () => {

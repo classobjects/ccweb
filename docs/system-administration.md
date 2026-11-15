@@ -598,7 +598,7 @@ true while that happens.
 | Path | When | Notes |
 |---|---|---|
 | **Entering an item on a purchase** (`POST /api/inventory`) | every new acquisition | requires a purchase order; see *Entering a purchase* |
-| **Splitting a lot** (`POST /api/inventory/{id}/split`) | a bought lot becomes individual pieces | children inherit the parent's claims and a share of its cost (`equal`, or `relative` to a value per piece); the parent gets `split_at` and drops out of every count. In the console: **Split into pieces...** in the item editor, a row per piece with its own description and year |
+| **Splitting a lot** (`POST /api/inventory/{id}/split`) | a bought lot becomes individual pieces | children inherit the parent's claims and a share of its cost (`equal`, or `relative` to a value per piece); the parent gets `split_at` and drops out of every count. In the console: **Split into pieces...** in the item editor, a row per piece with its own description, year and design series, the series' name added to the description |
 | **`python -m app.seed`** | a new, empty database | five demo items; never on real data -- refused where items or purchases exist, unless `--into-existing` |
 
 Every path records an opening `item_status_history` row, so every item has a
@@ -1562,6 +1562,8 @@ An arrow key on a closed picker steps over it to the next value, so it opens
 only when chosen from the open list; Escape in its form cancels the form and
 leaves the editor open. Attributes and
 error types ask for the label alone; the rest ask for a code and a label.
+Choosing it puts the cursor in the label box, in either form: the code is
+optional, derived from the label when left empty.
 Where the label is enough:
 
 - **The code is derived** -- lower-cased, punctuation to underscores

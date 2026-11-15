@@ -916,6 +916,49 @@ def test_a_piece_is_not_told_its_lot_claimed_a_series(
     assert body["lot_claims"]["year_start"] == 1881
 
 
+def test_a_piece_holds_the_series_it_is_given(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    """Each piece of a set may be its own design, and holds the one sent."""
+    parent = build_split_lot(db)
+    pieces: list[dict[str, object]] = [{"source_title": f"Round {n}"} for n in (1, 2)]
+    pieces[0]["series"] = "morgan_dollar"
+    response = client.post(
+        f"/api/inventory/{parent.id}/split",
+        json={"mode": "equal", "pieces": pieces},
+        headers=admin_headers,
+    )
+    assert response.status_code == 200, response.text
+    ids = [piece["id"] for piece in response.json()["pieces"]]
+
+    first, second = (
+        client.get(f"/api/inventory/{i}", headers=admin_headers).json() for i in ids[:2]
+    )
+
+    assert first["series"] == "morgan_dollar"
+    assert second["series"] is None
+
+
+def test_a_coin_lot_piece_is_refused_a_note_series(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    """A design belongs to one side, and a piece is of its lot's kind."""
+    parent = build_split_lot(db)
+    pieces: list[dict[str, object]] = [{"source_title": f"Round {n}"} for n in (1, 2)]
+    pieces[0]["series"] = "funnyback"
+
+    response = client.post(
+        f"/api/inventory/{parent.id}/split",
+        json={"mode": "equal", "pieces": pieces},
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 422, response.text
+    assert "series funnyback belongs to banknotes" in response.json()["detail"]
+    db.refresh(parent)
+    assert parent.split_at is None
+
+
 #: A request as `client.request` takes it: method, path and JSON body.
 Request = tuple[str, str, dict[str, object] | None]
 

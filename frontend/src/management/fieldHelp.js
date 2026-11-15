@@ -164,6 +164,14 @@ export const FIELD_HELP = {
     title: 'Year',
     text: "This piece's year. Blank keeps the lot's.",
   },
+  split_series: {
+    title: 'Series',
+    text:
+      "This piece's design series -- each quarter of a set of designs is its " +
+      "own. Its name is added to the end of the piece's description, so pieces " +
+      'that would read alike can be told apart; another pick replaces it. Blank ' +
+      'leaves the piece with no series.',
+  },
   label_filter: {
     title: 'Label',
     text:

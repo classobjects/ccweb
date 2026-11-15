@@ -210,7 +210,9 @@ closed select takes each arrow key as a choice, and Add is the first option
 under the blank, so an arrow steps over it to the value beyond: down from the
 blank chooses the first value, up from the first value chooses the blank.
 Add opens only when it is chosen -- from the open list, with Enter or the
-mouse. In the add form, Escape cancels the form and nothing else: it does
+mouse. The form opens with the cursor in its label box -- in a code-and-label
+form too, since the code is optional and derived from the label. In the add
+form, Escape cancels the form and nothing else: it does
 not reach the dialog the picker sits in, which would close and lose what was
 typed there.
 

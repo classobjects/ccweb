@@ -7,7 +7,9 @@ import { api } from '../../api'
 import HelpScope from '../../HelpScope'
 import ModalDialog from '../../ModalDialog'
 import { fromCents, isMoney, toCents } from '../../../shared/cents'
-import { isCurrencyKind } from '../../../shared/kinds'
+import { fitsKind, isCurrencyKind, sideFor } from '../../../shared/kinds'
+import { ReferenceSelect } from '../../../shared/reference'
+import { useReference } from '../../../shared/reference-context'
 import ForSaleNotice from '../ForSaleNotice'
 import { useMounted } from '../../useMounted'
 
@@ -26,6 +28,12 @@ import { useMounted } from '../../useMounted'
  * Every piece keeps the lot's seller's title, purchase, listing and
  * classifiers; the lot itself is kept, marked split, so the receipt's item
  * code still leads somewhere. A split cannot be undone here.
+ *
+ * A piece may be given its own design series -- each quarter of a set of
+ * five designs is its own -- and the series' name is then added to the end
+ * of its description, so pieces that would otherwise read alike tell
+ * themselves apart: "2019-S Proof Set. Lowell". Picking another series
+ * replaces the name added; what else was typed is kept.
  */
 
 const MAX_PIECES = 200
@@ -57,9 +65,28 @@ const blankRow = (item) => {
     key: nextKey,
     description: item.description ?? '',
     year: startingYear(item),
+    series: '',
     count: '1',
     value: '',
   }
+}
+
+/**
+ * `description` with the series name `was` taken off its end and `now`
+ * put there, as a sentence of its own: "US Proof Set" and "Lowell" give
+ * "US Proof Set. Lowell". Only a name this dialog added is taken off --
+ * one at the very end, after ". " or alone -- so a description typed over
+ * keeps every word typed.
+ */
+function withSeries(description, was, now) {
+  let base = description.trim()
+  if (was) {
+    if (base === was) base = ''
+    else if (base.endsWith(`. ${was}`)) base = base.slice(0, -(was.length + 2))
+  }
+  if (!now) return base
+  const stem = base.replace(/\.+$/, '')
+  return stem ? `${stem}. ${now}` : now
 }
 
 /** Rows to start from: one per piece the lot says it holds, at least two. */
@@ -133,6 +160,10 @@ export default function SplitDialog({ item, onSplit, onClose }) {
   // A note's year is its series year: its pieces are asked for none.
   const dated = !isCurrencyKind(item.item_kind)
   const estimate = shares(rows, mode, item.item_cost)
+  const seriesValues = useReference('series', { includeRetired: true })
+  /** A series' name as the description shows it: its label, or its code. */
+  const seriesName = (code) =>
+    code ? ((seriesValues ?? []).find((e) => e.code === code)?.label ?? code) : ''
 
   /** Make the rows as many as the Pieces box says, if it holds a number. */
   function resizeRows() {
@@ -155,6 +186,26 @@ export default function SplitDialog({ item, onSplit, onClose }) {
     )
   }
 
+  /** Give row `index` the series picked, its name replacing the one added. */
+  const setSeries = (index) => (e) => {
+    const code = e.target.value
+    setRows((current) =>
+      current.map((row, at) =>
+        at === index
+          ? {
+              ...row,
+              series: code,
+              description: withSeries(
+                row.description,
+                seriesName(row.series),
+                seriesName(code),
+              ),
+            }
+          : row,
+      ),
+    )
+  }
+
   const problem = problems(rows, mode)
   const canSplit = !splitting && problem === '' && (listed.length === 0 || acknowledged)
 
@@ -172,6 +223,7 @@ export default function SplitDialog({ item, onSplit, onClose }) {
         piece_count: Number(row.count),
         ...(row.description.trim() !== '' && { description: row.description.trim() }),
         ...(dated && row.year.trim() !== '' && { year_start: Number(row.year) }),
+        ...(row.series !== '' && { series: row.series }),
         ...(mode === 'relative' && { relative_value: row.value.trim() }),
       })),
       ...(acknowledged && { acknowledge_for_sale: true }),
@@ -234,6 +286,7 @@ export default function SplitDialog({ item, onSplit, onClose }) {
               <th>#</th>
               <th>Description</th>
               {dated && <th>Year</th>}
+              <th>Series</th>
               <th>Items</th>
               {mode === 'relative' && <th>Value of one</th>}
               <th>Cost, about</th>
@@ -261,6 +314,18 @@ export default function SplitDialog({ item, onSplit, onClose }) {
                     />
                   </td>
                 )}
+                <td data-help="split_series" data-label="Series">
+                  <ReferenceSelect
+                    table="series"
+                    label={`Series of piece ${index + 1}`}
+                    value={row.series}
+                    onChange={setSeries(index)}
+                    // Offered for the lot's kind, and one added here is
+                    // marked for it, as the item editor's picker does.
+                    filter={(entry) => fitsKind(entry, item.item_kind)}
+                    addFields={{ applies_to: sideFor(item.item_kind) }}
+                  />
+                </td>
                 <td data-help="split_items" data-label="Items">
                   <input
                     aria-label={`Items in piece ${index + 1}`}

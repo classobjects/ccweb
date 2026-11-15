@@ -166,6 +166,9 @@ export function ReferenceSelect({
           <>
             <input
               placeholder="label"
+              // Choosing Add is asking to type a label: it is where the
+              // cursor goes, rather than left on a select that is gone.
+              autoFocus
               value={draft.label}
               onChange={(e) => setDraft({ ...draft, label: e.target.value })}
             />
@@ -200,6 +203,9 @@ export function ReferenceSelect({
             />
             <input
               placeholder="label"
+              // The label, not the code: the code is optional and is
+              // derived from the label when left empty.
+              autoFocus
               value={draft.label}
               onChange={(e) => setDraft({ ...draft, label: e.target.value })}
             />

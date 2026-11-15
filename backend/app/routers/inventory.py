@@ -191,6 +191,7 @@ PIECE_CLASSIFIERS: dict[str, type] = {
     "grade": Grade,
     "strike_type": StrikeType,
     "metal": Metal,
+    "series": Series,
 }
 
 
@@ -3577,6 +3578,18 @@ def _denomination_misfit(db: Session, code: str, is_currency: bool) -> str | Non
     return f"denomination {code} belongs to {side}"
 
 
+def _series_misfit(db: Session, code: str, is_currency: bool) -> str | None:
+    """Why a design series does not fit a piece of this kind, or None if it does.
+
+    An unknown code is not a misfit: `code_to_id` refuses it, naming it.
+    """
+    applies_to = db.scalar(select(Series.applies_to).where(Series.code == code))
+    if applies_to is None or (applies_to == "currency") == is_currency:
+        return None
+    side = "banknotes" if applies_to == "currency" else "coins"
+    return f"series {code} belongs to {side}"
+
+
 def _refuse_pieces_that_do_not_fit(
     db: Session, parent: InventoryItem, specs: Sequence[SplitPieceIn]
 ) -> None:
@@ -3584,7 +3597,8 @@ def _refuse_pieces_that_do_not_fit(
 
     A piece is of its lot's kind, so a banknote lot's pieces are notes: no
     year of their own (a note's year is its series year), no metal, and no
-    coin's denomination -- the same rules an edit of one keeps. Nothing is
+    coin's denomination or design series -- the same rules an edit of one
+    keeps. Nothing is
     split when one is refused.
     """
     is_currency = parent.item_kind_id == item_kinds.currency_kind_id(db)
@@ -3596,6 +3610,10 @@ def _refuse_pieces_that_do_not_fit(
             wrong.add("metal belongs to coins, not banknotes")
         if spec.denomination:
             misfit = _denomination_misfit(db, spec.denomination, is_currency)
+            if misfit is not None:
+                wrong.add(misfit)
+        if spec.series:
+            misfit = _series_misfit(db, spec.series, is_currency)
             if misfit is not None:
                 wrong.add(misfit)
     if wrong:

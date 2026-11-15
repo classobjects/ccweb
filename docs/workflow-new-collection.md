@@ -120,7 +120,10 @@ cost, so each can be sold and its gain reported separately.*
 `equal`ly for identical pieces -- nine proof sets, a tube of rounds -- or
 `relative` to a value per piece when they differ (a mint set's cent and half
 dollar). The dialog starts with a row per piece the lot records; each row may
-carry its own description and year, and shows its estimated share. Every
+carry its own description, year and design series, and shows its estimated
+share. A series picked for a row adds its name to the end of that row's
+description ("US Proof Set. Lowell"), so the pieces of a set of designs
+read apart; a piece is given no series unless one is picked. Every
 piece keeps the lot's seller's title, purchase, listing link and seller's
 item id.
 
