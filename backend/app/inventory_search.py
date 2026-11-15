@@ -138,6 +138,11 @@ class Facet:
     called differently (`item_kind` is counted, `kind` is filtered); the
     facet is counted without that filter, so its picker goes on offering the
     other values.
+
+    `order` lists the values in an order of the table's own -- an ORDER BY
+    over its row, aliased `t` -- rather than most common first. A coin's
+    denomination is read by face value, Cent before Dime before Quarter,
+    and a count order scatters them. Only a facet with a `table` can have one.
     """
 
     id_column: str
@@ -146,6 +151,7 @@ class Facet:
     alias: str = "i"
     label_column: str = "code"
     filter: str | None = None
+    order: str | None = None
 
 
 @dataclass(frozen=True)
@@ -507,6 +513,11 @@ COIN_VIEW = ViewSpec(
     ),
     facets={
         **_SHARED_FACETS,
+        # By face value, as a coin's denominations are read; the label breaks
+        # a tie between two of one face (a dollar coin and a dollar round).
+        "denomination": Facet(
+            "denomination_id", "denomination", order="t.face_value, t.label"
+        ),
         "item_kind": Facet("item_kind_id", "item_kind", filter="kind"),
         "metal": Facet("metal_id", "metal"),
         "bullion_form": Facet("bullion_form_id", "bullion_form"),
@@ -1225,7 +1236,8 @@ def count_facets(
     vocabulary defines fifty-odd grades and a real collection uses a dozen, so
     offering all of them buries the ones present. Counted against the current
     filters, so the numbers describe what narrowing further would do. Every
-    value present is returned, most common first; the vocabulary bounds how
+    value present is returned, most common first unless the facet has an
+    `order` of its own (a coin's denomination, by face); the vocabulary bounds how
     many there can be, and a cut-off would hide a value that is there.
 
     **A facet is counted without its own filter.** With Status set to
@@ -1289,18 +1301,23 @@ def count_facets(
                 text(
                     f"SELECT t.id, t.{facet.label_column}, to_jsonb(t) ->> 'label' "
                     f"FROM {facet.table} t WHERE t.id = ANY(:ids)"
+                    + (f" ORDER BY {facet.order}" if facet.order else "")
                 ),
                 {"ids": ids},
             ).all()
         }
+        count_of = {row.fid: row.n for row in counts}
+        # Most common first, or in the facet's own order: `resolved` was
+        # read in that order, and a dict keeps it.
+        listed = resolved if facet.order else count_of
         results[name] = [
             {
-                "value": resolved[row.fid][0],
-                "label": resolved[row.fid][1],
-                "count": row.n,
+                "value": resolved[fid][0],
+                "label": resolved[fid][1],
+                "count": count_of[fid],
             }
-            for row in counts
-            if row.fid in resolved and resolved[row.fid][0] is not None
+            for fid in listed
+            if fid in resolved and fid in count_of and resolved[fid][0] is not None
         ]
 
     return results

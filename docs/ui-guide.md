@@ -67,7 +67,9 @@ notes, with the columns that matter for them, such as serial, seal and district.
   dimes whose listing never says Mercury. **Search tips**, under the box, gives
   examples.
 - **The dropdowns** narrow the result, and each lists only the values among the
-  items the other filters found, with a count.
+  items the other filters found, with a count, most common first. On Coins,
+  Denomination is listed by face value instead -- Half Cent, Cent, Two Cents,
+  Dime and on up.
 - **A column heading** sorts the table by that column. A second click reverses
   the order.
 - **An item code** opens that item in the editor.

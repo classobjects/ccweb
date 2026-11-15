@@ -1426,3 +1426,25 @@ def test_an_unknown_label_state_is_refused_naming_the_known_ones(
     detail = response.json()["detail"]
     for state in ("labeled", "unlabeled", "stale", "printed"):
         assert state in detail
+
+
+def test_coin_denominations_are_offered_by_face_value(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    """Cent before Dime before Quarter, however many of each there are.
+
+    Most common first would put the three quarters ahead of the one cent.
+    """
+    for code, how_many in (
+        ("usd_coin_0_25", 3),
+        ("usd_coin_0_01", 1),
+        ("usd_coin_0_10", 2),
+    ):
+        for _ in range(how_many):
+            coin(db, denomination_id=code_id(db, Denomination, code))
+    db.commit()
+
+    body = search(client, "coins", admin_headers, facets=True).json()
+    offered = [(f["value"], f["count"]) for f in body["facets"]["denomination"]]
+
+    assert offered == [("usd_coin_0_01", 1), ("usd_coin_0_10", 2), ("usd_coin_0_25", 3)]
