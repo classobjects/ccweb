@@ -32,6 +32,7 @@ import {
   rebase,
   shown,
 } from './fieldMerge'
+import { shownAttributes } from './ruleAttributes'
 import { clearedByKind } from './kindChange'
 import FriedbergPanel from './FriedbergPanel'
 import HelpScope from '../../HelpScope'
@@ -482,6 +483,9 @@ export default function ItemEditForm({
   // series. Shown for every field not edited here, so what follows from
   // a fact appears as the fact is entered and can still be typed over.
   const [preview, setPreview] = useState(null)
+  // The attributes as the rules had them when the person last chose theirs
+  // (`shownAttributes`): what the rules read after that is still shown.
+  const [attributesAgainst, setAttributesAgainst] = useState([])
   // What the Suggest button last said: a note under the description.
   const [suggestNote, setSuggestNote] = useState('')
   // The Split dialog, while open; and what the last split made, to say so.
@@ -702,6 +706,19 @@ export default function ItemEditForm({
   // The item as it will be saved, where that is known: nothing is shown
   // from a preview once the draft it answered is gone.
   const shownItem = hasFields && preview ? preview : item
+  // The attributes the rules give the item as shown -- a radar typed into
+  // the serial is a Radar here before it is saved -- and the person's
+  // choices on top of them.
+  const ruledAttributes = fieldValue(shownItem, 'attributes')
+  const attributes = shownAttributes(
+    draft.attributes,
+    attributesAgainst,
+    ruledAttributes,
+  )
+  // The draft as Save and the suggestion send it: attributes as shown, so
+  // what the rules read since the person chose goes with their choice.
+  const sendable = (changes) =>
+    'attributes' in changes ? { ...changes, attributes } : changes
   // `in`, not `??`: a year cleared in the draft is null, and must not fall
   // back to showing the stored year it is about to replace.
   const value = (key) => (key in draft ? draft[key] : shownItem[key]) ?? ''
@@ -757,8 +774,10 @@ export default function ItemEditForm({
     else next.item_kind = kind
 
     const current = (key) => {
+      if (key === 'attributes') {
+        return shownAttributes(next.attributes, attributesAgainst, ruledAttributes)
+      }
       if (key in next) return next[key]
-      if (key === 'attributes') return (item.attributes ?? []).map((a) => a.code)
       return item[key]
     }
     const { fields, attributes } = clearedByKind(kind, current, vocab)
@@ -774,6 +793,7 @@ export default function ItemEditForm({
         was: attributes.dropped,
       }
       next.attributes = attributes.keep
+      setAttributesAgainst(ruledAttributes)
     }
     // A note has no "no date", and shows no box to untick: one ticked here
     // is not sent, since the server refuses it on a note. A stored one the
@@ -932,7 +952,7 @@ export default function ItemEditForm({
   // send it, and the errors the panel holds.
   async function suggestDescription() {
     // Not the description itself: the suggestion is what replaces it.
-    const changes = certsCleaned(draft)
+    const changes = certsCleaned(sendable(draft))
     delete changes.description
     const body = { changes }
     if (errorsChanged) {
@@ -1099,7 +1119,7 @@ export default function ItemEditForm({
       const acknowledge = forSale && acknowledged
       await api.updateInventoryItem(
         itemId,
-        fieldsPayload(draft, item, baseItem, acknowledge),
+        fieldsPayload(sendable(draft), item, baseItem, acknowledge),
       )
       setError('')
       return true
@@ -1678,10 +1698,13 @@ export default function ItemEditForm({
         ))}
 
         <AttributesField
-          item={item}
+          item={shownItem}
           kind={value('item_kind')}
-          codes={draft.attributes ?? fieldValue(item, 'attributes')}
-          onChange={(codes) => setDraft({ ...draft, attributes: codes })}
+          codes={attributes}
+          onChange={(codes) => {
+            setAttributesAgainst(ruledAttributes)
+            setDraft({ ...draft, attributes: codes })
+          }}
         />
 
         {/* Held here and recorded by Save, like every other edit on this

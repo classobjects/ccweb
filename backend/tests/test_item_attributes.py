@@ -308,6 +308,70 @@ def test_a_designation_a_corrected_serial_no_longer_earns_is_taken_back(
     assert _link(db, by_hand, "radar") is not None
 
 
+def _held(client: TestClient, headers: dict[str, str], item: InventoryItem) -> list:
+    """The item's attributes as (code, source, derived_by), in vocabulary order."""
+    body = _detail(client, headers, item)
+    return [(a["code"], a["source"], a["derived_by"]) for a in body["attributes"]]
+
+
+#: A radar, and no other digit pattern.
+RADAR_SERIAL = "A12344321B"
+
+
+def test_what_a_new_serial_earns_sent_with_it_stays_the_rules(
+    db: Session,
+    make_item: ItemFactory,
+    client: TestClient,
+    admin_headers: dict[str, str],
+) -> None:
+    """The editor shows what a serial earns as it is typed, and sends it.
+
+    Sent beside the serial that earns them, they are still the rule's own
+    links: a corrected serial takes them back.
+    """
+    note = _note(db, make_item)
+    response = _set(
+        client,
+        admin_headers,
+        note,
+        ["radar", "fancy_serial"],
+        serial_number=RADAR_SERIAL,
+    )
+    assert response.status_code == 200
+    rule = ("derived", "serial_pattern")
+    assert _held(client, admin_headers, note) == [
+        ("fancy_serial", *rule),
+        ("radar", *rule),
+    ]
+
+    # The editor leaves out what the corrected serial no longer earns.
+    response = _set(client, admin_headers, note, [], serial_number="A12344322B")
+    assert response.status_code == 200
+    assert _held(client, admin_headers, note) == []
+
+
+def test_what_a_new_serial_earns_taken_off_in_the_same_save_stays_off(
+    db: Session,
+    make_item: ItemFactory,
+    client: TestClient,
+    admin_headers: dict[str, str],
+) -> None:
+    note = _note(db, make_item)
+    response = _set(
+        client, admin_headers, note, ["fancy_serial"], serial_number=RADAR_SERIAL
+    )
+    assert response.status_code == 200
+    assert _held(client, admin_headers, note) == [
+        ("fancy_serial", "derived", "serial_pattern")
+    ]
+    link = _link(db, note, "radar")
+    assert link is not None
+    assert link.removed_at is not None
+    # The rule does not put it back later.
+    run_serial_patterns(db, commit=True)
+    assert _codes(_detail(client, admin_headers, note)) == ["fancy_serial"]
+
+
 def test_an_attribute_for_the_other_kind_of_item_is_refused(
     db: Session,
     make_item: ItemFactory,

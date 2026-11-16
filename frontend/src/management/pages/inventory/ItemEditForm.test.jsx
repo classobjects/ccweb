@@ -1810,6 +1810,7 @@ describe('Attributes', () => {
     tables: {
       item_attribute: [
         attribute('star', 'Star Note', 'currency', 'serial'),
+        attribute('radar', 'Radar Serial', 'currency', 'serial'),
         attribute('no_motto', 'No Motto', 'any', 'variety'),
         attribute('first_strike', 'First Strike', 'coin', 'release'),
         attribute('cac', 'CAC (green sticker)', 'coin', 'verification'),
@@ -1895,6 +1896,98 @@ describe('Attributes', () => {
         base: { attributes: ['cac'] },
       }),
     )
+  })
+
+  describe('read from a serial typed here', () => {
+    const RADAR = 'A12344321B'
+    const radarHeld = {
+      code: 'radar',
+      label: 'Radar Serial',
+      group: 'serial',
+      source: 'derived',
+      derived_by: 'serial_pattern',
+    }
+    const note = { item_kind: 'currency', serial_number: null, attributes: [] }
+
+    // The preview runs Save's rules: a radar serial earns Radar there.
+    beforeEach(() => {
+      api.updateInventoryItem.mockResolvedValue({})
+      api.previewItem.mockImplementation(async (id, { changes }) => ({
+        ...item,
+        version: 3,
+        ...note,
+        serial_number: changes.serial_number ?? null,
+        attributes: changes.serial_number === RADAR ? [radarHeld] : [],
+      }))
+    })
+
+    const typeSerial = (user) =>
+      user.type(screen.getByRole('textbox', { name: 'Serial number' }), RADAR)
+    const save = async (user) => {
+      await user.click(screen.getByRole('button', { name: /save/i }))
+      await waitFor(() => expect(api.updateInventoryItem).toHaveBeenCalled())
+      return api.updateInventoryItem.mock.calls[0][1]
+    }
+    // The chip, not the picker's option of the same name. Waited for: it
+    // comes with the preview, asked a moment after the last keystroke.
+    const radarChip = () =>
+      screen.findByRole('button', { name: 'Remove Radar Serial' }, { timeout: 3000 })
+
+    it('shows the attribute before saving, marked as read, and leaves it to Save', async () => {
+      const user = userEvent.setup()
+      await open(note)
+      await typeSerial(user)
+
+      expect(await radarChip()).toBeVisible()
+      expect(screen.getByTitle('Read from the serial number')).toHaveTextContent('read')
+      // Untouched, the attributes are not sent: Save reads the same set.
+      expect(await save(user)).not.toHaveProperty('attributes')
+    })
+
+    it('sends it with an attribute chosen after it was read', async () => {
+      const user = userEvent.setup()
+      await open(note)
+      await typeSerial(user)
+      await radarChip()
+      await user.selectOptions(
+        screen.getByRole('combobox', { name: 'item_attribute' }),
+        'no_motto',
+      )
+
+      expect((await save(user)).attributes).toEqual(['radar', 'no_motto'])
+    })
+
+    it('adds it to attributes chosen before the serial was typed', async () => {
+      const user = userEvent.setup()
+      await open(note)
+      await user.selectOptions(
+        screen.getByRole('combobox', { name: 'item_attribute' }),
+        'no_motto',
+      )
+      await typeSerial(user)
+
+      expect(await radarChip()).toBeVisible()
+      expect((await save(user)).attributes).toEqual(['no_motto', 'radar'])
+    })
+
+    it('keeps it off once the person takes it off', async () => {
+      const user = userEvent.setup()
+      await open(note)
+      await typeSerial(user)
+      const remove = await radarChip()
+      const asked = api.previewItem.mock.calls.length
+      await user.click(remove)
+      // The preview asked again, answering the same serial, does not put it back.
+      await waitFor(() =>
+        expect(api.previewItem.mock.calls.length).toBeGreaterThan(asked),
+      )
+      await waitFor(() =>
+        expect(api.previewItem.mock.results.at(-1).value).resolves.toBeTruthy(),
+      )
+
+      expect(screen.queryByRole('button', { name: 'Remove Radar Serial' })).toBeNull()
+      expect((await save(user)).attributes).toEqual([])
+    })
   })
 
   it('offers nothing until the vocabulary has loaded', async () => {

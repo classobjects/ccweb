@@ -712,7 +712,9 @@ export const FIELD_HELP = {
       'What makes this piece special beyond its grade: Star Note, Radar, First ' +
       'Strike, CAC and the like. Type in Find to narrow the list, choose one to add ' +
       "it, and use its x to remove it. Only those that fit the item's kind are " +
-      'offered.',
+      'offered. What the serial number earns -- Star Note, Radar, Binary, ' +
+      'Trinary, Ladder, Scattered Ladder and the rest -- is added as the serial ' +
+      'is typed, marked "read", before you save; one you remove stays removed.',
   },
   error_details: {
     title: 'Error details',

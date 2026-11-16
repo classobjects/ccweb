@@ -3349,16 +3349,16 @@ def _set_scalars(item: InventoryItem, data: dict[str, Any]) -> None:
 
 def _set_attributes_sent(
     db: Session, item: InventoryItem, attributes: list[str] | None, user_id: int
-) -> None:
-    """Make the item's attributes the set an edit sent; none sent changes none.
+) -> bool:
+    """Make the item's attributes the set an edit sent; True if any changed.
 
-    A code unknown or of the other kind refuses the edit (422). The links
-    are another table. Touching the item is what moves its version, so a
-    form opened before this save gets a 409 rather than putting the old set
-    back.
+    None sent changes none. A code unknown or of the other kind refuses the
+    edit (422). The links are another table. Touching the item is what
+    moves its version, so a form opened before this save gets a 409 rather
+    than putting the old set back.
     """
     if attributes is None:
-        return
+        return False
     try:
         changed = item_attributes.set_attributes(db, item, attributes, user_id=user_id)
     except item_attributes.AttributeRefused as exc:
@@ -3368,6 +3368,7 @@ def _set_attributes_sent(
         ) from exc
     if changed:
         item.updated_at = datetime.now(UTC)
+    return changed
 
 
 @router.patch(
@@ -3481,9 +3482,6 @@ def update_item(
     if years is not None:
         item.year_start, item.year_end = years
     item.no_date = no_date
-    # After the classifiers: a kind changed in this request decides which
-    # attributes fit.
-    _set_attributes_sent(db, item, attributes, admin.id)
     # After the classifiers, so a new certificate takes the grading service
     # this same save sets; another table, so touched like the links above.
     if certs is not None and _set_certifications(db, item, certs):
@@ -3504,7 +3502,7 @@ def update_item(
             _end_offers_holding(
                 db, [item.id], locked, lambda _live: standing, "edited to"
             )
-        _finish_edit(db, item, data, sent, before, admin.id)
+        _finish_edit(db, item, data, sent, before, admin.id, attributes)
 
     db.refresh(item)
     return item
@@ -3517,11 +3515,26 @@ def _finish_edit(
     sent: dict[str, Any],
     before: dict[str, Any],
     user_id: int,
+    attributes: list[str] | None,
 ) -> None:
-    """Derive what an edit's writes decide, and log them: the edit's last flushes."""
+    """Derive what an edit's writes decide, and log them: the edit's last flushes.
+
+    The attribute set sent is applied after the rules have read the edit's
+    facts, not before. The editor shows the attributes a new serial earns
+    as it is typed (its preview runs these same rules), so the set it sends
+    already holds them: met here as the rule's own links, they stay the
+    rule's, to be taken back if the serial is corrected. Applied first,
+    they would have been written as the person's and kept for good. One the
+    person took off is marked removed, and the second pass leaves it so.
+    """
     forget(db, [item.id], [_column(field) for field in data])
     hold(db, [item.id], _emptied(data))
     refresh_items(db, [item.id])
+    # After the rules, and the classifiers before them: a kind changed in
+    # this request decides which attributes fit.
+    if _set_attributes_sent(db, item, attributes, user_id):
+        # The label's stale flag and Duplicate Serial read the links.
+        refresh_items(db, [item.id])
     db.flush()
     written = ["description"] if _fill_blank_description(db, item) else []
     # A note saved at no cost is a gift: the fields that moves are logged

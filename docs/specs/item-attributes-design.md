@@ -126,6 +126,19 @@ and a picker of the attributes that fit the item's kind. Changing an item
 across note and coin drops the attributes that no longer fit
 (`kindChange.js`).
 
+The chips follow the editor's preview (`POST /api/inventory/{id}/preview`),
+which runs Save's rules on the unsaved edit: a serial typed as a radar shows
+Radar Serial (and Fancy Serial), marked *read*, before it is saved, and a
+serial corrected away from it drops the chip. The suggested description reads
+the same set. Until the person touches the chips, Save sends no `attributes`
+and derives the same set itself. Once they have, Save sends the set shown
+(`ruleAttributes.js`): their choice, with what the rules have read or taken
+back since they made it, and a chip they took off stays off. The PATCH
+applies a sent set *after* the rules have run on the edit, so a code the
+rules have just derived is met as the rule's own link and stays derived, to be
+taken back if the serial is corrected later; one left out of the set is marked
+removed and is not derived back.
+
 ### Attributes from facts: No Motto
 
 "In God We Trust" first appeared on paper money on some Series 1935G $1
