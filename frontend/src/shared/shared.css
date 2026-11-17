@@ -449,6 +449,18 @@ button.link {
   flex: 0 1 7rem;
 }
 
+/* A split piece's series picker, in a table whose boxes take no width of
+   their own (above): with nothing to hold its column open, the find box
+   and select were squeezed to a few pixels each while the dialog had room
+   to spare. Wide enough for both side by side and a series name -- only
+   where the table is a table: stacked on a phone (below), the cell is a
+   row as wide as the screen and the picker fills it. */
+@media (min-width: 40.0625rem) {
+  .split-series .reference-select {
+    min-width: 16rem;
+  }
+}
+
 /* Adding a vocabulary value inline, from the picker that needed it. */
 .add-reference {
   display: flex;

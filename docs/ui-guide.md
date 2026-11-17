@@ -319,6 +319,8 @@ ticked, since finding the coins can take days.
 each. To add an item, type its number in **Item number** and press **Add to
 batch**.
 
+![The Labels page: the print batch's sheets, the labels printed and waiting to be applied, and the print batch](images/ui-guide/labels.png)
+
 Its fields:
 
 | Field | What it is |

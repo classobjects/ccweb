@@ -314,7 +314,11 @@ export default function SplitDialog({ item, onSplit, onClose }) {
                     />
                   </td>
                 )}
-                <td data-help="split_series" data-label="Series">
+                <td
+                  className="split-series"
+                  data-help="split_series"
+                  data-label="Series"
+                >
                   <ReferenceSelect
                     table="series"
                     label={`Series of piece ${index + 1}`}
