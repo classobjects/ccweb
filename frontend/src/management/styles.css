@@ -436,6 +436,14 @@ td.item-code {
 .offer-rows td[data-help='offer_listing_number'] {
   width: 14%;
 }
+/* The Split dialog's table: as wide as the dialog, the Description box
+   taking the room left over. Only where the table is a table: stacked on a
+   phone, each cell is a row as wide as the screen. */
+@media (min-width: 40.0625rem) {
+  .split-rows td[data-help='split_description'] {
+    width: 100%;
+  }
+}
 /* Open only: a closed <dialog> must stay hidden. The body scrolls and the
    help band stays at the bottom, as in the console itself. */
 .edit-dialog[open] {

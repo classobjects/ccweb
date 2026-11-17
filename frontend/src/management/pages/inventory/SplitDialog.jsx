@@ -241,7 +241,7 @@ export default function SplitDialog({ item, onSplit, onClose }) {
 
   const label = `Split ${item.item_code} into pieces`
   return (
-    <ModalDialog label={label} onClose={onClose}>
+    <ModalDialog label={label} onClose={onClose} wide>
       <HelpScope>
         <h2>{label}</h2>
         <p className="muted">
@@ -280,7 +280,7 @@ export default function SplitDialog({ item, onSplit, onClose }) {
           </label>
         </div>
         {/* On a phone each row stacks into a card, a line per labeled cell. */}
-        <table className="stacks">
+        <table className="table stacks split-rows">
           <thead>
             <tr>
               <th>#</th>

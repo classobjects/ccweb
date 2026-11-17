@@ -335,7 +335,7 @@ PICTURES: list[Picture] = [
         frame="dialog",
         width=1008,
     ),
-    Picture("split_dialog", f"{M}/inventory/coins", _split, frame="dialog", width=1008),
+    Picture("split_dialog", f"{M}/inventory/coins", _split, frame="dialog"),
     Picture("labels", f"{M}/labels", frame="whole"),
     Picture("photos", f"{M}/photos"),
     Picture("order_lookup", f"{M}/order-lookup"),
