@@ -457,7 +457,7 @@ button.link {
    row as wide as the screen and the picker fills it. */
 @media (min-width: 40.0625rem) {
   .split-series .reference-select {
-    min-width: 16rem;
+    min-width: 22rem;
   }
 }
 
