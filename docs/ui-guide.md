@@ -1,16 +1,17 @@
 # A tour of the screens
 
-Last revised: 2026-11-12.
+Last revised: 2026-11-16.
 
-What each screen looks like and how it is used, for someone deciding whether
-to run this software or learning to. It shows the screens; for the order the
-work is done in, read
-[workflow-new-collection.md](workflow-new-collection.md), and for every rule
-behind them, [system-administration.md](system-administration.md).
+This guide shows what each screen looks like and how it is used. It is for
+someone deciding whether to run this software, or learning to.
+
+It covers the screens only. For the order the work is done in, read
+[workflow-new-collection.md](workflow-new-collection.md). For every rule
+behind the screens, read [system-administration.md](system-administration.md).
 
 **The pictures hold made-up data.** The shop, the people, the orders and the
-prices are invented, and the coin and note pictures are drawings marked "DEMO
-IMAGE". A long form is shown whole, in one tall picture; a long table or list
+prices are invented. The coin and note pictures are drawings marked "DEMO
+IMAGE". A long form is shown whole, in one tall picture. A long table or list
 is shown by its first rows and its last.
 
 ## Contents
@@ -22,27 +23,34 @@ is shown by its first rows and its last.
 
 ## The console
 
-The management console, at `/management`, is where the business is run. It
-shows costs, sellers and customers, so only a manager can sign in to it.
+The management console is where the business is run. It shows costs, sellers
+and customers, so only a manager can sign in to it. (Its address is
+`/management` on the site.)
 
 ![The console's sign-in page](images/ui-guide/login.png)
 
 ### Getting around
 
-The menu across the top groups the pages by what the work is for: **Inventory**,
-**Procurement**, **Selling**, **Reports** and **Settings**. The group holding the
-page you are on is underlined.
+The menu across the top groups the pages by the work they are for:
+**Inventory**, **Procurement**, **Selling**, **Reports** and **Settings**. The
+group holding the page you are on is underlined.
 
-**Theme**, beside your sign-in name at the right of the header (here and in
-the shop), shows the pages light or dark, or **Automatic** to follow the
-device's own setting. The choice is saved to your account, so every computer
-and phone you sign in on shows the same.
+**Theme** sits beside your sign-in name, at the right of the header, in the
+console and in the shop. It shows the pages light or dark, or choose
+**Automatic** to follow the device's own setting. The choice is saved to your account, so
+every computer and phone you sign in on shows the same.
 
 The band at the bottom of the window explains whichever field has focus, on
-every page. Each form below is followed by its fields and that explanation,
-word for word; a field explained once is referred back to after that. Underlined letters in labels are keyboard shortcuts: Alt plus the
-letter goes to that field. In a window whose button shows "Ctrl+S", Ctrl+S
-saves it, and Escape closes a dialog.
+every page. In this guide, each form is followed by a table of its fields with
+that explanation, word for word. A field explained once is referred back to
+after that.
+
+Keyboard shortcuts:
+
+- An underlined letter in a label is a shortcut: Alt plus the letter goes to
+  that field.
+- In a window whose button shows "Ctrl+S", Ctrl+S saves it.
+- Escape closes a dialog.
 
 ![The Selling group open in the console's menu](images/ui-guide/menu.png)
 
@@ -50,9 +58,10 @@ saves it, and Escape closes a dialog.
 
 #### Coins and Currency
 
-Most work starts on these two pages, which find items. Coins lists everything
-that is not a banknote: coins, bullion, sets, medals and tokens. Currency lists
-notes, with the columns that matter for them, such as serial, seal and district.
+Most work starts on these two pages, which find items. **Coins** lists
+everything that is not a banknote: coins, bullion, sets, medals and tokens.
+**Currency** lists notes, with the columns that matter for them, such as
+serial, seal and district.
 
 ![The Coins page: search, filters, checks and the item table, first rows](images/ui-guide/coins_1.png)
 
@@ -62,17 +71,19 @@ notes, with the columns that matter for them, such as serial, seal and district.
 
 ![The Currency page, last rows](images/ui-guide/currency_2.png)
 
-- **Search** matches a title, description, rating, item code or order number,
-  and also the names of what an item is: `mercury` finds Winged Liberty Head
-  dimes whose listing never says Mercury. **Search tips**, under the box, gives
-  examples.
-- **The dropdowns** narrow the result, and each lists only the values among the
+- **Search** matches a title, description, rating, item code or order number.
+  It also matches the names of what an item is: `mercury` finds Winged Liberty
+  Head dimes whose listing never says Mercury. **Search tips**, under the box,
+  gives examples.
+- **The dropdowns** narrow the result. Each lists only the values held by the
   items the other filters found, with a count, most common first. On Coins,
   Denomination is listed by face value instead -- Half Cent, Cent, Two Cents,
   Dime and on up.
 - **A column heading** sorts the table by that column. A second click reverses
   the order.
 - **An item code** opens that item in the editor.
+
+##### Search and filters (Coins and Currency)
 
 The search and filters, as the help band explains each one:
 
@@ -108,20 +119,22 @@ The search and filters, as the help band explains each one:
 | **Select this page (table heading)** |  | Ticks every item on this page -- this page only, not every match -- to act on them together: edit them in bulk, offer them for sale or group them into a lot. |
 | **A row's tick box** |  | Tick items to act on them together: edit them in bulk, offer them for sale or group them into a lot. |
 
-The rounded chips are data-quality checks, each with the number of items it
-finds. Click one to list those items, and click it again to go back. This one
-shows the items with no grade:
+The rounded chips are data-quality checks. Each shows how many items it finds.
+Click one to list those items, and click it again to go back. This one shows
+the items with no grade:
 
 ![Coins narrowed to the items with no grade, first rows](images/ui-guide/coins_issue_1.png)
 
 ![Coins narrowed to the items with no grade, last rows](images/ui-guide/coins_issue_2.png)
 
-Tick rows to get the bulk bar, which sets what the selected items share, offers
-them for sale or groups them into a sales lot:
+Tick rows to get the bulk bar. It sets a value on all the selected items,
+offers them for sale, or groups them into a sales lot:
 
 ![Three coins selected, with the bulk bar above the table, first rows](images/ui-guide/coins_bulk_1.png)
 
 ![Three coins selected, with the bulk bar above the table, last rows](images/ui-guide/coins_bulk_2.png)
+
+##### The bulk bar
 
 The bulk bar's fields:
 
@@ -139,11 +152,11 @@ The bulk bar's fields:
 | **Mark label applied** |  | Records that the printed labels of the selected items are now on their holders, and says "N marked applied". Only an item with a printed label waiting is marked; the bar names any other and leaves it as it was. |
 | **Add to label batch** |  | Puts every selected item on the list of labels to print next, and says "N added". All or none: if any item is sold or otherwise takes no label, nothing is added and the refusal names each such item. The Labels page prints the batch. |
 
-A search that finds a single item opens it in the editor straight away. Once
-closed, it stays closed until the search changes.
+A search that finds a single item opens it in the editor straight away. If you
+close the editor, it stays closed until the search changes.
 
-**Review these** walks through the current result one item at a time, in the
-editor. The list is frozen when you start, so fixing an item does not skip the
+**Review these** walks through the current result in the editor, one item at a
+time. The list is frozen when you start, so fixing an item does not skip the
 next one. **Leave review** or Escape returns to the list.
 
 ![Review, with the item editor open on the first of the result](images/ui-guide/review.png)
@@ -152,10 +165,11 @@ next one. **Leave review** or Escape returns to the list.
 
 Everything recorded about one item is here. Changes are held until **Save**.
 
-- A value marked *suggested* was worked out from the facts, and typing over it
-  makes it yours, so nothing fills that field again.
-- **Suggest description** writes a description from what the form shows. Save
-  with the Description left empty writes the suggested one for you.
+- A value marked *suggested* was worked out from the facts. Type over it and
+  it is yours: nothing fills that field again.
+- **Suggest description** writes a description from what the form shows. If
+  you save with the Description left empty, the suggested one is written for
+  you.
 - **Photographs** adds pictures from a file or a web address, and sets which is
   primary.
 - **Offers** shows where the item has been offered, and **History** shows who
@@ -166,11 +180,13 @@ Everything recorded about one item is here. Changes are held until **Save**.
 ![The item editor for a coin](images/ui-guide/editor_coin.png)
 
 A note has its own fields, such as series, serial, plates, seal, signatures and
-district, and most of them follow from the series and serial:
+district. Most of them follow from the series and serial:
 
 ![The item editor for a note](images/ui-guide/editor_note.png)
 
-The editor's fields, top to bottom. Which appear depends on the kind: a note has its own, and a coin, bullion, a set, a medal or a token share the rest, in an order suited to each.
+The editor's fields, top to bottom. Which ones appear depends on the kind. A
+note has its own. A coin, bullion, a set, a medal or a token share the rest, in
+an order suited to each.
 
 | Field | Shown | What it is |
 |---|---|---|
@@ -236,7 +252,7 @@ The editor's fields, top to bottom. Which appear depends on the kind: a note has
 | **Delete item...** |  | Removes an item that should never have been entered -- one purchase recorded twice. It asks first. An item with pieces split from it, one that has ever been offered, or one in a sales lot cannot be deleted, and the reason is shown. |
 
 **Split into pieces...** turns a lot bought as one item into one item per
-piece, each with its share of the cost. It cannot be undone.
+piece. Each piece gets its share of the cost. A split cannot be undone.
 
 ![Splitting a lot of four coins, with the cost divided equally](images/ui-guide/split_dialog.png)
 
@@ -255,42 +271,52 @@ The split dialog's fields:
 #### Labels
 
 Prints holder labels on sheets of labels from sheetlabels.com: SL597 for
-coins, SL564 for notes and sets. A sheet partly used can be finished: a run
-starts at any cell.
+coins, SL564 for notes and sets. A run can start at any cell, so a sheet partly
+used can be finished.
 
-**What to print** is one of three: **The print batch**, the items you added
-for the next small run; **Not yet labeled**, every item that takes a holder
-label and has none on its holder or waiting to be applied; **Needs a new
-label**, items whose label no longer says what the item does. Once chosen, a source shows how many labels it
-prints. The batch's items that no longer take a label -- sold since they
-were added, say -- are named above the sheets; they do not print and stay in
-the batch until removed.
+**What to print** is one of three sources:
 
-Each sheet product the run needs is drawn to scale, every cell a button:
-click the first unused label on your sheet. The cells before it show as used,
-the cells the run fills are shaded, and the line under the sheet says where
-the run ends, onto further sheets if it needs them -- those always start at
-cell 1. **Print** opens the browser's print dialog on the labels alone, one
-page per sheet; print at 100% -- "Actual size", not "Fit to page" -- with
-headers and footers turned off. When the dialog closes the page asks **Did
-these labels print correctly?** **Yes** records every label in the run as
-printed, with the text on it, waiting in **To apply**, and empties the batch
-of what printed; **No** records nothing, and the run can be printed again
-from any cell. **Print a
-test page** prints the same layout with every cell's outline, on plain
-paper, to hold against a sheet; it asks nothing after.
+- **The print batch**: the items you added for the next small run.
+- **Not yet labeled**: every item that takes a holder label and has none on
+  its holder or waiting to be applied.
+- **Needs a new label**: items whose label no longer says what the item does.
 
-**To apply**, under the sheets, lists the labels printed and not yet on
-their holders: one list per print and sheet, newest first, in the order
-they are on the sheet, each with a tick box, none ticked -- finding the
-coins can take days. Tick a label once it is on its holder; **Select all**
-and **Deselect all**, above the lists and on each, tick or clear them
-together. **Applied** records the ticked labels as on their holders. **Not
-used** returns them -- spoiled, lost or set aside -- so the next run prints
-them again. Unticked labels stay.
+Once chosen, a source shows how many labels it prints. Items in the batch that
+no longer take a label -- sold since they were added, say -- are named above
+the sheets. They do not print, and they stay in the batch until removed.
 
-**The print batch**, under To apply, lists its items with a **Remove**
-beside each. Type an item's number in **Item number** and press **Add to
+**Choosing where to start.** Each sheet product the run needs is drawn to
+scale, and every cell is a button. Click the first unused label on your
+sheet. The cells before it show as used, and the cells the run fills are
+shaded. The line under the sheet says where the run ends. A run that needs
+further sheets goes onto them, and those always start at cell 1.
+
+**Printing.** **Print** opens the browser's print dialog on the labels alone,
+one page per sheet. Print at 100% -- "Actual size", not "Fit to page" -- with
+headers and footers turned off. When the dialog closes, the page asks **Did
+these labels print correctly?**
+
+- **Yes** records every label in the run as printed, with the text on it,
+  waiting in **To apply**. It also empties the batch of what printed.
+- **No** records nothing, and the run can be printed again from any cell.
+
+**Print a test page** prints the same layout on plain paper, with every
+cell's outline, to hold against a sheet. It asks nothing afterwards.
+
+**To apply**, under the sheets, lists the labels printed and not yet on their
+holders. There is one list per print and sheet, newest first, with the labels
+in the order they are on the sheet. Each label has a tick box, and none starts
+ticked, since finding the coins can take days.
+
+- Tick a label once it is on its holder. **Select all** and **Deselect all**,
+  above the lists and on each one, tick or clear them together.
+- **Applied** records the ticked labels as on their holders.
+- **Not used** returns the ticked labels -- spoiled, lost or set aside -- so
+  the next run prints them again.
+- Unticked labels stay.
+
+**The print batch**, under To apply, lists its items with a **Remove** beside
+each. To add an item, type its number in **Item number** and press **Add to
 batch**.
 
 Its fields:
@@ -303,9 +329,9 @@ Its fields:
 
 #### Photos
 
-Photographs not yet filed against an item wait here, usually from a bulk import
-whose file names could not be matched. Enter an item code, use **Find** to check
-it, then **Link**.
+Photographs not yet filed against an item wait here. They usually come from a
+bulk import whose file names could not be matched. To file one, enter an item
+code, use **Find** to check it, then **Link**.
 
 ![Two unattached photographs waiting to be filed](images/ui-guide/photos.png)
 
@@ -319,7 +345,7 @@ Its one field:
 
 Finds a purchase from what you remember of it: part of an order number, a vendor
 or a seller, a range of dates, or whether anything is still to arrive. The page
-says how many purchases match and what they cost together, and an order number
+says how many purchases match and what they cost together. An order number
 opens that purchase.
 
 ![Order lookup listing every purchase](images/ui-guide/order_lookup.png)
@@ -338,8 +364,9 @@ Its fields:
 #### Purchases
 
 Every item enters the system on a purchase, so its cost always traces to an
-order. Start a new one with a vendor. The order number, date, web address, seller
-and notes are optional, and a blank number is issued as `Order-0001` and up.
+order. Start a new one with a vendor. The order number, date, web address,
+seller and notes are optional. A purchase with no order number is given one:
+`Order-0001` and up.
 
 ![Starting a new purchase](images/ui-guide/purchases.png)
 
@@ -348,17 +375,24 @@ and pick it from the list:
 
 ![Choosing an existing purchase](images/ui-guide/purchase_existing.png)
 
-An open purchase lists its items as Coins and Currency do -- year, mint,
-series, grade and the description for a coin, serial, series and seal for a
-note -- in item-code order until a column heading is clicked to sort by it,
-with a total under them -- item cost,
-shipping, tax and what was paid in all, the figure Order lookup shows as its
-Cost -- and takes more under **New item**. A kind and a
-title make the item and open it in the editor. **Add another like** starts the
-next one from what items on the same order usually share. When two or more items
-are still ordered, **Receive all N still ordered** under the table receives the
-whole parcel here, in the same dialog as Receiving's. **Receive these** goes to
-Receiving for this purchase, to receive line by line.
+An open purchase lists its items as Coins and Currency do: year, mint, series,
+grade and the description for a coin; serial, series and seal for a note. They
+are in item-code order until a column heading is clicked to sort by it.
+
+Under the items is their total: item cost, shipping, tax and what was paid in
+all. What was paid in all is the figure Order lookup shows as its Cost.
+
+To add an item, use **New item**. A kind and a title make the item and open it
+in the editor. **Add another like** starts the next one from what items on the
+same order usually share.
+
+To receive what arrived:
+
+- When two or more items are still ordered, **Receive all N still ordered**,
+  under the table, receives the whole parcel here, in the same dialog as
+  Receiving's.
+- **Receive these** goes to Receiving for this purchase, to receive line by
+  line.
 
 ![An open purchase listing its coins and its note as Coins and Currency do, their total, Receive all under them, and the New item form](images/ui-guide/purchase_open.png)
 
@@ -388,10 +422,12 @@ The fields of a purchase and of its New item form:
 #### Receive
 
 Records what actually arrived and where it is kept. Only a received item can be
-offered for sale. A parcel is found by its order number, its vendor or seller,
-or what is in it, and by default only what has not arrived yet. Searched by an
-order number, everything still to come on that purchase is listed, with
-**Receive all** above it for the whole parcel:
+offered for sale.
+
+Find a parcel by its order number, its vendor or seller, or what is in it. By
+default the search finds only what has not arrived yet. Searched by an order
+number, everything still to come on that purchase is listed, with **Receive
+all** above it for the whole parcel:
 
 ![Receiving searched by order number: what has not arrived on it, with Receive all above the search](images/ui-guide/receive_found.png)
 
@@ -415,14 +451,20 @@ The search's fields:
 
 ![Receiving for one order, with Receive all above the search](images/ui-guide/receive_order.png)
 
-Clicking a line opens it. Confirm the facts that identify the piece, then give
-the arrival date, storage location, any note and photographs, and choose one of
-**Receive**, **Missing**, **Returned** or **Canceled**. The date and location
-carry to the next item, so a parcel going into one box is picked once.
+Click a line to open it:
+
+1. Confirm the facts that identify the piece.
+2. Give the arrival date, storage location, any note and photographs.
+3. Choose one of **Receive**, **Missing**, **Returned** or **Canceled**.
+
+The date and location carry to the next item, so a parcel going into one box
+needs the box picked only once.
 
 ![Receiving one coin](images/ui-guide/receive_dialog.png)
 
-The fields of the receipt for one item. The first group confirms what the piece is; **Receive all** shows only Arrived, Storage location, Note and Photo:
+The fields of the receipt for one item. The first group confirms what the
+piece is. **Receive all** shows only Arrived, Storage location, Note and
+Photo:
 
 | Field | Shown | What it is |
 |---|---|---|
@@ -442,11 +484,17 @@ The fields of the receipt for one item. The first group confirms what the piece 
 | **Photo** | one item | Pictures of the piece as it arrived: choose files, drag them onto the box, or paste one with Ctrl+V. They are added to the item after the receipt is recorded, and only when one item is being received. |
 
 When the whole parcel came, **Receive all** records every line still ordered in
-one step. It is offered on the purchase itself, on a purchase opened with **Receive these**, and after
-a search whose items are all on one purchase -- type its order number and
-press **Find** -- where it names that order ("Receive all 3 still ordered on
-49573"). Items from two purchases offer nothing; pick a line, or open the
-purchase.
+one step. On a purchase opened here it is offered only while two or more
+lines are still ordered; with one left, receive that line. It is offered:
+
+- on the purchase itself;
+- on a purchase opened with **Receive these**;
+- after a search whose items are all on one purchase -- type its order number
+  and press **Find**. There it names that order: "Receive all 3 still ordered
+  on 49573".
+
+A search that finds items from two purchases offers nothing. Pick a line, or
+open the purchase.
 
 ![Receiving all three items on an order](images/ui-guide/receive_all.png)
 
@@ -457,8 +505,10 @@ An item is offered in one place at a time, so it can never be sold twice.
 #### Listings
 
 Every offer, in the web store and elsewhere, with its price, cost and margin.
-**Edit** changes the wording or price and **End** withdraws the offer.
-**Record sale...** enters a sale made on another platform.
+
+- **Edit** changes the wording or price.
+- **End** withdraws the offer.
+- **Record sale...** enters a sale made on another platform.
 
 ![Listings across the web store, eBay and an auction house, first rows](images/ui-guide/listings_1.png)
 
@@ -476,10 +526,10 @@ The filters above the list, and the fields of **Edit**:
 | **Description** | Edit | The wording that goes with the title. It may be left empty. |
 | **Listing number** | Edit | The platform's own number for this listing, where it has one: the eBay item number, the lot number on an auction site. Leave it empty if there is none. |
 
-An offer is made with **Offer for sale...**, from the Coins or Currency bulk bar
-or the item editor. Choose a platform and format, then give each item a price,
-title and description. The dialog shows cost, estimated fees, net and margin as
-you type, and **Fill blank prices** prices the empty rows for the margin you ask
+To make an offer, use **Offer for sale...** in the Coins or Currency bulk bar or
+in the item editor. Choose a platform and format, then give each item a price,
+title and description. As you type, the dialog shows cost, estimated fees, net
+and margin. **Fill blank prices** prices the empty rows for the margin you ask
 for.
 
 ![The offer dialog](images/ui-guide/offer_dialog.png)
@@ -496,8 +546,8 @@ The offer dialog's fields:
 | **Description (each row)** | The wording that goes with the title. It starts as the description on record, and may be left empty. |
 | **Listing number (each row)** | The platform's own number for this listing, where it has one. Leave it empty if there is none yet. |
 
-Recording an outside sale takes the price, buyer, the platform's order number
-and the fees it actually charged, and ends the listing:
+Recording an outside sale takes the price, the buyer, the platform's order
+number and the fees it actually charged. It ends the listing:
 
 ![Recording a sale made on eBay](images/ui-guide/record_sale.png)
 
@@ -513,9 +563,11 @@ Its fields:
 #### Lots
 
 A sales lot is a group of items sold as one thing. The items stay individually
-owned, costed and reportable. Select them on Coins or Currency and choose **Group
-into lot...**, and they appear here to be worded and offered. Offering freezes
-the lot. Ending the offer dissolves it, and **Re-offer as a lot** starts it again.
+owned, costed and reportable.
+
+To make a lot, select the items on Coins or Currency and choose **Group into
+lot...**. They appear here to be worded and offered. Offering freezes the lot.
+Ending the offer dissolves it, and **Re-offer as a lot** starts it again.
 
 ![An assembling lot, and the lots already offered, sold or dissolved, first rows](images/ui-guide/lots_1.png)
 
@@ -530,14 +582,14 @@ the lot. Ending the offer dissolves it, and **Re-offer as a lot** starts it agai
 
 #### Auctions
 
-The platform runs the bidding, and this page runs everything around it. An
-auction moves from draft to scheduled, optionally consigned at an auction house,
-then closed and settled.
+The platform runs the bidding; this page runs everything around it. An auction
+moves from draft to scheduled, then to closed and settled. Between scheduled
+and closed it may, optionally, be consigned at an auction house.
 
 ![The list of auctions](images/ui-guide/auctions.png)
 
-While it is a draft, **Add lot...** puts in a sales lot or a single item, and lot
-numbers and reserves can be edited:
+While the auction is a draft, **Add lot...** puts in a sales lot or a single
+item, and lot numbers and reserves can be edited:
 
 ![A draft auction with two lots](images/ui-guide/auction_draft.png)
 
@@ -560,8 +612,8 @@ The fields of **New auction...**, **Add lot...**, the lot table, **Mark consigne
 | **Consigned on** | Mark consigned, an auction house | The day the items went to the auction house. They are recorded as at the house from then on, until they are sold or come back. |
 | **Return items to** | Cancel or Remove, once consigned | Where the items are put away now they are back from the auction house. Asked for because the auction was consigned: the items left the premises, and something must say where they are now. |
 
-Once closed, each lot's result, hammer price and buyer are entered, and **Settle**
-makes one order per buyer. Unsold lots come back:
+Once the auction is closed, enter each lot's result, hammer price and buyer.
+**Settle** then makes one order per buyer. Unsold lots come back:
 
 ![A settled auction: one lot sold, one unsold](images/ui-guide/auction_settled.png)
 
@@ -577,10 +629,12 @@ The settlement grid, shown once the auction is closed:
 
 #### Sales
 
-Every order, whatever its source. Change the status from the order's row, through
-pending, paid, packed, shipped and delivered, or canceled and refunded. **Edit**
-revises an order still pending or paid. No money moves here: orders are settled
+Every order, whatever its source. No money moves here: orders are settled
 outside the system.
+
+Change an order's status from its row. It goes through pending, paid, packed,
+shipped and delivered, or canceled and refunded. **Edit** revises an order
+that is still pending or paid.
 
 ![The Sales page](images/ui-guide/sales.png)
 
@@ -609,7 +663,7 @@ The fields of the Sales page and of an order, new or edited:
 #### Platforms
 
 Where items are sold, with each account's default fees. Those fees are only for
-estimating a price. Nothing is shipped for them, so enter them from your own
+estimating a price. The software comes with none, so enter them from your own
 account, with the date you read them.
 
 ![The Platforms page](images/ui-guide/platforms.png)
@@ -634,9 +688,9 @@ The fields of **Add platform** and **Edit**:
 
 #### Spot prices
 
-The price of a troy ounce of each metal, the fine ounces held and what they melt
-for. Type a price and press **Record**. A price is never edited: a new one becomes
-the current one, and the old one is kept.
+The price of a troy ounce of each metal, the fine ounces held, and what they
+melt for. To record a price, type it and press **Record**. A price is never
+edited: a new one becomes the current one, and the old one is kept.
 
 ![Spot prices with holdings and melt value](images/ui-guide/spot_prices.png)
 
@@ -648,16 +702,17 @@ Its one field:
 
 ### Reports
 
-Reports answer questions over the whole collection, and only read. Choose one from
-the list on the left, which is grouped as Collection, Data quality, Purchasing and
-receiving, Selling and Money.
+Reports answer questions about the whole collection. They only read; they
+change nothing. Choose one from the list on the left, which is grouped as
+Collection, Data quality, Purchasing and receiving, Selling and Money.
 
 ![The Reports page before a report is chosen, first rows](images/ui-guide/reports_1.png)
 
 ![The Reports page before a report is chosen, last rows](images/ui-guide/reports_2.png)
 
-Set any parameters and press **Run**. **Export workbook** downloads the same result
-as a spreadsheet, and **Print** prints it. A linked cell opens the items it counts.
+Set any parameters and press **Run**. **Export workbook** downloads the same
+result as a spreadsheet, and **Print** prints it. A linked cell opens the items
+it counts.
 
 ![Holdings: what the collection is made of, first rows](images/ui-guide/report_cb_holdings_1.png)
 
@@ -715,9 +770,11 @@ photograph, a grade or weight, a location and a cost.
 
 #### People
 
-**Accounts** are who can sign in, as a manager or a customer. They are deactivated,
-never deleted. **Customers** are who has bought, with their contact details and
-addresses, including buyers recorded from other platforms.
+**Accounts** are the people who can sign in, as a manager or a customer. An
+account is deactivated, never deleted.
+
+**Customers** are the people who have bought, with their contact details and
+addresses. They include buyers recorded from other platforms.
 
 ![People: accounts](images/ui-guide/people.png)
 
@@ -744,10 +801,10 @@ The fields of both tabs:
 
 #### Vocabularies
 
-The values the pickers offer: grades, denominations, series, storage forms and the
-rest. Choose a vocabulary to add a value or give one another name (an alias, which
-search and the pickers then recognize). The ⋮ menu on a row renames, retires, merges
-or edits it.
+The values the pickers offer: grades, denominations, series, storage forms and
+the rest. Choose a vocabulary to add a value, or to give one another name. That
+other name is an alias, which search and the pickers then recognize. The ⋮
+menu on a row renames, retires, merges or edits it.
 
 ![The storage form vocabulary with a row's menu open, first rows](images/ui-guide/vocab_storage_form_1.png)
 
@@ -772,15 +829,17 @@ Its fields and a row's actions:
 
 #### Lists
 
-The lists you keep yourself. **Friedberg numbers** starts empty, because publishers'
-numbering is not shipped with the software
+The lists you keep yourself. **Friedberg numbers** starts empty, because
+publishers' numbering is not shipped with the software
 ([reference-data.md](reference-data.md)).
 
 ![Lists: Friedberg numbers, empty](images/ui-guide/lists.png)
 
-**Sellers** are the accounts purchases were bought from, **Vendors** are where they
-were made, and **Storage locations** are where items are kept, with how many are in
-each.
+The other lists:
+
+- **Sellers** are the accounts purchases were bought from.
+- **Vendors** are where purchases were made.
+- **Storage locations** are where items are kept, with how many are in each.
 
 ![Lists: sellers](images/ui-guide/lists_sellers.png)
 
@@ -810,11 +869,12 @@ Each list has a **Search** box, and its fields appear when a row is added or edi
 
 ## The shop
 
-The shop is a separate application for customers, at the site's root. It never shows
-costs or where an item came from. `SHOP_OPEN=false` closes it to the public
-([settings.md](settings.md)).
+The shop is a separate application for customers, at the site's root. It never
+shows costs or where an item came from. The setting `SHOP_OPEN=false` closes it
+to the public ([settings.md](settings.md)).
 
-The catalog shows what is offered in the web store, with search and a filter by type:
+The catalog shows what is offered in the web store, with search and a filter by
+type:
 
 ![The shop's catalog, first rows](images/ui-guide/shop_catalog_1.png)
 
@@ -824,8 +884,8 @@ An item's page shows its primary photograph, price, description and details:
 
 ![An item's page in the shop](images/ui-guide/shop_detail.png)
 
-The cart holds what a customer means to buy. **Place order** records the order, and
-payment is arranged outside the system.
+The cart holds what a customer means to buy. **Place order** records the order.
+Payment is arranged outside the system.
 
 ![The shop's cart](images/ui-guide/shop_cart.png)
 
@@ -833,7 +893,8 @@ payment is arranged outside the system.
 
 ![A customer's orders](images/ui-guide/shop_orders.png)
 
-Customers sign in or register here. An account made this way is always a customer.
+Customers sign in or register here. An account made by registering in the shop
+is always a customer.
 
 ![The shop's sign-in page](images/ui-guide/shop_login.png)
 
