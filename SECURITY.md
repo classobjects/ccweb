@@ -48,22 +48,24 @@ doing more harm than described here is still welcome.
 
 - **Someone can lock an account out of signing in.** After 20 failed
   sign-ins to one account within 15 minutes, further attempts on it are
-  refused before the password is checked -- the right one included -- until
-  the oldest failure is 15 minutes old (`app/throttle.py`). Each address is
-  also held to 10 failures in 15 minutes, but someone sending from many
-  addresses can keep an account locked for as long as they keep sending.
-  The limit is what stops password guessing, so it holds for the owner too.
-  The counts live in the API's memory: restarting the API service clears
-  them, and the owner can sign in again at once.
+  refused before the password is checked -- the right one included. This
+  lasts until the oldest failure is 15 minutes old (`app/throttle.py`).
+  Each address is also held to 10 failures in 15 minutes. But someone
+  sending from many addresses can keep an account locked for as long as
+  they keep sending. The limit is what stops password guessing, so it holds
+  for the owner too. The counts live in the API's memory: restarting the
+  API service clears them, and the owner can sign in again at once.
 - **Sign-in tokens are kept in the browser's `localStorage`**, where any
   script running on the site's own pages can read them. A cross-site
   scripting flaw would therefore let an attacker take a signed-in
-  session. Defenses against that: the content security policy in
-  `deploy/Caddyfile` runs only the site's own scripts and DigiCert's seal,
-  and refuses inline scripts; React escapes everything it renders; and the
-  pages never insert raw HTML. A stolen access token works for 30 minutes,
-  a refresh token for 14 days (`ACCESS_TOKEN_EXPIRE_MINUTES`,
-  `REFRESH_TOKEN_EXPIRE_DAYS`). Signing out, or a manager setting the
-  account a new password, ends every one of the account's sessions at
-  once, on every device: each token carries the account's version, which
-  is checked on every request.
+  session. The defenses against that:
+  - the content security policy in `deploy/Caddyfile` runs only the site's
+    own scripts and DigiCert's seal, and refuses inline scripts;
+  - React escapes everything it renders;
+  - the pages never insert raw HTML.
+
+  A stolen access token works for 30 minutes, a refresh token for 14 days
+  (`ACCESS_TOKEN_EXPIRE_MINUTES`, `REFRESH_TOKEN_EXPIRE_DAYS`). Signing
+  out, or a manager setting the account a new password, ends every one of
+  the account's sessions at once, on every device. Each token carries the
+  account's version, which is checked on every request.
