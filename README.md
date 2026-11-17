@@ -2,20 +2,17 @@
 
 Numismatic and Currency Web Platform for Inventory and Sales.
 
-An inventory and sales system for a coin and paper-money collector or small
-dealer: record what was bought and what it cost, describe each item in the
-hobby's standard terms, photograph it, and sell it -- in your own web shop
-and on outside platforms such as eBay, Whatnot and auction houses -- without
-ever selling an item twice. It answers three questions a business depends
-on: what exactly each item is, what was paid for it, and whether it is still
-available to sell.
+ccweb is a self-hosted inventory and sales system for a coin and paper-money
+collector or small dealer. With it you:
 
-New here? Start with [docs/overview.md](docs/overview.md) (what it is and
-how it is built), then [docs/architecture.md](docs/architecture.md). This
-README is the developer's entry point: the stack, the code layout, the API
-and where to find everything else. Why the system exists, and what it
-deliberately does not do, is in [docs/project-purpose.md](docs/project-purpose.md).
-Licensed under the [Apache License 2.0](LICENSE).
+- record what was bought and what it cost;
+- describe each item in the hobby's standard terms;
+- photograph it;
+- sell it -- in your own web shop and on outside platforms such as eBay,
+  Whatnot and auction houses -- without ever selling an item twice.
+
+It answers the three questions a business depends on: what exactly each item
+is, what was paid for it, and whether it is still available to sell.
 
 A FastAPI backend and two React applications share one PostgreSQL database:
 
@@ -26,9 +23,20 @@ A FastAPI backend and two React applications share one PostgreSQL database:
   order.
 
 The `ccwebdb` database is the system of record for the collection. Data is
-corrected in the console or by passes over stored items, and the whole
-database is backed up and restored as a workbook by `app.workbook_backup`
-([docs/system-administration.md](docs/system-administration.md)).
+corrected in the console, or by passes -- command-line corrections run over
+stored items. `app.workbook_backup` backs up and restores the whole database
+as a workbook ([docs/system-administration.md](docs/system-administration.md)).
+
+**Where to go next.** New here? Read [docs/overview.md](docs/overview.md)
+first: what it is and how it is built. Then read
+[docs/architecture.md](docs/architecture.md). Why the system exists, and what
+it deliberately does not do, is in
+[docs/project-purpose.md](docs/project-purpose.md). To install it, see
+*Getting started* below.
+
+This README is the developer's entry point: the stack, the code layout, the
+API and where to find everything else. Licensed under the
+[Apache License 2.0](LICENSE).
 
 ## Stack
 
@@ -42,15 +50,18 @@ database is backed up and restored as a workbook by `app.workbook_backup`
 
 ## Getting started
 
-The system is developed and hosted on Windows 11 and on Ubuntu LTS; every
-script in `scripts/` comes as a `.cmd` for Windows and a `.sh` for Linux
-that do the same. You need Git; everything else -- Python 3.13, uv, Node,
-PostgreSQL -- is installed into one conda environment by the setup
-documents, which also fetch the code. First time on a machine, follow
+The system is developed and hosted on Windows 11 and on Ubuntu LTS. Every
+script in `scripts/` comes as a `.cmd` for Windows and a `.sh` for Linux,
+and the two do the same.
+
+**First time on a machine.** You need Git. The setup documents fetch the
+code and install everything else -- Python 3.13, uv, Node, PostgreSQL --
+into one conda environment. Follow
 **[docs/environment-setup-windows.md](docs/environment-setup-windows.md)**
 or **[docs/environment-setup-linux.md](docs/environment-setup-linux.md)**.
-After that, one command starts the database, the API and both
-applications. On Windows, in cmd:
+
+**Every time after that.** One command starts the database, the API and
+both applications. On Windows, in cmd:
 
 ```console
 cd /d %USERPROFILE%\dev\ccweb
@@ -64,17 +75,19 @@ cd ~/dev/ccweb
 ./scripts/ccweb_startup.sh
 ```
 
-Stop with `ccweb_shutdown`; see what is running with `ccweb_status`.
-[docs/runtime-operations-windows.md](docs/runtime-operations-windows.md) and
-[docs/runtime-operations-linux.md](docs/runtime-operations-linux.md) cover
-every script, and their *Quick reference* lists the addresses of the shop,
-the console and the API. Every port, host and folder is a setting in
-`.env`; `.env.example` lists them all with their defaults.
+Stop with `ccweb_shutdown`. See what is running with `ccweb_status`.
 
-To run a public shop on a server, follow
+- [docs/runtime-operations-windows.md](docs/runtime-operations-windows.md)
+  and [docs/runtime-operations-linux.md](docs/runtime-operations-linux.md)
+  cover every script. Their *Quick reference* lists the addresses of the
+  shop, the console and the API.
+- Every port, host and folder is a setting in `.env`. `.env.example` lists
+  them all with their defaults.
+
+**A public shop on a server.** Follow
 [docs/deployment-windows.md](docs/deployment-windows.md) or
-[docs/deployment-linux.md](docs/deployment-linux.md): a new installation
-starts from an empty database and makes its first manager with
+[docs/deployment-linux.md](docs/deployment-linux.md). A new installation
+starts from an empty database. Its first manager is made with
 `python -m app.create_admin`.
 
 ## Documentation
@@ -143,7 +156,10 @@ backend/
                          attribute), serial_pairs (the star note of a note's
                          serial number already in the collection, or a star
                          note's plain twins), cell_text (text written to a
-                         workbook cell stays text, never a formula)
+                         workbook cell stays text, never a formula),
+                         duplicate_serials (serial ranges printed twice),
+                         labels (holder labels: what is printed, waiting,
+                         applied or stale)
     photographs          imaging (strip, orient, hash), image_store,
                          storage, image_fetch (from a web address),
                          image_urls (an address at its host's full size),
@@ -151,7 +167,8 @@ backend/
     passes               classifier_defaults, series_match, series_classify,
                          serial_patterns, photo_import, vendor_cleanup,
                          ebay_orders, listing_links, bullion_weights,
-                         image_sources, image_enlarge, seller_titles:
+                         image_sources, image_enlarge, seller_titles,
+                         description_review:
                          corrections over stored
                          items, run as python -m app.<name>; dry run unless
                          --commit. pass_cli is the --commit --by EMAIL
@@ -199,7 +216,7 @@ docs/                    project, operations and design documents; designs
 
 ## API
 
-Everything is under `/api`; the live OpenAPI page at `/docs` is the complete
+Everything is under `/api`. The live OpenAPI page at `/docs` is the complete
 reference. "Manager" is the administrator role (`UserRole.manager`, checked
 by `deps.require_admin`). By area:
 
@@ -214,6 +231,7 @@ by `deps.require_admin`). By area:
 | Photographs | `/images` (upload, from a web address, file against an item, list, delete, renditions), `/image-links` (role, primary, move, detach) | renditions public, by content hash; the rest manager |
 | Selling | `/sales-venues`, `/metal-prices` (spot prices), `/offers`, `/listings` (edit, end, record a sale), `/sales-lots`, `/auctions` | manager |
 | Friedberg numbers | `/friedberg`, `/inventory/{id}/friedberg` | manager; the owner's own numbers only |
+| Holder labels | `/labels` (label sheets, the run to print, the batch, printed, waiting, applied, unused) | manager |
 | Reports | `/reports` (catalog, run, `/workbook`) | manager |
 | Health | `GET /health`, outside `/api` | public; touches nothing |
 
@@ -221,32 +239,34 @@ Rules that hold across the API:
 
 - **Classifiers cross the API as codes, not ids** (`"grade": "MS64"`). An
   unknown code is a 422 naming the field; the API never invents a vocabulary
-  row. An unrecognized search filter is also a 422, never ignored -- a dropped
+  row. An unrecognized search filter is also a 422, never ignored: a dropped
   filter returns the whole collection and looks like a result.
-- **Concurrent edits are detected.** Reads return a `version`; a write that
+- **Concurrent edits are detected.** Reads return a `version`. A write that
   sends a stale one is refused with 409 and the current state.
-- **No item is offered twice.** At most one active offer per item, enforced
-  by the partial unique index `uq_offer_claim_active`. Every selling write
-  locks lot rows, then items, then listings, each in id order
+- **No item is offered twice.** An item has at most one active offer,
+  enforced by the partial unique index `uq_offer_claim_active`. Every
+  selling write locks lot rows, then items, then listings, each in id order
   ([docs/specs/lock-order-design.md](docs/specs/lock-order-design.md)).
 - **Order lines record the price paid** (`sales_order_item.unit_price`) and
   a snapshot of the item as sold, so later edits do not rewrite history.
-- **Every item has a permanent `item_code`** (`CC-000123`), issued once from
-  a sequence and never reused.
-- **Photographs are stripped of metadata at ingest** (they carry GPS), and
-  only generated `thumb` and `web` renditions are ever served, addressed by
-  the hash of their content; an original never leaves the server. The shop
-  shows a listed item's primary photograph; storage location, cost and
-  history never reach a customer -- `routers/catalog.py` builds each public
-  response field by field.
+- **Every item has a permanent `item_code`** (`CC-000123`). It is issued
+  once from a sequence and never reused.
+- **Photographs are stripped of metadata at ingest**, because they carry
+  GPS. Only the generated `thumb` and `web` renditions are ever served,
+  addressed by the hash of their content; an original never leaves the
+  server.
+- **A customer sees only what a buyer needs.** The shop shows a listed
+  item's primary photograph. Storage location, cost and history never reach
+  a customer: `routers/catalog.py` builds each public response field by
+  field.
 - **Long lists are paged.** Orders, listings and auctions take `limit` and
-  `offset` and carry the unpaged total in the `X-Total-Count` header.
-- **Money is `NUMERIC` and `Decimal`**, never a float; lot splits reconcile to
-  the penny.
+  `offset`, and carry the unpaged total in the `X-Total-Count` header.
+- **Money is `NUMERIC` and `Decimal`**, never a float. Lot splits reconcile
+  to the penny.
 
 ## Looking at the data
 
-In a browser, with pgAdmin. Windows (cmd):
+**In a browser, with pgAdmin.** Windows (cmd):
 
 ```console
 cd /d %USERPROFILE%\dev\ccweb
@@ -261,15 +281,16 @@ cd ~/dev/ccweb
 ```
 
 It opens pgAdmin on http://127.0.0.1:5050 with the `ccwebdb` connection
-already registered; it asks once for the password in `DATABASE_URL`. pgAdmin is not a project
-dependency; install it once into its own uv tool environment, pinned to
-Python 3.13 (the script header says why):
+already registered. It asks once for the password in `DATABASE_URL`.
+
+pgAdmin is not a project dependency. Install it once into its own uv tool
+environment, pinned to Python 3.13 (the script header says why):
 
 ```console
 uv tool install --python 3.13 pgadmin4
 ```
 
-At the command line, with psql (every argument passes straight to psql):
+**At the command line, with psql.** Every argument passes straight to psql.
 
 Interactive psql. Windows (cmd):
 
@@ -313,13 +334,13 @@ cd ~/dev/ccweb
 ./scripts/ccweb_psql.sh -f query.sql
 ```
 
-The views `coin_inventory`, `currency_inventory`, `item_valuation` and
-`public_catalog` resolve foreign keys to readable codes and exclude split and
-deleted rows, which makes them the easy place to query by hand. The
-application itself does not read them (the search queries the base tables,
-which is many times faster).
+**Views for querying by hand.** The views `coin_inventory`,
+`currency_inventory`, `item_valuation` and `public_catalog` resolve foreign
+keys to readable codes. They exclude split and deleted rows. The
+application itself does not read them: the search queries the base tables,
+which is many times faster.
 
-One trap: `source_title` often holds only denomination text (`0.25`,
+**One trap.** `source_title` often holds only denomination text (`0.25`,
 `Mint Set`), not a name. The words a person searches for are in
 `description`. Search both:
 
@@ -330,8 +351,8 @@ where coalesce(source_title, '') || ' ' || coalesce(description, '') ilike '%mor
 
 ## Code quality and tests
 
-Every gate: ruff (format, lint), mutation-scaffolding guard, mypy, pytest,
-eslint, prettier, vitest, bundle isolation. Windows (cmd):
+One script runs every gate: ruff (format, lint), mutation-scaffolding guard,
+mypy, pytest, eslint, prettier, vitest, bundle isolation. Windows (cmd):
 
 ```console
 cd /d %USERPROFILE%\dev\ccweb
@@ -362,21 +383,23 @@ cd ~/dev/ccweb
 Every gate is at zero, so any finding is new.
 [docs/code-quality.md](docs/code-quality.md) lists what runs and the three
 justified lint exceptions. The Python suite builds and drops its own
-`ccwebdb_test` database and never touches `ccwebdb`.
+`ccwebdb_test` database. It never touches `ccwebdb`.
 
 ## Useful tools
 
-- **eBay purchase history:** the Chrome extension
+- **eBay purchase history.** The Chrome extension
   [eBay Purchase History Downloader](https://chromewebstore.google.com/detail/ebay-purchase-history-dow/dhccpfcjgmlajnnoigjhokbfgpaamhpe)
-  saves a year of eBay purchases as a workbook (`Ebay_Purchase_History_<year>.xlsx`),
-  a row per item bought, with its order number and eBay item id.
+  saves a year of eBay purchases as a workbook
+  (`Ebay_Purchase_History_<year>.xlsx`). Each row is one item bought, with
+  its order number and eBay item id.
   `python -m app.ebay_orders FILE... [--commit --by EMAIL] [--review OUT.xlsx]`
-  reads those workbooks to fill missing order numbers and each item's
+  reads those workbooks. It fills missing order numbers and each item's
   listing id, and merges purchases that were one eBay order (see
   [docs/specs/ebay-order-recovery-design.md](docs/specs/ebay-order-recovery-design.md)).
 
 ## Dependencies
 
-Python dependencies are managed **only** by uv (`uv add`, `uv sync`) and land
-in the conda `ccwebdb` environment. Never `conda install` or `pip install` a
-Python package there; see [docs/environment-setup-windows.md](docs/environment-setup-windows.md).
+Python dependencies are managed **only** by uv (`uv add`, `uv sync`). They
+land in the conda `ccwebdb` environment. Never `conda install` or
+`pip install` a Python package there; see
+[docs/environment-setup-windows.md](docs/environment-setup-windows.md).
