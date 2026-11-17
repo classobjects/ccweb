@@ -584,7 +584,7 @@ export const FIELD_HELP = {
   coolness_index: {
     title: 'Coolness index',
     text:
-      "A percentage from 0 to 100 with one decimal place, copied from the 'Coolness " +
+      "A percentage from 0 to 100 with up to two decimal places, copied from the 'Coolness " +
       "Index' that mycurrencycollection.com's Check serial page shows. It is " +
       "CoolNumbers.com's for-fun score for how interesting a serial number is; the " +
       'site says it does not measure value. Typed by you, never filled in. Ask about ' +

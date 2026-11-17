@@ -94,8 +94,8 @@ item as saved, in the same transaction.
 ## 2. Serial patterns derived on save
 
 `app/serial_patterns.py` derives Star, Solid, Binary, Trinary, Radar,
-Repeater, Double Quad, Ladder, Birthday, Low Serial, High Serial and Fancy
-Serial from a note's serial. Each is a derived link (`derived_by`
+Repeater, Double Quad, Ladder, 5 to 7 in a row, Birthday, Low Serial, High
+Serial and Fancy Serial from a note's serial. Each is a derived link (`derived_by`
 `serial_pattern`), which a person may remove and which then stays removed.
 
 **On every save.** Every save of an item -- the editor's, bulk edit, item
@@ -128,6 +128,22 @@ as a reference for these terms):
   group, `applies_to` currency, beside Ladder.
 - Broken Ladder is a `reference_alias` of Scattered Ladder.
 - They are terms in common use, so they may ship (`docs/reference-data.md`).
+
+**Runs of one digit are three attributes** (the owner's rule): one digit
+repeated in a row, named by the length of the serial's longest run.
+
+| Attribute | Longest run is exactly | Earns it | Does not |
+|---|---|---|---|
+| 5 in a row (`5_in_a_row`) | 5 | 12222256 | 12555578 (a run of 4) |
+| 6 in a row (`6_in_a_row`) | 6 | 37777771 | |
+| 7 in a row (`7_in_a_row`) | 7 | 11111112 | 55555555 (a Solid Serial) |
+
+- A note earns one of them at most: a run of 6 is not also 5 in a row.
+- A run of 4 is named by none: Double Quad already covers the run of 4 that
+  collectors pay for.
+- They are digit patterns, so each adds Fancy Serial.
+- They are seeded in `backend/data/reference/attribute.json` in the `serial`
+  group, `applies_to` currency.
 
 **Duplicate Serial** (`duplicate_serial`; the owner's request). In 2014-2016
 the Bureau of Engraving and Printing (BEP) printed the same 6,650,000 serials
@@ -215,7 +231,7 @@ and each has help text:
 
 | Field | Type | Meaning |
 |---|---|---|
-| Coolness index | a percentage, 0 to 100, one decimal place, optional | the "Coolness Index" the checker shows |
+| Coolness index | a percentage, 0 to 100, two decimal places, optional | the "Coolness Index" the checker shows |
 | Star run size | a whole number above 0, optional | the size of the star note's print run, from the star lookup |
 
 The help text, on each button's tooltip and each field, says:
@@ -288,7 +304,9 @@ Star Note · Wide · Partial Ladder
 Cut error · Ink smear
 ```
 
-- **Line 1:** number, Friedberg number, Coolness index. The Friedberg number
+- **Line 1:** number, Friedberg number, Coolness index. The Coolness index
+  prints with one decimal place, or two when the second is not 0 (96.9,
+  96.95). The Friedberg number
   prints when its status is `confirmed` or `proposed` (the owner's ruling),
   not `unknown` or `conflicting`.
 - **Line 2:** what the note is (`offer_titles.name_of`).
@@ -486,8 +504,8 @@ rehearsal, live, verify), in this order. The commands are in
 - Every change follows the project's rules in `CLAUDE.md` and
   `docs/code-quality.md`; the gate (`scripts\ccweb_check.cmd`) passes.
 - The schema for all four pieces ships as Alembic migrations
-  `a4d7c2e9b1f6_holder_labels` and `b7e1d4a9c3f2_label_applied` (the
-  waiting label). Each is applied to live by the release procedure in
+  `a4d7c2e9b1f6_holder_labels`, `b7e1d4a9c3f2_label_applied` (the
+  waiting label) and `c3e8f1a5d7b9_coolness_two_places`. Each is applied to live by the release procedure in
   `docs/system-administration.md`.
 - Serial-rule tests use the synthetic serials already used in tests.
 - Help texts are in `frontend/src/management/fieldHelp.js`.

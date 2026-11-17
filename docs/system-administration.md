@@ -900,7 +900,7 @@ any other kind:
 mycurrencycollection.com, and are never filled in by the system. Each is
 optional:
 
-- `coolness_index`: 0 to 100, one decimal place. A second decimal is
+- `coolness_index`: 0 to 100, two decimal places. A third decimal is
   refused.
 - `star_run_size`: a whole number above 0.
 

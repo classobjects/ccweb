@@ -15,6 +15,7 @@ from app.labels import (
     label_lines,
     label_text,
     labelable_clause,
+    printed_coolness,
     printed_number,
     refresh_stale,
 )
@@ -56,6 +57,17 @@ def test_each_layout_fills_letter_exactly() -> None:
     assert SHEETS["SL597"].rounded and not SHEETS["SL564"].rounded
     assert SHEETS["SL597"].gap_y == Decimal("0.1556")
     assert SHEET_FOR_KIND == {"coin": "SL597", "currency": "SL564", "set": "SL564"}
+
+
+@pytest.mark.parametrize(
+    ("value", "printed"),
+    [("96.9", "96.9"), ("96.90", "96.9"), ("96.95", "96.95"), ("100", "100.0")],
+)
+def test_coolness_prints_a_second_decimal_only_when_it_has_one(
+    value: str, printed: str
+) -> None:
+    # One place as before, so a label printed then is not marked stale now.
+    assert printed_coolness(Decimal(value)) == printed
 
 
 def test_printed_number() -> None:

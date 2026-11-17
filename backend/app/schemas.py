@@ -55,15 +55,15 @@ Rate = Annotated[
     Decimal, Field(ge=Decimal("0"), le=Decimal("1"), max_digits=6, decimal_places=4)
 ]
 
-#: A note's Coolness Index: a percentage, 0 to 100, one decimal place, held to
-#: the `NUMERIC(4,1)` column it is stored in. Optional.
+#: A note's Coolness Index: a percentage, 0 to 100, two decimal places, held
+#: to the `NUMERIC(5,2)` column it is stored in. Optional.
 CoolnessIndex = Annotated[
     Decimal | None,
     Field(
         ge=Decimal("0"),
         le=Decimal("100"),
-        max_digits=4,
-        decimal_places=1,
+        max_digits=5,
+        decimal_places=2,
     ),
 ]
 
@@ -1115,7 +1115,7 @@ class ItemDetailOut(InventoryItemOut):
     back_plate_number: str | None = None
     #: `dc` (Washington) or `fw` (Fort Worth); None when not known.
     printing_facility: str | None = None
-    #: Typed by the owner: a percentage with one decimal, and a star run's size.
+    #: Typed by the owner: a percentage with two decimals, and a star run's size.
     coolness_index: Decimal | None = None
     star_run_size: int | None = None
     #: The Friedberg number attached to the note, if any. Set through
@@ -1259,7 +1259,7 @@ class InventoryItemUpdate(BaseModel):
     back_plate_number: BackPlate = None
     #: `dc` or `fw`; read from the face plate when that is sent.
     printing_facility: str | None = Field(default=None, pattern=_PRINTING_FACILITY)
-    #: The Coolness Index, 0 to 100 with one decimal place.
+    #: The Coolness Index, 0 to 100 with two decimal places.
     coolness_index: CoolnessIndex = None
     #: A star run's size, a whole number above 0.
     star_run_size: int | None = Field(default=None, gt=0)
@@ -1449,7 +1449,7 @@ class ItemCreate(BaseModel):
     back_plate_number: BackPlate = None
     #: `dc` or `fw`; read from the face plate when that is sent.
     printing_facility: str | None = Field(default=None, pattern=_PRINTING_FACILITY)
-    #: The Coolness Index, 0 to 100 with one decimal place.
+    #: The Coolness Index, 0 to 100 with two decimal places.
     coolness_index: CoolnessIndex = None
     #: A star run's size, a whole number above 0.
     star_run_size: int | None = Field(default=None, gt=0)

@@ -1188,8 +1188,8 @@ def test_coolness_and_run_size_are_saved_and_read(
     assert db.get_one(CurrencyDetail, note.id).coolness_index == Decimal("96.9")
 
 
-@pytest.mark.parametrize("bad", ["-0.1", "100.1", "12.34"])
-def test_coolness_outside_0_to_100_or_finer_than_one_place_is_refused(
+@pytest.mark.parametrize("bad", ["-0.01", "100.01", "12.345"])
+def test_coolness_outside_0_to_100_or_finer_than_two_places_is_refused(
     client: TestClient, admin_headers: dict[str, str], db: Session, bad: str
 ) -> None:
     note = _note(db, serial_number="A11111111A")
@@ -1204,7 +1204,7 @@ def test_coolness_outside_0_to_100_or_finer_than_one_place_is_refused(
     assert response.status_code == 422, response.text
 
 
-@pytest.mark.parametrize("edge", ["0", "100", "0.5"])
+@pytest.mark.parametrize("edge", ["0", "100", "0.5", "96.95"])
 def test_coolness_at_the_edges_is_kept(
     client: TestClient, admin_headers: dict[str, str], db: Session, edge: str
 ) -> None:

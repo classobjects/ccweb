@@ -247,7 +247,7 @@ value.
 | `friedberg_status` | same four values as `pcgs_status` |
 | `face_plate_number`, `back_plate_number`, `plate_position` | varchar(16). Needed to identify a mule, and they carry check letters |
 | `printing_facility` | `dc` \| `fw` (check constraint); null when not known. Read from the face plate when there is one: `FW` before the plate number means Fort Worth (`app.plates`) |
-| `coolness_index` | numeric(4,1) null, check 0 to 100 (`ck_currency_detail_coolness_index`). The "Coolness Index" CoolNumbers.com gives a serial, typed by the owner |
+| `coolness_index` | numeric(5,2) null, check 0 to 100 (`ck_currency_detail_coolness_index`). The "Coolness Index" CoolNumbers.com gives a serial, typed by the owner |
 | `star_run_size` | integer null, check above 0 (`ck_currency_detail_star_run_size`). The size of a star note's print run, typed by the owner |
 
 A series letter (`1957-B`) and a mint mark (`1921-D`) look alike but mean

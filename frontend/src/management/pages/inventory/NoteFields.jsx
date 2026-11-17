@@ -30,9 +30,9 @@ const NOTE_TEXT_FIELDS = [
 ]
 
 //: What the owner reads off mycurrencycollection.com and types in: the
-//: Coolness Index (0 to 100, one decimal place) and a star run's size.
+//: Coolness Index (0 to 100, two decimal places) and a star run's size.
 const NOTE_RECORDED_FIELDS = [
-  ['Coolness index', 'coolness_index', { min: 0, max: 100, step: 0.1 }],
+  ['Coolness index', 'coolness_index', { min: 0, max: 100, step: 0.01 }],
   ['Star run size', 'star_run_size', { min: 1, step: 1 }],
 ]
 

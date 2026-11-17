@@ -375,6 +375,16 @@ def _coin_lines(db: Session, item: InventoryItem) -> list[str]:
     ]
 
 
+def printed_coolness(value: Decimal) -> str:
+    """The Coolness index as printed: one decimal place, two when it has two.
+
+    96.90 prints as 96.9 and 96.95 as 96.95, so a label printed when the
+    index held one place reads the same today and is not marked stale.
+    """
+    text = f"{value:.2f}"
+    return text[:-1] if text.endswith("0") else text
+
+
 def _note_lines(db: Session, item: InventoryItem, facts: _Facts) -> list[str]:
     """Number, Friedberg and Coolness; what it is; attributes; errors."""
     detail = item.currency_detail
@@ -388,7 +398,7 @@ def _note_lines(db: Session, item: InventoryItem, facts: _Facts) -> list[str]:
         if fr_number is not None:
             first.append(f"Fr {fr_number}")
     if detail is not None and detail.coolness_index is not None:
-        first.append(f"Cool {detail.coolness_index:.1f}%")
+        first.append(f"Cool {printed_coolness(detail.coolness_index)}%")
     held = [
         h
         for h in facts.held.get(item.id, [])
