@@ -1,33 +1,43 @@
 # List maintenance
 
-*2026-09-29.* The owner keeps four lists that are not vocabularies -- the
-Friedberg catalog, sellers, vendors and storage locations. Each grows mostly
-by inline entry while something else is being done: a Friedberg number while
-a note is identified, a seller or vendor while a purchase is entered, a
-location while an item is placed. A slip made there -- a Friedberg number
-pasted as `9907-` for `9907-L`, a vendor entered twice -- is corrected or
-pruned on one management-console page, **Lists** (`/management/lists`,
-`pages/Lists.jsx`), for managers only, which also adds a row ahead of the
-purchase or item that will use it. Vocabularies
-(`/management/vocabularies`) and sales platforms (`/management/platforms`)
-have their own pages. The page is not called "catalogs": the shop's public
-side is the catalog, and the console never links to it.
+*2026-09-29.* The owner keeps four lists that are not vocabularies: the
+Friedberg catalog (the owner's own record of Friedberg catalog numbers for US
+paper money), sellers, vendors and storage locations.
+
+Each grows mostly by inline entry while something else is being done:
+
+- a Friedberg number while a note is identified;
+- a seller or vendor while a purchase is entered;
+- a location while an item is placed.
+
+A slip made there -- a Friedberg number pasted as `9907-` for `9907-L`, a
+vendor entered twice -- is corrected or pruned on one management-console
+page, **Lists** (`/management/lists`, `pages/Lists.jsx`), for managers only.
+The page also adds a row ahead of the purchase or item that will use it.
+
+Vocabularies (`/management/vocabularies`) and sales platforms
+(`/management/platforms`) have their own pages. The page is not called
+"catalogs": the shop's public side is the catalog, and the console never
+links to it.
 
 ## The page
 
 One tab per list, kept in the address (`?tab=friedberg`, `sellers`,
 `vendors`, `locations`) so a reload or a link lands on it. Each tab lists its
 rows, filtered in the browser by a search box, with how many records use
-each row. A row is edited in place (**Edit**, then **Save** or **Cancel**);
-only the fields changed are sent, a blank as null, and the list is read
-again after every write. **Delete** is offered only for a row nothing uses.
-The server refuses the rest too -- every foreign key into these tables is
-`RESTRICT` -- with a 409 saying how many records hold it.
+each row.
 
-**Add <row>** above the table opens a form for a new row, sent to the
-list's own create route -- the one its inline entry uses -- with the
-fields filled in and the blank ones left out. A refusal is shown with
-the form kept as typed. What a new row is asked for:
+- A row is edited in place (**Edit**, then **Save** or **Cancel**). Only the
+  fields changed are sent, a blank as null, and the list is read again after
+  every write.
+- **Delete** is offered only for a row nothing uses. The server refuses the
+  rest too -- every foreign key into these tables is `RESTRICT` -- with a 409
+  saying how many records hold it.
+
+**Add <row>** above the table opens a form for a new row. It is sent to the
+list's own create route -- the one its inline entry uses -- with the fields
+filled in and the blank ones left out. A refusal is shown with the form kept
+as typed. What a new row is asked for:
 
 | Tab | Asked for | Required |
 |---|---|---|
@@ -36,9 +46,8 @@ the form kept as typed. What a new row is asked for:
 | Vendors | name, link (`https://` added to a bare `ebay.com`, as the purchase screen does), kind (none is `unknown`) | name |
 | Storage locations | kind, institution, identifier, notes | kind; never `consigned` or `sold` |
 
-A Friedberg number added here has no type: the type is what a note in
-hand gives it, so a number meant for the lookup is better recorded from
-the note.
+A Friedberg number added here has no type. The type is what a note in hand
+gives it, so a number meant for the lookup is better recorded from the note.
 
 | Tab | Shown | Editable | "Uses" counts |
 |---|---|---|---|
@@ -47,11 +56,11 @@ the note.
 | Vendors | name, link, kind | name, link, kind | purchases and sales platforms naming the vendor |
 | Storage locations | kind, institution, identifier, notes | the same four | items kept there now plus location-history rows naming it |
 
-A Friedberg number's type -- denomination, note type, series, district,
-signatures, seal, web press, printing facility -- is what the lookup matches
-it by (the page's Type column shows all of these but the signatures) and
-is not edited here: a type recorded with a wrong attribute is deleted, if
-unused, and recorded again from the note.
+A Friedberg number's type is what the lookup matches it by: denomination,
+note type, series, district, signatures, seal, web press, printing facility.
+The page's Type column shows all of these but the signatures. The type is not
+edited here. A type recorded with a wrong attribute is deleted, if unused,
+and recorded again from the note.
 
 The district is the one exception. A number that carries a district
 (`9905-D`) says which district its type is (`fr_district`):
@@ -68,59 +77,79 @@ The district is the one exception. A number that carries a district
   records none, so one district's number is never offered to another
   district's note.
 
-Correcting a Friedberg number keeps every note that uses it attached -- the
+Correcting a Friedberg number keeps every note that uses it attached: the
 items hold the catalog row, not its text. Undoing a confirmation clears the
 row's `verified_at`, so the next lookup offers it as proposed again (see
 `receiving-purchases-design.md`, **Use**).
 
-A storage location of kind `consigned` is made by the auction code, and
-`sold` is reserved (nothing creates one): such a row is not editable,
-neither kind is offered in the picker,
-and the server refuses (422) editing one or changing a location to one. A
-location an item has ever been in is part of that item's history, so it
+Two storage location kinds are special. `consigned` is made by the auction
+code, and `sold` is reserved (nothing creates one). For both:
+
+- such a row is not editable;
+- neither kind is offered in the picker;
+- the server refuses (422) editing one or changing a location to one.
+
+A location an item has ever been in is part of that item's history, so it
 cannot be deleted.
 
 ## The form of a Friedberg number
 
 A number is cleaned, then checked, wherever one is saved -- recorded new
-(`POST /api/friedberg`) or corrected here -- and again when one is confirmed,
-here or by the lookup. `app/fr_format.py` (`normalize_fr`, `fr_problem`) is
-the rule the server holds, applied by the request schemas;
-`frontend/src/management/friedberg-format.js` (`normalizeFr`, `frProblem`)
-applies the same rule as the number is typed, so Save is held back with the
-reason shown.
+(`POST /api/friedberg`) or corrected here. It is checked again when one is
+confirmed, here or by the lookup.
 
-- **Cleaned:** surrounding space and a `Fr.`, `Fr#` or `FR-` label in front
-  of the digits are dropped, space around the hyphen is closed up, and the
-  optional letter and the district letter are capitalized --
-  ` Fr. 9905-d ` is kept as `9905-D`, `9912a-b` as `9912A-B`. A mule's `m`
-  stays lower-case whatever case it was typed in, after the digits or after
-  the district, with any star after it: `9901M` is kept as `9901m`,
-  `9907-EM` and `9907-e*m` as `9907-Em` and `9907-Em*`. A seal shade at the
-  end is capitalized after one space: `9908-b  lgs` is kept as
-  `9908-B LGS`. A Military Payment Certificate's `M` is a capital and the
-  letter after its digits lower-case, as the catalog writes a replacement:
-  `m9901R` is kept as `M9901r`.
-- **Checked:** an optional `M` for a Military Payment Certificate, 1 to 4
-  digits, an optional letter (`1A`), an optional district
-  `-A` to `-L`, an optional `m` after the district for a mule (the answer
-  the Friedberg web search is asked for when plates are given), an
-  optional `*` for a star note, and an optional ` LGS` or ` DGS` for a
-  light or dark green seal (`9908-B LGS`, `9908-B* LGS`). The seal is
-  already part of a type's identity, so the two shades are two types; the
-  suffix keeps their numbers apart. The shade must agree with the seal:
-  an `LGS` number whose seal is recorded as anything but Light Green
-  (`light_green`), or a `DGS` number on a light green seal, is refused
-  (422) when it is recorded, when a row's number is corrected to it, and
-  when it is attached to a note whose seal says otherwise. A seal not
-  recorded yet contradicts nothing (though a new number sent with its note
-  type must carry one -- below). `9907-` is refused as
-  ending in a hyphen, `99070-L` as having five digits, anything else out of
-  that form as not a Friedberg number -- each with a sentence saying which
-  (422).
-- **Confirming a malformed number is refused** (422, "Correct ... before
-  confirming it") until it is corrected: a confirmed number is one the next
-  lookup attaches in one step. It can still be attached as proposed.
+- `app/fr_format.py` (`normalize_fr`, `fr_problem`) is the rule the server
+  holds, applied by the request schemas.
+- `frontend/src/management/friedberg-format.js` (`normalizeFr`, `frProblem`)
+  applies the same rule as the number is typed, so Save is held back with the
+  reason shown.
+
+**Cleaned:**
+
+- Surrounding space and a `Fr.`, `Fr#` or `FR-` label in front of the digits
+  are dropped, and space around the hyphen is closed up.
+- The optional letter and the district letter are capitalized:
+  ` Fr. 9905-d ` is kept as `9905-D`, `9912a-b` as `9912A-B`.
+- A mule's `m` stays lower-case whatever case it was typed in, after the
+  digits or after the district, with any star after it: `9901M` is kept as
+  `9901m`, `9907-EM` and `9907-e*m` as `9907-Em` and `9907-Em*`.
+- A seal shade at the end is capitalized after one space: `9908-b  lgs` is
+  kept as `9908-B LGS`.
+- A Military Payment Certificate's `M` is a capital and the letter after its
+  digits lower-case, as the catalog writes a replacement: `m9901R` is kept as
+  `M9901r`.
+
+**Checked.** The form is, in order:
+
+1. an optional `M` for a Military Payment Certificate;
+2. 1 to 4 digits;
+3. an optional letter (`1A`);
+4. an optional district `-A` to `-L`;
+5. an optional `m` after the district for a mule (the answer the Friedberg
+   web search is asked for when plates are given);
+6. an optional `*` for a star note;
+7. an optional ` LGS` or ` DGS` for a light or dark green seal (`9908-B LGS`,
+   `9908-B* LGS`).
+
+The seal is already part of a type's identity, so the two shades are two
+types; the suffix keeps their numbers apart. The shade must agree with the
+seal. An `LGS` number whose seal is recorded as anything but Light Green
+(`light_green`), or a `DGS` number on a light green seal, is refused (422):
+
+- when it is recorded;
+- when a row's number is corrected to it;
+- when it is attached to a note whose seal says otherwise.
+
+A seal not recorded yet contradicts nothing (though a new number sent with
+its note type must carry one -- below).
+
+Anything out of that form is refused (422), each with a sentence saying
+which: `9907-` as ending in a hyphen, `99070-L` as having five digits,
+anything else as not a Friedberg number.
+
+**Confirming a malformed number is refused** (422, "Correct ... before
+confirming it") until it is corrected: a confirmed number is one the next
+lookup attaches in one step. It can still be attached as proposed.
 
 Only the form is known -- never which number belongs to which note, which is
 the publisher's arrangement (`docs/reference-data.md`).
@@ -131,25 +160,28 @@ Recording a number whose type matches a row already in the catalog is
 refused with 409 and the row named: *"That combination is already recorded
 as 9907- (row 14)."*, with `existing: {id, fr_number}` beside `detail`. The
 Friedberg lookup (`FriedbergLookup.jsx`) then offers **Correct 9907- to
-9907-L**, which renames the recorded row and attaches it -- the slip is
+9907-L**, which renames the recorded row and attaches it. The slip is
 repaired where it was noticed, without a trip to the Lists page.
 
-A mule (`9907-Em`) and a star note (`9907-E*`) are types of their own,
-so neither is refused by the plain number on file, nor the plain number by
-them. Correcting a row's number is refused the same way (409, the row
-named) when adding or dropping its `m` or `*` would make it a type already
-recorded under another number.
+A mule (`9907-Em`) and a star note (`9907-E*`) are types of their own. So
+neither is refused by the plain number on file, nor the plain number by
+them. Correcting a row's number is refused the same way (409, the row named)
+when adding or dropping its `m` or `*` would make it a type already recorded
+under another number.
 
 The seal is part of a type, so a number recorded with its note type is
-recorded with its seal: sent without one, it is refused (422, *"Set the seal
+recorded with its seal. Sent without one, it is refused (422, *"Set the seal
 color before recording 9907-L: the seal is part of its type."*), and the
 lookup says so before sending. Recorded sealless, the row would be offered
 to a note of any seal, and the next note of its type with its seal entered
-would record the same number again. Two kinds of number need no seal: a
-number alone, as the Lists page adds one, which is not a type yet; and a
-number of a note type printed without one -- a Demand Note, a Military
-Payment Certificate, Fractional Currency (`NOTE_TYPES_WITHOUT_SEAL` in
-`schemas.py`, mirrored in `FriedbergLookup.jsx`).
+would record the same number again.
+
+Two kinds of number need no seal:
+
+- a number alone, as the Lists page adds one, which is not a type yet;
+- a number of a note type printed without one -- a Demand Note, a Military
+  Payment Certificate, Fractional Currency (`NOTE_TYPES_WITHOUT_SEAL` in
+  `schemas.py`, mirrored in `FriedbergLookup.jsx`).
 
 ## API
 
@@ -171,7 +203,9 @@ All manager only (`AdminUser`).
 | `DELETE /api/storage-locations/{id}` | 409 while anything is or was kept there |
 
 Only the fields sent change. Uniqueness is kept the way the create routes
-keep it, and a correction onto another row's value is a 409: a Friedberg
-number already recorded (naming its row), a seller or vendor name already
-used (case aside), or a storage location with the same kind, institution
-and identifier (case aside).
+keep it, and a correction onto another row's value is a 409:
+
+- a Friedberg number already recorded (naming its row);
+- a seller or vendor name already used (case aside);
+- a storage location with the same kind, institution and identifier (case
+  aside).

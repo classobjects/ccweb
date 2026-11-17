@@ -1,14 +1,19 @@
 # Orders entered and edited on a customer's behalf
 
-The management console is a superset of the shop: anything a customer can do, a
-manager can do from `/management`. For orders that means placing an order
-for someone else -- a phone, walk-in or in-person sale of a web-store item --
-changing an order after it is placed, and moving it through its statuses to
-shipped or canceled. All of it happens on the **Sales** page
-(`/management/sales`), which lists every order: shop checkouts, orders
-entered on a customer's behalf, and sales recorded from other platforms
-(`selling-design.md`). Because a manager can act for a buyer and re-price a
-paid order, every order records who placed it and every change to it.
+The management console is a superset of the shop: anything a customer can
+do, a manager can do from `/management`. For orders, a manager can:
+
+- place an order for someone else: a phone, walk-in or in-person sale of a
+  web-store item;
+- change an order after it is placed;
+- move it through its statuses to shipped or canceled.
+
+All of it happens on the **Sales** page (`/management/sales`). It lists every
+order: shop checkouts, orders entered on a customer's behalf, and sales
+recorded from other platforms (`selling-design.md`).
+
+A manager can act for a buyer and re-price a paid order. So every order
+records who placed it and every change to it.
 
 ## Rules
 
@@ -20,15 +25,18 @@ paid order, every order records who placed it and every change to it.
 | Accountability | **Who placed the order, plus a history row for every change.** |
 | Shape | **One order-writing module (`app/order_writes.py`) behind separate manager endpoints.** The shop's `POST /api/orders` keeps its contract. |
 
-Manager-only fields on the shop's endpoints are not used: one role check
-would stand between a shopper and setting their own price. Line-by-line
-endpoints are not used either: "swap this coin for that one" would be two
-calls that can half-succeed.
+Two designs are not used:
 
-A web-store item sold in person is entered here, not through the Listings
-page's Record sale, which refuses store listings (`selling-design.md`).
-Lines come from web-store listings only: the Add item search reads the shop
-catalog, and a new or grown line must be an active store listing.
+- **Manager-only fields on the shop's endpoints.** One role check would
+  stand between a shopper and setting their own price.
+- **Line-by-line endpoints.** "Swap this coin for that one" would be two
+  calls that can half-succeed.
+
+A web-store item sold in person is entered here. It is not entered through
+the Listings page's Record sale, which refuses store listings
+(`selling-design.md`). Lines come from web-store listings only: the Add item
+search reads the shop catalog, and a new or grown line must be an active
+store listing.
 
 ## Data model
 
@@ -49,16 +57,17 @@ catalog, and a new or grown line must be an active store listing.
 | `listing_id` | FK `listing`, `ON DELETE RESTRICT`, nullable; set for line-level changes |
 | `from_value`, `to_value` | text: `2` → `3`, `189.00` → `150.00`, a customer's display name, a status code |
 
-One save writes several rows sharing `changed_at` and `changed_by_id`;
-grouping on those reconstructs an edit. Values are text because they are of
-mixed kinds; `change` is a closed vocabulary so the history stays
-filterable. Money is stored as a plain decimal string and formatted only for
-display.
+One save writes several rows sharing `changed_at` and `changed_by_id`.
+Grouping on those two reconstructs an edit.
+
+- Values are text because they are of mixed kinds.
+- `change` is a closed vocabulary, so the history stays filterable.
+- Money is stored as a plain decimal string and formatted only for display.
 
 ## `order_writes`
 
-The one place order stock moves. Functions run inside the caller's
-transaction and leave committing to it. Every refusal goes through
+This module is the one place order stock moves. Its functions run inside the
+caller's transaction and leave committing to it. Every refusal goes through
 `_refuse`, which rolls the transaction back before raising.
 
 **`place_order(db, customer, lines, placed_by, notes=None, *, venue=None,
@@ -67,71 +76,82 @@ status_code="pending", external_order_id=None)`.** `lines` are
 
 1. Take the rows through `_lock_listings`, which goes through
    `offering_writes.lock_for_sale`: lot rows, then items, then listings
-   (`lock-order-design.md`). Unknown listing: 422.
-2. With no `venue` (a shop or on-behalf order): the listing must be the
-   store's and `active`, else 409. Always: quantity above
-   `quantity_available` is 409 naming the listing and what remains.
-3. Reduce `quantity_available`; a listing reaching 0 marks its items `sold`.
+   (`lock-order-design.md`). An unknown listing is a 422.
+2. Check each line:
+   - With no `venue` (a shop or on-behalf order), the listing must be the
+     store's and `active`, else 409.
+   - Always, a quantity above `quantity_available` is a 409 naming the
+     listing and what remains.
+3. Reduce `quantity_available`. A listing reaching 0 marks its items `sold`.
    On a shop or on-behalf order, a lot listing bought outright is ended as
-   sold with its lot (an item listing stays active at zero stock).
+   sold with its lot. An item listing stays active at zero stock.
 4. A line's `unit_price` is the given price, or the listing's.
-5. Write one `sales_order_item_share` per item the line carries (one for an
-   item listing, one per member for a lot), total the order, set
+5. Write one `sales_order_item_share` per item the line carries: one for an
+   item listing, one per member for a lot. Total the order, set
    `placed_by_id`, and write a `placed` change row naming the placing
    account.
 
 `venue`, `status_code` and `external_order_id` are for sales recorded from
-another platform (`sales_writes`); an on-behalf order leaves them unset.
+another platform (`sales_writes`). An on-behalf order leaves them unset.
 
 **`revise_order(db, order, *, customer, lines, notes, version, by) -> bool`.**
 `lines` is the order's complete desired contents.
 
-1. Lock and re-read the `sales_order` row first. Status not `pending` or
-   `paid`, or a status history that ever reached `packed`, `shipped` or
-   `delivered`: 409. `version` differs: 409, "changed by someone else…
-   reload".
-   An order that records a sale on another platform takes no stock: a line
+1. Lock and re-read the `sales_order` row first. Then refuse:
+   - a status not `pending` or `paid`, or a status history that ever reached
+     `packed`, `shipped` or `delivered`: 409;
+   - a different `version`: 409, "changed by someone else… reload".
+
+   An order that records a sale on another platform takes no stock. A line
    added or grown on it is a 409 naming the platform. Its prices, customer
    and notes may still be changed.
 2. Take the listings of the current and desired lines together through
    `_lock_listings`.
-3. Per listing, `delta = desired - current`. `delta > 0` needs an active
-   store listing with that much available, else 409. Shrinking or removing a
-   line whose listing has **ended** is refused: its stock has nowhere to go
-   back to. Every check passes before anything changes, so a refused save
-   changes no line and no stock.
-4. Move stock by the delta: reaching 0 marks the item `sold`, rising from 0
+3. Per listing, compute `delta = desired - current`.
+   - `delta > 0` needs an active store listing with that much available,
+     else 409.
+   - Shrinking or removing a line whose listing has **ended** is refused:
+     its stock has nowhere to go back to.
+
+   Every check passes before anything changes, so a refused save changes no
+   line and no stock.
+4. Move stock by the delta. Reaching 0 marks the item `sold`; rising from 0
    on an active listing marks it `listed`.
-5. Add, remove, re-quantity and re-price lines; replace `customer_id` and
-   `notes`; recompute `total_amount` and the shares.
-6. One change row per difference. No difference: no rows, no version bump,
-   returns `False`.
+5. Add, remove, re-quantity and re-price lines. Replace `customer_id` and
+   `notes`. Recompute `total_amount` and the shares.
+6. Write one change row per difference. With no difference there are no
+   rows and no version bump, and the function returns `False`.
 
-**Status changes** (`PATCH /api/orders/{id}`, any `sales_order_status`
-code: `pending`, `paid`, `packed`, `shipped`, `delivered`, `canceled`,
-`refunded`, with the `version` the order was read at) lock the order row,
-write a `status` change row and bump `version`. No `version`: 422; a
-`version` the order has moved past: 409, so a status chosen from a stale
-page is not applied over a change its chooser never saw.
+**Status changes** go through `PATCH /api/orders/{id}`. It takes any
+`sales_order_status` code (`pending`, `paid`, `packed`, `shipped`,
+`delivered`, `canceled`, `refunded`) with the `version` the order was read
+at. It locks the order row, writes a `status` change row and bumps
+`version`.
 
-- Canceling an order that has not been packed returns its stock
-  (`return_stock`, through the same lock path). Canceling one whose listing
-  has ended -- an outside sale, or a lot bought in the shop -- is refused
-  while it is unpacked, because there is nothing to return the stock to.
-- Canceling a `packed`, `shipped` or `delivered` order moves no stock; it is
-  how a refund is recorded, whatever the listing's state.
-- "Has been packed" is read from the order's status history, not only its
-  status: an order set back from `shipped` to `pending` or `paid` still
+- No `version` is a 422.
+- A `version` the order has moved past is a 409. So a status chosen from a
+  stale page is not applied over a change its chooser never saw.
+
+What each status change does to stock:
+
+- **Canceling an unpacked order** returns its stock (`return_stock`, through
+  the same lock path). It is refused while unpacked if the order's listing
+  has ended -- an outside sale, or a lot bought in the shop -- because there
+  is nothing to return the stock to.
+- **Canceling a `packed`, `shipped` or `delivered` order** moves no stock. It
+  is how a refund is recorded, whatever the listing's state.
+- **"Has been packed"** is read from the order's status history, not only
+  its status. An order set back from `shipped` to `pending` or `paid` still
   returns no stock when it is canceled or refunded.
-- **Refunding** moves stock exactly as canceling does. Refunded while
-  `pending` or `paid`, the coins never left: the stock is returned, refused
-  in the same cases a cancellation is, and the order cannot then be moved on
-  except to `canceled` (read from its status history). Refunded after
-  packing moves no stock and may still be moved on.
-- Canceling a `refunded` order moves no more stock: the refund already
+- **Refunding** moves stock exactly as canceling does.
+  - Refunded while `pending` or `paid`, the coins never left. The stock is
+    returned, refused in the same cases a cancellation is. The order cannot
+    then be moved on except to `canceled` (read from its status history).
+  - Refunded after packing, it moves no stock and may still be moved on.
+- **Canceling a `refunded` order** moves no more stock. The refund already
   returned it, or it left with the parcel.
-- A canceled order cannot be moved to another status: its stock is back on
-  sale. Re-sending `canceled` is harmless.
+- **A canceled order** cannot be moved to another status, because its stock
+  is back on sale. Re-sending `canceled` is harmless.
 
 ## Endpoints
 
@@ -145,60 +165,74 @@ page is not applied over a change its chooser never saw.
 | `GET /api/orders/{id}/changes` | manager | Change rows, newest first, with the changing account's email and each line's listing title. |
 | `PATCH /api/orders/{id}` | manager | Status, as above. Body: `status`, `version`. |
 
-The manager endpoints' request schemas forbid extra fields. 422 for a
-quantity below 1, a unit price below 0, a listing twice in one order, or no
-lines -- an order is emptied by canceling it. Shoppers cannot edit an order.
+The manager endpoints' request schemas forbid extra fields. They answer 422
+for:
+
+- a quantity below 1;
+- a unit price below 0;
+- a listing twice in one order;
+- no lines -- an order is emptied by canceling it.
+
+Shoppers cannot edit an order.
 
 `OrderOut` carries `version`, `notes`, `placed_by_email`, each line's
-`listing_ended`, and `payment_adjustment_due`: true when the order is `paid`
-and a `total` change row is later than its latest `status` change to
-`paid`. Payments are not recorded, so this prompts a person; it never
-charges or refunds.
+`listing_ended`, and `payment_adjustment_due`. That last is true when the
+order is `paid` and a `total` change row is later than its latest `status`
+change to `paid`. Payments are not recorded, so the flag prompts a person;
+it never charges or refunds.
 
 ## Console
 
 All on the Sales page (`/management/sales`).
 
-**Order editor** (`orders/OrderEditor.jsx`), a modal for **New order** and
-for **Edit** on a `pending` or `paid` order:
+**Order editor** (`orders/OrderEditor.jsx`) is a modal for **New order**,
+and for **Edit** on a `pending` or `paid` order:
 
-- **Customer**: a searchable picker over customers and accounts without a
-  customer record ("account, no orders yet"); choosing an account calls
-  `POST /api/users/{id}/customer`.
+- **Customer**: a searchable picker over customers, and over accounts
+  without a customer record ("account, no orders yet"). Choosing an account
+  calls `POST /api/users/{id}/customer`.
 - **Lines**: title, quantity, unit price, available stock, remove. An
   overridden price is marked "listing price $189.00".
 - **Add item**: searches the shop catalog (`listCatalog` with `q` and
   `in_stock`).
-- **Notes**, and a running **total** computed in integer cents
+- **Notes**, and a running **total**. The total is computed in integer cents
   (`orders/cents.js`), never floating point; the server's total is the real
   one.
 - A `paid` order shows "This order is paid. Changing its total will flag a
   payment adjustment."
-- Saving sends the loaded `version`. A refusal is shown in the dialog with
+- Saving sends the loaded `version`. A refusal is shown in the dialog, with
   the edits kept.
 
-**Order list**, newest first: customer, lines, total with a "payment
-adjustment due" badge, "entered by <email>" when the placing account's email
-is not the customer's, **Edit** on `pending` and `paid` orders, and
-**History** (`orders/OrderHistory.jsx`, changes grouped by edit). Each row's
-status is a select, saved as it is chosen with the order's `version`. Every
-option stays live. Choosing one the server would refuse sends nothing and
-says why above the table: `canceled` or `refunded` on an unpacked outside
-sale, or on an unpacked store order with a line whose listing has ended
-(`listing_ended`); and any other status on a canceled order, whose stock
-is back on sale. The console reads "unpacked" from the current status; the
-server also reads the order's history.
+**Order list**, newest first. Each row shows:
+
+- customer, lines, and total with a "payment adjustment due" badge;
+- "entered by <email>" when the placing account's email is not the
+  customer's;
+- **Edit** on `pending` and `paid` orders;
+- **History** (`orders/OrderHistory.jsx`, changes grouped by edit).
+
+Each row's status is a select, saved as it is chosen, with the order's
+`version`. Every option stays live. Choosing one the server would refuse
+sends nothing and says why above the table. Those are:
+
+- `canceled` or `refunded` on an unpacked outside sale, or on an unpacked
+  store order with a line whose listing has ended (`listing_ended`);
+- any other status on a canceled order, whose stock is back on sale.
+
+The console reads "unpacked" from the current status; the server also reads
+the order's history.
 
 ## Tests
 
 - Stock: raising, lowering and removing lines move stock by the delta;
   swapping listings in one save; `listed`/`sold` as edits cross zero; an
   over-request refused with nothing changed.
-- Concurrency (`tests/test_order_revision_race.py`): a manager's edit and a
-  checkout contending for a last unit on real threads -- one succeeds, the
-  other is refused for the stock, stock never negative; a cancel and an
-  edit of one order neither deadlock nor corrupt stock; a concurrent edit to
-  an item does not refuse a revision or a cancellation.
+- Concurrency (`tests/test_order_revision_race.py`), on real threads:
+  - a manager's edit and a checkout contend for a last unit: one succeeds,
+    the other is refused for the stock, and stock is never negative;
+  - a cancel and an edit of one order neither deadlock nor corrupt stock;
+  - a concurrent edit to an item does not refuse a revision or a
+    cancellation.
 - Rules: editable statuses; a second edit sent at a version already used is
   a 409; price and quantity bounds, duplicate listings, at least one line,
   unknown customer and listing.
@@ -211,9 +245,9 @@ server also reads the order's history.
 
 ## Not built
 
-- Finding an item to add by inventory code (the catalog search covers
-  the listing's title and description and the item's source title and
-  description).
+- Finding an item to add by inventory code. The catalog search covers the
+  listing's title and description and the item's source title and
+  description.
 - Shipping or billing addresses on an order. `sales_order` has
   `shipping_address_id` and `billing_address_id`, and a customer's addresses
   can be recorded (`POST /api/customers/{id}/addresses`), but nothing sets

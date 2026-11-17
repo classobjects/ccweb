@@ -22,10 +22,12 @@ last made in that browser.
 
 ## Where it is chosen
 
-A **Theme** dropdown in the header of every page, shop and console alike,
-beside the account's name. Changing it changes the page at once. Signed in,
-it is saved to the account (`PATCH /api/auth/me` with `{"theme": ...}`); not
-signed in, it is remembered by that browser only.
+A **Theme** dropdown sits in the header of every page, shop and console
+alike, beside the account's name. Changing it changes the page at once.
+
+- Signed in, the choice is saved to the account (`PATCH /api/auth/me` with
+  `{"theme": ...}`).
+- Not signed in, it is remembered by that browser only.
 
 ## How a page applies it
 
@@ -39,12 +41,14 @@ applies when:
 `auto` is the absence of the attribute. `frontend/src/shared/theme.js` sets
 or removes it and keeps the choice in the browser (`ccwebdb.theme`).
 
-So that a page does not flash light before turning dark, each HTML entry
-page (`index.html`, `management.html`) runs a few lines in its `<head>` that
-apply the browser's remembered choice before anything is drawn. Signing in
-then reads the account's choice from `/api/auth/me`, applies it, and
-remembers it in the browser for the next load. Signing out leaves the page
-as it is.
+**No flash on load.** Each HTML entry page (`index.html`,
+`management.html`) runs a few lines in its `<head>` that apply the browser's
+remembered choice before anything is drawn. So a page does not flash light
+before turning dark.
+
+**Signing in and out.** Signing in reads the account's choice from
+`/api/auth/me`, applies it, and remembers it in the browser for the next
+load. Signing out leaves the page as it is.
 
 ## API
 

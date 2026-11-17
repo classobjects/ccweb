@@ -1,33 +1,38 @@
 # Lock order for the selling writers
 
-A shopper's checkout, a manager offering a coin on eBay, a receipt marking a
-coin missing and an auction settlement can all touch the same coin at the
-same moment. Each takes row locks on lots, items and listings; if two of them
-took those in different orders, Postgres would find a deadlock and abort one
--- an HTTP 500 on a money path instead of the clean refusal either path
-gives. This spec is the rule that prevents that, for anyone changing a
-selling writer: one acquisition order, owned by one function,
-`offering_writes.lock_for_sale` (and the private `_acquire` behind it), which
-every such writer goes through. It has no page of its own; its effect is that
-concurrent sales, offers and edits either succeed or are refused with a
-message.
+Several writers can touch the same coin at the same moment: a shopper's
+checkout, a manager offering a coin on eBay, a receipt marking a coin
+missing, an auction settlement. Each takes row locks on lots, items and
+listings. If two of them took those locks in different orders, Postgres
+would find a deadlock and abort one. That is an HTTP 500 on a money path,
+instead of the clean refusal either path gives.
+
+This spec is the rule that prevents that, for anyone changing a selling
+writer. There is one acquisition order, owned by one function,
+`offering_writes.lock_for_sale` (and the private `_acquire` behind it).
+Every such writer goes through it.
+
+It has no page of its own. Its effect is that concurrent sales, offers and
+edits either succeed or are refused with a message.
 
 ## The rule
 
-**Lot rows, then items, then listings** -- each kind in *one* statement,
-`FOR UPDATE`, ascending id. Rows that sit above a sale are taken before it:
-an `auction` row (`auctions._lock_auction`) or a `sales_order` row
-(`order_writes.revise_order`, `routers.orders.update_order_status`) comes
-first, then the sale's rows in the order above.
+**Lot rows, then items, then listings.** Each kind is taken in *one*
+statement, `FOR UPDATE`, in ascending id.
 
-The order lives in exactly one function, `offering_writes._acquire`, and
-every writer that takes more than one kind of row reaches it through
-`offering_writes.lock_for_sale`. The order is not a convention several
-modules remember; an inversion is something you would have to write on
+Rows that sit above a sale are taken before it. An `auction` row
+(`auctions._lock_auction`) or a `sales_order` row
+(`order_writes.revise_order`, `routers.orders.update_order_status`) comes
+first. Then come the sale's rows, in the order above.
+
+The order lives in exactly one function, `offering_writes._acquire`. Every
+writer that takes more than one kind of row reaches it through
+`offering_writes.lock_for_sale`. So the order is not a convention several
+modules remember. An inversion is something you would have to write on
 purpose.
 
-One statement per kind matters as much as the order: N sorted statements are
-not a sorted acquisition, and the listing half is where a lot makes that a
+One statement per kind matters as much as the order. N sorted statements
+are not a sorted acquisition. The listing half is where a lot makes that a
 real hazard.
 
 ## Why this order
@@ -35,85 +40,106 @@ real hazard.
 Two writers need the same rows for different reasons.
 
 - **`offering_writes` must hold items before it reads claims.** Its listing
-  set is *derived*: a listing holds an item only through an `offer_claim`,
-  this module is the only writer of claims, and `_lock_items` holds those
-  items' rows before the claims are read. Nothing can join the set between
-  the read and the lock. Taking listings first would mean locking a set
-  derived from an unlocked claim read. The one-live-claim-per-item guarantee
-  rests on this order.
-- **`order_writes` is handed listing ids** (`Line(listing_id=...)`), and no
+  set is *derived*:
+  - a listing holds an item only through an `offer_claim`;
+  - this module is the only writer of claims;
+  - `_lock_items` holds those items' rows before the claims are read.
+
+  So nothing can join the set between the read and the lock. Taking
+  listings first would mean locking a set derived from an unlocked claim
+  read. The one-live-claim-per-item guarantee rests on this order.
+- **`order_writes` is handed listing ids** (`Line(listing_id=...)`). No
   invariant of its own depends on which kind it takes first.
 
-So the order that carries a guarantee is the canonical one. If the two
+So the canonical order is the one that carries a guarantee. If the two
 writers disagreed, a checkout and a concurrent offer of the same coin could
 each hold what the other waits for, and Postgres would abort one of them.
-Every money-path request commits once, at the end, so an abort never leaves
-anything half-written -- the cost is a bad error, not bad data.
+
+Every money-path request commits once, at the end. So an abort never leaves
+anything half-written. The cost is a bad error, not bad data.
 
 ## `lock_for_sale`
 
 `lock_for_sale(db, *, listing_ids=(), item_ids=(), including_paused=False)`
-returns a `LockedForSale` (`listings` by id, the confirmed `item_ids`, and
-the `lot_ids` it holds). It writes nothing.
+returns a `LockedForSale`. It carries `listings` by id, the confirmed
+`item_ids`, and the `lot_ids` it holds. It writes nothing.
 
-**Two entry points, one closure.** `offer` enters from items -- one item, or
-a lot's members, which `_lot_members` froze under the lot's own row lock
-before reading them. Checkout, revision, stock return and record-a-sale
-enter from listings, and the function resolves listing → lot → members
-itself; settlement enters from items, and receiving and the item edits
-from both. `including_paused=True` widens the derived item set from
-`offered_items` (what a *sale* touches) to `_affected_items` (also the items
-of the store listings an offer paused, which an *ending* must move).
+**Two entry points, one closure.** A caller enters from items, from
+listings, or from both:
+
+| Enters from | Callers |
+|---|---|
+| items | `offer` (one item, or a lot's members, which `_lot_members` froze under the lot's own row lock before reading them); settlement |
+| listings | checkout, revision, stock return, record-a-sale; the function resolves listing → lot → members itself |
+| both | receiving, the item edits |
+
+`including_paused=True` widens the derived item set. Without it the set is
+`offered_items`: what a *sale* touches. With it the set is
+`_affected_items`: also the items of the store listings an offer paused,
+which an *ending* must move.
 
 **Read, lock, re-read.** Which items a listing offers has to be read before
 anything can be locked. That is safe because an offered lot's membership is
-frozen while the offer stands: `lot_writes._refuse_unless_assembling`
-refuses a membership change on a lot that is not `assembling`, and
-`_refuse_grouped` refuses offering a member of an offered lot on any venue.
+frozen while the offer stands:
+
+- `lot_writes._refuse_unless_assembling` refuses a membership change on a
+  lot that is not `assembling`;
+- `_refuse_grouped` refuses offering a member of an offered lot, on any
+  venue.
+
 The function re-reads the set under the locks to confirm it.
 
-- A still-live listing whose set moved raises **`LockSetChanged`** -- a 500,
-  unmapped in the routers, because it is an invariant violation no retry can
-  fix. It is deliberately not an `OfferRefused` (409 means "something is in
-  the way, try again", which would be false).
+- A still-live listing whose set moved raises **`LockSetChanged`**. It is a
+  500, unmapped in the routers, because it is an invariant violation no
+  retry can fix. It is deliberately not an `OfferRefused`: a 409 means
+  "something is in the way, try again", which would be false.
 - **The offer's own ending is not a violation.** `offering_writes._end`
-  releases every membership when a lot is sold or dissolved, so the loser of
+  releases every membership when a lot is sold or dissolved. So the loser of
   two checkouts racing one lot reads two members, waits, and finds none. A
   listing the lock found ended is left to each caller's own refusal:
-  `place_order` "is not currently for sale", `revise_order` "has ended…",
-  `record_sale` "is not on offer".
+  - `place_order`: "is not currently for sale";
+  - `revise_order`: "has ended…";
+  - `record_sale`: "is not on offer".
 
-Locking more rows than a caller turns out to need is never unsafe; a caller
+Locking more rows than a caller turns out to need is never unsafe. A caller
 that refuses writes nothing to them.
 
 ## The one rule a caller has to remember
 
-`lock_for_sale` also locks every live listing holding one of the items, and
-one of those can be a **lot** listing the caller never named. Its lot row is
-taken only if the function's own unlocked `offers_holding` read saw it, so a
-lot offered between that read and the item lock is held without its lot row.
-`LockedForSale.lot_ids` says which lot rows really are held.
+`lock_for_sale` also locks every live listing holding one of the items. One
+of those can be a **lot** listing the caller never named. Its lot row is
+taken only if the function's own unlocked `offers_holding` read saw it. So a
+lot offered between that read and the item lock is held without its lot
+row. `LockedForSale.lot_ids` says which lot rows really are held.
 
 **A caller that may call `end_offer` on a listing it did not name must first
 pass that set through `refuse_if_lot_unheld`.** Otherwise `end_offer` would
-take the lot row late, after items and listings -- the inversion one level
-down. Four callers do this. Three are in `routers.inventory`:
-`receive_items`, `bulk_edit` and `update_item`, each of which ends whatever
-`offers_holding` returns for the items it changes. The fourth is
-`routers.offers.create_offers`, which locks a whole batch of items in one
-pass before its first `offer`; each `offer` then takes the lot rows of the
-live offers holding its item, so a lot offered between the batch's unlocked
-read and its item lock would have its lot row taken after the items. Every
-other caller ends only listings it named, whose lot rows are always taken
-first.
+take the lot row late, after items and listings: the inversion, one level
+down.
 
-It is not enforced inside `lock_for_sale` because every narrower key turns
-an ordinary lost race into a 500: keyed on the derived half it refuses
-`offer` losing to a lot offer
-(`test_offering_a_lot_races_offering_one_of_its_members`), keyed on
-`listing_ids` it catches `place_order`, keyed on `including_paused` it
-catches `end_offer`. The obligation is stated in `lock_for_sale`'s docstring,
-in `refuse_if_lot_unheld`, and here.
+Four callers do this:
+
+- In `routers.inventory`: `receive_items`, `bulk_edit` and `update_item`.
+  Each ends whatever `offers_holding` returns for the items it changes.
+- `routers.offers.create_offers`. It locks a whole batch of items in one
+  pass before its first `offer`. Each `offer` then takes the lot rows of the
+  live offers holding its item. So a lot offered between the batch's
+  unlocked read and its item lock would have its lot row taken after the
+  items.
+
+Every other caller ends only listings it named, whose lot rows are always
+taken first.
+
+The check is not enforced inside `lock_for_sale`, because every narrower key
+turns an ordinary lost race into a 500:
+
+- keyed on the derived half, it refuses `offer` losing to a lot offer
+  (`test_offering_a_lot_races_offering_one_of_its_members`);
+- keyed on `listing_ids`, it catches `place_order`;
+- keyed on `including_paused`, it catches `end_offer`.
+
+The obligation is stated in `lock_for_sale`'s docstring, in
+`refuse_if_lot_unheld`, and here.
 
 ## Who comes through it
 
@@ -134,63 +160,84 @@ in `refuse_if_lot_unheld`, and here.
 | `auctions.remove_lot` | `_lock_auction`, then `lock_for_sale(listing_ids=..., including_paused=True)` for the lot before its coins come back from the house, then `end_offer` |
 | `auctions.cancel` | `_lock_auction`, then one `lock_for_sale(listing_ids=..., including_paused=True)` over every lot in the auction, then `end_offer` per lot |
 
-`remove_lot` and `cancel` take their pass before the first write because
-returning a consigned coin writes its item row, and that write is flushed
-before `end_offer`: taken any later, the item row would come before the lot
-row. `cancel` takes one pass for the whole auction, as `settle` does, since
-its lots' `sales_lot` ids need not ascend in the order it removes them.
+### Auctions
 
-`auctions.consign` takes `_lock_auction` and then moves items through
-`lifecycle_writes.set_location`, which writes item rows and takes no lot or
-listing row. `schedule` and `close` touch only the auction row and rely on
-its `version` column; `refuse_unless_lot_editable`, the gate on a lot's
-number and reserve, takes the auction row and nothing below it. Every
-transition that reaches an auction's coins takes
-the auction row first; a `cancel` that wrote the auction row last would take
-lots, items and listings before it, the inverse of `settle`.
+`remove_lot` and `cancel` take their pass before the first write. Returning
+a consigned coin writes its item row, and that write is flushed before
+`end_offer`. Taken any later, the item row would come before the lot row.
+`cancel` takes one pass for the whole auction, as `settle` does, since its
+lots' `sales_lot` ids need not ascend in the order it removes them.
 
-**Receiving** takes its locks before it writes any `inventory_item` row, and
-its `offers_holding` read *above* the locks only chooses what to lock. The
-item edits (`bulk_edit`, `update_item`) follow the same pattern. The
-authoritative read is a second `offers_holding` call after the writes, under
-the locks: it also finds an offer made between the first read and the
+The other auction transitions:
+
+- `auctions.consign` takes `_lock_auction` and then moves items through
+  `lifecycle_writes.set_location`. That writes item rows and takes no lot or
+  listing row.
+- `schedule` and `close` touch only the auction row, and rely on its
+  `version` column.
+- `refuse_unless_lot_editable`, the gate on a lot's number and reserve,
+  takes the auction row and nothing below it.
+
+Every transition that reaches an auction's coins takes the auction row
+first. A `cancel` that wrote the auction row last would take lots, items and
+listings before it: the inverse of `settle`.
+
+### Receiving and the item edits
+
+**Receiving** takes its locks before it writes any `inventory_item` row. Its
+`offers_holding` read *above* the locks only chooses what to lock. The item
+edits (`bulk_edit`, `update_item`) follow the same pattern.
+
+The authoritative read is a second `offers_holding` call, after the writes,
+under the locks. It also finds an offer made between the first read and the
 locks, which acting on the first read would leave standing. A listing a
-concurrent checkout ended meanwhile is safe either way -- `_end` returns
-early on an `ended` listing (*Ending is idempotent*, below), so a `sold`
-lot is never rewritten to `dissolved`
+concurrent checkout ended meanwhile is safe either way. `_end` returns early
+on an `ended` listing (*Ending is idempotent*, below), so a `sold` lot is
+never rewritten to `dissolved`
 (`test_buying_a_lot_races_marking_one_of_its_coins_missing`).
 
 `lock_for_sale` re-reads the rows it locks, so after it the session holds
-the current version, and the version column's own check at the UPDATE can
+the current version. The version column's own check at the UPDATE can then
 no longer see a save that landed between the request's read and its lock.
-`update_item` therefore asks its lost-update check again when the version
-moved (`_recheck_under_the_lock`), as `_refuse_lost_update` asks it: a
-`base` is merged again against the item as it now stands, so a change to
-another field -- a checkout's disposition -- is kept, whether or not a
-`version` came with it (the console sends both); a `version` sent without a
-base is refused (409).
+So `update_item` asks its lost-update check again when the version moved
+(`_recheck_under_the_lock`), as `_refuse_lost_update` asks it:
 
-What an edit works out from the item -- its years, `no_date`, a fine weight
-the weight rule must redo, and the kind guards (coin-only fields, a
-denomination, designation or series of the other kind) -- is worked out
-after the lock, from the item as it stands under it. Worked out before, it
-would write back the values the landed save replaced. `update_item` and
-`bulk_edit` therefore take `lock_for_sale` straight after reading the item,
-ahead of their guards. Receiving
-and `bulk_edit` send no version and are not refused for a change they were
-never shown: a coin that went missing while its lot was bought is still
-recorded missing (`test_buying_a_lot_races_marking_one_of_its_coins_missing`,
+- A `base` is merged again against the item as it now stands. So a change
+  to another field -- a checkout's disposition -- is kept, whether or not a
+  `version` came with it (the console sends both).
+- A `version` sent without a base is refused (409).
+
+Some values an edit works out from the item:
+
+- its years and `no_date`;
+- a fine weight the weight rule must redo;
+- the kind guards: coin-only fields, and a denomination, designation or
+  series of the other kind.
+
+These are worked out after the lock, from the item as it stands under it.
+Worked out before, they would write back the values the landed save
+replaced. So `update_item` and `bulk_edit` take `lock_for_sale` straight
+after reading the item, ahead of their guards.
+
+Receiving and `bulk_edit` send no version. They are not refused for a change
+they were never shown: a coin that went missing while its lot was bought is
+still recorded missing
+(`test_buying_a_lot_races_marking_one_of_its_coins_missing`,
 `tests/test_lock_rereads.py`).
 
+### Splitting and settlement
+
 **Splitting** is items → listings, the canonical direction, and takes no lot
-row: its listing loop filters `Listing.inventory_item_id == parent.id`,
-which is NULL on a lot listing, and `split_item` refuses outright a parent
-that is an open member of an *offered* lot, so it never reaches a lot
-listing through `end_offer`.
+row. It never reaches a lot listing through `end_offer`, for two reasons:
+
+- its listing loop filters `Listing.inventory_item_id == parent.id`, which
+  is NULL on a lot listing;
+- `split_item` refuses outright a parent that is an open member of an
+  *offered* lot.
 
 **Settlement** passes `item_ids` only, so the confirming re-read has nothing
-to compare; that is safe because `add_lot` refuses any auction that is not
-`draft` or `scheduled`, so a `closed` auction's lots cannot change under it.
+to compare. That is safe because `add_lot` refuses any auction that is not
+`draft` or `scheduled`. So a `closed` auction's lots cannot change under it.
 
 ## Every `with_for_update` in `backend/app`
 
@@ -219,39 +266,41 @@ Statements and `db.refresh(..., with_for_update=True)` calls alike:
 
 Two transaction-scoped advisory locks sit beside them:
 
-- `image_store.hold_content`, keyed by a stored picture's hash. `ingest`
-  holds it from its look for that hash to its commit, and
-  `image_store.remove_unheld` holds it while it asks whether any row still
-  names the files before deleting them -- so a delete never removes the
-  files of the same picture uploaded again meanwhile, and two uploads of one
-  picture are one row. `routers.images.delete_image` holds it from before it
-  deletes the image row until its commit, so an upload of the same picture
-  waits and stores it again rather than answering with the row being
-  deleted. `image_enlarge._enlarge` holds a new picture's hash from its look
-  until its batch commits, so one batch holds up to `image_enlarge.BATCH`
-  hashes across that many fetches.
-- `acquisitions.next_order_number`'s, over the generated purchase numbers,
-  held until the purchase that took the number commits.
+- **`image_store.hold_content`**, keyed by a stored picture's hash.
+  - `ingest` holds it from its look for that hash to its commit.
+  - `image_store.remove_unheld` holds it while it asks whether any row still
+    names the files, before deleting them.
+
+  So a delete never removes the files of the same picture uploaded again
+  meanwhile, and two uploads of one picture are one row.
+  - `routers.images.delete_image` holds it from before it deletes the image
+    row until its commit. So an upload of the same picture waits and stores
+    it again, rather than answering with the row being deleted.
+  - `image_enlarge._enlarge` holds a new picture's hash from its look until
+    its batch commits. So one batch holds up to `image_enlarge.BATCH` hashes
+    across that many fetches.
+- **`acquisitions.next_order_number`'s**, over the generated purchase
+  numbers, held until the purchase that took the number commits.
 
 A request that holds both an item and a picture's hash holds the item first
-(`hold_items`, then `hold_content`): upload, fetch by web address and
-delete. `app.photo_import`, run by hand, stores a file before it finds the
-item and so takes them the other way.
+(`hold_items`, then `hold_content`). These are upload, fetch by web address
+and delete. `app.photo_import`, run by hand, stores a file before it finds
+the item, and so takes them the other way.
 
 ## Related rules
 
-- **Ending is idempotent.** `offering_writes._end` returns early on a listing
-  that is already `ended`, so a second `POST /api/listings/{id}/end` cannot
-  rewrite a `sold` lot to `dissolved`
+- **Ending is idempotent.** `offering_writes._end` returns early on a
+  listing that is already `ended`. So a second `POST /api/listings/{id}/end`
+  cannot rewrite a `sold` lot to `dissolved`
   (`test_ending_a_sold_lot_s_listing_again_leaves_it_sold`,
-  `tests/test_offers_api.py`). It lives in
-  `_end` because that is the single writer of `sales_lot.status`.
+  `tests/test_offers_api.py`). It lives in `_end` because that is the single
+  writer of `sales_lot.status`.
 - **No false conflicts on items.** `_after_stock_change` writes
-  `inventory_item.disposition`, which carries a version column; the items are
-  locked and re-read first, so an unrelated concurrent edit to a coin does
-  not refuse a revision or a cancellation. The `StaleDataError` handling in
-  `revise_order`, and `routers._tx.committing` around `update_order_status`,
-  remain as defense in depth.
+  `inventory_item.disposition`, which carries a version column. The items
+  are locked and re-read first, so an unrelated concurrent edit to a coin
+  does not refuse a revision or a cancellation. The `StaleDataError`
+  handling in `revise_order`, and `routers._tx.committing` around
+  `update_order_status`, remain as defense in depth.
 
 ## Tests
 
@@ -260,13 +309,15 @@ item and so takes them the other way.
   connection. It is what fails if `_acquire`'s lines are reordered.
 - `test_buying_a_lot_races_offering_one_of_its_coins`
   (`tests/test_offer_races.py`) races a lot checkout against an offer of one
-  of its coins on two real connections and asserts one winner, one clean
-  refusal and no `OperationalError`. It fails if a caller **bypasses**
-  `_acquire` (for example `_lock_listings` taking listings on its own).
-  Reordering `_acquire` does not fail it: with one copy of the order, both
-  writers move together and still agree. A deadlock needs disagreement, not
-  a particular direction -- which is why the rule is "come through here".
-- `tests/test_offer_races.py` also races two checkouts for one lot and a lot
-  checkout against a receipt marking one of its coins missing;
-  `tests/test_settlement_race.py` races settlement against settlement,
+  of its coins, on two real connections. It asserts one winner, one clean
+  refusal and no `OperationalError`.
+  - It fails if a caller **bypasses** `_acquire` (for example
+    `_lock_listings` taking listings on its own).
+  - Reordering `_acquire` does not fail it. With one copy of the order, both
+    writers move together and still agree. A deadlock needs disagreement,
+    not a particular direction -- which is why the rule is "come through
+    here".
+- `tests/test_offer_races.py` also races two checkouts for one lot, and a
+  lot checkout against a receipt marking one of its coins missing.
+- `tests/test_settlement_race.py` races settlement against settlement,
   cancellation and receiving, and consigning against canceling.

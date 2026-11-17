@@ -2,17 +2,26 @@
 
 *2026-09-29.* SonarQube tracks the code's quality over time -- issues,
 duplication, test coverage and a quality gate -- for the backend and
-frontend together, as a second opinion beside the lint and test gates of
-`scripts\ccweb_check.cmd`. It is a developer tool, not part of the product:
-the developer runs it on this machine through four `scripts\ccweb_sonar_*.cmd`
-scripts, reads the dashboard at `http://localhost:9000`, and the development
-tool queries it through the SonarQube MCP tools. It runs locally in Podman
-containers, so code and analysis data never leave the machine. Day-to-day
-commands are in `docs/runtime-operations-windows.md`, section "SonarQube (local
-server)". On Linux each script has a `.sh` twin
-(`docs/runtime-operations-linux.md`), where podman runs natively and there
-is no podman machine to start. The server's host port is the setting
-`CCWEB_SONAR_PORT`, default 9000.
+frontend together. It is a second opinion beside the lint and test gates of
+`scripts\ccweb_check.cmd`.
+
+It is a developer tool, not part of the product:
+
+- the developer runs it on this machine through four
+  `scripts\ccweb_sonar_*.cmd` scripts;
+- the developer reads the dashboard at `http://localhost:9000`;
+- the development tool queries it through the SonarQube MCP tools (MCP, the
+  Model Context Protocol, is how the development tool calls outside
+  services).
+
+It runs locally in Podman containers, so code and analysis data never leave
+the machine. The server's host port is the setting `CCWEB_SONAR_PORT`,
+default 9000.
+
+Day-to-day commands are in `docs/runtime-operations-windows.md`, section
+"SonarQube (local server)". On Linux each script has a `.sh` twin
+(`docs/runtime-operations-linux.md`); there podman runs natively and there
+is no podman machine to start.
 
 Out of scope: TLS, LAN or CI exposure, user management, auto-start on boot,
 and Developer Edition features (branch analysis, PR decoration). Community
@@ -64,19 +73,27 @@ Named volumes: `sonar-db-data`, `sonarqube-data`, `sonarqube-extensions`,
 
 **Why a separate MCP launcher.** Left to its defaults, the CLI's own
 `sonar run mcp` starts its container on the default bridge network with
-`SONARQUBE_URL=http://localhost:9000`, so `localhost` is the container itself
-and it dies with `Connection refused`. sonarqube-cli 1.10 and later can be told
-otherwise, but only in each user's own CLI configuration
-(`mcp.container.network` set to `sonar-net`, `mcp.container.serverUrl` to
-`http://sonarqube:9000`), which a clone does not carry. `ccweb_sonar_mcp.cmd` holds the same choices in the
-repository -- `sonar-net`, the server by container name, the project key
-`ccweb`, the repository mounted read-only, the token passed by name so it never
-appears on a command line -- and `.mcp.json` (gitignored, hand-edited) points
-at it. `sonar integrate claude` overwrites `.mcp.json` with the `sonar run mcp`
-launcher, which works only where those two settings are made; the file's
-contents, to restore it, are in
-[runtime-operations-windows.md](../runtime-operations-windows.md) (*SonarQube (local
-server)*).
+`SONARQUBE_URL=http://localhost:9000`. There `localhost` is the container
+itself, so it dies with `Connection refused`.
+
+sonarqube-cli 1.10 and later can be told otherwise, but only in each user's
+own CLI configuration (`mcp.container.network` set to `sonar-net`,
+`mcp.container.serverUrl` to `http://sonarqube:9000`), which a clone does
+not carry.
+
+`ccweb_sonar_mcp.cmd` holds the same choices in the repository:
+
+- `sonar-net`;
+- the server by container name;
+- the project key `ccweb`;
+- the repository mounted read-only;
+- the token passed by name, so it never appears on a command line.
+
+`.mcp.json` (gitignored, hand-edited) points at it. `sonar integrate claude`
+overwrites `.mcp.json` with the `sonar run mcp` launcher, which works only
+where those two settings are made. The file's contents, to restore it, are
+in [runtime-operations-windows.md](../runtime-operations-windows.md)
+(*SonarQube (local server)*).
 
 ## Configuration
 
@@ -86,10 +103,10 @@ server)*).
 - `sonar.sources=backend/app,frontend/src` (Alembic's generated migrations,
   under `backend/alembic`, lie outside it)
 - `sonar.tests=backend/tests,frontend/src`, with `sonar.test.inclusions`
-  naming `backend/tests/**`, `*.test.js`, `*.test.jsx` and `src/test/**` --
-  frontend tests sit beside their components, and without the inclusion they
-  count as uncovered source; the inclusion narrows every test root, so the
-  backend's tests are named in it too
+  naming `backend/tests/**`, `*.test.js`, `*.test.jsx` and `src/test/**`.
+  Frontend tests sit beside their components, and without the inclusion they
+  count as uncovered source. The inclusion narrows every test root, so the
+  backend's tests are named in it too.
 - `sonar.python.version=3.13`, `sonar.python.coverage.reportPaths=coverage.xml`
 - `sonar.javascript.lcov.reportPaths=frontend/coverage/lcov.info`
 - `sonar.exclusions=frontend/dist/**,frontend/node_modules/**`
@@ -102,26 +119,32 @@ python -m pytest --cov=backend/app --cov-report=xml:coverage.xml
 ```
 
 with `relative_files = true` under `[tool.coverage.run]` in `pyproject.toml`.
-All three are needed: coverage.py records absolute paths by default, and the
-scanner reads `coverage.xml` inside a container where the repository is mounted
-at a different absolute path. The mismatch does not error; it reports 0%
-coverage, which reads as clean code rather than a broken pipeline. Running from
-`backend\` (as `ccweb_check.cmd` does) records `app/...` paths that
-`backend/app` cannot map, with the same silent result.
+All three are needed (the repository root, the command, the setting):
+
+- coverage.py records absolute paths by default, and the scanner reads
+  `coverage.xml` inside a container where the repository is mounted at a
+  different absolute path. The mismatch does not error. It reports 0%
+  coverage, which reads as clean code rather than a broken pipeline.
+- Running from `backend\` (as `ccweb_check.cmd` does) records `app/...`
+  paths that `backend/app` cannot map, with the same silent result.
 
 The frontend's `vitest run --coverage` writes `frontend/coverage/lcov.info`.
 
 Ignored by git: `coverage.xml`, `.scannerwork/`, `frontend/coverage/`,
 `.mcp.json`, `scripts/.sonar/`.
 
-**Rules.** Every language is analyzed with the server's built-in `Sonar way`
-profile but JavaScript, whose profile is `ccwebdb way`: a child of `Sonar way`,
-so it follows the built-in's changes, with one rule switched off --
-`javascript:S6846`, which forbids the `accesskey` attribute. The console gives
-its fields Alt letters on purpose, and that attribute is how. The profile lives
-in the server's own database, not in this repository: a server built afresh
-needs it made again (Quality Profiles: create it for JavaScript, set `Sonar
-way` as its parent, deactivate the rule, and make it the project's).
+**Rules.** Every language but JavaScript is analyzed with the server's
+built-in `Sonar way` profile. JavaScript's profile is `ccwebdb way`:
+
+- a child of `Sonar way`, so it follows the built-in's changes;
+- with one rule switched off -- `javascript:S6846`, which forbids the
+  `accesskey` attribute. The console gives its fields Alt letters on
+  purpose, and that attribute is how.
+
+The profile lives in the server's own database, not in this repository. A
+server built afresh needs it made again: in Quality Profiles, create it for
+JavaScript, set `Sonar way` as its parent, deactivate the rule, and make it
+the project's.
 
 ## Authentication
 

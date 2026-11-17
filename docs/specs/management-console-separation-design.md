@@ -2,27 +2,32 @@
 
 *2026-09-29.* The business has two audiences: buyers browsing the public
 shop, and the owner and managers running inventory, purchases, sales and
-reports. The frontend is therefore two applications built from one Vite
-project: the **shop**, served at `/`, and the **management console**, served
-at `/management`. The shop's bundle contains no console module -- not lazily
-loaded, not present -- so an anonymous visitor neither downloads the
-console's code nor learns what its pages are or which endpoints they call.
-This document covers how the two are kept apart and how that is verified; it
+reports. So the frontend is two applications built from one Vite project:
+
+- the **shop**, served at `/`;
+- the **management console**, served at `/management`.
+
+The shop's bundle contains no console module -- not lazily loaded, not
+present. An anonymous visitor neither downloads the console's code nor
+learns what its pages are or which endpoints they call.
+
+This document covers how the two are kept apart and how that is verified. It
 is of interest to whoever adds a page or a shared module.
 
 ## What this is and is not
 
 This is frontend structure, not access control. `require_admin` in
-`backend/app/deps.py` guards every administrative endpoint; the separation is
-defense in depth plus the removal of an information leak. A per-route guard in
-the shop answering "Manager privileges are required" would confirm that
-the page exists; the shop instead answers "not found" for console paths.
+`backend/app/deps.py` guards every administrative endpoint. The separation is
+defense in depth, plus the removal of an information leak: a per-route guard
+in the shop answering "Manager privileges are required" would confirm that
+the page exists. The shop instead answers "not found" for console paths.
 
-Someone who *guesses* `/management` still reaches a sign-in screen, so the console
-remains discoverable to a determined guesser. `management.html` asks crawlers
-not to index or follow it, so a search engine does not do the guessing.
-Closing that means serving the console on an interface the public cannot
-reach -- a deployment decision that needs no change to anything here.
+Someone who *guesses* `/management` still reaches a sign-in screen, so the
+console remains discoverable to a determined guesser. `management.html` asks
+crawlers not to index or follow it, so a search engine does not do the
+guessing. Closing that gap means serving the console on an interface the
+public cannot reach -- a deployment decision that needs no change to
+anything here.
 
 ## Structure
 
@@ -45,18 +50,23 @@ Rollup builds each HTML entry as an independent module graph. Everything stays
 under `frontend/src`, so one eslint, one vitest and one SonarQube source path
 cover both applications.
 
-Two Vite projects were rejected (two dependency trees, two lint and test
-configurations, shared code needing a workspace package), and so was one bundle
-with a lazily-loaded console subtree (the chunk is still served on request and
-the routes still exist in the shop's router).
+Two alternatives were rejected:
+
+- Two Vite projects: two dependency trees, two lint and test configurations,
+  and shared code needing a workspace package.
+- One bundle with a lazily-loaded console subtree: the chunk is still served
+  on request, and the routes still exist in the shop's router.
 
 ### The API client is split
 
-An object literal does not tree-shake, so every endpoint written into the
-shop's `api` object is a map of the owner's tooling delivered to every visitor.
-`shared/api.js` holds the transport (`send`, token handling, `ApiError`) and
-the calls the shop and shared components make; `management/api.js` spreads it and
-adds the console's, so a console page imports one `api`.
+An object literal does not tree-shake (the build cannot drop its unused
+members). So every endpoint written into the shop's `api` object would be a
+map of the owner's tooling delivered to every visitor. Instead:
+
+- `shared/api.js` holds the transport (`send`, token handling, `ApiError`)
+  and the calls the shop and shared components make;
+- `management/api.js` spreads it and adds the console's, so a console page
+  imports one `api`.
 
 One exception: `addReferenceValue` stays in `shared/api.js`, because
 `ReferenceSelect` in `shared/reference.jsx` calls it and shared code may not
@@ -65,10 +75,10 @@ the endpoint itself is staff only.
 
 ### The stylesheet is split
 
-`shared.css`, `store/styles.css` and `management/styles.css`. A shared stylesheet
-would ship the shop class names that enumerate the owner's features
-(`.inventory-table`, `.bulk-bar`, `.review-pane`), giving back what the bundle
-split removed.
+There are three stylesheets: `shared.css`, `store/styles.css` and
+`management/styles.css`. A single shared stylesheet would ship the shop class
+names that enumerate the owner's features (`.inventory-table`, `.bulk-bar`,
+`.review-pane`), giving back what the bundle split removed.
 
 ### Sessions are shared
 
@@ -80,18 +90,26 @@ redirecting to the shop's; both wrap the shared `LoginForm`. **The shop never
 links to the console**: that link would reintroduce exactly the discovery this
 removes.
 
-Keeping the tokens in `localStorage` is a trade-off. Any script running in
-the page can read them, so a cross-site scripting flaw would hand over the
-session, refresh token included, where an `HttpOnly` cookie would keep it
-out of a script's reach. The bearer token in return needs no CSRF defense,
-since a browser never attaches it to a request on its own. What limits the
-exposure is everything that keeps a foreign script out of the page: React
-escapes what it renders, the pages load nothing from elsewhere but the
-DigiCert seal, and the public site's `Content-Security-Policy`
-(`deploy/Caddyfile`) allows scripts from the site itself and the seal only,
-and data to be sent back to the site alone. The access token lives
-`ACCESS_TOKEN_EXPIRE_MINUTES` (30 by default), and signing out or changing
-the password invalidates every token issued to the account.
+Keeping the tokens in `localStorage` is a trade-off:
+
+- **The cost.** Any script running in the page can read them. A cross-site
+  scripting flaw would hand over the session, refresh token included, where
+  an `HttpOnly` cookie would keep it out of a script's reach.
+- **The gain.** The bearer token needs no CSRF defense, since a browser never
+  attaches it to a request on its own.
+
+What limits the exposure is everything that keeps a foreign script out of
+the page:
+
+- React escapes what it renders.
+- The pages load nothing from elsewhere but the DigiCert seal.
+- The public site's `Content-Security-Policy` (`deploy/Caddyfile`) allows
+  scripts from the site itself and the seal only, and data to be sent back
+  to the site alone.
+
+The access token lives `ACCESS_TOKEN_EXPIRE_MINUTES` (30 by default), and
+signing out or changing the password invalidates every token issued to the
+account.
 
 ### One guard at the router root
 
@@ -132,15 +150,18 @@ static imports, so `no-restricted-syntax` applies the same boundary to
 (`bundleGraph()` in `vite.config.js`) writes `dist/.vite/bundle-graph.json`,
 listing every chunk's modules. `frontend/scripts/check-bundle-isolation.mjs`
 walks the chunks reachable from each entry, following static and dynamic
-imports, and fails if any chunk contains a module from the other
-application's tree. It is
-symmetric. It reads chunk *membership*, not Vite's `manifest.json`: a manifest
-records a chunk's imports but not its contents, and a chunk shared between
-entries has no `src` -- exactly where a module imported by both lands. It is
-also the only layer that catches a computed dynamic import
-(``import(`../management/pages/${name}.jsx`)``), which no lint rule can match. It is
-deliberately not a string search of the built JavaScript: minification renames
-identifiers, and a check that passes for the wrong reason is worse than none.
+imports. It fails if any chunk contains a module from the other
+application's tree. It is symmetric.
+
+- It reads chunk *membership*, not Vite's `manifest.json`. A manifest
+  records a chunk's imports but not its contents, and a chunk shared between
+  entries has no `src` -- exactly where a module imported by both lands.
+- It is the only layer that catches a computed dynamic import
+  (``import(`../management/pages/${name}.jsx`)``), which no lint rule can
+  match.
+- It is deliberately not a string search of the built JavaScript.
+  Minification renames identifiers, and a check that passes for the wrong
+  reason is worse than none.
 
 `scripts\ccweb_check.cmd` builds the frontend and runs the isolation check as
 one of its gates.
