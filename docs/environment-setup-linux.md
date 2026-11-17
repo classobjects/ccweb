@@ -1,18 +1,24 @@
 # Development environment setup on Linux
 
-How to build the `ccwebdb` development environment on a clean Ubuntu
-machine, from nothing to a running shop and management console: the tools,
-the local PostgreSQL cluster, the configuration, and filling the database.
-It is the Linux counterpart of
-[environment-setup-windows.md](environment-setup-windows.md), with the same
-steps in the same order, so a step number means the same thing in both.
+This guide builds the `ccwebdb` development environment on a clean Ubuntu
+machine. It takes you from nothing to a running shop and management
+console: the tools, the local PostgreSQL cluster, the configuration, and
+filling the database.
 
-Tested on **Ubuntu 26.04 LTS**, on a computer of its own and under WSL; 24.04
-is expected to work. Everything is installed **per-user or
-per-environment**; only step 0 needs `sudo`. All commands are **bash**, and
-each block pastes into a terminal as written. For day-to-day starting and
-stopping once set up, see
-[runtime-operations-linux.md](runtime-operations-linux.md).
+It is the Linux counterpart of
+[environment-setup-windows.md](environment-setup-windows.md). The steps are
+the same and in the same order, so a step number means the same thing in
+both.
+
+- **Tested on:** Ubuntu 26.04 LTS, on a computer of its own and under WSL.
+  24.04 is expected to work.
+- **Installed:** everything per-user or per-environment. Only step 0 needs
+  `sudo`.
+- **Commands:** all bash. Each block pastes into a terminal as written.
+
+Once it is set up, see
+[runtime-operations-linux.md](runtime-operations-linux.md) for day-to-day
+starting and stopping.
 
 Versions in use; newer patch releases should be fine:
 
@@ -28,8 +34,8 @@ Versions in use; newer patch releases should be fine:
 The application needs **PostgreSQL 17 or later**; step 4 installs the 18
 line.
 
-**Under WSL**, keep the repository in the Linux home folder (`~/dev/...`),
-never under `/mnt/c`: files there are reached through a slow translation
+**Under WSL, keep the repository in the Linux home folder** (`~/dev/...`),
+never under `/mnt/c`. Files there are reached through a slow translation
 layer, and PostgreSQL refuses a data folder whose permissions Windows
 controls.
 
@@ -37,21 +43,25 @@ controls.
 
 ## 0. The system's own tools
 
-`git` to fetch the repository, `curl` to fetch the installers, `iproute2`
-for `ss`, which the scripts use to see which program holds a port, and
-`rsync`, which step 8 uses to copy the photographs. Most
-Ubuntu installations have them already; this installs whatever is missing
-and changes nothing that is there:
+Install the system tools the setup needs. Most Ubuntu installations have
+them already; this installs whatever is missing and changes nothing that is
+there:
 
 ```console
 sudo apt-get update
 sudo apt-get install -y git curl iproute2 rsync
 ```
 
+- `git` fetches the repository.
+- `curl` fetches the installers.
+- `iproute2` provides `ss`, which the scripts use to see which program holds
+  a port.
+- `rsync` copies the photographs in step 8.
+
 ## 1. Miniforge3
 
-Miniforge is conda configured for the `conda-forge` channel only, so there are
-no Anaconda Terms-of-Service prompts.
+Miniforge is conda configured for the `conda-forge` channel only, so there
+are no Anaconda Terms-of-Service prompts.
 
 **First check whether it is already installed:**
 
@@ -66,7 +76,7 @@ if [ -x ~/miniforge3/bin/conda ]; then ~/miniforge3/bin/conda --version; else ec
   ~/miniforge3/bin/conda update -n base conda
   ```
 
-- **It is not installed:** install it, into `~/miniforge3`:
+- **It is not installed:** install it into `~/miniforge3`:
 
   ```console
   curl -fsSLo /tmp/Miniforge3.sh "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-$(uname)-$(uname -m).sh"
@@ -74,8 +84,8 @@ if [ -x ~/miniforge3/bin/conda ]; then ~/miniforge3/bin/conda --version; else ec
   rm /tmp/Miniforge3.sh
   ```
 
-Make `conda` available to your shells. This adds conda's hook to
-`~/.bashrc`; run again, it reports `no change`:
+Then make `conda` available to your shells. This adds conda's hook to
+`~/.bashrc`. Run again, it reports `no change`:
 
 ```console
 ~/miniforge3/bin/conda init bash
@@ -85,7 +95,7 @@ Make `conda` available to your shells. This adds conda's hook to
 
 ## 2. The `ccwebdb` conda environment
 
-First check whether it exists:
+First check whether the environment exists:
 
 ```console
 if [ -x ~/miniforge3/envs/ccwebdb/bin/python ]; then echo "The ccwebdb environment exists: skip creating it"; else echo "No ccwebdb environment yet: create it below"; fi
@@ -98,30 +108,30 @@ conda create -n ccwebdb python=3.13
 ```
 
 **If conda asks to remove an existing environment, answer `n`.** It asks
-that when `ccwebdb` already exists, and `y` deletes the environment with
+this when `ccwebdb` already exists, and `y` deletes the environment with
 everything installed in it.
 
-Then, either way:
+Then, either way, activate it:
 
 ```console
 conda activate ccwebdb
 ```
 
-The project scripts activate it themselves (see
-[runtime-operations-linux.md](runtime-operations-linux.md)); activate it by
+The project scripts activate the environment themselves (see
+[runtime-operations-linux.md](runtime-operations-linux.md)). Activate it by
 hand only for commands you type yourself.
 
 ## 3. uv
 
-uv owns Python dependency management for this project. Check first whether
-it is installed; this prints its version if it is:
+uv manages this project's Python dependencies. Check whether it is
+installed; if it is, this prints its version:
 
 ```console
 uv --version
 ```
 
-If bash says `uv: command not found`, install it with Astral's installer,
-which puts `uv` in `~/.local/bin`:
+If bash says `uv: command not found`, install it with Astral's installer.
+It puts `uv` in `~/.local/bin`:
 
 ```console
 curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -131,9 +141,9 @@ Then open a new terminal, so `~/.local/bin` is on `PATH`.
 
 ### Two environment variables
 
-Add them to `~/.bashrc`, so every new terminal has them. Run this in a
-terminal where `ccwebdb` is active, so the path comes from the activated
-environment; it adds each line only once:
+Add two variables to `~/.bashrc`, so every new terminal has them. Run this
+in a terminal where `ccwebdb` is active, so the path comes from the
+activated environment. It adds each line only once:
 
 ```console
 conda activate ccwebdb
@@ -142,36 +152,40 @@ grep -q UV_CACHE_DIR ~/.bashrc || echo 'export UV_CACHE_DIR="$HOME/dev/uv/cache"
 ```
 
 - `UV_PROJECT_ENVIRONMENT` -- **the important one.** It makes `uv sync`,
-  `uv add` and `uv run` operate on the conda `ccwebdb` environment instead of
+  `uv add` and `uv run` work on the conda `ccwebdb` environment instead of
   creating a project-local `.venv`.
-- `UV_CACHE_DIR` -- keeps uv's cache somewhere you chose. Any folder will
-  do; the one above is only a suggestion.
+- `UV_CACHE_DIR` -- keeps uv's cache in a folder you choose. Any folder
+  will do; the one above is only a suggestion.
 
-They take effect in **new** terminals. Check with
+They take effect in **new** terminals. Check them with
 `tail -n 2 ~/.bashrc`.
 
-> **`UV_PROJECT_ENVIRONMENT` applies to every uv project on the machine.** For
-> an unrelated uv project, run `export UV_PROJECT_ENVIRONMENT=.venv` in that
-> terminal first.
+> **`UV_PROJECT_ENVIRONMENT` applies to every uv project on the machine.**
+> For an unrelated uv project, first run `export UV_PROJECT_ENVIRONMENT=.venv`
+> in that terminal.
 
 ## 4. Node.js, PostgreSQL and the GitHub CLI (inside the conda env)
 
-None of these is a Python package, so `uv sync` never prunes them. This line
-is the record of what conda owns in `ccwebdb`; Python packages are recorded in
-`pyproject.toml` and `uv.lock` and are never installed with conda.
+Install all three into the conda environment. On an environment already in
+use, preview the change first with `--dry-run`.
 
 ```console
 conda install -n ccwebdb -c conda-forge nodejs=24.19.0 postgresql=18 gh=2.100.0
 ```
 
-On an environment already in use, preview with `--dry-run` first. Pin
-`nodejs` to the 24.x LTS line; conda-forge's newest `nodejs` builds have
-been pre-releases. Pin `postgresql` to its major version: a cluster made by
-one major version is not opened by the next without an upgrade. They land in `~/miniforge3/envs/ccwebdb/bin`, so they are
-on `PATH` only with the environment active. `gh`, the GitHub CLI, is
-optional: nothing in the setup or the scripts uses it, so leave it off
-the line unless you want it for pull requests; to use it, sign in once
-with `gh auth login`.
+- **Why conda.** None of these is a Python package, so `uv sync` never
+  prunes them. This line is the record of what conda owns in `ccwebdb`.
+  Python packages are recorded in `pyproject.toml` and `uv.lock`, and are
+  never installed with conda.
+- **The pins.** Pin `nodejs` to the 24.x LTS line, because conda-forge's
+  newest `nodejs` builds have been pre-releases. Pin `postgresql` to its
+  major version: a cluster made by one major version is not opened by the
+  next without an upgrade.
+- **Where they land.** In `~/miniforge3/envs/ccwebdb/bin`, so they are on
+  `PATH` only with the environment active.
+- **`gh`, the GitHub CLI, is optional.** Nothing in the setup or the
+  scripts uses it. Leave it off the line unless you want it for pull
+  requests. To use it, sign in once with `gh auth login`.
 
 Verify:
 
@@ -186,10 +200,10 @@ They print `v24.19.0`, `psql (PostgreSQL) 18.6` and `gh version 2.100.0`.
 
 ## 5. Fetch the code and create the local database cluster
 
-Clone the repository into `~/dev/ccweb` (the example's
-address is shown; use yours if it differs). From here on, each block of
-commands starts by changing to it, so it can be pasted on its own; change
-that line if you cloned it elsewhere.
+Clone the repository into `~/dev/ccweb`. The example's address is shown;
+use yours if it differs. From here on, each block of commands starts by
+changing to that folder, so it can be pasted on its own. Change that line
+if you cloned it elsewhere.
 
 ```console
 mkdir -p ~/dev
@@ -197,17 +211,15 @@ cd ~/dev
 if [ -d ccweb ]; then echo "already cloned"; else git clone https://github.com/classobjects/ccweb.git; fi
 ```
 
-PostgreSQL runs directly from the conda environment -- no Docker, no
-system PostgreSQL. First check whether the cluster exists:
+PostgreSQL runs directly from the conda environment -- no Docker, no system
+PostgreSQL. First check whether the cluster exists:
 
 ```console
 if [ -f ~/dev/ccweb/.pgdata/PG_VERSION ]; then echo "The database cluster exists: skip creating it"; else echo "No database cluster yet: create it below"; fi
 ```
 
-If it does not, create it (`initdb` refuses a `.pgdata` that is not empty,
-so this never overwrites one). Local connections need a password too:
-on Linux, unlike Windows, the cluster also listens on a socket file, which
-`--auth-local` secures.
+If it does not, create it. `initdb` refuses a `.pgdata` that is not empty,
+so this never overwrites one.
 
 ```console
 cd ~/dev/ccweb
@@ -217,8 +229,10 @@ initdb -D .pgdata -U postgres --pwfile="$pwfile" --auth-host=scram-sha-256 --aut
 rm -f "$pwfile"
 ```
 
-`.pgdata/` is gitignored, and `initdb` makes it readable by you alone
-(mode 0700), which PostgreSQL insists on.
+Local connections need a password too. On Linux, unlike Windows, the
+cluster also listens on a socket file, and `--auth-local` secures it.
+`.pgdata/` is gitignored. `initdb` makes it readable by you alone (mode
+0700), which PostgreSQL insists on.
 
 Start the server by hand. `./scripts/ccweb_startup.sh` cannot start it yet:
 it stops before PostgreSQL unless the dependencies of step 7 are installed.
@@ -252,27 +266,33 @@ psql -h localhost -U postgres -d postgres -c "CREATE DATABASE ccwebdb OWNER ccwe
 `role "ccwebdb" already exists` and `database "ccwebdb" already exists`,
 and change nothing.
 
-The server runs until you stop it (step 8 does, when restoring a
-collection) or the machine restarts; after
-a restart, start it again with the `pg_ctl` line above. From the end of step
-8 on, `./scripts/ccweb_startup.sh` starts it.
+The server runs until you stop it or the machine restarts. (Step 8 stops it
+when restoring a collection.) After a restart, start it again with the
+`pg_ctl` line above. From the end of step 8 on, `./scripts/ccweb_startup.sh`
+starts it.
 
-**Under WSL, port 5432 may be taken already.** A PostgreSQL running on the
-Windows side is reached from Linux as `localhost:5432` when WSL's networking
-is in *mirrored* mode, and then the cluster cannot listen there. Stop the
-Windows one, or give this cluster another port: add `port = 5434` to
-`.pgdata/postgresql.conf` and use 5434 in `DATABASE_URL` (step 6) and in the
-commands above and below. The scripts start the cluster on
-`DATABASE_URL`'s port whatever `postgresql.conf` says, so that edit
-matters only to a server started by hand.
+**Under WSL, port 5432 may be taken already.** When WSL's networking is in
+*mirrored* mode, a PostgreSQL running on the Windows side is reached from
+Linux as `localhost:5432`, and then this cluster cannot listen there. Stop
+the Windows one, or give this cluster another port:
+
+1. Add `port = 5434` to `.pgdata/postgresql.conf`.
+2. Use 5434 in `DATABASE_URL` (step 6) and in the commands above and below.
+
+The scripts start the cluster on `DATABASE_URL`'s port whatever
+`postgresql.conf` says. The `postgresql.conf` edit matters only to a server
+started by hand.
 
 ## 6. Configure the application
 
 The application reads its settings from a file named `.env` in the
-repository folder. Each line is `NAME=value`, with no spaces around the `=`;
-a line starting with `#` is a comment. The file holds this machine's
-secrets, so it is never committed (git ignores it) and made fresh on each
-machine from the committed template, `.env.example`.
+repository folder.
+
+- Each line is `NAME=value`, with no spaces around the `=`.
+- A line starting with `#` is a comment.
+- The file holds this machine's secrets. It is never committed (git ignores
+  it); each machine makes its own from the committed template,
+  `.env.example`.
 
 **1. Make the file from the template.** An existing `.env` is kept:
 
@@ -282,7 +302,7 @@ if [ -f .env ]; then echo ".env exists: keeping it"; else cp .env.example .env; 
 ```
 
 **2. Make a sign-in secret.** This prints 64 random characters, different
-every time; copy them:
+every time. Copy them:
 
 ```console
 conda activate ccwebdb
@@ -298,33 +318,35 @@ nano .env
 
 | Setting | What to put there |
 | --- | --- |
-| `JWT_SECRET` | **Required.** The 64 characters from 2, pasted after the `=`. It signs every sign-in, so it is this machine's alone: the API refuses to start without one, with one under 32 characters, or with an example value published in this repository. |
-| `FIRST_ADMIN_PASSWORD` | A password of your own, 12 characters or more, for the administrator `app.seed` makes on a **trial installation** (step 8). `app.create_admin`, which makes a new installation's first manager, takes it too when set, and otherwise asks. Restoring a collection runs neither, so it may stay empty there. |
+| `JWT_SECRET` | **Required.** The 64 characters from 2, pasted after the `=`. It signs every sign-in, so it belongs to this machine alone. The API refuses to start without one, with one under 32 characters, or with an example value published in this repository. |
+| `FIRST_ADMIN_PASSWORD` | A password of your own, 12 characters or more, for the administrator that `app.seed` makes on a **trial installation** (step 8). `app.create_admin`, which makes a new installation's first manager, also takes it when set, and otherwise asks. Restoring a collection runs neither, so there it may stay empty. |
 | `FIRST_ADMIN_EMAIL` | The trial administrator's sign-in; `admin@example.com` will do. |
-| `DATABASE_URL` | Leave it: it names the `ccwebdb` database and the `devpassword` of step 5. Change it only if step 5 used another password or port. |
-| `SALES_TAX_RATE`, `SALES_TAX_INCLUDES_SHIPPING` | Your sales tax on purchases as a fraction (`0.0635` is 6.35%), and `true` or `false` for whether shipping is taxed; unset, no tax ([settings.md](settings.md#the-shop-and-purchases)). |
+| `DATABASE_URL` | Leave it. It names the `ccwebdb` database and the `devpassword` of step 5. Change it only if step 5 used another password or port. |
+| `SALES_TAX_RATE`, `SALES_TAX_INCLUDES_SHIPPING` | Your sales tax on purchases as a fraction (`0.0635` is 6.35%), and `true` or `false` for whether shipping is taxed. Unset, there is no tax ([settings.md](settings.md#the-shop-and-purchases)). |
 | `DEFAULT_ITEM_KIND` | `currency` if you mostly buy notes; otherwise leave it ([settings.md](settings.md#the-shop-and-purchases)). |
 | `ACCESS_TOKEN_EXPIRE_MINUTES`, `REFRESH_TOKEN_EXPIRE_DAYS` | Leave them. |
-| Everything commented out (`# CCWEB_API_PORT=8000` and the rest) | Leave it: each line shows its setting's default. Uncomment one only to change it. The backup folder's default is `~/ccwebdb-backup`. |
+| Everything commented out (`# CCWEB_API_PORT=8000` and the rest) | Leave it. Each line shows its setting's default; uncomment one only to change it. The backup folder's default is `~/ccwebdb-backup`. |
 
-In nano, save with Ctrl+O and Enter, leave with Ctrl+X. Keep the names
-exactly as the template spells them: a misspelt name stops the API from
-starting rather than being ignored.
+In nano, save with Ctrl+O and Enter, and leave with Ctrl+X. Keep the names
+exactly as the template spells them. A misspelt name is not ignored: it
+stops the API from starting.
 
-**4. Check it** -- after step 7, which installs what it needs. This loads
-the settings the way the API does and prints `settings OK`, or an error
-naming the setting that is wrong, never a value:
+**4. Check it** -- after step 7, which installs what the check needs. This
+loads the settings the way the API does. It prints `settings OK`, or an
+error naming the setting that is wrong (never a value):
 
 ```console
 cd ~/dev/ccweb/backend
 uv run python -c "from app.config import settings; print('settings OK')"
 ```
 
-[settings.md](settings.md) lists every setting -- whether it is required,
-its default and the values it takes -- and says which must change before
+[settings.md](settings.md) lists every setting: whether it is required, its
+default, and the values it takes. It also says which must change before
 anything outside this machine can reach the system.
 
 ## 7. Install dependencies
+
+Install the Python packages and the frontend's packages:
 
 ```console
 cd ~/dev/ccweb
@@ -338,31 +360,35 @@ Then run step 6's check.
 
 ## 8. Fill the database
 
-Two cases, and they are **not interchangeable**. Both need the PostgreSQL
-server of step 5; first check that it answers:
+There are two cases, and they are **not interchangeable**: restore a
+collection, or make a trial installation. Both need the PostgreSQL server
+of step 5. First check that it answers:
 
 ```console
 conda activate ccwebdb
 pg_isready -h localhost -p 5432
 ```
 
-`accepting connections` is ready. `no response` means it is not running:
-start it with the `pg_ctl` line of step 5.
+`accepting connections` means it is ready. `no response` means it is not
+running: start it with the `pg_ctl` line of step 5.
 
 ### A collection, on a new machine
 
-The collection moves as the backup workbook and its photographs: the folder
-the backup writes to (`CCWEB_BACKUP_DIR`), made on the machine that holds
-the collection by its backup script (`ccweb_backup.cmd` on Windows,
-`ccweb_backup.sh` here). Copy that whole folder to this machine first --
-with `rsync`, `scp`, or a drive. Under WSL, a Windows machine's backup
-folder can be read directly under `/mnt/c/Users/` and the Windows user
-name: the example installation's, for instance, under that user's
-`OneDrive/coins_backup`.
+A collection moves as the backup workbook and its photographs. Both are in
+the folder the backup writes to (`CCWEB_BACKUP_DIR`). The backup script
+writes them on the machine that holds the collection: `ccweb_backup.cmd` on
+Windows, `ccweb_backup.sh` here.
 
-The same version of the code is needed as on the machine the backup came
-from (a workbook loads only into a database at its own migration revision).
-In one terminal, name the folder the backup is in -- this is the default;
+Before you start:
+
+- **Copy that whole folder to this machine** -- with `rsync`, `scp`, or a
+  drive. Under WSL, a Windows machine's backup folder can be read directly
+  under `/mnt/c/Users/` and the Windows user name. The example
+  installation's, for instance, is under that user's `OneDrive/coins_backup`.
+- **Use the same version of the code** as the machine the backup came from.
+  A workbook loads only into a database at its own migration revision.
+
+In one terminal, name the folder the backup is in. This is the default;
 put yours if you copied it elsewhere:
 
 ```console
@@ -384,16 +410,19 @@ BACKUP=~/ccwebdb-backup
    WORKBOOK="$(ls -t "$BACKUP"/ccwebdb_*.xlsx | head -n 1)" && echo "$WORKBOOK"
    ```
 
-   Then, in this same terminal, with the environment active
-   (`conda activate ccwebdb`), restore it as [system-administration.md](system-administration.md#the-workbook-backup)
-   (*The workbook backup*, *Restoring from it*) does: the password it asks
-   for is `devpassword` (step 5), and `"$WORKBOOK"` goes in place of
-   `FILE.xlsx`. Leave out its last line, `compare`: it compares with the
-   live database, which here is still the empty `ccwebdb`.
+   Then restore it as
+   [system-administration.md](system-administration.md#the-workbook-backup)
+   (*The workbook backup*, *Restoring from it*) does. Use this same
+   terminal, with the environment active (`conda activate ccwebdb`):
+
+   - The password it asks for is `devpassword` (step 5).
+   - `"$WORKBOOK"` goes in place of `FILE.xlsx`.
+   - Leave out its last line, `compare`. It compares with the live
+     database, which here is still the empty `ccwebdb`.
 
 3. **Put it in place as `ccwebdb`**, the name `.env` and the scripts use.
    This drops the empty `ccwebdb` made in step 5 and renames the restored
-   one -- but only when `ccwebdb` holds no tables, so it never drops a
+   one. It does so only when `ccwebdb` holds no tables, so it never drops a
    database with anything in it:
 
    ```console
@@ -406,9 +435,9 @@ BACKUP=~/ccwebdb-backup
    already holds tables, something was loaded into it already: look before
    going on.
 
-4. **Copy the photographs** into the folder the application keeps them in
-   (`media` in the repository, unless `MEDIA_ROOT` in `.env` names
-   another), then check every one against its record:
+4. **Copy the photographs** into the folder the application keeps them in:
+   `media` in the repository, unless `MEDIA_ROOT` in `.env` names another.
+   Then check every one against its record:
 
    ```console
    rsync -a "$BACKUP/media/" ~/dev/ccweb/media/
@@ -419,10 +448,11 @@ BACKUP=~/ccwebdb-backup
    uv run python -m app.media_backup check ~/dev/ccweb/media
    ```
 
-   The check names any photograph missing or not matching its record.
+   The check names any photograph that is missing or does not match its
+   record.
 
-5. **Stop the hand-started server** (step 5) and start everything the usual
-   way (*Running the application*, below):
+5. **Stop the hand-started server** (step 5). Then start everything the
+   usual way (*Running the application*, below):
 
    ```console
    cd ~/dev/ccweb
@@ -431,7 +461,7 @@ BACKUP=~/ccwebdb-backup
    ```
 
 The restore is then complete: **skip *A trial installation* below.** Sign
-in with an account from the old machine -- the restored database holds its
+in with an account from the old machine; the restored database holds its
 own accounts. **Do not run `app.seed`.**
 
 ### A trial installation, with demo data
@@ -443,20 +473,23 @@ uv run python -m app.seeding load
 uv run python -m app.seed
 ```
 
-`app.seeding load` loads the reference vocabularies from
-`backend/data/reference/`. `app.seed` creates the administrator from
-`FIRST_ADMIN_EMAIL` / `FIRST_ADMIN_PASSWORD` **plus five demo items with shop
-listings**. Both are idempotent. Never run `app.seed` against a real
-collection's database: it refuses one that already holds a purchase, or an
-item other than the five demo ones, and writes nothing, unless
-`--into-existing` is given.
+- `app.seeding load` loads the reference vocabularies from
+  `backend/data/reference/`.
+- `app.seed` creates the administrator from `FIRST_ADMIN_EMAIL` /
+  `FIRST_ADMIN_PASSWORD` **plus five demo items with shop listings**.
+
+Both are idempotent.
+
+Never run `app.seed` against a real collection's database. Unless
+`--into-existing` is given, it refuses a database that already holds a
+purchase, or an item other than the five demo ones, and writes nothing.
 
 ---
 
 ## Running the application
 
-Stop a server still running from step 5 (it prints `server stopped`, or
-`Is server running?` when none was):
+First stop a server still running from step 5. It prints `server stopped`,
+or `Is server running?` when none was:
 
 ```console
 cd ~/dev/ccweb
@@ -464,43 +497,51 @@ conda activate ccwebdb
 pg_ctl -D .pgdata -m fast stop
 ```
 
-Then:
+Then start everything:
 
 ```console
 cd ~/dev/ccweb
 ./scripts/ccweb_startup.sh
 ```
 
-The addresses are in [runtime-operations-linux.md](runtime-operations-linux.md)
-(*Quick reference*); under WSL, a browser on Windows reaches them at the
-same `http://127.0.0.1:...` addresses. Sign in to the management console
-with a manager account: on a trial installation, the administrator from
-`.env`; on a restored one, an account from the backup.
+The addresses are in
+[runtime-operations-linux.md](runtime-operations-linux.md) (*Quick
+reference*). Under WSL, a browser on Windows reaches them at the same
+`http://127.0.0.1:...` addresses.
+
+Sign in to the management console with a manager account:
+
+- on a trial installation, the administrator from `.env`;
+- on a restored one, an account from the backup.
 
 ## Running the tests
+
+This runs every gate ([code-quality.md](code-quality.md)):
 
 ```console
 cd ~/dev/ccweb
 ./scripts/ccweb_check.sh
 ```
 
-runs every gate ([code-quality.md](code-quality.md)). The Python suite
-creates `ccwebdb_test`, builds the schema, runs each test in a rolled-back
-transaction, and drops the database afterwards. A cluster of the
-computer's own for the tests, apart from the collection's, is
-`./scripts/ccweb_testdb.sh` ([runtime-operations-linux.md](runtime-operations-linux.md),
-*A cluster for the tests*). The gate runs the suite in parallel, each
-worker on a database of its own (`ccwebdb_gw0_test` and on). Never run two
-pytest sessions, or two gates, at once: they share those databases, and the
-resulting failures look like real bugs.
+- The Python suite creates `ccwebdb_test`, builds the schema, runs each
+  test in a rolled-back transaction, and drops the database afterwards.
+- The gate runs the suite in parallel, each worker on a database of its own
+  (`ccwebdb_gw0_test` and on).
+- `./scripts/ccweb_testdb.sh` gives the tests a cluster of the computer's
+  own, apart from the collection's
+  ([runtime-operations-linux.md](runtime-operations-linux.md), *A cluster
+  for the tests*).
+
+**Never run two pytest sessions, or two gates, at once.** They share those
+databases, and the resulting failures look like real bugs.
 
 ---
 
 ## Changing the code
 
-**Setup is finished at step 8; nothing in this section is part of it.** The
-commands for adding a dependency or a migration are the same in bash as in
-cmd: see [environment-setup-windows.md](environment-setup-windows.md),
+**Setup is finished at step 8; nothing in this section is part of it.**
+The commands for adding a dependency or a migration are the same in bash as
+in cmd. See [environment-setup-windows.md](environment-setup-windows.md),
 *Changing the code*, with `~/dev/ccweb` for the folder.
 
 ---
@@ -509,21 +550,22 @@ cmd: see [environment-setup-windows.md](environment-setup-windows.md),
 
 **Never install Python packages into the conda env with `conda` or `pip`.**
 uv and conda share `site-packages` through `UV_PROJECT_ENVIRONMENT`, and
-`uv sync` uninstalls anything not in `uv.lock`. Use conda only for non-Python
-tools.
+`uv sync` uninstalls anything not in `uv.lock`. Use conda only for
+non-Python tools.
 
-**`ccweb_env.sh` and `ccweb_testdb.sh use` are sourced in your own
-shell** (`. scripts/ccweb_env.sh`), because they set its variables.
-`ccweb_settings.sh`, `ccweb_logdir.sh`, `ccweb_portpid.sh` and
-`ccweb_wait.sh` are sourced by the other scripts only -- in an
-interactive shell the settings would outrank later edits to `.env`. The
-rest are run (`./scripts/ccweb_status.sh`).
+**`ccweb_env.sh` and `ccweb_testdb.sh use` are sourced in your own shell**
+(`. scripts/ccweb_env.sh`), because they set its variables.
+
+- `ccweb_settings.sh`, `ccweb_logdir.sh`, `ccweb_portpid.sh` and
+  `ccweb_wait.sh` are sourced by the other scripts only. In an interactive
+  shell, the settings they set would outrank later edits to `.env`.
+- The rest are run (`./scripts/ccweb_status.sh`).
 
 **A script checked out with Windows line endings fails** with
 `$'\r': command not found`. `.gitattributes` keeps every `.sh` LF, so this
-happens only to a file copied in by other means; `git checkout -- FILE`
+happens only to a file copied in by other means. `git checkout -- FILE`
 restores it.
 
-**Under WSL, keep `systemd` on** (the default in current Ubuntu images), or
-`ccweb_backup.sh --schedule` has no timer to install; it then prints the
-crontab line to use instead.
+**Under WSL, keep `systemd` on** (the default in current Ubuntu images).
+Without it, `ccweb_backup.sh --schedule` has no timer to install; it then
+prints the crontab line to use instead.

@@ -1,36 +1,48 @@
 # Deploying on a Windows server
 
-Last revised: 2026-11-13.
+Last revised: 2026-11-16.
 
-How to run the system on a Windows server the public can reach over
-`https://` at a domain of your own. The development machine runs everything
-from `scripts\ccweb_startup.cmd` with Vite serving the frontend; a server
-runs none of that. Every command here is cmd; none is PowerShell. For an
-Ubuntu server, see [deployment-linux.md](deployment-linux.md).
+How to run the system on a Windows server that the public reaches over
+`https://` at a domain of your own. Every command here is cmd; none is
+PowerShell. For an Ubuntu server, see
+[deployment-linux.md](deployment-linux.md).
 
-**This document is for the server only.** The Windows services it creates
-(`ccwebdb-postgres`, `ccwebdb-api`, `caddy`) exist on the server and
-nowhere else; a development computer has none of them and never needs them.
-A development computer is set up by
-[environment-setup-windows.md](environment-setup-windows.md), and its
-`.env` leaves `CCWEB_SITE_DOMAIN`, `CCWEB_TLS_CERT` and `CCWEB_TLS_KEY`
-unset. A computer that only edits code and runs the tests needs no
-collection database at all: the tests run on their own cluster
-(`scripts\ccweb_testdb.cmd`).
+A development machine runs everything from `scripts\ccweb_startup.cmd`, with
+Vite serving the frontend. A server runs none of that.
+
+**This document is for the server only.** It creates three Windows
+services: `ccwebdb-postgres`, `ccwebdb-api` and `caddy`. They exist on the
+server and nowhere else. A development computer has none of them and never
+needs them.
+
+- A development computer is set up by
+  [environment-setup-windows.md](environment-setup-windows.md). Its `.env`
+  leaves `CCWEB_SITE_DOMAIN`, `CCWEB_TLS_CERT` and `CCWEB_TLS_KEY` unset.
+- A computer that only edits code and runs the tests needs no collection
+  database at all. The tests run on their own cluster
+  (`scripts\ccweb_testdb.cmd`).
 
 **The example installation.** Where a value has to be shown, it is the
-owner's: a server named `classobjects` serving `https://classobjects.com`,
-with a DigiCert certificate, the repository in
-`%USERPROFILE%\dev\ccweb`, and backups into a OneDrive
-folder. Put your own domain, certificate files and folders where those
-appear; the settings they belong to are named alongside.
+owner's:
+
+- a server named `classobjects`, serving `https://classobjects.com`;
+- a DigiCert certificate;
+- the repository in `%USERPROFILE%\dev\ccweb`;
+- backups into a OneDrive folder.
+
+Put your own domain, certificate files and folders where those appear. The
+setting each one belongs to is named alongside.
 
 **On the server, do not use `ccweb_startup.cmd` or `ccweb_shutdown.cmd`
-once step 6 is done.** The shutdown script stops the API listening on the
-API's port -- there, the live API -- and stops PostgreSQL, taking the site
-down. The startup script finds the API and PostgreSQL already running and
-leaves them, but starts Vite as well, which the server has no use for. The
-server's own controls are under *Keeping it running*.
+once step 6 is done.**
+
+- The shutdown script stops the API listening on the API's port -- on the
+  server, the live API -- and stops PostgreSQL. That takes the site down.
+- The startup script finds the API and PostgreSQL already running and
+  leaves them alone. But it also starts Vite, which the server has no use
+  for.
+
+The server's own controls are under *Keeping it running*.
 
 ## The shape
 
@@ -39,32 +51,40 @@ browser --https:443--> Caddy --+-- /api/...   --> uvicorn CCWEB_API_HOST:CCWEB_A
                                +-- everything else --> CCWEB_SITE_ROOT (the built frontend)
 ```
 
-- **Caddy** is the only thing that listens to the outside. It holds the TLS
-  certificate, sends `http://` visitors to `https://`, serves the built
-  frontend, and passes `/api/...` to the API. It is open source, one
-  `caddy.exe`, and configured by one short text file, rendered from
-  `deploy\Caddyfile` in the repository. IIS can do the same job, but needs
-  the URL Rewrite and Application Request Routing modules and a `.pfx` in
-  the Windows certificate store; nginx's Windows build is not meant for
-  production.
-- **The API** (FastAPI under uvicorn) listens on `CCWEB_API_HOST`
-  (`127.0.0.1` unless `.env` says otherwise) only. The application never
+- **Caddy** is the only thing that listens to the outside. It:
+  - holds the TLS certificate;
+  - sends `http://` visitors to `https://`;
+  - serves the built frontend;
+  - passes `/api/...` to the API.
+
+  Caddy is open source and is one program, `caddy.exe`. It is configured by
+  one short text file, rendered from `deploy\Caddyfile` in the repository.
+  IIS can do the same job, but needs the URL Rewrite and Application Request
+  Routing modules and a `.pfx` in the Windows certificate store. nginx's
+  Windows build is not meant for production.
+- **The API** (FastAPI under uvicorn) listens only on `CCWEB_API_HOST`,
+  which is `127.0.0.1` unless `.env` says otherwise. The application never
   reads the certificate: TLS ends at Caddy.
-- **The frontend** is built once into static files (`frontend\dist`): no
-  Vite and no Node run on the server after the build. The shop is
+- **The frontend** is built once into static files (`frontend\dist`). After
+  the build, no Vite and no Node run on the server. The shop is
   `index.html`; the console is `management.html`.
-- **Photographs** are served by the API (`/api/images/...`, by content hash),
-  so the `/api` rule covers them. Their bytes live under `MEDIA_ROOT`, never
-  in the database.
-- Browser and API share one origin, so no cross-origin request is ever made
-  and `CORS_ORIGINS` needs no change.
+- **Photographs** are served by the API (`/api/images/...`, by content
+  hash), so the `/api` rule covers them. Their bytes live under
+  `MEDIA_ROOT`, never in the database.
+- **Browser and API share one origin.** No cross-origin request is ever
+  made, and `CORS_ORIGINS` needs no change.
 
 ## 1. The certificate
 
-A server needs the site's certificate, the intermediate certificate that
-signed it, and the private key. A certificate authority's download holds the
-first two, and often the root as well, which browsers already have; it never
-holds the key. The example's DigiCert zip:
+A server needs three things:
+
+- the site's certificate;
+- the intermediate certificate that signed it;
+- the private key.
+
+A certificate authority's download holds the first two. It often holds the
+root as well, which browsers already have. It never holds the key. The
+example's DigiCert zip:
 
 | File | In the zip | Needed by Caddy |
 |---|---|---|
@@ -73,17 +93,28 @@ holds the key. The example's DigiCert zip:
 | `DigiCertGlobalRootG2.pem` -- the root | yes | no: browsers already hold it |
 | **the private key** | **no** | **yes** |
 
-The private key was made wherever the certificate request (CSR) was made,
-and never leaves there on its own. Two ways to get one onto the server.
+The private key was made wherever the certificate request (CSR) was made.
+It never leaves there on its own. There are two ways to get one onto the
+server.
 
-**Reissue from the server (simplest when unsure where the key is).** Make a
-new key and request on the server, then use *Reissue* on the order in the
-certificate authority's portal and paste in the request; DigiCert reissues
-at no charge and sends a new zip, and the key never travels. The example's
-commands follow: put your own domain where `classobjects.com` appears, and
-your organization's country, state, town and name in `-subj`, which shows
-stand-ins (`COUNTRY`, a two-letter code; `STATE`, `TOWN`, `BUSINESS`,
-`DOMAIN`), which openssl refuses until they are replaced.
+**Reissue from the server.** This is the simplest way when you are unsure
+where the key is.
+
+1. Make a new key and request on the server, with the commands below.
+2. In the certificate authority's portal, use *Reissue* on the order and
+   paste in the request. Ask for the `www.` name as an additional name.
+3. DigiCert reissues at no charge and sends a new zip. The key never
+   travels.
+
+The commands are the example's. Put your own domain where
+`classobjects.com` appears. In `-subj`, put your organization's country,
+state, town and name in place of the stand-ins: `COUNTRY` (a two-letter
+code), `STATE`, `TOWN`, `BUSINESS` and `DOMAIN`. openssl refuses them until
+they are replaced.
+
+`openssl` is in the conda environment
+(`%USERPROFILE%\miniforge3\envs\ccwebdb\Library\bin\openssl.exe`), so run
+these in a window where `conda activate ccwebdb` has been run.
 
 ```console
 if not exist C:\caddy\certs mkdir C:\caddy\certs
@@ -92,25 +123,22 @@ openssl req -new -newkey rsa:2048 -nodes -keyout classobjects.com.key -out class
 type classobjects.com.csr
 ```
 
-`openssl` is in the conda environment
-(`%USERPROFILE%\miniforge3\envs\ccwebdb\Library\bin\openssl.exe`), so run
-these in a window where `conda activate ccwebdb` has been run. Ask for the
-`www.` name as an additional name in the portal.
+**Or export the key from the machine that made the request.** Use this when
+the request was made with IIS or `certreq`:
 
-**Or export the key from the machine that made the request.** If the
-request was made with IIS or `certreq`, complete it on that machine, export
-the certificate *with its private key* as a `.pfx`
-(`certlm.msc` -> Personal -> Certificates -> the certificate -> All Tasks ->
-Export), carry the `.pfx` across, and take the key out of it (the example's
-file names):
+1. Complete the request on that machine.
+2. Export the certificate *with its private key* as a `.pfx`: `certlm.msc`
+   -> Personal -> Certificates -> the certificate -> All Tasks -> Export.
+3. Carry the `.pfx` across to the server.
+4. Take the key out of it (the example's file names):
 
 ```console
 cd /d C:\caddy\certs
 openssl pkcs12 -in classobjects.com.pfx -nocerts -nodes -out classobjects.com.key
 ```
 
-Either way, Caddy wants the certificate and the intermediate in one file,
-site certificate first (the example's files):
+**Either way, join the two certificates.** Caddy wants the certificate and
+the intermediate in one file, site certificate first (the example's files):
 
 ```console
 cd /d C:\caddy\certs
@@ -118,47 +146,58 @@ copy /b classobjects.com.pem + GeoTrustTLSRSACAG1.pem fullchain.pem
 type fullchain.pem
 ```
 
-`type` should show two `BEGIN CERTIFICATE` blocks, each on its own line; if
+`type` should show two `BEGIN CERTIFICATE` blocks, each on its own line. If
 the two run together on one line, add a line break between them in a text
-editor. Then allow only the administrators and the account Caddy runs as to
-read the key (Caddy as a service runs as `SYSTEM`):
+editor.
+
+**Lock down the key.** Allow only the administrators and the account Caddy
+runs as to read it. Caddy as a service runs as `SYSTEM`:
 
 ```console
 icacls C:\caddy\certs\classobjects.com.key /inheritance:r /grant:r SYSTEM:R Administrators:F
 ```
 
-Keep every certificate and key file out of the repository. The certificate
-and key files are named to Caddy by two settings, `CCWEB_TLS_CERT` and
+Keep every certificate and key file out of the repository. Two settings
+name the certificate and key files to Caddy: `CCWEB_TLS_CERT` and
 `CCWEB_TLS_KEY` (step 4).
 
 ### No certificate to buy
 
-A bought certificate is optional. Leave `CCWEB_TLS_CERT` and `CCWEB_TLS_KEY`
-both empty in `.env`, and the Caddyfile rendered in step 7 has no `tls`
-line: Caddy then obtains a free certificate for the domain and its `www.`
-name from a public authority (Let's Encrypt or ZeroSSL) when it starts, and
-renews it by itself before it expires. Nothing in this step is needed, and
-nothing has to be done at expiry. Setting only one of the two is refused
-when the Caddyfile is rendered.
+A bought certificate is optional. To do without one, leave `CCWEB_TLS_CERT`
+and `CCWEB_TLS_KEY` both empty in `.env`. The Caddyfile rendered in step 7
+then has no `tls` line, and Caddy:
 
-The authority checks that the domain is the server's by connecting to it,
-so before Caddy starts, the DNS records must point at the server and ports
+- obtains a free certificate for the domain and its `www.` name from a
+  public authority (Let's Encrypt or ZeroSSL) when it starts;
+- renews it by itself before it expires.
+
+Nothing in this step is needed, and nothing has to be done at expiry.
+Setting only one of the two settings is refused when the Caddyfile is
+rendered.
+
+The authority checks that the domain is the server's by connecting to it.
+So before Caddy starts, the DNS records must point at the server, and ports
 80 and 443 must reach it (step 8). Until they do, Caddy logs a failed
-attempt and tries again. Such a certificate carries no organization's name
-and comes with no site seal: leave `VITE_DIGICERT_SEAL_ID` unset.
+attempt and tries again.
+
+Such a certificate carries no organization's name and comes with no site
+seal: leave `VITE_DIGICERT_SEAL_ID` unset.
 
 ## 2. Install the system
 
-On the server, follow [environment-setup-windows.md](environment-setup-windows.md) steps 0
-to 7: Git, Miniforge, the `ccwebdb` conda environment, uv, Node and
+On the server, follow
+[environment-setup-windows.md](environment-setup-windows.md) steps 0 to 7.
+They cover Git, Miniforge, the `ccwebdb` conda environment, uv, Node and
 PostgreSQL in the environment, the code and the database cluster, `.env`,
 and the dependencies.
 
-PostgreSQL on a server has to run apart from any console, so it becomes a
-Windows service. A service cannot start while another server holds the
-cluster -- one started by `ccweb_startup.cmd` or by hand in
-environment-setup-windows.md step 5. First stop any that is running (it
-prints `server stopped`, or `Is server running?` when none was):
+Then make PostgreSQL a Windows service, `ccwebdb-postgres`. On a server it
+has to run apart from any console.
+
+**1. Stop any server already running on the cluster.** A service cannot
+start while another server holds the cluster -- one started by
+`ccweb_startup.cmd`, or by hand in environment-setup-windows.md step 5. This
+prints `server stopped`, or `Is server running?` when none was:
 
 ```console
 conda activate ccwebdb
@@ -166,51 +205,66 @@ cd /d %USERPROFILE%\dev\ccweb
 pg_ctl -D .pgdata -m fast stop
 ```
 
-Then register the cluster as a service once, from an administrator cmd with
-`conda activate ccwebdb` run in it. `-S auto` starts it with the machine,
-and `-o` gives it the port of `DATABASE_URL` (5432 is the default; put
-yours if it differs), as the development scripts and the Linux unit do. It
-also has the server write its own log files, one per weekday, each
-overwritten a week later (*Logs*, under *Keeping it running*):
+**2. Register the cluster as a service, once.** Run this from an
+administrator cmd in which `conda activate ccwebdb` has been run.
+
+- `-S auto` starts the service with the machine.
+- `-o` gives it the port of `DATABASE_URL`, as the development scripts and
+  the Linux unit do. 5432 is the default; put yours if it differs.
+- The `-c` options have the server write its own log files, one per
+  weekday, each overwritten a week later (*Logs*, under *Keeping it
+  running*).
 
 ```console
 pg_ctl register -N ccwebdb-postgres -D "%USERPROFILE%\dev\ccweb\.pgdata" -S auto -o "-p 5432 -c logging_collector=on -c log_filename=postgresql-%a.log -c log_truncate_on_rotation=on"
 ```
 
 Keep the cluster on the server's own disk, never in a folder that OneDrive
-or another service syncs: a cluster that starts with the machine must be
+or another service syncs. A cluster that starts with the machine must be
 one that no other computer can start
 ([runtime-operations-windows.md](runtime-operations-windows.md), *One
-database, two computers*). Then start it:
+database, two computers*).
+
+**3. Start it:**
 
 ```console
 sc.exe start ccwebdb-postgres
 pg_isready -h localhost -p 5432
 ```
 
-`pg_isready` says `accepting connections` within a few seconds; run it again
-if it says `no response` at first. The service tool is written `sc.exe`
-here and throughout, never `sc`: pasted into PowerShell -- Windows
-Terminal's default tab -- a bare `sc` is `Set-Content`, which writes a file
-named `start` and never reaches the service. (The cluster folder and port shown are
-the defaults; with `CCWEB_DB_CLUSTER_DIR` or another port in `DATABASE_URL`,
-use those.) `sc.exe qc ccwebdb-postgres` shows what was registered. The service
-runs as `LocalSystem`, which can read a cluster in the user's folder, and
-runs `pg_ctl.exe` from the conda environment by its full path: re-creating
-the `ccwebdb` environment breaks it until the service is registered again
-(`pg_ctl unregister -N ccwebdb-postgres`, then the `register` line above).
+`pg_isready` says `accepting connections` within a few seconds. If it says
+`no response` at first, run it again. The cluster folder and port shown are
+the defaults; with `CCWEB_DB_CLUSTER_DIR` or another port in
+`DATABASE_URL`, use those.
+
+The service tool is written `sc.exe` here and throughout, never `sc`.
+Pasted into PowerShell -- Windows Terminal's default tab -- a bare `sc` is
+`Set-Content`, which writes a file named `start` and never reaches the
+service.
+
+`sc.exe qc ccwebdb-postgres` shows what was registered. The service runs as
+`LocalSystem`, which can read a cluster in the user's folder. It runs
+`pg_ctl.exe` from the conda environment by its full path. So re-creating
+the `ccwebdb` environment breaks it until the service is registered again:
+`pg_ctl unregister -N ccwebdb-postgres`, then the `register` line above.
 
 ## 3. The collection
 
-Two paths: a new installation starts with an empty collection and one
-manager; an existing collection is restored from the machine that holds
-it. Never run `app.seed` on the server: it adds demo items.
+There are two paths:
+
+- **A new installation** starts with an empty collection and one manager.
+- **An existing collection** is restored from the machine that holds it.
+
+Never run `app.seed` on the server: it adds demo items.
 
 ### A new installation
 
-The schema, the reference vocabularies, and the first manager account; no
-demo data. `.env` must exist with its own `JWT_SECRET` first
-(environment-setup-windows.md step 6), because every command here reads it:
+This makes the schema, the reference vocabularies and the first manager
+account, with no demo data. `.env` must exist with its own `JWT_SECRET`
+first (environment-setup-windows.md step 6), because every command here
+reads it.
+
+**1. Make the schema and load the vocabularies:**
 
 ```console
 conda activate ccwebdb
@@ -219,40 +273,46 @@ uv run alembic upgrade head
 uv run python -m app.seeding load
 ```
 
-Then the manager's sign-in address, asked for on its own:
+**2. Give the manager's sign-in address.** It is asked for on its own:
 
 ```console
 set /p ADMIN_EMAIL=Manager's email address:
 ```
 
-and the account. It asks for a password twice (12 characters or more),
-showing nothing as it is typed, so it is given alone:
+**3. Make the account.** It asks for a password twice (12 characters or
+more) and shows nothing as it is typed, so the command is given alone:
 
 ```console
 cd /d %USERPROFILE%\dev\ccweb\backend && uv run python -m app.create_admin --email %ADMIN_EMAIL%
 ```
 
-It refuses a password under 12 characters or one published in this
-repository, and refuses to run once a manager exists unless given `--another`. Sign
-in to the console with that account once the site answers (step 9), and
-make the other accounts there.
+It refuses a password under 12 characters, or one published in this
+repository. It refuses to run once a manager exists, unless given
+`--another`.
+
+Once the site answers (step 9), sign in to the console with that account
+and make the other accounts there.
 
 ### Restore an existing collection
 
-Skip this if the collection is already on the server: restored from
-the backup workbook by environment-setup-windows.md step 8 (*A collection, on a
-new machine*), it is complete.
+Skip this if the collection is already on the server. A collection restored
+from the backup workbook by environment-setup-windows.md step 8 (*A
+collection, on a new machine*) is complete.
 
-Restore the current collection. On the
-development machine, with nothing writing to the database, dump it and
-prove the dump exactly as
+**1. On the development machine, dump the current collection.** With
+nothing writing to the database, dump it and prove the dump exactly as
 [system-administration.md](system-administration.md#applying-a-schema-release)
-(*Applying a schema release*, step 1) does: it signs in as the `ccwebdb`
-account, writes the dump to `ccwebdb-backups` in `%USERPROFILE%\dev`, and
-restores it into `ccwebdb_rehearsal` to compare it; drop that database
-afterwards, in the same window, with `"%PGBIN%\dropdb.exe"
-ccwebdb_rehearsal`. Then copy the photographs to a folder you can carry
-across -- the example uses `D:\to_server`:
+(*Applying a schema release*, step 1) does. That step:
+
+- signs in as the `ccwebdb` account;
+- writes the dump to `ccwebdb-backups` in `%USERPROFILE%\dev`;
+- restores it into `ccwebdb_rehearsal` to compare it.
+
+Afterwards, in the same window, drop that database with
+`"%PGBIN%\dropdb.exe" ccwebdb_rehearsal`.
+
+**2. Copy the photographs** to a folder you can carry across. The example
+uses `D:\to_server`:
 
 ```console
 cd /d %USERPROFILE%\dev\ccweb\backend
@@ -262,13 +322,15 @@ python -m app.media_backup copy D:\to_server\media
 python -m app.media_backup check D:\to_server\media
 ```
 
-Carry the dump and the `media` folder to the server. There,
-restore into an empty database (`createdb`, then `pg_restore -d ccwebdb`
-and the dump), as in
+**3. Carry the dump and the `media` folder to the server.**
+
+**4. On the server, restore the dump into an empty database**
+(`createdb`, then `pg_restore -d ccwebdb` and the dump), as in
 [system-administration.md](system-administration.md) (*Applying a schema
-release*, step 1), and copy `media` to the folder `MEDIA_ROOT` will name.
-Then, on the server, with `MEDIA_FOLDER` replaced by the folder `MEDIA_ROOT`
-names:
+release*, step 1). Copy `media` to the folder `MEDIA_ROOT` will name.
+
+**5. Check the photographs on the server.** Replace `MEDIA_FOLDER` with the
+folder `MEDIA_ROOT` names:
 
 ```console
 cd /d %USERPROFILE%\dev\ccweb\backend
@@ -279,8 +341,9 @@ python -m app.media_backup check MEDIA_FOLDER
 
 ## 4. Settings for the server
 
-The server's `.env` (template: `.env.example`, which lists every setting
-with its default; [settings.md](settings.md) says what each one takes):
+Fill in the server's `.env` as below. Its template is `.env.example`, which
+lists every setting with its default; [settings.md](settings.md) says what
+each one takes.
 
 | Setting | On the server |
 |---|---|
@@ -300,23 +363,29 @@ with its default; [settings.md](settings.md) says what each one takes):
 | `CCWEB_BACKUP_DIR`, `CCWEB_BACKUP_TIME` | a folder that leaves the machine, and the time of the daily backup (*Keeping it running*). The example: its OneDrive folder, 20:00 |
 | `TIME_ZONE` | the business's zone (`America/New_York`) if the server's clock runs on another; otherwise unset |
 
-`FIRST_ADMIN_EMAIL` and `FIRST_ADMIN_PASSWORD` are read by `app.seed`, which
-is never run on the server, and `FIRST_ADMIN_PASSWORD`, when set, by
-`app.create_admin` (step 3, *A new installation*). Leave the password empty
-once the first manager exists. A restored database already holds its
-accounts: sign in with one of them, and change the password of any account
-still using a development password.
+Two settings are read only when accounts are made:
+
+- `FIRST_ADMIN_EMAIL` and `FIRST_ADMIN_PASSWORD` are read by `app.seed`,
+  which is never run on the server.
+- `FIRST_ADMIN_PASSWORD`, when set, is also read by `app.create_admin`
+  (step 3, *A new installation*). Leave the password empty once the first
+  manager exists.
+
+A restored database already holds its accounts. Sign in with one of them,
+and change the password of any account still using a development password.
 
 ### The database passwords
 
-environment-setup-windows.md step 5 gives both database accounts the password
-`devpassword`: `ccwebdb`, which the application signs in as, and
-`postgres`, the administrator. Change both on the server.
+environment-setup-windows.md step 5 gives both database accounts the
+password `devpassword`. Change both on the server:
+
+- `ccwebdb`, which the application signs in as;
+- `postgres`, the administrator.
 
 **1. Make a new password**, once for each account. This prints 32 random
 characters -- letters, digits, `-` and `_` -- that go into `.env` as they
-are. A password with `@ # : / %` in it would break `DATABASE_URL`, which is
-a web-style address, unless those characters were encoded.
+are. `DATABASE_URL` is a web-style address, so a password with `@ # : / %`
+in it would break it unless those characters were encoded.
 
 ```console
 conda activate ccwebdb
@@ -324,7 +393,7 @@ python -c "import secrets; print(secrets.token_urlsafe(24))"
 ```
 
 **2. Start psql as the administrator.** It asks for the `postgres`
-password, still `devpassword`:
+password, which is still `devpassword`:
 
 ```console
 cd /d %USERPROFILE%\dev\ccweb
@@ -332,9 +401,7 @@ psql -h localhost -U postgres -d postgres
 ```
 
 **3. At the `postgres=#` prompt, set each password.** `\password` asks for
-the new one twice and shows nothing as it is typed or pasted. It keeps the
-password out of psql's history file and the server's log, which
-`ALTER ROLE ... PASSWORD '...'` would not.
+the new one twice and shows nothing as it is typed or pasted:
 
 ```console
 \password ccwebdb
@@ -344,12 +411,16 @@ password out of psql's history file and the server's log, which
 \password postgres
 ```
 
-Then `\q` to leave. The application never uses the `postgres` password:
-keep it somewhere safe, for psql and for schema releases.
+Then type `\q` to leave.
+
+`\password` keeps the password out of psql's history file and the server's
+log; `ALTER ROLE ... PASSWORD '...'` would not. The application never uses
+the `postgres` password. Keep it somewhere safe, for psql and for schema
+releases.
 
 **4. Put the `ccwebdb` password into `.env`.** Change only the part between
-`ccwebdb:` and `@`, so the line reads
-`DATABASE_URL=postgresql+psycopg://ccwebdb:NEWPASSWORD@localhost:5432/ccwebdb`
+`ccwebdb:` and `@`. The line then reads
+`DATABASE_URL=postgresql+psycopg://ccwebdb:NEWPASSWORD@localhost:5432/ccwebdb`,
 with the new password in place of `NEWPASSWORD`:
 
 ```console
@@ -358,7 +429,7 @@ notepad .env
 ```
 
 **5. Check that the application signs in.** This prints the database's
-schema revision, ending `(head)`; a `password authentication failed` means
+schema revision, ending `(head)`. A `password authentication failed` means
 `.env` does not match what was typed in 3:
 
 ```console
@@ -366,11 +437,16 @@ cd /d %USERPROFILE%\dev\ccweb\backend
 uv run alembic current
 ```
 
-An API already running read the old `.env` when it started: restart it
-(*Keeping it running*, below). The backup, `scripts\ccweb_psql.cmd` and the
-application read `.env` and need nothing more.
+An API already running read the old `.env` when it started, so restart it
+(*Keeping it running*, below). The backup, `scripts\ccweb_psql.cmd`, Alembic
+and every `python -m app...` command read `.env` each time they start, and
+need nothing more.
 
 ## 5. Build the frontend
+
+Set `VITE_DIGICERT_SEAL_ID` (step 4) before building. The build reads it
+from `.env`. If it is unset, the shop has no seal, and the build prints a
+`WARNING` naming it.
 
 ```console
 conda activate ccwebdb
@@ -380,43 +456,50 @@ npm run build
 ```
 
 This writes `frontend\dist`: `index.html`, `management.html`, the
-favicons, `brand\` and `assets\`. `brand\` holds the project's own
-ClassObjects pictures: a site of your own replaces `frontend\public\brand\logo.svg`
-(the logo in every header) with its own before building, and removes or
-replaces the `classobjects-*.png` files there. The build reads
-`VITE_DIGICERT_SEAL_ID` from `.env`, so set it (step 4) before building,
-or the shop has no seal; the build prints a `WARNING` naming it.
-Build again after every update.
+favicons, `brand\` and `assets\`. Build again after every update.
+
+`brand\` holds the project's own ClassObjects pictures. A site of your own,
+before building:
+
+- replaces `frontend\public\brand\logo.svg` (the logo in every header) with
+  its own;
+- removes or replaces the `classobjects-*.png` files there.
 
 ## 6. Run the API at start-up
 
-The API runs as the Windows service `ccwebdb-api`, which runs
+The API runs as the Windows service `ccwebdb-api`. The service runs
 `scripts\ccweb_api.cmd` at boot, whether or not anyone is signed in, and
 starts it again if it dies. The script is part of the repository, so an
-update to how the API starts arrives with the code. It takes everything from
-the settings:
-- it listens on `CCWEB_API_HOST` and `CCWEB_API_PORT`;
-- its output goes through `backend\app\logpipe.py` into `backend.log` in
+update to how the API starts arrives with the code.
+
+The script takes everything from the settings:
+
+- It listens on `CCWEB_API_HOST` and `CCWEB_API_PORT`.
+- Its output goes through `backend\app\logpipe.py` into `backend.log` in
   the log folder, as `ccweb_startup.cmd` sends it on the development
-  machine. So `backend.log` starts afresh each time the service starts and
+  machine. So `backend.log` starts afresh each time the service starts, and
   never grows past `CCWEB_LOG_MAX_BYTES`, with `CCWEB_LOG_KEEP` files kept
   ([logs/README.md](../logs/README.md)).
 
-It runs `python -m uvicorn` rather than `uvicorn.exe`, because Smart App
-Control blocks unsigned `.exe` wrappers on some machines.
-`--proxy-headers` with `--forwarded-allow-ips` set to the API's own address
-makes the API see the visitor's address and `https` from Caddy's headers,
-and trust those headers from Caddy alone.
+Two details of how it runs:
+
+- It runs `python -m uvicorn` rather than `uvicorn.exe`, because Smart App
+  Control blocks unsigned `.exe` wrappers on some machines.
+- `--proxy-headers`, with `--forwarded-allow-ips` set to the API's own
+  address, makes the API see the visitor's address and `https` from Caddy's
+  headers, and trust those headers from Caddy alone.
 
 A service needs a program that speaks to the service manager, and a `.cmd`
-does not, so [WinSW](https://github.com/winsw/winsw) runs it. The service's
-account is `NT SERVICE\ccwebdb-api`, which has no password to store and can
-reach only the folders granted below: the API takes requests from the
-internet, so it holds no administrator rights and cannot read the database's
-files. WinSW writes its own log to `C:\ccwebdb-api\logs`.
+does not. So [WinSW](https://github.com/winsw/winsw) runs it. WinSW writes
+its own log to `C:\ccwebdb-api\logs`.
 
-From an administrator cmd, make the service's folder, closed to other
-accounts' changes, and download WinSW into it:
+The service's account is `NT SERVICE\ccwebdb-api`. It has no password to
+store, and it can reach only the folders granted below. The API takes
+requests from the internet, so it holds no administrator rights and cannot
+read the database's files.
+
+**1. Make the service's folder and download WinSW into it.** Run this from
+an administrator cmd. The folder is closed to other accounts' changes:
 
 ```console
 mkdir C:\ccwebdb-api\logs
@@ -425,15 +508,15 @@ curl -L -o C:\ccwebdb-api\ccwebdb-api-service.exe https://github.com/winsw/winsw
 copy "%USERPROFILE%\dev\ccweb\deploy\windows\ccwebdb-api.xml" C:\ccwebdb-api\ccwebdb-api-service.xml
 ```
 
-Open the copy and replace `OWNER` with this account's folder name under
-`C:\Users`:
+**2. Name the account's folder in the copy.** Open it and replace `OWNER`
+with this account's folder name under `C:\Users`:
 
 ```console
 notepad C:\ccwebdb-api\ccwebdb-api-service.xml
 ```
 
-Install the service, give it its account and tell the service manager to
-restart it when it fails:
+**3. Install the service.** This installs it, gives it its account, and
+tells the service manager to restart it when it fails:
 
 ```console
 C:\ccwebdb-api\ccwebdb-api-service.exe install
@@ -441,11 +524,14 @@ sc.exe config ccwebdb-api obj= "NT SERVICE\ccwebdb-api"
 sc.exe failure ccwebdb-api reset= 3600 actions= restart/10000/restart/30000/restart/60000
 ```
 
-Grant the account what the API uses. The checkout's own folder is granted
-without inheritance, so nothing new at its top level, `.pgdata` above all,
-becomes readable. Keep `MEDIA_ROOT` and `CCWEB_LOG_DIR` in the grant if
-`.env` moves them. The photograph folder does not exist on a new
-installation, so it is made first:
+**4. Grant the account what the API uses.**
+
+- The photograph folder does not exist on a new installation, so the first
+  line makes it.
+- The checkout's own folder is granted without inheritance. Nothing new at
+  its top level -- `.pgdata` above all -- becomes readable.
+- If `.env` moves `MEDIA_ROOT` or `CCWEB_LOG_DIR`, keep the moved folders
+  in the grant.
 
 ```console
 if not exist "%USERPROFILE%\dev\ccweb\media" mkdir "%USERPROFILE%\dev\ccweb\media"
@@ -461,17 +547,18 @@ icacls "%USERPROFILE%\dev\ccweb\media" /grant "NT SERVICE\ccwebdb-api:(OI)(CI)M"
 ```
 
 A program that replaces `.env` rather than saving over it drops that file's
-grant, and the API then stops at start-up saying it cannot read its settings:
-run the `.env` line again.
+grant. The API then stops at start-up, saying it cannot read its settings.
+Run the `.env` line again.
 
-Then start it and check it answers (at the default address; use
-`CCWEB_API_HOST` and `CCWEB_API_PORT` if `.env` sets them):
+**5. Start the service:**
 
 ```console
 net start ccwebdb-api
 ```
 
-It can take a few seconds to answer, so give it five before checking:
+**6. Check that it answers.** It can take a few seconds to answer, so this
+gives it five before checking. The address is the default; use
+`CCWEB_API_HOST` and `CCWEB_API_PORT` if `.env` sets them:
 
 ```console
 ping -n 6 127.0.0.1 >nul
@@ -479,7 +566,7 @@ curl -s -f -o nul http://127.0.0.1:8000/health
 if errorlevel 1 echo The API is not answering: read %USERPROFILE%\dev\ccweb\logs\backend.log
 ```
 
-To restart it after an update:
+To restart the API after an update:
 
 ```console
 net stop ccwebdb-api
@@ -488,10 +575,8 @@ net start ccwebdb-api
 
 ## 7. Caddy
 
-Caddy is one program, `caddy.exe`. Download it into `C:\caddy` (this is the
-address behind the Windows amd64 button on caddyserver.com's download page,
-which saves the same file as `caddy_windows_amd64.exe`; renamed to
-`caddy.exe`, that one does as well):
+**1. Download Caddy.** Caddy is one program, `caddy.exe`. Download it into
+`C:\caddy`:
 
 ```console
 if not exist C:\caddy mkdir C:\caddy
@@ -499,29 +584,40 @@ curl -L -o C:\caddy\caddy.exe "https://caddyserver.com/api/download?os=windows&a
 C:\caddy\caddy.exe version
 ```
 
-`version` prints a `v2.` version line. Every command here names
-`C:\caddy\caddy.exe` in full: on a machine with
-`NoDefaultCurrentDirectoryInExePath` set, a bare `caddy` is not found even
+`version` prints a `v2.` version line.
+
+The download address is the one behind the Windows amd64 button on
+caddyserver.com's download page. That button saves the same file as
+`caddy_windows_amd64.exe`; renamed to `caddy.exe`, that one does as well.
+
+Every command here names `C:\caddy\caddy.exe` in full. On a machine with
+`NoDefaultCurrentDirectoryInExePath` set, a bare `caddy` is not found, even
 in `C:\caddy`.
 
-Then write its configuration, `C:\caddy\Caddyfile`, from the repository's
-template `deploy\Caddyfile` and the settings of step 4. The Windows service
-has no environment of its own, so the values are filled in now, with full
-paths -- Caddy runs as `SYSTEM`, whose own `USERPROFILE` is not the
-installing account's -- and forward slashes, which Caddy wants on Windows
-too. In a window where `conda activate ccwebdb` has been run:
+**2. Render the configuration.** Caddy's configuration is
+`C:\caddy\Caddyfile`. It is written from the repository's template
+`deploy\Caddyfile` and the settings of step 4. Run this in a window where
+`conda activate ccwebdb` has been run:
 
 ```console
 cd /d %USERPROFILE%\dev\ccweb\backend
 python -m app.runtime_settings --render ..\deploy\Caddyfile > C:\caddy\Caddyfile.new
 ```
 
-It goes to `Caddyfile.new` first, so that a refused setting -- an empty
+The Windows service has no environment of its own, so the values are filled
+in now:
+
+- with full paths, because Caddy runs as `SYSTEM`, whose own `USERPROFILE`
+  is not the installing account's;
+- with forward slashes, which Caddy wants on Windows too.
+
+The output goes to `Caddyfile.new` first. So a refused setting -- an empty
 `CCWEB_SITE_DOMAIN`, say, which it names -- never empties the file a
-running Caddy reads. Render it again after changing any of those settings,
-check it and put it in place as below, then restart the service. For the
-example installation, with the repository under an account named `YOU`, the
-result, comments left out, is:
+running Caddy reads. After changing any of those settings, render the file
+again, check it and put it in place as below, then restart the service.
+
+For the example installation, with the repository under an account named
+`YOU`, the result, comments left out, is:
 
 ```
 {
@@ -582,48 +678,53 @@ www.classobjects.com {
 }
 ```
 
-The two `try_files` rules are the server's half of the two applications: a
-console address that is not a file is answered with `management.html`, any
-other with the shop's `index.html`, as Vite's development fallback does.
-The `@console` rule names `/management` and the addresses under it, and no
-other address that merely starts with those letters.
+What the parts of the file do:
 
-The `header` block is sent with every answer: HTTPS only for a year
-(`Strict-Transport-Security`), no guessing at a file's type, never shown
-inside another site's frame, the address passed to other sites without its
-path, no `Server` line, and a content policy that lets a page load only the
-site's own scripts, styles, pictures and API, plus the DigiCert seal's
-script and badge. A script injected into a page could not send what it read
-anywhere but this site. The policy names DigiCert because the seal is the
-one thing the shop loads from elsewhere; a site using another authority's
-seal names that one instead.
+- **The two `try_files` rules** are the server's half of the two
+  applications. A console address that is not a file is answered with
+  `management.html`; any other with the shop's `index.html`. Vite's
+  development fallback does the same. The `@console` rule names
+  `/management` and the addresses under it, and no other address that
+  merely starts with those letters.
+- **The `header` block** is sent with every answer. It sets:
+  - HTTPS only, for a year (`Strict-Transport-Security`);
+  - no guessing at a file's type;
+  - never shown inside another site's frame;
+  - the address passed to other sites without its path;
+  - no `Server` line;
+  - a content policy that lets a page load only the site's own scripts,
+    styles, pictures and API, plus the DigiCert seal's script and badge.
 
-The two `Cache-Control` rules make a deploy reach every browser at once. A
-file under `/assets/` is named for a hash of its content, so a browser
-keeps it for a year without asking; a new build brings new names. Every
-other file -- `management.html` and `index.html` above all, which name the
-build's assets -- is `no-cache`: the browser keeps it but asks the server
-before each use, and is answered `304 Not Modified` when it has not
-changed. Without them a browser guesses from the file's age, and after a
-deploy can go on running the previous build for hours, even with the
-site's cookies and storage cleared.
+  So a script injected into a page could not send what it read anywhere but
+  this site. The policy names DigiCert because the seal is the one thing
+  the shop loads from elsewhere. A site using another authority's seal names
+  that one instead.
+- **The two `Cache-Control` rules** make a deploy reach every browser at
+  once. A file under `/assets/` is named for a hash of its content, so a
+  browser keeps it for a year without asking; a new build brings new names.
+  Every other file -- `management.html` and `index.html` above all, which
+  name the build's assets -- is `no-cache`. The browser keeps it but asks
+  the server before each use, and is answered `304 Not Modified` when it has
+  not changed. Without these rules a browser guesses from the file's age.
+  After a deploy it can then go on running the previous build for hours,
+  even with the site's cookies and storage cleared.
+- **The two `tls` lines** give Caddy its own certificate, so it asks no one
+  else for one. It still answers port 80 by sending visitors to `https://`.
+  The lines must name the key file Caddy is really to use, and that is the
+  copy to lock down with `icacls` (step 1). Keep one copy of the key in
+  `C:\caddy\certs`, not several under different names. With
+  `CCWEB_TLS_CERT` and `CCWEB_TLS_KEY` both empty, the file has no `tls`
+  lines at all: see *No certificate to buy* (step 1).
 
-Given its own certificate, Caddy asks no one else for one; it still answers
-port 80 by sending visitors to `https://`. The two `tls` lines must name the
-key file Caddy is really to use, and that is the copy to lock down with
-`icacls` (step 1). Keep one copy of the key in `C:\caddy\certs`, not several
-under different names. With `CCWEB_TLS_CERT` and `CCWEB_TLS_KEY` both empty
-the file has no `tls` lines at all: see *No certificate to buy* (step 1).
-
-Check the file. It says `Valid configuration`, and, with the certificate
-files given, that it is skipping automatic certificates because they are
-loaded:
+**3. Check the file.** It says `Valid configuration`. With the certificate
+files given, it also says it is skipping automatic certificates because
+they are loaded:
 
 ```console
 C:\caddy\caddy.exe validate --config C:\caddy\Caddyfile.new
 ```
 
-Only when it does, put it in place:
+**4. Only when it does, put it in place:**
 
 ```console
 move /y C:\caddy\Caddyfile.new C:\caddy\Caddyfile
@@ -631,38 +732,46 @@ move /y C:\caddy\Caddyfile.new C:\caddy\Caddyfile
 
 ### Other sites on the server
 
-A site the server runs beside the shop is not in the template, which
-describes the shop alone. Its Caddyfile lives in
-`C:\caddy\sites`, outside the repository, and `CCWEB_CADDY_IMPORT` names
-it, or a pattern for all of them (`C:\caddy\sites\*.caddy`). The rendered
-file then ends with an `import` of it; unset, it ends with the `www.`
-block. Render, validate and move the file into place as above after adding
-or changing one.
+The template describes the shop alone. A site the server runs beside the
+shop is not in it:
+
+- Its Caddyfile lives in `C:\caddy\sites`, outside the repository.
+- `CCWEB_CADDY_IMPORT` names it, or a pattern for all of them
+  (`C:\caddy\sites\*.caddy`).
+- The rendered file then ends with an `import` of it. With the setting
+  unset, it ends with the `www.` block.
+
+After adding or changing such a site, render, validate and move the file
+into place as above.
 
 ### Caddy as a service
 
-Caddy runs as a Windows service by itself -- no wrapper program -- so that
-it starts with the machine and keeps running when no one is signed in.
-Caddy started by hand in a window (`caddy run`) holds ports 80 and 443 until
-that window closes; stop it with Ctrl+C first, and check that none is left:
+Caddy runs as a Windows service by itself, with no wrapper program. It then
+starts with the machine and keeps running when no one is signed in.
+
+**1. Stop any Caddy started by hand.** Caddy started in a window
+(`caddy run`) holds ports 80 and 443 until that window closes. Stop it with
+Ctrl+C first, then check that none is left:
 
 ```console
 tasklist /fi "imagename eq caddy.exe"
 ```
 
-It should say `No tasks are running`. Then, from a cmd window run **as
-administrator** (Start, type `cmd`, right-click *Command Prompt*, *Run as
-administrator*; its title starts `Administrator:`), create the service --
-copy the line rather than retype it:
+It should say `No tasks are running`.
+
+**2. Create the service.** Use a cmd window run **as administrator**: Start,
+type `cmd`, right-click *Command Prompt*, *Run as administrator*. Its title
+starts `Administrator:`. Copy the line rather than retype it:
 
 ```console
 sc.exe create caddy start= auto binPath= "C:\caddy\caddy.exe run --config C:\caddy\Caddyfile"
 ```
 
-It prints `[SC] CreateService SUCCESS`. `sc.exe` wants a space after each `=`
-and nothing else there: `start= auto`, exactly; a misspelt value is refused
-as an `Invalid start= field`. Start it and check it, with your domain in
-place of `YOUR_DOMAIN`:
+It prints `[SC] CreateService SUCCESS`. `sc.exe` wants a space after each
+`=` and nothing else there: `start= auto`, exactly. A misspelt value is
+refused as an `Invalid start= field`.
+
+**3. Start it and check it**, with your domain in place of `YOUR_DOMAIN`:
 
 ```console
 sc.exe start caddy
@@ -670,9 +779,11 @@ sc.exe query caddy
 curl -s -o nul -w "%{http_code}\n" https://YOUR_DOMAIN/
 ```
 
-`RUNNING`, and `200` once the domain points at the server (step 8); with a
-certificate Caddy obtains itself, not before. Caddy reads the Caddyfile only when it starts, so after
-rendering it again or changing the certificate files, restart the service:
+Expect `RUNNING`, and `200` once the domain points at the server (step 8).
+With a certificate Caddy obtains itself, `200` does not come before then.
+
+Caddy reads the Caddyfile only when it starts. After rendering it again or
+changing the certificate files, restart the service:
 
 ```console
 sc.exe stop caddy
@@ -689,15 +800,18 @@ sc.exe start caddy
 | `FAILED 1072: The specified service has been marked for deletion` | the same held name, said plainly -- see below |
 | copying `caddy.exe` into `C:\caddy` fails with `Access is denied` | the old `caddy.exe` was deleted while still open, and its name is held -- see below |
 
-**Close the Services window before deleting or re-creating a service.** A
-service deleted with `sc.exe delete` while the Services window (or anything
-else) has it open is only *marked* for deletion: it lingers, and its name
-cannot be used again. A `caddy.exe` deleted while a process still has it open
-is held the same way -- gone from `dir`, but its name refused to anything
-that tries to create it. Both clear when whatever holds them lets go; a
-restart always does it. Until then, a service under another name
-(`caddy-web`, say) running a copy of `caddy.exe` from another folder keeps
-the site up.
+**Close the Services window before deleting or re-creating a service.**
+
+- A service deleted with `sc.exe delete` while the Services window (or
+  anything else) has it open is only *marked* for deletion. It lingers, and
+  its name cannot be used again.
+- A `caddy.exe` deleted while a process still has it open is held the same
+  way. It is gone from `dir`, but its name is refused to anything that
+  tries to create it.
+
+Both clear when whatever holds them lets go; a restart always does it.
+Until then, a service under another name (`caddy-web`, say) running a copy
+of `caddy.exe` from another folder keeps the site up.
 
 ## 8. Open the server to the internet
 
@@ -717,7 +831,8 @@ the site up.
 
 ## 9. Check it
 
-With your domain, `CCWEB_SITE_DOMAIN`, in place of `YOUR_DOMAIN`:
+Run these with your domain, `CCWEB_SITE_DOMAIN`, in place of
+`YOUR_DOMAIN`:
 
 ```console
 curl -sI https://YOUR_DOMAIN/
@@ -725,21 +840,29 @@ curl -s https://YOUR_DOMAIN/api/shop
 curl -sI http://YOUR_DOMAIN/
 ```
 
-Expect `200`, `{"open":false}` (`{"open":true}` once `SHOP_OPEN` is
-`true`), and a redirect to `https://`. `/api/shop` answers anyone, open or
-not, so it proves Caddy reaches the API; the catalog would not do here,
-since while the shop is closed it refuses a visitor who is not signed in
-(403). Then in a browser: the
-shop loads with the coin-and-note favicon, the certificate's seal appears in the
-footer if `VITE_DIGICERT_SEAL_ID` is set (it shows only on the domain the
-certificate names), and the domain's `/management` signs in.
+Expect, in order:
+
+1. `200`;
+2. `{"open":false}`, or `{"open":true}` once `SHOP_OPEN` is `true`;
+3. a redirect to `https://`.
+
+`/api/shop` answers anyone, open or not, so it proves Caddy reaches the
+API. The catalog would not do here: while the shop is closed, it refuses a
+visitor who is not signed in (403).
+
+Then check in a browser:
+
+- the shop loads with the coin-and-note favicon;
+- the certificate's seal appears in the footer if `VITE_DIGICERT_SEAL_ID`
+  is set (it shows only on the domain the certificate names);
+- the domain's `/management` signs in.
 
 ## Keeping it running
 
-The server's three parts are controlled on their own, never with the
-`ccweb_` start-up and shut-down scripts. All three start with the machine.
-From an administrator
-cmd, stop the site, API first:
+The server's three parts all start with the machine. Control them on their
+own, never with the `ccweb_` start-up and shut-down scripts.
+
+From an administrator cmd, stop the site, API first:
 
 ```console
 net stop ccwebdb-api
@@ -755,29 +878,33 @@ net start ccwebdb-api
 sc.exe start caddy
 ```
 
-`sc.exe query ccwebdb-postgres` and `sc.exe query caddy` say `RUNNING` when they
-are up; step 9 checks the whole site.
+`sc.exe query ccwebdb-postgres` and `sc.exe query caddy` say `RUNNING` when
+they are up. Step 9 checks the whole site.
 
 - **A certificate Caddy obtained itself** (*No certificate to buy*) is
-  renewed by Caddy; nothing below applies to it.
+  renewed by Caddy. Nothing below applies to it.
 - **A bought certificate expires** on the date it carries
   (`openssl x509 -in classobjects.com.pem -noout -enddate`, with your
-  certificate's file name). A public certificate may now last no more than
-  200 days, so a multi-year purchase is a subscription: the authority issues
-  a new certificate within it, at no charge, before each one ends -- about
-  twice a year. Ahead of each expiry, reissue in the portal (the request
-  made in step 1 can be used again, so the key stays where it is), replace
-  the certificate and `fullchain.pem` in `C:\caddy\certs`, and restart the
-  `caddy` service.
-- **An update:** `git pull`, `uv sync`, then a schema release as in
-  [system-administration.md](system-administration.md) (*Applying a schema
-  release*) when the update brings a migration, then `npm ci` and
-  `npm run build` in `frontend`, then restart the API service (above).
-  Caddy needs no restart for a new build. The deployed copies of the
-  templates -- `C:\caddy\Caddyfile` and the API service's XML in
-  `C:\ccwebdb-api` -- are not updated by a pull: when an update changes
-  `deploy\`, copy and edit the XML again (step 6) and render the
-  Caddyfile again (step 7).
+  certificate's file name). A public certificate may last no more than 200
+  days, so a multi-year purchase is a subscription. Within it, the authority
+  issues a new certificate at no charge before each one ends -- about twice
+  a year. Ahead of each expiry:
+  1. Reissue in the portal. The request made in step 1 can be used again,
+     so the key stays where it is.
+  2. Replace the certificate and `fullchain.pem` in `C:\caddy\certs`.
+  3. Restart the `caddy` service.
+- **An update:**
+  1. `git pull`, then `uv sync`.
+  2. When the update brings a migration, a schema release as in
+     [system-administration.md](system-administration.md) (*Applying a
+     schema release*).
+  3. `npm ci` and `npm run build` in `frontend`.
+  4. Restart the API service (above).
+
+  Caddy needs no restart for a new build. A pull does not update the
+  deployed copies of the templates: `C:\caddy\Caddyfile` and the API
+  service's XML in `C:\ccwebdb-api`. When an update changes `deploy\`, copy
+  and edit the XML again (step 6) and render the Caddyfile again (step 7).
 - **Backups:** schedule the daily backup once, from an administrator cmd:
 
   ```console
@@ -785,10 +912,10 @@ are up; step 9 checks the whole site.
   .\scripts\ccweb_backup.cmd /schedule
   ```
 
-  It runs every day at
-  `CCWEB_BACKUP_TIME`, into `CCWEB_BACKUP_DIR`, whether or not anyone is
-  signed in ([system-administration.md](system-administration.md), *Backing
-  up and restoring*). Put that folder somewhere that leaves the machine: the
+  It runs every day at `CCWEB_BACKUP_TIME`, into `CCWEB_BACKUP_DIR`,
+  whether or not anyone is signed in
+  ([system-administration.md](system-administration.md), *Backing up and
+  restoring*). Put that folder somewhere that leaves the machine. The
   example's is a OneDrive folder, whose files OneDrive carries off at the
   owner's next sign-in.
 
@@ -801,18 +928,21 @@ are up; step 9 checks the whole site.
 | Caddy | the file `CCWEB_CADDY_LOG` names (step 4), `C:\caddy\logs\caddy.log` in the example. Caddy creates the folder, starts a new file at 100 MB and keeps ten |
 | The daily backup | `backup.log` in the log folder |
 
-Both service logs need their settings. A Windows service has no console, so
-anything it writes to one is lost:
+Both service logs need their settings. A Windows service has no console,
+so anything it writes to one is lost.
 
-- **PostgreSQL registered without the `logging_collector` options** (as
-  step 2 did before) writes to the Windows Application event log instead:
-  Event Viewer, *Windows Logs*, *Application*, source `PostgreSQL`. To move
-  it to files, register the service again from an administrator cmd with
-  `conda activate ccwebdb` run in it, typed or pasted into the window
-  rather than run from a `.cmd` file, which would drop the `%a`. The API
-  service depends on the database's, so it stops first and starts last:
-  the site is down for about a minute. Stop both, and wait until `sc.exe query
-  ccwebdb-postgres` says `STOPPED`:
+- **PostgreSQL registered without the `logging_collector` options** writes
+  to the Windows Application event log instead: Event Viewer, *Windows
+  Logs*, *Application*, source `PostgreSQL`. To move it to files, register
+  the service again:
+  - Use an administrator cmd with `conda activate ccwebdb` run in it.
+  - Type or paste the commands into the window. Do not run them from a
+    `.cmd` file, which would drop the `%a`.
+  - The API service depends on the database's, so it stops first and
+    starts last. The site is down for about a minute.
+
+  Stop both, and wait until `sc.exe query ccwebdb-postgres` says
+  `STOPPED`:
 
   ```console
   net stop ccwebdb-api
@@ -821,8 +951,8 @@ anything it writes to one is lost:
   ```
 
   Then register the database again and start both. Neither `pg_ctl` line
-  prints anything when it works, and the API's dependency survives, because
-  it names the service by its name:
+  prints anything when it works. The API's dependency survives, because it
+  names the service by its name:
 
   ```console
   pg_ctl unregister -N ccwebdb-postgres
@@ -834,6 +964,6 @@ anything it writes to one is lost:
   `dir %USERPROFILE%\dev\ccweb\.pgdata\log` then lists that day's file,
   `postgresql-Wed.log` on a Wednesday.
 
-- **Caddy with `CCWEB_CADDY_LOG` unset** keeps no log at all. Set it in
-  `.env`, render the Caddyfile again (step 7) and restart the `caddy`
-  service.
+- **Caddy with `CCWEB_CADDY_LOG` unset** keeps no log at all. To give it
+  one, set it in `.env`, render the Caddyfile again (step 7) and restart
+  the `caddy` service.
