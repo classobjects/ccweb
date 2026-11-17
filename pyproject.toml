@@ -176,7 +176,7 @@ python_version = "3.13"
 # The tests are checked too. ruff's ANN rules only ask that an annotation
 # exist; mypy is what asks whether it is true -- a helper annotated
 # `-> None` that returns a value is invisible without it.
-files = ["backend/app", "backend/tests"]
+files = ["backend/app", "backend/tests", "backend/ui_guide"]
 plugins = ["pydantic.mypy"]
 # Start strict about the things that actually catch bugs, rather than turning
 # on everything and drowning the signal in `Any` complaints from libraries.

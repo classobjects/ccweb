@@ -134,6 +134,10 @@ stored.
 | `CCWEB_FRONTEND_PORT` | no | `5173` | a port, 1-65535<br><br>**Seen:** Next script run |
 | `CCWEB_PGADMIN_PORT` | no | `5050` | a port, 1-65535, for pgAdmin when used<br><br>**Seen:** Next script run |
 | `CCWEB_SONAR_PORT` | no | `9000` | a port, 1-65535, for SonarQube when used<br><br>**Seen:** Next script run |
+| `CCWEB_GUIDE_API_PORT` | no | `8010` | a port, 1-65535, for the API of the stack that retakes the screen guide's pictures ([backend/ui_guide/README.md](../backend/ui_guide/README.md))<br><br>**Seen:** Next `python -m ui_guide` |
+| `CCWEB_GUIDE_FRONTEND_PORT` | no | `5183` | a port, 1-65535, for that stack's frontend<br><br>**Seen:** Next `python -m ui_guide` |
+| `CCWEB_GUIDE_BROWSER_PORT` | no | `9334` | a port, 1-65535, for the headless Chrome that stack drives<br><br>**Seen:** Next `python -m ui_guide` |
+| `CCWEB_GUIDE_DIR` | no | `.runtime/ui-guide` | the folder holding that stack's photographs, browser profile and logs; never the collection's `MEDIA_ROOT`<br><br>**Seen:** Next `python -m ui_guide` |
 | `CCWEB_CONDA_ENV` | no | `ccwebdb` | the conda environment the scripts activate<br><br>**Seen:** Next script run |
 | `CCWEB_CONDA_ROOT` | no | found: from `CONDA_EXE`, then `conda` on `PATH`, then a `miniforge3` folder in the home folder | the conda installation's folder<br><br>**Seen:** Next script run |
 

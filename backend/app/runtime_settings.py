@@ -106,6 +106,15 @@ class RuntimeFields(BaseSettings):
     ccweb_pgadmin_port: int = Field(default=5050, ge=1, le=65535)
     ccweb_sonar_port: int = Field(default=9000, ge=1, le=65535)
 
+    # --- the screen guide's pictures (backend/ui_guide) ---------------------
+    # A stack of its own, beside any development server: an API, Vite and a
+    # headless Chrome on these ports, over a demo database in the test
+    # cluster, with its photographs and browser profile in this folder.
+    ccweb_guide_api_port: int = Field(default=8010, ge=1, le=65535)
+    ccweb_guide_frontend_port: int = Field(default=5183, ge=1, le=65535)
+    ccweb_guide_browser_port: int = Field(default=9334, ge=1, le=65535)
+    ccweb_guide_dir: Path = Path(".runtime/ui-guide")
+
     # --- logs ----------------------------------------------------------------
     ccweb_log_dir: Path = Path("logs")
     ccweb_log_keep: int = Field(default=DEFAULT_KEEP, ge=1)
