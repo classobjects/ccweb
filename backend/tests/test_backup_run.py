@@ -444,13 +444,18 @@ def test_no_dump_goes_while_the_newest_may_still_be_being_written(
 ) -> None:
     """A pg_dump taken as the backup runs is newest, and may yet fail."""
     folder = tmp_path / "backup"
-    made = _dumps(folder, "ccwebdb_pre_a_20261101.dump", "ccwebdb_pre_b_20261102.dump")
+    made = _dumps(
+        folder, "ccwebdb_pre_a_20261101.dump", "ccwebdb_pre_release_20261102.dump"
+    )
     made[-1].touch()
 
     done = run(engine, folder, stamp="20261114_200000", prove=_proved, dumps=folder)
 
     assert done.removed_dumps == []
-    assert done.dumps_kept == "ccwebdb_pre_b_20261102.dump was written in the last hour"
+    assert (
+        done.dumps_kept
+        == "ccwebdb_pre_release_20261102.dump was written in the last hour"
+    )
     assert all(path.is_file() for path in made)
 
 
@@ -459,7 +464,9 @@ def test_no_dump_goes_when_the_newest_is_not_a_whole_archive(
 ) -> None:
     """A failed pg_dump leaves an empty or partial file; it must not survive alone."""
     folder = tmp_path / "backup"
-    made = _dumps(folder, "ccwebdb_pre_a_20261101.dump", "ccwebdb_pre_b_20261102.dump")
+    made = _dumps(
+        folder, "ccwebdb_pre_a_20261101.dump", "ccwebdb_pre_release_20261102.dump"
+    )
     stamp = made[-1].stat().st_mtime
     made[-1].write_bytes(b"")
     os.utime(made[-1], (stamp, stamp))
@@ -468,19 +475,22 @@ def test_no_dump_goes_when_the_newest_is_not_a_whole_archive(
 
     assert done.removed_dumps == []
     assert (
-        done.dumps_kept == "ccwebdb_pre_b_20261102.dump is not a whole pg_dump archive"
+        done.dumps_kept
+        == "ccwebdb_pre_release_20261102.dump is not a whole pg_dump archive"
     )
     assert all(path.is_file() for path in made)
 
 
-def test_a_proved_backup_removes_all_but_the_newest_dump(
+def test_a_proved_backup_removes_the_dumps_before_the_newest_release(
     engine: Engine, tmp_path: Path
 ) -> None:
+    """Each dump is kept until the next release; a live write since it stays."""
     folder = tmp_path / "backup"
     _dumps(
         folder,
+        "ccwebdb_pre_release_20261110.dump",
         "ccwebdb_pre_wheat_metal_20261112.dump",
-        "ccwebdb_pre_odd_certs_20261114.dump",
+        "ccwebdb_pre_release_20261113.dump",
         "ccwebdb_pre_label_applied_20261114.dump",
     )
 
@@ -489,18 +499,40 @@ def test_a_proved_backup_removes_all_but_the_newest_dump(
     assert _names(folder) == [
         "ccwebdb_20261114_200000.xlsx",
         "ccwebdb_pre_label_applied_20261114.dump",
+        "ccwebdb_pre_release_20261113.dump",
     ]
     assert sorted(path.name for path in done.removed_dumps) == [
-        "ccwebdb_pre_odd_certs_20261114.dump",
+        "ccwebdb_pre_release_20261110.dump",
         "ccwebdb_pre_wheat_metal_20261112.dump",
     ]
+
+
+def test_live_write_dumps_are_kept_until_a_release(
+    engine: Engine, tmp_path: Path
+) -> None:
+    """A live write is not a release: however many there are, none goes."""
+    folder = tmp_path / "backup"
+    made = _dumps(
+        folder,
+        "ccwebdb_pre_wheat_metal_20261112.dump",
+        "ccwebdb_pre_odd_certs_20261114.dump",
+        "ccwebdb_pre_label_applied_20261114.dump",
+    )
+
+    done = run(engine, folder, stamp="20261114_200000", prove=_proved, dumps=folder)
+
+    assert done.removed_dumps == []
+    assert done.dumps_kept is None
+    assert all(path.is_file() for path in made)
 
 
 def test_a_backup_that_is_not_proved_removes_no_dump(
     engine: Engine, tmp_path: Path
 ) -> None:
     folder = tmp_path / "backup"
-    made = _dumps(folder, "ccwebdb_pre_a_20261101.dump", "ccwebdb_pre_b_20261102.dump")
+    made = _dumps(
+        folder, "ccwebdb_pre_a_20261101.dump", "ccwebdb_pre_release_20261102.dump"
+    )
 
     done = run(engine, folder, stamp="20261114_200000", prove=_differs, dumps=folder)
 
@@ -512,13 +544,18 @@ def test_only_pre_change_dumps_are_ever_removed(engine: Engine, tmp_path: Path) 
     """A dump under any other name is a person's, and takes no place either."""
     folder = tmp_path / "backup"
     kept = ["my_copy.dump", "ccwebdb.dump", "ccwebdb_pre_x_20261101.dump.bak"]
-    _dumps(folder, *kept, "ccwebdb_pre_a_20261101.dump", "ccwebdb_pre_b_20261102.dump")
+    _dumps(
+        folder,
+        *kept,
+        "ccwebdb_pre_a_20261101.dump",
+        "ccwebdb_pre_release_20261102.dump",
+    )
 
     done = run(engine, folder, stamp="20261114_200000", prove=_proved, dumps=folder)
 
     assert [path.name for path in done.removed_dumps] == ["ccwebdb_pre_a_20261101.dump"]
     assert _names(folder) == sorted(
-        [*kept, "ccwebdb_20261114_200000.xlsx", "ccwebdb_pre_b_20261102.dump"]
+        [*kept, "ccwebdb_20261114_200000.xlsx", "ccwebdb_pre_release_20261102.dump"]
     )
 
 
@@ -532,12 +569,12 @@ def test_the_command_says_which_dumps_it_removed(
     """The dumps are where pg_dump wrote them, not in the backup folder."""
     monkeypatch.setattr(backup_run, "prove_workbook", _proved)
     folder = tmp_path / "backup"
-    _dumps(archive, "ccwebdb_pre_a_20261101.dump", "ccwebdb_pre_b_20261102.dump")
-    _dumps(folder, "ccwebdb_pre_c_20261101.dump", "ccwebdb_pre_d_20261102.dump")
+    _dumps(archive, "ccwebdb_pre_a_20261101.dump", "ccwebdb_pre_release_20261102.dump")
+    _dumps(folder, "ccwebdb_pre_c_20261101.dump", "ccwebdb_pre_release_20261102.dump")
 
     assert main([str(folder)], live=engine) == 0
 
-    assert _names(archive) == ["ccwebdb_pre_b_20261102.dump"]
+    assert _names(archive) == ["ccwebdb_pre_release_20261102.dump"]
     assert "ccwebdb_pre_c_20261101.dump" in _names(folder)
 
     assert (

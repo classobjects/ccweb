@@ -2392,16 +2392,18 @@ One command does what the sections below describe step by step
    - When only one workbook is kept, it prunes the photograph files no image
      names. With `--keep` above 1 nothing is pruned, because the older
      workbooks kept still name those photographs.
-   - It removes the `pg_dump` files taken before each schema release or live
-     write, all but the newest. These are named
+   - It keeps the `pg_dump` files taken before each schema release or live
+     write until the next release, then removes them. These are named
      `ccwebdb_pre_<change>_<date>.dump`, and are in the archive folder
      `CCWEB_ARCHIVE_DIR` -- `ccwebdb-backups` beside the repository, where
      *Applying a schema release* writes them -- whatever the backup folder
-     is. The newest is the way back from the latest change, and the proved
-     workbook covers the rest. None goes while that newest one is under an
-     hour old (it may still be being written), or is not a whole `pg_dump`
-     archive; the run says so, and the next one tidies. A dump under any
-     other name stays.
+     is. A release's dump is `ccwebdb_pre_release_<date>.dump`. The newest
+     one stays, with every dump taken after it (live writes since that
+     release); the dumps before it go, and the proved workbook covers them.
+     With no release dump, nothing goes. None goes while the newest release
+     dump is under an hour old (it may still be being written), or is not a
+     whole `pg_dump` archive; the run says so, and the next one tidies. A
+     dump under any other name stays.
 
 **When any step fails, nothing is removed**: the workbooks already there are
 the proved ones. The reason is printed, and the exit code is 1. The exit code
@@ -2923,8 +2925,11 @@ window you use. `scripts\ccweb_psql.cmd` fills in any it finds unset from
    of every table (*Backing up and restoring*). Anything else means the dump
    is not usable, and nothing is applied.
 
-   Keep the dump until the release has been in use for a while; it is the way
-   back.
+   The dump is the way back from this release. Name it
+   `ccwebdb_pre_release_<date>` as above: the routine backup keeps it, and
+   every dump taken after it, until the next release's dump is taken. A dump
+   taken before a live write is named for that change instead and is kept
+   the same way.
 
 2. **Rehearse on the restore.**
    1. Check out the release's code.
@@ -3053,9 +3058,14 @@ window you use. `scripts\ccweb_psql.cmd` fills in any it finds unset from
 - **Per-permission roles.** Two roles, one boundary.
 - **Password reset by email.** No mail configuration exists.
 - **Editing an account's email.** It is the account's identity.
-- **Deleting a user.** Deactivate instead. History rows reference the user
-  id. `ON DELETE SET NULL` on those columns exists so that removing a user
-  never erases the record that the work was done.
+- **Deleting a user.** The console never deletes an account. To remove a
+  person, deactivate their account on **People**: they can no longer sign
+  in, everything they did stays recorded under their name, and the account
+  can be made active again. Deleting is different: it takes the row out of
+  `users`, which only happens outside the console (in `psql`, say). History
+  rows reference the user id, and `ON DELETE SET NULL` on those columns
+  means even a deletion never erases the record that the work was done --
+  only the name of who did it.
 - **A storage location customers can see.** This is an authorization
   boundary: a public listing that leaked the safe-deposit box holding an item
   would be a security failure. It is enforced by `routers/catalog.py`, which

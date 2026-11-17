@@ -225,8 +225,8 @@ formula.
   migrated database in one transaction.
 - `app.backup_run` exports, restores the export into a scratch database and
   compares every row of every table, and checks the photograph copy. Only
-  then does it remove older workbooks, photographs nothing names, and all
-  but the newest pre-change `pg_dump`.
+  then does it remove older workbooks, photographs nothing names, and the
+  pre-change `pg_dump` files older than the newest release's.
 - `app.backup` copies database to database. `app.media_backup` copies,
   checks and prunes photograph bytes.
 

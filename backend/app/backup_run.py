@@ -18,8 +18,9 @@ unattended:
    and no photograph's row was added or removed since the export began --
    **prune** the photograph files no image names any more. The
    `ccwebdb_pre_<change>_<date>.dump` files taken before each schema
-   release or live write go too, all but the newest: it is the way back
-   from the latest change, and the proved workbook stands for the rest.
+   release or live write are kept until the next release: those older
+   than the newest `ccwebdb_pre_release_<date>.dump` go, and that one and
+   every dump since stay. The proved workbook stands for what went.
    They are in the archive folder (`CCWEB_ARCHIVE_DIR`, where the guide's
    `pg_dump` writes them), which need not be `FOLDER`.
 
@@ -86,10 +87,15 @@ WORKBOOK = re.compile(r"ccwebdb_\d{8}_\d{6}\.xlsx")
 #: was, then its date. Any other dump is a person's and is never removed.
 PRE_CHANGE_DUMP = re.compile(r"ccwebdb_pre_\w+_\d{8}\.dump")
 
+#: The dump taken before a schema release, as the guide's `pg_dump` names
+#: it. The newest one marks where the older dumps may go: each dump is kept
+#: until the next release.
+RELEASE_DUMP = re.compile(r"ccwebdb_pre_release_\d{8}\.dump")
+
 #: The first bytes of every `pg_dump -Fc` archive.
 DUMP_SIGNATURE = b"PGDMP"
 
-#: How long the newest dump must have been left alone before the older
+#: How long the newest release dump must have been left alone before the older
 #: ones may go: long enough that it is not one still being written.
 DUMP_SETTLE_SECONDS = 3600
 
@@ -110,7 +116,7 @@ class BackupRun:
     #: Obsolete photograph files and older workbooks removed.
     pruned: int = 0
     removed: list[Path] = field(default_factory=list)
-    #: Pre-change dumps removed, all but the newest.
+    #: Pre-change dumps removed: those older than the newest release's.
     removed_dumps: list[Path] = field(default_factory=list)
     #: Why the older dumps were left in a proved run, when they were.
     dumps_kept: str | None = None
@@ -274,15 +280,20 @@ def run(
 
 
 def _tidy_dumps(folder: Path, done: BackupRun) -> None:
-    """Remove all but the newest pre-change dump, when that one can be trusted.
+    """Remove the pre-change dumps older than the newest release's.
 
-    Newest by time, not name: a name begins with what the change was. The
-    one kept is the only way back from the latest change, so nothing goes
-    unless it is a finished `pg_dump -Fc` archive: begun with the format's
-    signature, and not written to for `DUMP_SETTLE_SECONDS` -- a dump still
-    being taken, or one that failed part way, would otherwise survive while
-    the good ones before it were deleted. A file that cannot be removed
-    stops the tidy and is reported; the run stays proved.
+    Every dump is kept until the next release: the newest release dump
+    (`RELEASE_DUMP`) stays, and so does every dump taken after it -- the
+    live writes since that release. Only those before it go. With no
+    release dump, nothing goes.
+
+    Older and newer by time, not name: a name begins with what the change
+    was. The release dump is the way back from that release, so nothing
+    goes unless it is a finished `pg_dump -Fc` archive: begun with the
+    format's signature, and not written to for `DUMP_SETTLE_SECONDS` -- a
+    dump still being taken, or one that failed part way, would otherwise
+    survive while the good ones before it were deleted. A file that cannot
+    be removed stops the tidy and is reported; the run stays proved.
     """
     dumps = sorted(
         (
@@ -293,9 +304,17 @@ def _tidy_dumps(folder: Path, done: BackupRun) -> None:
         key=lambda path: path.stat().st_mtime,
         reverse=True,
     )
-    if len(dumps) < 2:
+    release = next(
+        (
+            index
+            for index, path in enumerate(dumps)
+            if RELEASE_DUMP.fullmatch(path.name)
+        ),
+        None,
+    )
+    if release is None or release == len(dumps) - 1:
         return
-    newest = dumps[0]
+    newest = dumps[release]
     if time.time() - newest.stat().st_mtime < DUMP_SETTLE_SECONDS:
         done.dumps_kept = f"{newest.name} was written in the last hour"
         return
@@ -303,7 +322,7 @@ def _tidy_dumps(folder: Path, done: BackupRun) -> None:
         if file.read(len(DUMP_SIGNATURE)) != DUMP_SIGNATURE:
             done.dumps_kept = f"{newest.name} is not a whole pg_dump archive"
             return
-    for path in dumps[1:]:
+    for path in dumps[release + 1 :]:
         try:
             path.unlink()
         except OSError as exc:
