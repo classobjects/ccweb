@@ -4,7 +4,8 @@
 """Derive note designations from the serial number itself.
 
 PMG and PCGS give special pedigree designations to particular serial numbers --
-radars, repeaters, binaries, solids, ladders, low serials, and star
+radars, repeaters, binaries, solids, ladders, runs of one digit (5 to 7 in
+a row), low serials, and star
 (replacement) notes -- and a grading submission asks the sender to declare
 them. They carry real premiums, so a note whose designation is unrecorded is a
 note sold too cheaply.
@@ -85,9 +86,20 @@ SMALL_SIZE_FROM = 1928
 LOW_SERIAL_ZEROS = 4
 HIGH_SERIAL_FIRST_DIGIT = "9"
 
+#: The run designations, by the length of the run they name: one digit
+#: repeated that many times in a row, A12222256B being 5 in a row. A run is
+#: named only when it is the serial's longest and exactly this long, so a
+#: note earns one of them at most -- a run of 6 is not also 5 in a row. A
+#: run of 8 is a Solid Serial. The owner's rule.
+RUN_DESIGNATIONS: dict[int, str] = {
+    5: "5_in_a_row",
+    6: "6_in_a_row",
+    7: "7_in_a_row",
+}
+
 #: The designations that say what the digits spell (`_pattern_designations`):
 #: the ones `fancy_serial` sums up.
-DIGIT_PATTERNS: frozenset[str] = frozenset(
+DIGIT_PATTERNS: frozenset[str] = frozenset(RUN_DESIGNATIONS.values()) | frozenset(
     {
         "solid_serial",
         "binary",
@@ -187,9 +199,18 @@ def _ladder_family(d: str) -> set[str]:
     return found
 
 
+def _longest_run(d: str) -> int:
+    """The length of the longest stretch of one digit repeated."""
+    return max(len(m.group()) for m in re.finditer(r"(\d)\1*", d))
+
+
 def _pattern_designations(d: str) -> set[str]:
     """Designations earned by what the digits spell."""
     found: set[str] = set()
+
+    run = RUN_DESIGNATIONS.get(_longest_run(d))
+    if run is not None:
+        found.add(run)
 
     distinct = len(set(d))
     if distinct == 1:

@@ -163,6 +163,27 @@
       "sort_order": 170
     },
     {
+      "code": "5_in_a_row",
+      "label": "5 in a row",
+      "applies_to": "currency",
+      "attribute_group": "serial",
+      "sort_order": 181
+    },
+    {
+      "code": "6_in_a_row",
+      "label": "6 in a row",
+      "applies_to": "currency",
+      "attribute_group": "serial",
+      "sort_order": 182
+    },
+    {
+      "code": "7_in_a_row",
+      "label": "7 in a row",
+      "applies_to": "currency",
+      "attribute_group": "serial",
+      "sort_order": 183
+    },
+    {
       "code": "no_motto",
       "label": "No Motto",
       "applies_to": "any",

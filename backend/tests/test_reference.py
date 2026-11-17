@@ -483,7 +483,9 @@ def test_a_value_added_late_still_sorts_alphabetically(
 
     labels = [v["label"] for v in _values(client, admin_headers, "item_attribute")]
 
-    assert labels[0] == "Aardvark Test"
+    # First among the labels that start with a letter: "5 in a row" and the
+    # other runs of one digit sort before every letter.
+    assert next(label for label in labels if label[0].isalpha()) == "Aardvark Test"
 
 
 # ---------------------------------------------------------------------------

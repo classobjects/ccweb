@@ -45,7 +45,10 @@ STAR_SERIAL = "A38164927*"
         # Low and high are positional -- where the note sits in the print
         # run -- so they stack with the pattern designations rather than
         # replacing them.
-        ("A00001234B", {"low_serial", "partial_ladder", "fancy_serial"}),
+        (
+            "A00001234B",
+            {"low_serial", "partial_ladder", "fancy_serial"},
+        ),
         # Ladder family: Ladder (all eight step), Scattered (the eight digits
         # of a ladder, shuffled), Partial (a run of five or more, or four
         # consecutive pairs). A note may earn Scattered and Partial both.
@@ -63,7 +66,7 @@ STAR_SERIAL = "A38164927*"
         ("A99001122B", {"high_serial", "partial_ladder", "fancy_serial"}),
         ("A10203040B", set()),
         ("A12321555B", set()),
-        ("A11111112B", {"binary", "fancy_serial"}),
+        ("A11111112B", {"binary", "7_in_a_row", "fancy_serial"}),
         ("A98765432B", {"high_serial", "ladder", "fancy_serial"}),
         (
             "A99999999B",
@@ -80,8 +83,19 @@ STAR_SERIAL = "A38164927*"
         ("A25282252B", {"trinary", "fancy_serial"}),
         # Four of one digit then four of another. Binary too -- two distinct
         # digits -- but the arrangement is the thing collectors pay for.
-        ("E00003333B", {"double_quad", "binary", "low_serial", "fancy_serial"}),
+        (
+            "E00003333B",
+            {"double_quad", "binary", "low_serial", "fancy_serial"},
+        ),
         ("A19472856B", set()),
+        # Runs of one digit: named only when the longest run is exactly 5 to
+        # 7, so a note earns one at most; a run of 8 is a Solid Serial, and a
+        # run of 4 is named by nothing (Double Quad covers two of them).
+        ("A12555578B", set()),
+        ("A12222256B", {"5_in_a_row", "fancy_serial"}),
+        ("A37777771B", {"6_in_a_row", "trinary", "fancy_serial"}),
+        ("A55551555B", {"binary", "fancy_serial"}),
+        ("A12333456B", set()),
     ],
 )
 def test_designations(serial: str, expected: set[str]) -> None:
