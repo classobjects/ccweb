@@ -210,6 +210,43 @@ def _links(db: Session, item: InventoryItem) -> list[tuple[str, str | None]]:
     )
 
 
+@pytest.mark.parametrize(
+    ("serial", "note_type", "series_year", "reported"),
+    [
+        # A small-size Federal note prints eight digits: seven is a typo.
+        ("E9801342C", "frn", 1974, True),
+        ("A0260959B", "silver_certificate", 1957, True),
+        ("C335942A", "frbn", 1929, True),
+        # Valid serials of another length: a 1929 National Bank Note's six
+        # digits, a large-size note's, and a note with no Federal type -- a
+        # Goldback, a foreign note, an obsolete.
+        ("F003716A", "national_bank_note", 1929, False),
+        ("B175109", "frn", 1918, False),
+        ("AN71099", None, 2026, False),
+        ("1791040", None, 1939, False),
+    ],
+)
+def test_only_a_short_small_size_federal_serial_is_reported_incomplete(
+    db: Session,
+    make_item: ItemFactory,
+    serial: str,
+    note_type: str | None,
+    series_year: int,
+    reported: bool,
+) -> None:
+    """The pass lists a serial as incomplete only where eight digits are due."""
+    note = _note(db, make_item, serial)
+    detail = db.get_one(CurrencyDetail, note.id)
+    detail.series_year = series_year
+    detail.note_type_id = code_id(db, NoteType, note_type) if note_type else None
+    db.commit()
+
+    stats, incomplete = run(db, commit=False)
+
+    assert ((note.item_code, serial) in incomplete) is reported
+    assert stats["incomplete_serial"] == len(incomplete)
+
+
 def test_a_retired_designation_is_not_added(
     db: Session, make_item: ItemFactory
 ) -> None:

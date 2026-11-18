@@ -152,6 +152,24 @@ def is_incomplete(serial: str) -> bool:
     return len(digits_of(serial)) < SERIAL_DIGITS
 
 
+#: The note types whose small-size serials carry `SERIAL_DIGITS` digits. A
+#: 1929 National Bank Note's serial has six, and a note with no Federal type
+#: -- a Goldback, a foreign note, an obsolete -- has its own; neither is
+#: reported short.
+EIGHT_DIGIT_NOTE_TYPES = frozenset(
+    {"frn", "frbn", "silver_certificate", "us_note", "gold_certificate"}
+)
+
+
+def _owes_eight_digits(note_type: str | None, series_year: int | None) -> bool:
+    """Whether a note of this type and series prints an eight-digit serial."""
+    return (
+        note_type in EIGHT_DIGIT_NOTE_TYPES
+        and series_year is not None
+        and series_year >= SMALL_SIZE_FROM
+    )
+
+
 def _positional_designations(d: str) -> set[str]:
     """Designations earned by where the serial sits in the print run.
 
@@ -447,7 +465,7 @@ def _plan(db: Session, item_ids: Collection[int] | None) -> _Plan:
             plan.to_remove.append((item_id, stale_id))
         if not serial:
             continue
-        if is_incomplete(serial):
+        if is_incomplete(serial) and _owes_eight_digits(note_type, series_year):
             plan.stats["incomplete_serial"] += 1
             plan.incomplete.append((item_code, serial))
         plan.to_add += _missing_links(
@@ -559,7 +577,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  {code:<16}{count:>5}")
     if stats.get("incomplete_serial"):
         print(
-            f"\nincomplete serials (fewer than {SERIAL_DIGITS} digits): "
+            f"\nincomplete serials (small-size Federal notes with fewer than "
+            f"{SERIAL_DIGITS} digits): "
             f"{stats['incomplete_serial']}"
         )
         for code, serial in incomplete[:8]:
