@@ -30,7 +30,7 @@ from sqlalchemy import event, select
 from sqlalchemy.engine import Connection
 from sqlalchemy.orm import Session
 
-from tests.builders import ItemFactory, code_id
+from tests.builders import ItemFactory, code_id, patch_current
 
 _API = "/api/labels"
 
@@ -189,7 +189,8 @@ def test_the_unlabeled_run_holds_labelable_items_with_no_label(
     assert [r["sheet"] for r in runs] == ["SL597"]
     codes = _codes(runs[0])
     assert codes == sorted(codes)
-    assert first.item_code in codes and second.item_code in codes
+    assert first.item_code in codes
+    assert second.item_code in codes
     for absent in (labeled, sold, slab):
         assert absent.item_code not in codes
     label = next(lb for lb in runs[0]["labels"] if lb["item_id"] == first.id)
@@ -339,7 +340,8 @@ def test_only_labelable_items_join_the_batch(
     )
     assert refused.status_code == 422, refused.text
     detail = refused.json()["detail"]
-    assert sold.item_code in detail and bullion.item_code in detail
+    assert sold.item_code in detail
+    assert bullion.item_code in detail
     assert good.item_code not in detail
     assert _fresh(db, good.id).in_label_batch is False
 
@@ -402,7 +404,8 @@ def test_printed_twice_records_once(
     first = _fresh(db, item.id)
     stamped: datetime | None = first.label_waiting_at
     text = first.label_waiting_text
-    assert stamped is not None and text
+    assert stamped is not None
+    assert text
     assert first.in_label_batch is False
 
     assert _printed(db, client, admin_headers, "batch", item.id, other.id) == 1
@@ -442,7 +445,8 @@ def test_a_reprint_keeps_the_old_label_until_applied(
     after = _fresh(db, item.id)
     assert after.label_text == label_text(label_lines(db, after))
     assert after.label_stale is False
-    assert after.label_applied_at is not None and after.label_applied_at > old
+    assert after.label_applied_at is not None
+    assert after.label_applied_at > old
     assert (after.label_waiting_at, after.label_waiting_text) == (None, None)
 
 
@@ -482,7 +486,8 @@ def test_the_text_recorded_is_the_text_that_printed(
     assert done.json() == {"recorded": 1}
     waiting = _fresh(db, item.id)
     assert waiting.label_waiting_text == label_text(printed)
-    assert waiting.label_applied_at is None and waiting.label_stale is False
+    assert waiting.label_applied_at is None
+    assert waiting.label_stale is False
 
     _settle(client, admin_headers, "applied", item.id)
     after = _fresh(db, item.id)
@@ -527,7 +532,9 @@ def test_an_error_added_to_a_labeled_note_marks_its_label_stale(
 
 
 @pytest.mark.parametrize(
-    "lines", [["x"] * 9, ["x" * 501]], ids=["too many lines", "too long a line"]
+    "lines",
+    [["x"] * 9, ["x" * 501], ["004521", "A\nB"]],
+    ids=["too many lines", "too long a line", "a line break inside a line"],
 )
 def test_a_printed_label_larger_than_any_label_is_refused(
     db: Session,
@@ -536,7 +543,11 @@ def test_a_printed_label_larger_than_any_label_is_refused(
     admin_headers: dict[str, str],
     lines: list[str],
 ) -> None:
-    """No label holds more than eight lines of a few hundred characters."""
+    """No label holds more than eight lines of a few hundred characters.
+
+    Nor a line holding a line break: the lines are stored joined by one,
+    and would come back as more lines than printed.
+    """
     item = _coin(db, make_item)
     done = client.post(
         f"{_API}/printed",
@@ -576,10 +587,12 @@ def test_label_bookkeeping_does_not_move_the_item_version(
     """
     item = _coin(db, make_item)
     before = _fresh(db, item.id)
-    mark = (before.version, before.updated_at)
+    version, updated_at = before.version, before.updated_at
 
     _add(client, admin_headers, item.id)
-    assert (_fresh(db, item.id).version, _fresh(db, item.id).updated_at) == mark
+    batched = _fresh(db, item.id)
+    assert batched.version == version
+    assert batched.updated_at == updated_at
     client.delete(f"{_API}/batch/{item.id}", headers=admin_headers)
     _add(client, admin_headers, item.id)
     _printed(db, client, admin_headers, "batch", item.id)
@@ -589,7 +602,8 @@ def test_label_bookkeeping_does_not_move_the_item_version(
     _settle(client, admin_headers, "applied", item.id)
     after = _fresh(db, item.id)
     assert after.label_applied_at is not None
-    assert (after.version, after.updated_at) == mark
+    assert after.version == version
+    assert after.updated_at == updated_at
 
 
 # --- applying ---------------------------------------------------------------
@@ -606,7 +620,8 @@ def test_yes_leaves_labels_waiting_not_labeled(
     _printed(db, client, admin_headers, "unlabeled", item.id)
 
     after = _fresh(db, item.id)
-    assert after.label_applied_at is None and after.label_text is None
+    assert after.label_applied_at is None
+    assert after.label_text is None
     unlabeled = _run(client, admin_headers, "unlabeled")["runs"]
     assert isinstance(unlabeled, list)
     assert item.item_code not in [code for run in unlabeled for code in _codes(run)]
@@ -642,6 +657,32 @@ def test_waiting_runs_are_grouped_newest_first(
     first = runs[2]["labels"]
     assert isinstance(first, list)
     assert first[0]["lines"] == [printed_number(early.item_code), "1921-S", "Silver"]
+
+
+def test_a_waiting_label_is_listed_after_its_item_s_kind_changes(
+    db: Session,
+    make_item: ItemFactory,
+    client: TestClient,
+    admin_headers: dict[str, str],
+) -> None:
+    """A coin made a token after its label printed: no sheet serves tokens.
+
+    The label is still on a sheet, so it is listed (with the coins) and can
+    still be settled.
+    """
+    coin = _coin(db, make_item)
+    _printed(db, client, admin_headers, "unlabeled", coin.id)
+    edited = patch_current(
+        client,
+        f"/api/inventory/{coin.id}",
+        json={"item_kind": "token"},
+        headers=admin_headers,
+    )
+    assert edited.status_code == 200, edited.text
+
+    runs = _waiting(client, admin_headers)
+    assert [(r["sheet"], _codes(r)) for r in runs] == [("SL597", [coin.item_code])]
+    assert _settle(client, admin_headers, "unused", coin.id)["done"] == 1
 
 
 def test_applied_moves_the_waiting_label_onto_the_holder(
@@ -723,7 +764,8 @@ def test_unused_returns_the_item_to_what_its_holder_carries(
     assert kept.label_waiting_at is None
     unlabeled = _run(client, admin_headers, "unlabeled")["runs"]
     stale = _run(client, admin_headers, "stale")["runs"]
-    assert isinstance(unlabeled, list) and isinstance(stale, list)
+    assert isinstance(unlabeled, list)
+    assert isinstance(stale, list)
     assert fresh.item_code in [code for run in unlabeled for code in _codes(run)]
     assert relabeled.item_code in [code for run in stale for code in _codes(run)]
 

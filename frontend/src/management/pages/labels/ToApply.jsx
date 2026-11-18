@@ -4,6 +4,7 @@
 import { useState } from 'react'
 
 import { api } from '../../api'
+import { keyedLines } from './layout'
 
 /** "1 label" or "N labels". */
 const labelsWord = (n) => (n === 1 ? '1 label' : `${n} labels`)
@@ -111,7 +112,7 @@ export default function ToApply({ runs, sheetNames, onChanged }) {
           `${sheetNames[run.sheet] ?? run.sheet} labels, printed ` +
           `${new Date(run.printed_at).toLocaleString()}`
         return (
-          <div key={runKey(run)} className="label-run" role="group" aria-label={title}>
+          <fieldset key={runKey(run)} className="label-run" aria-label={title}>
             <h3>
               {title}: {labelsWord(ids.length)}
             </h3>
@@ -146,8 +147,8 @@ export default function ToApply({ runs, sheetNames, onChanged }) {
                       {label.item_code}
                     </td>
                     <td data-label="Label">
-                      {label.lines.map((line, i) => (
-                        <div key={i} className="cell-scroll">
+                      {keyedLines(label.lines).map(({ line, key }) => (
+                        <div key={key} className="cell-scroll">
                           {line}
                         </div>
                       ))}
@@ -156,7 +157,7 @@ export default function ToApply({ runs, sheetNames, onChanged }) {
                 ))}
               </tbody>
             </table>
-          </div>
+          </fieldset>
         )
       })}
     </section>

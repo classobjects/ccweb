@@ -36,10 +36,12 @@ from ..labels import (
     SHEET_FOR_KIND,
     SHEETS,
     label_items,
+    label_state_clauses,
     label_text,
     labelable_clause,
     labels_of,
     refresh_every_stale,
+    sheet_for,
     write_quietly,
 )
 from ..models import InventoryItem, utcnow
@@ -129,22 +131,11 @@ def label_run(
         offered = _labelable_ids(db, [item.id for item in batch])
         items = [item for item in batch if item.id in offered]
         skipped = [item.item_code for item in batch if item.id not in offered]
-    elif source == "unlabeled":
-        items = label_items(
-            db,
-            labelable_clause(),
-            InventoryItem.label_applied_at.is_(None),
-            InventoryItem.label_waiting_at.is_(None),
-        )
     else:
-        with committing(db, _STALE):
-            refresh_every_stale(db)
-        items = label_items(
-            db,
-            labelable_clause(),
-            InventoryItem.label_stale.is_(True),
-            InventoryItem.label_waiting_at.is_(None),
-        )
+        if source == "stale":
+            with committing(db, _STALE):
+                refresh_every_stale(db)
+        items = label_items(db, labelable_clause(), label_state_clauses()[source])
     lines = labels_of(db, items)
     by_sheet: dict[str, list[InventoryItem]] = {}
     for item in items:
@@ -269,7 +260,7 @@ def list_waiting(db: DbSession, _admin: AdminUser) -> list[LabelWaitingRunOut]:
     runs: dict[tuple[datetime, str], list[InventoryItem]] = {}
     for item in items:
         assert item.label_waiting_at is not None
-        key = (item.label_waiting_at, SHEET_FOR_KIND[item.item_kind.code])
+        key = (item.label_waiting_at, sheet_for(item.item_kind.code))
         runs.setdefault(key, []).append(item)
     sheet_order = list(SHEETS)
     return [
@@ -295,9 +286,15 @@ def list_waiting(db: DbSession, _admin: AdminUser) -> list[LabelWaitingRunOut]:
 def _settle(
     db: Session,
     item_ids: Sequence[int],
-    change: Callable[[InventoryItem], dict[str, object]],
+    change: Callable[
+        [list[InventoryItem]], Mapping[InventoryItem, Mapping[str, object]]
+    ],
 ) -> LabelsAppliedOut:
-    """Apply `change` to the waiting labels of these items; name the others."""
+    """Write what `change` makes of the items with a waiting label; name the others.
+
+    `change` is given those items as loaded here, once, and answers each
+    one's new column values.
+    """
     ids = list(dict.fromkeys(item_ids))
     items = label_items(db, InventoryItem.id.in_(ids))
     found = {item.id for item in items}
@@ -312,7 +309,7 @@ def _settle(
     waiting = [item for item in items if item.label_waiting_at is not None]
     not_waiting = [item.item_code for item in items if item.label_waiting_at is None]
     with committing(db, _STALE):
-        write_quietly(db, {item: change(item) for item in waiting})
+        write_quietly(db, change(waiting))
     return LabelsAppliedOut(done=len(waiting), not_waiting=not_waiting)
 
 
@@ -327,22 +324,21 @@ def record_applied(
     printed. Items with no label waiting are named in `not_waiting` and
     left alone.
     """
-    items = label_items(
-        db,
-        InventoryItem.id.in_(payload.item_ids),
-        InventoryItem.label_waiting_at.is_not(None),
-    )
-    current = labels_of(db, items)
     now = utcnow()
 
-    def apply(item: InventoryItem) -> dict[str, object]:
-        text = item.label_waiting_text
+    def apply(
+        waiting: list[InventoryItem],
+    ) -> dict[InventoryItem, Mapping[str, object]]:
+        current = labels_of(db, waiting)
         return {
-            "label_applied_at": now,
-            "label_text": text,
-            "label_stale": text != label_text(current[item.id]),
-            "label_waiting_at": None,
-            "label_waiting_text": None,
+            item: {
+                "label_applied_at": now,
+                "label_text": item.label_waiting_text,
+                "label_stale": item.label_waiting_text != label_text(current[item.id]),
+                "label_waiting_at": None,
+                "label_waiting_text": None,
+            }
+            for item in waiting
         }
 
     return _settle(db, payload.item_ids, apply)
@@ -361,5 +357,8 @@ def record_unused(
     return _settle(
         db,
         payload.item_ids,
-        lambda _item: {"label_waiting_at": None, "label_waiting_text": None},
+        lambda waiting: {
+            item: {"label_waiting_at": None, "label_waiting_text": None}
+            for item in waiting
+        },
     )

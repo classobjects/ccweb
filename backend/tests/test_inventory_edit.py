@@ -28,6 +28,7 @@ from app.models import (
     ItemStatus,
     Metal,
     Mint,
+    NoteType,
     SealColor,
     Series,
     StrikeType,
@@ -1148,6 +1149,43 @@ def test_an_edit_that_empties_the_description_writes_one(
     assert [(c.old_value, c.new_value, c.changed_by_id) for c in logged] == [
         ("Old words", item.description, admin_user.id)
     ]
+
+
+@pytest.mark.parametrize("autoflush", [True, False])
+def test_a_description_written_by_an_edit_reads_the_edit_s_denomination(
+    client: TestClient, admin_headers: dict[str, str], db: Session, autoflush: bool
+) -> None:
+    """The face value the edit sets is the one described, not the one before.
+
+    The route reads the item before the edit, which loads its denomination;
+    setting only the denomination's id leaves that row loaded. Run both
+    ways: production's session does not autoflush.
+    """
+    note = _note(
+        db,
+        note_type_id=code_id(db, NoteType, "frn"),
+        series_year=1999,
+        serial_number="F12344321R",
+    )
+    note.denomination_id = code_id(db, Denomination, "usd_note_1")
+    db.commit()
+
+    db.autoflush = autoflush
+    try:
+        response = patch_current(
+            client,
+            f"/api/inventory/{note.id}",
+            json={"denomination": "usd_note_2", "description": ""},
+            headers=admin_headers,
+        )
+    finally:
+        db.autoflush = True
+
+    assert response.status_code == 200, response.text
+    db.expire_all()
+    described = db.get_one(InventoryItem, note.id).description
+    assert "$2" in described
+    assert "$1" not in described
 
 
 def test_a_typed_description_is_kept(

@@ -85,7 +85,8 @@ function withSeries(description, was, now) {
     else if (base.endsWith(`. ${was}`)) base = base.slice(0, -(was.length + 2))
   }
   if (!now) return base
-  const stem = base.replace(/\.+$/, '')
+  let stem = base
+  while (stem.endsWith('.')) stem = stem.slice(0, -1)
   return stem ? `${stem}. ${now}` : now
 }
 

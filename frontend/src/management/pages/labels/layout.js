@@ -94,6 +94,20 @@ export function cellBox(layout, cell) {
 }
 
 /**
+ * A label's lines, each with a key of its own for a list: the text, and
+ * which of its repeats it is, so two equal lines are told apart without
+ * their place in the list.
+ */
+export function keyedLines(lines) {
+  const seen = new Map()
+  return lines.map((line) => {
+    const repeat = seen.get(line) ?? 0
+    seen.set(line, repeat + 1)
+    return { line, key: `${repeat}:${line}` }
+  })
+}
+
+/**
  * The font size, in points, of a line `needed` wide in a space `available`
  * wide at `size` points: unchanged when it fits, else smaller in proportion
  * (text width scales with its size), down to the quarter point, and never
@@ -101,7 +115,10 @@ export function cellBox(layout, cell) {
  * out (both widths 0) is left at `size`.
  */
 export function fittedSize(size, minimum, available, needed) {
-  if (!(needed > available) || !(available > 0)) return size
+  // A width that is not a number leaves the size alone too.
+  if (Number.isNaN(needed + available) || needed <= available || available <= 0) {
+    return size
+  }
   const scaled = Math.floor(((size * available) / needed) * 4) / 4
   return Math.max(minimum, scaled)
 }

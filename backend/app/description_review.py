@@ -166,12 +166,14 @@ def _lines(text: str) -> str:
     return text.replace("\r\n", "\n").replace("\r", "\n")
 
 
-def plan_apply(db: Session, path: Path) -> Replace:
-    """The marked rows of the workbook, sorted into replace, skipped, unknown."""
+def _marked_rows(path: Path, todo: Replace) -> dict[str, str]:
+    """Each row marked x in the workbook: its item code and the text it showed.
+
+    A row marked with anything else is counted in `todo.unrecognized`.
+    """
     sheet = load_workbook(path, read_only=True).active
     assert sheet is not None
     marked: dict[str, str] = {}
-    todo = Replace()
     for code, current, _suggested, mark in sheet.iter_rows(
         min_row=2, max_col=4, values_only=True
     ):
@@ -182,6 +184,13 @@ def plan_apply(db: Session, path: Path) -> Replace:
             marked[str(code).strip()] = "" if current is None else str(current)
         elif said:
             todo.unrecognized += 1
+    return marked
+
+
+def plan_apply(db: Session, path: Path) -> Replace:
+    """The marked rows of the workbook, sorted into replace, skipped, unknown."""
+    todo = Replace()
+    marked = _marked_rows(path, todo)
     if not marked:
         return todo
     items = {

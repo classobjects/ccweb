@@ -3,7 +3,14 @@
 // SPDX-License-Identifier: Apache-2.0
 import { describe, expect, it } from 'vitest'
 
-import { cellBox, endOf, fittedSize, placeLabels, sheetLayout } from './layout'
+import {
+  cellBox,
+  endOf,
+  fittedSize,
+  keyedLines,
+  placeLabels,
+  sheetLayout,
+} from './layout'
 import { SL564, SL597 } from './sheets.fixture'
 
 describe('placeLabels', () => {
@@ -76,5 +83,17 @@ describe('fittedSize', () => {
 
   it('leaves a line it cannot measure alone', () => {
     expect(fittedSize(7, 5, 0, 0)).toBe(7)
+    expect(fittedSize(7, 5, Number.NaN, 120)).toBe(7)
+    expect(fittedSize(7, 5, 100, undefined)).toBe(7)
+  })
+})
+
+describe('keyedLines', () => {
+  it('keys each line by its text, telling equal lines apart', () => {
+    expect(keyedLines(['004521', 'Silver', 'Silver'])).toEqual([
+      { line: '004521', key: '0:004521' },
+      { line: 'Silver', key: '0:Silver' },
+      { line: 'Silver', key: '1:Silver' },
+    ])
   })
 })

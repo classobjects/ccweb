@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useLayoutEffect, useRef } from 'react'
 
-import { cellBox, fittedSize, placeLabels, sheetLayout } from './layout'
+import { cellBox, fittedSize, keyedLines, placeLabels, sheetLayout } from './layout'
 
 /** Inches as a CSS length, rounded past anything a printer can place. */
 const inch = (value) => `${+value.toFixed(4)}in`
@@ -58,11 +58,13 @@ export default function LabelSheets({ sheet, labels, start, outline = false }) {
   const layout = sheetLayout(sheet)
   const container = useRef(null)
   const places = placeLabels(labels.length, start, layout.cells)
-  const pages = Array.from(
-    { length: places.length ? places[places.length - 1].sheet + 1 : 0 },
-    () => [],
+  const pages = Array.from({ length: (places.at(-1)?.sheet ?? -1) + 1 }, (_, n) => ({
+    number: n + 1,
+    placed: [],
+  }))
+  places.forEach((place, i) =>
+    pages[place.sheet].placed.push({ ...place, label: labels[i] }),
   )
-  places.forEach((place, i) => pages[place.sheet].push({ ...place, label: labels[i] }))
 
   useLayoutEffect(() => fitLines(container.current))
 
@@ -87,16 +89,16 @@ export default function LabelSheets({ sheet, labels, start, outline = false }) {
 
   return (
     <div ref={container} className="label-sheets">
-      {pages.map((page, number) => (
-        <section key={number} className={pageClass}>
+      {pages.map((page) => (
+        <section key={page.number} className={pageClass}>
           {outline &&
             Array.from({ length: layout.cells }, (_, i) => (
               <div key={`cell-${i + 1}`} className="label-cell" style={placed(i + 1)} />
             ))}
-          {page.map(({ cell, label }) => (
+          {page.placed.map(({ cell, label }) => (
             <div key={label.item_id} className="label" style={placed(cell)}>
-              {label.lines.map((line, i) => (
-                <div key={i} className="label-line">
+              {keyedLines(label.lines).map(({ line, key }) => (
+                <div key={key} className="label-line">
                   {line}
                 </div>
               ))}

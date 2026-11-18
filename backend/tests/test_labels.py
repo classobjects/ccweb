@@ -54,7 +54,8 @@ def test_each_layout_fills_letter_exactly() -> None:
         assert float(down) == pytest.approx(11, abs=0.0035)
     assert SHEETS["SL597"].cells == 160
     assert SHEETS["SL564"].cells == 102
-    assert SHEETS["SL597"].rounded and not SHEETS["SL564"].rounded
+    assert SHEETS["SL597"].rounded
+    assert not SHEETS["SL564"].rounded
     assert SHEETS["SL597"].gap_y == Decimal("0.1556")
     assert SHEET_FOR_KIND == {"coin": "SL597", "currency": "SL564", "set": "SL564"}
 
@@ -385,7 +386,7 @@ def test_marking_a_label_stale_is_not_an_edit_of_the_item(
     db.expire_all()
     before = db.get(InventoryItem, item.id)
     assert before is not None
-    mark = (before.version, before.updated_at)
+    version, updated_at = before.version, before.updated_at
     refresh_stale(db, [item.id])
     db.commit()
     assert before.label_stale is True
@@ -393,7 +394,8 @@ def test_marking_a_label_stale_is_not_an_edit_of_the_item(
     after = db.get(InventoryItem, item.id)
     assert after is not None
     assert after.label_stale is True
-    assert (after.version, after.updated_at) == mark
+    assert after.version == version
+    assert after.updated_at == updated_at
 
 
 def _count_queries(db: Session, ids: list[int]) -> int:

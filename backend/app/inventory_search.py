@@ -30,19 +30,20 @@ specification's own allowlists; every value is a bound parameter.
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal
 from functools import cache
 from typing import Any
 
-from sqlalchemy import select, text
+from sqlalchemy import Row, select, text
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Session
 
 from . import aliases, grades
 from .issues import COIN_ISSUES, CURRENCY_ISSUES, Issue
-from .labels import labelable_clause
+from .labels import label_state_clauses, labelable_clause
 from .models import (
     GradeDesignation,
     InventoryItem,
@@ -844,35 +845,24 @@ def _item_codes_clause(params: dict[str, Any], bound: dict[str, Any]) -> str | N
     return "i.item_code = ANY(:p_item_codes)"
 
 
-#: The `label=` filter: each state of an item's holder label. Every state
-#: is among labelable items only (`app.labels.labelable_clause`) -- a sold
-#: coin is never offered a label, so it is not "not labeled" either. An item
-#: is in one state only, the first that fits: a printed label waiting to be
-#: applied comes before what its holder carries.
-LABEL_STATES: dict[str, str] = {
-    # Printed, not yet applied: on a sheet, not on the holder.
-    "printed": "i.label_waiting_at IS NOT NULL",
-    # Nothing on the holder, and nothing waiting.
-    "unlabeled": "i.label_applied_at IS NULL AND i.label_waiting_at IS NULL",
-    # On the holder, and it would now read differently: needs a new label.
-    "stale": "i.label_stale AND i.label_waiting_at IS NULL",
-    # On the holder, with the text it would print now.
-    "labeled": (
-        "i.label_applied_at IS NOT NULL AND NOT i.label_stale "
-        "AND i.label_waiting_at IS NULL"
-    ),
-}
+#: The `label=` filter: each state of an item's holder label
+#: (`app.labels.label_state_clauses`). Every state is among labelable items
+#: only (`app.labels.labelable_clause`) -- a sold coin is never offered a
+#: label, so it is not "not labeled" either.
+LABEL_STATES: tuple[str, ...] = tuple(label_state_clauses())
 
 
 @cache
-def _labelable_sql() -> str:
-    """`labelable_clause` as SQL text against `i`, compiled once.
+def _label_state_sql(state: str) -> str:
+    """The labelable items in `state`, as SQL text against `i`, compiled once.
 
     Its only values are the vocabulary codes `app.labels` names, never user
     input, so they are written into the text rather than bound.
     """
-    labelable = select(InventoryItem.id).where(labelable_clause())
-    compiled = labelable.compile(
+    found = select(InventoryItem.id).where(
+        labelable_clause(), label_state_clauses()[state]
+    )
+    compiled = found.compile(
         dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
     )
     return f"i.id IN ({compiled})"
@@ -887,7 +877,7 @@ def _label_clause(params: dict[str, Any]) -> str | None:
         raise ValueError(
             f"unknown label state {state!r}; expected one of {sorted(LABEL_STATES)}."
         )
-    return f"{_labelable_sql()} AND {LABEL_STATES[state]}"
+    return _label_state_sql(state)
 
 
 #: The grade parameters, read as search terms rather than codes.
@@ -1222,6 +1212,47 @@ def search(
     return [{k: plain(v) for k, v in row.items()} for row in rows], total
 
 
+def _facet_values(
+    db: Session, facet: Facet, counts: Sequence[Row[Any]]
+) -> list[dict[str, Any]]:
+    """A facet's counted ids as the values a picker offers, with their counts."""
+    if facet.table is None:
+        # The column is the value -- there is nothing to resolve.
+        return [{"value": row.fid, "count": row.n} for row in counts]
+
+    ids = [row.fid for row in counts]
+    # A textual query returns untyped rows, so the pair is taken by
+    # position rather than by asking dict() to infer it.
+    # The value is what the filter compares; the label is what a person
+    # reads -- "Cent" for `usd_coin_0_01`. `to_jsonb(t) ->> 'label'` reads
+    # the label where the table has one and yields NULL where it does not,
+    # so one query serves every facet table without knowing its columns.
+    resolved: dict[int, tuple[object, str | None]] = {
+        row[0]: (row[1], row[2])
+        for row in db.execute(
+            text(
+                f"SELECT t.id, t.{facet.label_column}, to_jsonb(t) ->> 'label' "
+                f"FROM {facet.table} t WHERE t.id = ANY(:ids)"
+                + (f" ORDER BY {facet.order}" if facet.order else "")
+            ),
+            {"ids": ids},
+        ).all()
+    }
+    count_of = {row.fid: row.n for row in counts}
+    # Most common first, or in the facet's own order: `resolved` was
+    # read in that order, and a dict keeps it.
+    listed = resolved if facet.order else count_of
+    return [
+        {
+            "value": resolved[fid][0],
+            "label": resolved[fid][1],
+            "count": count_of[fid],
+        }
+        for fid in listed
+        if fid in resolved and fid in count_of and resolved[fid][0] is not None
+    ]
+
+
 def count_facets(
     db: Session,
     spec: ViewSpec,
@@ -1279,46 +1310,7 @@ def count_facets(
             bound,
         ).all()
 
-        if not counts:
-            results[name] = []
-            continue
-
-        if facet.table is None:
-            # The column is the value -- there is nothing to resolve.
-            results[name] = [{"value": row.fid, "count": row.n} for row in counts]
-            continue
-
-        ids = [row.fid for row in counts]
-        # A textual query returns untyped rows, so the pair is taken by
-        # position rather than by asking dict() to infer it.
-        # The value is what the filter compares; the label is what a person
-        # reads -- "Cent" for `usd_coin_0_01`. `to_jsonb(t) ->> 'label'` reads
-        # the label where the table has one and yields NULL where it does not,
-        # so one query serves every facet table without knowing its columns.
-        resolved: dict[int, tuple[object, str | None]] = {
-            row[0]: (row[1], row[2])
-            for row in db.execute(
-                text(
-                    f"SELECT t.id, t.{facet.label_column}, to_jsonb(t) ->> 'label' "
-                    f"FROM {facet.table} t WHERE t.id = ANY(:ids)"
-                    + (f" ORDER BY {facet.order}" if facet.order else "")
-                ),
-                {"ids": ids},
-            ).all()
-        }
-        count_of = {row.fid: row.n for row in counts}
-        # Most common first, or in the facet's own order: `resolved` was
-        # read in that order, and a dict keeps it.
-        listed = resolved if facet.order else count_of
-        results[name] = [
-            {
-                "value": resolved[fid][0],
-                "label": resolved[fid][1],
-                "count": count_of[fid],
-            }
-            for fid in listed
-            if fid in resolved and fid in count_of and resolved[fid][0] is not None
-        ]
+        results[name] = _facet_values(db, facet, counts) if counts else []
 
     return results
 

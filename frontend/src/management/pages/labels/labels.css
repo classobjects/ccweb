@@ -31,7 +31,7 @@
   border: 1px solid #ccc;
   border-radius: 0;
   background: #fff;
-  color: #888;
+  color: #666;
   font-size: 7px;
   line-height: 1;
   overflow: hidden;
@@ -44,11 +44,11 @@
 }
 .sheet-picker .sheet-picker-cell.used {
   background: #e5e5e5;
-  color: #aaa;
+  color: #555;
 }
 .sheet-picker .sheet-picker-cell.fills {
   background: #bee3f8;
-  color: #2b6cb0;
+  color: #1e4e8c;
 }
 .sheet-picker .sheet-picker-cell.start {
   background: #2b6cb0;
@@ -57,6 +57,14 @@
 }
 .sheet-picker figcaption {
   margin-top: 0.4rem;
+}
+/* A run of waiting labels is a fieldset for its group role only: none of
+   the browser's frame, and no min-content width to push a phone sideways. */
+fieldset.label-run {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
 }
 .label-run-actions {
   display: flex;

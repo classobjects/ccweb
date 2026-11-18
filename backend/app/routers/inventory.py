@@ -3536,6 +3536,11 @@ def _finish_edit(
         # The label's stale flag and Duplicate Serial read the links.
         refresh_items(db, [item.id])
     db.flush()
+    # Read back as saved, as the editor's preview does: a relationship
+    # loaded before the edit keeps its old row when only its id was set
+    # (a denomination changed would be described by its old face value),
+    # and the rules wrote some of theirs by SQL.
+    db.expire_all()
     written = ["description"] if _fill_blank_description(db, item) else []
     # A note saved at no cost is a gift: the fields that moves are logged
     # with the ones sent.
@@ -3603,6 +3608,20 @@ def _series_misfit(db: Session, code: str, is_currency: bool) -> str | None:
     return f"series {code} belongs to {side}"
 
 
+def _piece_misfits(db: Session, spec: SplitPieceIn, is_currency: bool) -> list[str]:
+    """What one piece is given that a piece of this kind cannot hold."""
+    misfits: list[str | None] = []
+    if is_currency and spec.year_start is not None:
+        misfits.append("year_start: a note's year is its series year")
+    if is_currency and spec.metal is not None:
+        misfits.append("metal belongs to coins, not banknotes")
+    if spec.denomination:
+        misfits.append(_denomination_misfit(db, spec.denomination, is_currency))
+    if spec.series:
+        misfits.append(_series_misfit(db, spec.series, is_currency))
+    return [misfit for misfit in misfits if misfit is not None]
+
+
 def _refuse_pieces_that_do_not_fit(
     db: Session, parent: InventoryItem, specs: Sequence[SplitPieceIn]
 ) -> None:
@@ -3611,24 +3630,12 @@ def _refuse_pieces_that_do_not_fit(
     A piece is of its lot's kind, so a banknote lot's pieces are notes: no
     year of their own (a note's year is its series year), no metal, and no
     coin's denomination or design series -- the same rules an edit of one
-    keeps. Nothing is
-    split when one is refused.
+    keeps. Nothing is split when one is refused.
     """
     is_currency = parent.item_kind_id == item_kinds.currency_kind_id(db)
     wrong: set[str] = set()
     for spec in specs:
-        if is_currency and spec.year_start is not None:
-            wrong.add("year_start: a note's year is its series year")
-        if is_currency and spec.metal is not None:
-            wrong.add("metal belongs to coins, not banknotes")
-        if spec.denomination:
-            misfit = _denomination_misfit(db, spec.denomination, is_currency)
-            if misfit is not None:
-                wrong.add(misfit)
-        if spec.series:
-            misfit = _series_misfit(db, spec.series, is_currency)
-            if misfit is not None:
-                wrong.add(misfit)
+        wrong.update(_piece_misfits(db, spec, is_currency))
     if wrong:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,

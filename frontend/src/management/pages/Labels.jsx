@@ -12,6 +12,7 @@ import { useRequest } from '../../shared/useRequest'
 import LabelSheets from './labels/LabelSheets'
 import SheetPicker from './labels/SheetPicker'
 import ToApply from './labels/ToApply'
+import { keyedLines } from './labels/layout'
 import './labels/labels.css'
 
 //: What a run is drawn from (`LabelSource`), as the page offers it.
@@ -83,7 +84,7 @@ function PrintBatch({ batch, onChanged }) {
       </p>
       <div className="row">
         <label data-help="label_item_number">
-          Item number
+          Item number{/* */}
           <input
             type="text"
             value={number}
@@ -120,8 +121,8 @@ function PrintBatch({ batch, onChanged }) {
                   {label.item_code}
                 </td>
                 <td data-label="Label">
-                  {label.lines.map((line, i) => (
-                    <div key={i} className="cell-scroll">
+                  {keyedLines(label.lines).map(({ line, key }) => (
+                    <div key={key} className="cell-scroll">
                       {line}
                     </div>
                   ))}

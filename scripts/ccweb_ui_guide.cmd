@@ -24,7 +24,7 @@ if /i "%~1"=="list" goto run
 call "%~dp0ccweb_testdb.cmd" start || exit /b 1
 
 :run
-pushd "%~dp0..\backend"
+pushd "%~dp0..\backend" || exit /b 2
 "%ENVDIR%\python.exe" -m ui_guide %*
 set "RC=%errorlevel%"
 popd

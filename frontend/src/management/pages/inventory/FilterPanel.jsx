@@ -223,7 +223,7 @@ export default function FilterPanel({
             count to show, and nothing to be unrecorded. No letter, as the
             seller's item id has none. */}
           <label data-help="label_filter">
-            Label
+            Label{/* */}
             <select
               value={current.label ?? ''}
               onChange={(e) => apply({ label: e.target.value })}

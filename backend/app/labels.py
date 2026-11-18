@@ -53,12 +53,14 @@ __all__ = [
     "is_labelable",
     "label_items",
     "label_lines",
+    "label_state_clauses",
     "label_text",
     "labelable_clause",
     "labels_of",
     "printed_number",
     "refresh_every_stale",
     "refresh_stale",
+    "sheet_for",
     "write_quietly",
 ]
 
@@ -122,6 +124,18 @@ SHEETS: dict[str, SheetLayout] = {
 #: The sheet an item of each labelable kind prints on.
 SHEET_FOR_KIND: dict[str, str] = {"coin": "SL597", "currency": "SL564", "set": "SL564"}
 
+
+def sheet_for(kind_code: str) -> str:
+    """The sheet a label for an item of this kind is shown with.
+
+    A kind no sheet serves -- a token, medal or bullion piece -- is never
+    offered a label, but can still hold one printed before its kind was
+    changed. It is shown with the coins, beside which the Coins screen
+    holds it, so that waiting label can still be settled.
+    """
+    return SHEET_FOR_KIND.get(kind_code, SHEET_FOR_KIND["coin"])
+
+
 #: Parts of one line, and of lines 3 and 4, are joined with these.
 _PART_GAP = "  "
 _LIST_JOIN = " · "
@@ -162,6 +176,31 @@ def labelable_clause() -> ColumnElement[bool]:
         InventoryItem.deleted_at.is_(None),
         InventoryItem.split_at.is_(None),
     )
+
+
+def label_state_clauses() -> dict[str, ColumnElement[bool]]:
+    """Each state of an item's holder label, as a WHERE clause on `InventoryItem`.
+
+    An item is in one state only: a printed label waiting to be applied
+    comes before what its holder carries. The Labels page's runs and the
+    inventory's `label=` filter both read these; neither names the
+    labelable items (`labelable_clause`), which each adds.
+    """
+    nothing_waiting = InventoryItem.label_waiting_at.is_(None)
+    return {
+        # Printed, not yet applied: on a sheet, not on the holder.
+        "printed": InventoryItem.label_waiting_at.is_not(None),
+        # Nothing on the holder, and nothing waiting.
+        "unlabeled": and_(InventoryItem.label_applied_at.is_(None), nothing_waiting),
+        # On the holder, and it would now read differently: needs a new label.
+        "stale": and_(InventoryItem.label_stale.is_(True), nothing_waiting),
+        # On the holder, with the text it would print now.
+        "labeled": and_(
+            InventoryItem.label_applied_at.is_not(None),
+            InventoryItem.label_stale.is_(False),
+            nothing_waiting,
+        ),
+    }
 
 
 def is_labelable(db: Session, item: InventoryItem) -> bool:
