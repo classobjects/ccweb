@@ -102,9 +102,7 @@ function PrintBatch({ batch, onChanged }) {
         </button>
       </div>
       {error && <p className="error">{error}</p>}
-      {batch && batch.length === 0 && (
-        <p className="muted">The print batch is empty.</p>
-      )}
+      {batch?.length === 0 && <p className="muted">The print batch is empty.</p>}
       {batch && batch.length > 0 && (
         <table className="table stacks" aria-label="Print batch">
           <thead>
@@ -283,7 +281,7 @@ export default function Labels() {
           from the batch.
         </p>
       )}
-      {answer && answer.runs.length === 0 && <p className="muted">Nothing to print.</p>}
+      {answer?.runs.length === 0 && <p className="muted">Nothing to print.</p>}
       {answer &&
         sheets.data &&
         answer.runs.map((sheetRun) => {
