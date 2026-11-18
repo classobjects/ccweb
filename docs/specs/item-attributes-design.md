@@ -91,7 +91,7 @@ The vocabulary is seeded from `backend/data/reference/attribute.json`:
 
 | Group | Attributes | For |
 |---|---|---|
-| `serial` | Star, Fancy Serial, Consecutive, Low / High Serial, Solid, Radar, Repeater, Binary, Trinary, Birthday, Ladder, Double Quad | notes |
+| `serial` | Star, Fancy Serial, Consecutive, Low / High Serial, Solid, Radar, Repeater, Binary, Trinary, Birthday, Ladder, Double Quad, Quad, 5 to 7 in a row, 5 and 6 of a Kind | notes |
 | `variety` | Error, Web Press, Specimen, Proof; No Motto, Motto, Mule, Gift (any); Wide / Narrow, Type 1 / Type 2, R / S Experimental | mostly notes |
 | `release` | First Strike (PCGS), Early Releases / First Releases (NGC), First Day of Issue, First Delivery (CACG) | coins |
 | `release` | First Print (PCGS Banknote) | notes |

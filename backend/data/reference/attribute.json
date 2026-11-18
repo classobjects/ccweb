@@ -163,6 +163,13 @@
       "sort_order": 170
     },
     {
+      "code": "quad",
+      "label": "Quad",
+      "applies_to": "currency",
+      "attribute_group": "serial",
+      "sort_order": 180
+    },
+    {
       "code": "5_in_a_row",
       "label": "5 in a row",
       "applies_to": "currency",
@@ -182,6 +189,20 @@
       "applies_to": "currency",
       "attribute_group": "serial",
       "sort_order": 183
+    },
+    {
+      "code": "5_of_a_kind",
+      "label": "5 of a Kind",
+      "applies_to": "currency",
+      "attribute_group": "serial",
+      "sort_order": 184
+    },
+    {
+      "code": "6_of_a_kind",
+      "label": "6 of a Kind",
+      "applies_to": "currency",
+      "attribute_group": "serial",
+      "sort_order": 185
     },
     {
       "code": "no_motto",

@@ -94,7 +94,8 @@ item as saved, in the same transaction.
 ## 2. Serial patterns derived on save
 
 `app/serial_patterns.py` derives Star, Solid, Binary, Trinary, Radar,
-Repeater, Double Quad, Ladder, 5 to 7 in a row, Birthday, Low Serial, High
+Repeater, Double Quad, Ladder, Quad, 5 to 7 in a row, 5 and 6 of a Kind,
+Birthday, Low Serial, High
 Serial and Fancy Serial from a note's serial. Each is a derived link (`derived_by`
 `serial_pattern`), which a person may remove and which then stays removed.
 
@@ -129,21 +130,35 @@ as a reference for these terms):
 - Broken Ladder is a `reference_alias` of Scattered Ladder.
 - They are terms in common use, so they may ship (`docs/reference-data.md`).
 
-**Runs of one digit are three attributes** (the owner's rule): one digit
+**Runs of one digit are four attributes** (the owner's rule): one digit
 repeated in a row, named by the length of the serial's longest run.
 
 | Attribute | Longest run is exactly | Earns it | Does not |
 |---|---|---|---|
-| 5 in a row (`5_in_a_row`) | 5 | 12222256 | 12555578 (a run of 4) |
+| Quad (`quad`) | 4 | 12555578, 00001234 | 11112222 (a Double Quad) |
+| 5 in a row (`5_in_a_row`) | 5 | 12222256 | |
 | 6 in a row (`6_in_a_row`) | 6 | 37777771 | |
 | 7 in a row (`7_in_a_row`) | 7 | 11111112 | 55555555 (a Solid Serial) |
 
 - A note earns one of them at most: a run of 6 is not also 5 in a row.
-- A run of 4 is named by none: Double Quad already covers the run of 4 that
-  collectors pay for.
-- They are digit patterns, so each adds Fancy Serial.
-- They are seeded in `backend/data/reference/attribute.json` in the `serial`
-  group, `applies_to` currency.
+- A Double Quad is not also a Quad: its two runs of 4 are what it is named
+  for.
+
+**One digit five or six times is 5 of a Kind or 6 of a Kind** (the owner's
+rule): the digit appears exactly that many times, and not all of them in a
+row -- five in a row is 5 in a row, not 5 of a Kind.
+
+| Attribute | One digit appears exactly | Earns it | Does not |
+|---|---|---|---|
+| 5 of a Kind (`5_of_a_kind`) | 5 times, not all in a row | 31323334, 24744441 | 12222256 (5 in a row) |
+| 6 of a Kind (`6_of_a_kind`) | 6 times, not all in a row | 77077717, 22222132 | 37777771 (6 in a row) |
+
+- They stack with the runs: 24744441 is a Quad and 5 of a Kind, 22222132 is
+  5 in a row and 6 of a Kind.
+
+All six are digit patterns, so each adds Fancy Serial. They are seeded in
+`backend/data/reference/attribute.json` in the `serial` group, `applies_to`
+currency.
 
 **Duplicate Serial** (`duplicate_serial`; the owner's request). In 2014-2016
 the Bureau of Engraving and Printing (BEP) printed the same 6,650,000 serials

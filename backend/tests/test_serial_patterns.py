@@ -10,7 +10,9 @@ note too cheaply, and a wrong one is a claim the note cannot support.
 
 from __future__ import annotations
 
+import json
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 from app.labels import label_lines, label_text
@@ -23,7 +25,7 @@ from app.models import (
     NoteType,
     utcnow,
 )
-from app.serial_patterns import analyze, is_incomplete, run
+from app.serial_patterns import DESIGNATIONS, analyze, is_incomplete, run
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -45,9 +47,10 @@ STAR_SERIAL = "A38164927*"
         # Low and high are positional -- where the note sits in the print
         # run -- so they stack with the pattern designations rather than
         # replacing them.
+        # Four leading zeros are a run of 4 like any other: a Quad.
         (
             "A00001234B",
-            {"low_serial", "partial_ladder", "fancy_serial"},
+            {"low_serial", "partial_ladder", "quad", "fancy_serial"},
         ),
         # Ladder family: Ladder (all eight step), Scattered (the eight digits
         # of a ladder, shuffled), Partial (a run of five or more, or four
@@ -80,7 +83,7 @@ STAR_SERIAL = "A38164927*"
         ),
         ("A04301989B", {"birthday", "fancy_serial"}),
         ("A15141514B", {"trinary", "repeater", "fancy_serial"}),
-        ("A25282252B", {"trinary", "fancy_serial"}),
+        ("A25282252B", {"trinary", "5_of_a_kind", "fancy_serial"}),
         # Four of one digit then four of another. Binary too -- two distinct
         # digits -- but the arrangement is the thing collectors pay for.
         (
@@ -88,18 +91,42 @@ STAR_SERIAL = "A38164927*"
             {"double_quad", "binary", "low_serial", "fancy_serial"},
         ),
         ("A19472856B", set()),
-        # Runs of one digit: named only when the longest run is exactly 5 to
+        # Runs of one digit: named only when the longest run is exactly 4 to
         # 7, so a note earns one at most; a run of 8 is a Solid Serial, and a
-        # run of 4 is named by nothing (Double Quad covers two of them).
-        ("A12555578B", set()),
+        # Double Quad (above) is not also a Quad.
+        ("A12555578B", {"quad", "fancy_serial"}),
         ("A12222256B", {"5_in_a_row", "fancy_serial"}),
         ("A37777771B", {"6_in_a_row", "trinary", "fancy_serial"}),
-        ("A55551555B", {"binary", "fancy_serial"}),
+        ("A55551555B", {"binary", "quad", "fancy_serial"}),
         ("A12333456B", set()),
+        # Of a kind: one digit exactly five or six times, not all of them in
+        # a row (that is a run). CC-008387 is a Quad and 5 of a Kind both.
+        ("K24744441A", {"quad", "5_of_a_kind", "fancy_serial"}),
+        ("A31323334B", {"5_of_a_kind", "fancy_serial"}),
+        ("A77077717B", {"6_of_a_kind", "trinary", "fancy_serial"}),
+        ("A22222132B", {"5_in_a_row", "6_of_a_kind", "trinary", "fancy_serial"}),
+        ("A13151715B", set()),
     ],
 )
 def test_designations(serial: str, expected: set[str]) -> None:
     assert analyze(serial) == expected
+
+
+def test_every_derived_designation_is_seeded() -> None:
+    """A code the rules give out but the seed lacks is derived on no install.
+
+    `_missing_links` passes over a code the vocabulary does not have, so an
+    attribute added only by hand on one database would be derived there and
+    nowhere else.
+    """
+    seed = json.loads(
+        (Path(__file__).parents[1] / "data/reference/attribute.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    seeded = {row["code"] for row in seed["item_attribute"]}
+
+    assert sorted(DESIGNATIONS - seeded) == []
 
 
 def test_a_star_is_not_a_fancy_serial() -> None:

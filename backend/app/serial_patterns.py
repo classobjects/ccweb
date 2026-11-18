@@ -4,8 +4,9 @@
 """Derive note designations from the serial number itself.
 
 PMG and PCGS give special pedigree designations to particular serial numbers --
-radars, repeaters, binaries, solids, ladders, runs of one digit (5 to 7 in
-a row), low serials, and star
+radars, repeaters, binaries, solids, ladders, runs of one digit (a Quad, 5
+to 7 in a row), one digit five or six times (5 / 6 of a Kind), low serials,
+and star
 (replacement) notes -- and a grading submission asks the sender to declare
 them. They carry real premiums, so a note whose designation is unrecorded is a
 note sold too cheaply.
@@ -87,31 +88,46 @@ LOW_SERIAL_ZEROS = 4
 HIGH_SERIAL_FIRST_DIGIT = "9"
 
 #: The run designations, by the length of the run they name: one digit
-#: repeated that many times in a row, A12222256B being 5 in a row. A run is
-#: named only when it is the serial's longest and exactly this long, so a
-#: note earns one of them at most -- a run of 6 is not also 5 in a row. A
-#: run of 8 is a Solid Serial. The owner's rule.
+#: repeated that many times in a row, A12555578B being a Quad and
+#: A12222256B 5 in a row. A run is named only when it is the serial's
+#: longest and exactly this long, so a note earns one of them at most -- a
+#: run of 6 is not also 5 in a row. A run of 8 is a Solid Serial, and a
+#: Double Quad is not also a Quad. The owner's rule.
 RUN_DESIGNATIONS: dict[int, str] = {
+    4: "quad",
     5: "5_in_a_row",
     6: "6_in_a_row",
     7: "7_in_a_row",
 }
 
+#: The of-a-kind designations, by how many times one digit appears: exactly
+#: that many, and not all of them in a row (that is a run, above), so
+#: A31323334B is 5 of a Kind. They stack with the runs: K24744441A is a
+#: Quad and 5 of a Kind both. The owner's rule.
+KIND_DESIGNATIONS: dict[int, str] = {
+    5: "5_of_a_kind",
+    6: "6_of_a_kind",
+}
+
 #: The designations that say what the digits spell (`_pattern_designations`):
 #: the ones `fancy_serial` sums up.
-DIGIT_PATTERNS: frozenset[str] = frozenset(RUN_DESIGNATIONS.values()) | frozenset(
-    {
-        "solid_serial",
-        "binary",
-        "trinary",
-        "radar",
-        "repeater",
-        "double_quad",
-        "ladder",
-        "scattered_ladder",
-        "partial_ladder",
-        "birthday",
-    }
+DIGIT_PATTERNS: frozenset[str] = (
+    frozenset(RUN_DESIGNATIONS.values())
+    | frozenset(KIND_DESIGNATIONS.values())
+    | frozenset(
+        {
+            "solid_serial",
+            "binary",
+            "trinary",
+            "radar",
+            "repeater",
+            "double_quad",
+            "ladder",
+            "scattered_ladder",
+            "partial_ladder",
+            "birthday",
+        }
+    )
 )
 
 
@@ -199,18 +215,39 @@ def _ladder_family(d: str) -> set[str]:
     return found
 
 
-def _longest_run(d: str) -> int:
-    """The length of the longest stretch of one digit repeated."""
-    return max(len(m.group()) for m in re.finditer(r"(\d)\1*", d))
+def _longest_run(d: str, digit: str = r"\d") -> int:
+    """The length of the longest stretch of one digit repeated.
+
+    Of any digit, or of `digit` alone; 0 when `digit` is not in `d`.
+    """
+    return max((len(m.group()) for m in re.finditer(rf"({digit})\1*", d)), default=0)
+
+
+def _of_a_kind(d: str) -> set[str]:
+    """The of-a-kind designations: a digit's count, when not all in a row."""
+    return {
+        KIND_DESIGNATIONS[count]
+        for digit, count in Counter(d).items()
+        if count in KIND_DESIGNATIONS and _longest_run(d, digit) < count
+    }
+
+
+def _is_double_quad(d: str) -> bool:
+    """Four of one digit then four of another -- 00005555."""
+    half = SERIAL_DIGITS // 2
+    return len(set(d[:half])) == 1 and len(set(d[half:])) == 1 and d[0] != d[half]
 
 
 def _pattern_designations(d: str) -> set[str]:
     """Designations earned by what the digits spell."""
     found: set[str] = set()
 
+    # A Double Quad's two runs of 4 are what it is named for: it is not
+    # also a Quad.
     run = RUN_DESIGNATIONS.get(_longest_run(d))
-    if run is not None:
+    if run is not None and not (run == "quad" and _is_double_quad(d)):
         found.add(run)
+    found |= _of_a_kind(d)
 
     distinct = len(set(d))
     if distinct == 1:
@@ -225,11 +262,10 @@ def _pattern_designations(d: str) -> set[str]:
     if d.startswith(d[SERIAL_DIGITS // 2 :]):
         found.add("repeater")
 
-    # Four of one digit then four of another -- 00005555. Named separately
-    # from `binary` because collectors and grading forms treat the arrangement
-    # as the point, not merely the count of distinct digits.
-    half = SERIAL_DIGITS // 2
-    if len(set(d[:half])) == 1 and len(set(d[half:])) == 1 and d[0] != d[half]:
+    # Named separately from `binary` because collectors and grading forms
+    # treat the arrangement as the point, not merely the count of distinct
+    # digits.
+    if _is_double_quad(d):
         found.add("double_quad")
 
     ascending = "".join(str((int(d[0]) + i) % 10) for i in range(SERIAL_DIGITS))
