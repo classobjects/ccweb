@@ -5,7 +5,8 @@
 
 In the owner's style: grade, designation, grading service and attributes
 first, then year, face value and serial, then the note type and seal, then
-the certificate numbers -- no field labels, district or signatures.
+the Friedberg number when known, then the certificate numbers -- no field
+labels, district or signatures.
 """
 
 from __future__ import annotations
@@ -24,6 +25,7 @@ from app.models import (
     DenominationKind,
     ErrorType,
     FedDistrict,
+    FriedbergNumber,
     GradeDesignation,
     GradingService,
     InventoryItem,
@@ -238,6 +240,38 @@ def test_the_certificate_number_is_its_own_sentence_before_the_packing(
     text = suggested_description(db, item)
     strap = _label(db, StorageForm, "strap")
     assert text.endswith(f"Green Seal. Cert #8012345-001. {strap} of 2.")
+
+
+def _with_friedberg(db: Session, item: InventoryItem, status: str) -> None:
+    """Give the note a (synthetic) Friedberg number with this status."""
+    number = FriedbergNumber(fr_number="9901-F*")
+    db.add(number)
+    db.flush()
+    assert item.currency_detail is not None
+    item.currency_detail.friedberg_id = number.id
+    item.currency_detail.friedberg_status = status
+    db.flush()
+
+
+@pytest.mark.parametrize("status", ["confirmed", "proposed"])
+def test_a_known_friedberg_number_follows_the_seal_before_the_certificate(
+    db: Session, status: str
+) -> None:
+    item = _note(db)
+    db.add(ItemCertification(inventory_item_id=item.id, cert_number="8012345-001"))
+    db.flush()
+    _with_friedberg(db, item, status)
+    text = suggested_description(db, item)
+    assert text.endswith("Green Seal. Fr 9901-F*. Cert #8012345-001.")
+
+
+@pytest.mark.parametrize("status", ["unknown", "conflicting"])
+def test_a_friedberg_number_not_known_is_not_said(db: Session, status: str) -> None:
+    item = _note(db)
+    _with_friedberg(db, item, status)
+    text = suggested_description(db, item)
+    assert "9901" not in text
+    assert text.endswith("Green Seal.")
 
 
 def test_several_certificates_are_listed_in_the_order_recorded(db: Session) -> None:

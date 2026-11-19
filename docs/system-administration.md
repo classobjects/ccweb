@@ -958,6 +958,10 @@ It writes in the owner's style:
 - **Certificate numbers** follow in a sentence of their own, before the
   packaging ("PR70 DCAM PCGS 1975-S Roosevelt Dime. Copper-Nickel Clad. Cert
   #44012345."). This includes numbers typed in the editor and not yet saved.
+- **A note's Friedberg number** is a sentence of its own after the note type
+  and seal, before the certificate ("Federal Reserve Note Green Seal. Fr
+  1921-L. Cert #8012345-001."). It appears only when the number's status is
+  confirmed or proposed, the same rule as the holder label.
 - The owner's own grading (SELF) is not named. There are no field labels,
   district or signatures.
 - **A note's design series** follows its face value ("1963B $1 Barr Note S/N

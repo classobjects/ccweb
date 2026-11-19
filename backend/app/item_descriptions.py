@@ -33,6 +33,11 @@ a buyer looks it up: "PR70 DCAM PCGS 1975-S Roosevelt Dime. Copper-Nickel
 Clad. Cert #44012345." The owner's own grading is no service and is not
 named.
 
+A note's Friedberg number, where the owner has recorded one and it is
+confirmed or proposed (the holder label's rule), is a sentence of its own
+after the note type and seal: "Federal Reserve Note Green Seal. Fr
+1921-L. Cert #8012345-001."
+
 The district and signatures are left out -- they follow from the serial and
 series, and a buyer does not search by them. Errors are promoted beside the
 attributes, right after the grade: they are what an error note sells on --
@@ -46,7 +51,8 @@ included, in a transaction that is rolled back. A new item is entered in
 the same editor, so there is one way a description is suggested.
 
 Facts, not a catalog's arrangement: every part is a label from this
-database's own vocabularies or the item's own values
+database's own vocabularies or the item's own values -- a Friedberg number
+included, which is only ever what the owner recorded for the note
 (`docs/reference-data.md`).
 """
 
@@ -63,6 +69,7 @@ from . import grades, item_attributes
 from .models import (
     CurrencyDetail,
     ErrorType,
+    FriedbergNumber,
     InventoryItem,
     ItemCertification,
     ItemError,
@@ -246,7 +253,7 @@ def _features(db: Session, item: InventoryItem, given: Features | None) -> list[
 
 
 def _note(db: Session, item: InventoryItem, given: Features | None) -> list[str]:
-    """``[grade service features year face S/N serial, type seal, certs, packing]``."""
+    """``[grade ... S/N serial, type seal, Fr, certs, packing]``: a note's sentences."""
     detail = item.currency_detail
     assert detail is not None
     first = _graded(item)
@@ -277,11 +284,30 @@ def _note(db: Session, item: InventoryItem, given: Features | None) -> list[str]
 
     second = _class_and_seal(db, detail, note_type)
     sentences = [" ".join(part) for part in (first, second) if part]
+    if (fr := _friedberg(db, detail)) is not None:
+        sentences.append(fr)
     if (certs := _certificates(db, item)) is not None:
         sentences.append(certs)
     if (packed := _packaging(db, item, sentences)) is not None:
         sentences.append(packed)
     return sentences
+
+
+#: The statuses under which a note's Friedberg number is said: the same as
+#: the holder label's (`labels._note_lines`). An `unknown` or `conflicting`
+#: number is not yet the note's.
+_SAID_FRIEDBERG_STATUSES = frozenset({"confirmed", "proposed"})
+
+
+def _friedberg(db: Session, detail: CurrencyDetail) -> str | None:
+    """``Fr 1921-L``: the note's own recorded Friedberg number, when known."""
+    if (
+        detail.friedberg_id is None
+        or detail.friedberg_status not in _SAID_FRIEDBERG_STATUSES
+    ):
+        return None
+    number = db.get(FriedbergNumber, detail.friedberg_id)
+    return f"Fr {number.fr_number}" if number is not None else None
 
 
 def _designation(detail: CurrencyDetail) -> str | None:
