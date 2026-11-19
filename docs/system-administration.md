@@ -788,7 +788,8 @@ the filter when clicked.
 
 Under the hood: the API's `grade_min` and `grade_max` read the same grade
 terms, so `grade_max=64` stops below 64+. The API also takes `issue`,
-`missing`, `lot`, `item_codes` (a list of item codes, matched exactly) and
+`missing`, `lot`, `item_codes` (a list of item codes, matched exactly),
+`item_from` and `item_to` (an item-number range) and
 `deleted` (`no`, `only`, `any`) as filters (`app/inventory_search.py`), and
 the drill-down links use several of them. An unknown filter name is refused,
 and so is a `sort` naming a column the table does not show.

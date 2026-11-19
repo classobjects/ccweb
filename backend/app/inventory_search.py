@@ -54,6 +54,7 @@ from .models import (
     Series,
     StrikeType,
 )
+from .models.core import ITEM_CODE_PREFIX
 
 __all__ = [
     "COIN_VIEW",
@@ -68,6 +69,8 @@ __all__ = [
     "ViewSpec",
     "count_facets",
     "count_issues",
+    "item_number",
+    "matching_ids",
     "names_matching",
     "plain",
     "search",
@@ -845,6 +848,49 @@ def _item_codes_clause(params: dict[str, Any], bound: dict[str, Any]) -> str | N
     return "i.item_code = ANY(:p_item_codes)"
 
 
+#: An item number as typed: ``004521``, ``4521``, ``CC-004521``, any case.
+_TYPED_NUMBER = re.compile(rf"(?:{ITEM_CODE_PREFIX}-)?([0-9]+)", re.IGNORECASE)
+
+#: An item code's number, compared as a number: a code past 999999 has seven
+#: digits, so text order would put it before CC-100000.
+_ITEM_NUMBER_SQL = (
+    f"CAST(substring(i.item_code from '^{ITEM_CODE_PREFIX}-([0-9]+)') AS bigint)"
+)
+
+
+def item_number(typed: str) -> int | None:
+    """The number a person typed for an item, or None if it is not one.
+
+    ``004521``, ``4521`` and ``CC-004521`` are all 4521.
+    """
+    match = _TYPED_NUMBER.fullmatch(typed.strip())
+    return int(match.group(1)) if match else None
+
+
+def _item_range_clause(params: dict[str, Any], bound: dict[str, Any]) -> str | None:
+    """Items numbered `item_from` to `item_to`, both included; either may be absent.
+
+    Each is typed as the label prints it or with the prefix. Raises
+    ValueError for one that is no item number.
+    """
+    ends = (
+        ("item_from", ">=", params.pop("item_from", None)),
+        ("item_to", "<=", params.pop("item_to", None)),
+    )
+    parts: list[str] = []
+    for name, op, typed in ends:
+        if typed in (None, ""):
+            continue
+        number = item_number(str(typed))
+        if number is None:
+            raise ValueError(
+                f"{typed!r} is not an item number: type it as 004521 or CC-004521."
+            )
+        bound[f"p_{name}"] = number
+        parts.append(f"{_ITEM_NUMBER_SQL} {op} :p_{name}")
+    return _AND.join(parts) if parts else None
+
+
 #: The `label=` filter: each state of an item's holder label
 #: (`app.labels.label_state_clauses`). Every state is among labelable items
 #: only (`app.labels.labelable_clause`) -- a sold coin is never offered a
@@ -894,6 +940,8 @@ SPECIAL_PARAMS: tuple[str, ...] = (
     "error_type",
     "attribute",
     "item_codes",
+    "item_from",
+    "item_to",
     "label",
     *GRADE_PARAMS,
 )
@@ -1106,6 +1154,7 @@ def _conditions(
         _error_type_clause(params, bound),
         _attribute_clause(params, bound),
         _item_codes_clause(params, bound),
+        _item_range_clause(params, bound),
         _label_clause(params),
         _grade_clause(params, bound, joins),
     ):
@@ -1210,6 +1259,34 @@ def search(
     )
 
     return [{k: plain(v) for k, v in row.items()} for row in rows], total
+
+
+def matching_ids(
+    db: Session,
+    spec: ViewSpec,
+    *,
+    params: dict[str, Any],
+    query: str | None = None,
+    names: list[tuple[Named, list[int]]] | None = None,
+) -> list[int]:
+    """Every item the search matches, on every page, in item-number order.
+
+    The same filters as `search`, and the same refusals of a filter it does
+    not know.
+    """
+    clauses, joins, bound = _conditions(
+        spec, params, query, _names(db, spec, query, names)
+    )
+    where = " WHERE " + _AND.join(clauses)
+    return list(
+        db.execute(
+            text(
+                f"SELECT i.id FROM {spec.base} {spec.joins_for(joins)}{where} "
+                "ORDER BY i.item_code"
+            ),
+            bound,
+        ).scalars()
+    )
 
 
 def _facet_values(

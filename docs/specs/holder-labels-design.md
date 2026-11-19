@@ -402,12 +402,21 @@ the browser. An item is added to it from:
   search, and *Add to batch*;
 - the inventory's search, whose ticked rows gain an *Add to label batch*
   action;
+- the inventory's search as a whole: *Add all N matching to label batch*
+  adds every item the Coins or Currency screen's filters match, on every
+  page, so those filters choose what to label -- an item-number range
+  (*From item*, *To item*), a series, the Label state. Unlike the other
+  ways, which are all or none, it passes over the matches that take no
+  label and counts them, since a search of the collection holds sold and
+  graded pieces. Past 200 matches it asks first
+  (`POST /api/inventory/{view}/label-batch`, the search's own query
+  string; it answers `matched`, `added`, `already`, `not_labelable`);
 - the item editor, with an *Add to label batch* button.
 
 The rules of the batch:
 
 - The Labels page lists the batch with a *Remove* beside each item.
-- Only labelable items can be added.
+- Only labelable items are added.
 - A *Yes* after printing the batch empties it; a *No* keeps it.
 - The batch is separate from the other two choices. Printing everything not
   yet labeled neither reads nor empties it.

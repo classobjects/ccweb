@@ -4,6 +4,7 @@
 import { useState } from 'react'
 
 import HelpScope from '../HelpScope'
+import AddMatchesToLabelBatch from './inventory/AddMatchesToLabelBatch'
 import BulkEditBar from './inventory/BulkEditBar'
 import FilterPanel from './inventory/FilterPanel'
 import InventoryTable from './inventory/InventoryTable'
@@ -105,7 +106,6 @@ function InventoryView({ config }) {
   return (
     <section>
       <h1>{config.title}</h1>
-
       <FilterPanel
         config={config}
         current={current}
@@ -117,14 +117,17 @@ function InventoryView({ config }) {
         total={total}
         busy={busy}
       />
-
       <button
         disabled={rows.length === 0}
         onClick={() => setReviewing(rows.map((r) => r.id))}
       >
         Review these {rows.length}
-      </button>
-
+      </button>{' '}
+      <AddMatchesToLabelBatch
+        view={config.view}
+        filters={filtersOf(current)}
+        total={busy ? 0 : total}
+      />
       {/* In a help scope of the page's, so the bar's field picker and value
           box explain the field chosen as the filters above explain theirs. */}
       <HelpScope>
@@ -148,7 +151,6 @@ function InventoryView({ config }) {
           onClear={() => setSelected([])}
         />
       </HelpScope>
-
       {error && <p className="error">{error}</p>}
       {linked.problem && <p className="error">{linked.problem}</p>}
       {!busy && !error && total === 0 && (
@@ -159,7 +161,6 @@ function InventoryView({ config }) {
         filters={filtersOf(current)}
         hereEmpty={!busy && !error && total === 0}
       />
-
       {rows.length > 0 && (
         <InventoryTable
           config={config}
@@ -172,7 +173,6 @@ function InventoryView({ config }) {
           sortable={page?.sortable ?? []}
         />
       )}
-
       {total > PAGE_SIZE && (
         <div className="row pager">
           <button
@@ -193,7 +193,6 @@ function InventoryView({ config }) {
           </button>
         </div>
       )}
-
       {openId && (
         <ItemEditDialog
           key={openId}

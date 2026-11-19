@@ -287,9 +287,17 @@ describe('FilterPanel keyboard accelerators', () => {
   //: Its label holds no letter the browser leaves free that another field on
   //: one view or the other does not already use.
   const NO_LETTER = "Seller's item id"
-  //: Nor do these: every free letter of "Order number", "Error" and
-  //: "Attribute" is another field's on one view or the other.
-  const LETTERLESS = [NO_LETTER, 'Order number', 'Error', 'Attribute']
+  //: Nor do these: every free letter of "Order number", "Error",
+  //: "Attribute", "From item" and "To item" is another field's on one view or
+  //: the other.
+  const LETTERLESS = [
+    NO_LETTER,
+    'Order number',
+    'Error',
+    'Attribute',
+    'From item',
+    'To item',
+  ]
 
   it('offers an error and an attribute picker on both views, with no letter', () => {
     for (const view of [COIN_VIEW, CURRENCY_VIEW]) {

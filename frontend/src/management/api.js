@@ -433,6 +433,11 @@ export const api = {
   // batch items no longer labelable in `skipped`.
   labelRun: (source) => send(withQuery('/api/labels/run', { source })),
   labelBatch: () => send('/api/labels/batch'),
+  // Every labelable item an inventory search matches, on every page, into the
+  // batch; `filters` are the search's own. `{matched, added, already,
+  // not_labelable}`.
+  addMatchesToLabelBatch: (view, filters) =>
+    send(withQuery(`/api/inventory/${view}/label-batch`, filters), { method: 'POST' }),
   // All or none: an item not labelable is refused (422), naming it.
   addToLabelBatch: (itemIds) =>
     send('/api/labels/batch', { method: 'POST', body: { item_ids: itemIds } }),

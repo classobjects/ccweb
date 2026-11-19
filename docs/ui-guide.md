@@ -109,6 +109,8 @@ The search and filters, as the help band explains each one:
 | **Attribute** |  | Only items carrying this attribute: Star Note, Radar, First Strike, CAC and the like. The list is of the attributes the matching items carry, each with how many. |
 | **Serial number** |  | All or part of a serial, anywhere in it. _ stands for exactly one character, so B1234567_ finds a run of consecutive notes; % for any run. On coins it is a bar's, round's or Goldback's own serial. |
 | **Item code** |  | All or part of an item code: CC-000412, or 412. |
+| **From item** |  | The first item number of a range, as on its label (004521) or with the prefix (CC-004521). With To item, every item numbered from one to the other, both included; alone, every item from it on. |
+| **To item** |  | The last item number of a range, included. Alone, every item up to it. |
 | **Seller's item id** |  | All or part of the seller's id for the listing an item was bought from -- eBay's item number. Every piece split from one listing keeps it, so one number can find several items. |
 | **Order number** |  | The seller's order or invoice number, from the receipt, email or packing slip. When searching, part of it is enough: "4452" finds order 114-4452-X, upper or lower case alike, and the dashes may be left out: "1144452X" finds it too. |
 | **Grade** |  | A grade or a range of grades: 65 is exactly 65, 64+ exactly 64+, and 55% both 55 and 55+. PR69 names the strike too. BU is 60-62, BU+ 63-64, BU++ 65-66 and BU% all three. Coins and notes each use their own scale. |
@@ -154,6 +156,13 @@ The bulk bar's fields:
 
 A search that finds a single item opens it in the editor straight away. If you
 close the editor, it stays closed until the search changes.
+
+**Add all N matching to label batch** puts every item the filters match, on
+every page, on the list of labels to print next, and says how many were added,
+how many were in it already and how many take no label (sold, graded, a roll),
+which are passed over. Past 200 matches it asks first. The Labels page prints
+the batch. To label a run of numbers, fill in From item and To item, and pick
+Not labeled under Label to leave out the ones already done.
 
 **Review these** walks through the current result in the editor, one item at a
 time. The list is frozen when you start, so fixing an item does not skip the

@@ -3230,6 +3230,19 @@ class LabelsPrintedIn(BaseModel):
     labels: list[PrintedLabelIn] = Field(min_length=1, max_length=_MOST_LABELS)
 
 
+class LabelBatchAddedOut(BaseModel):
+    """What adding a search's matches to the print batch did."""
+
+    #: Items the search matched, on every page.
+    matched: int
+    #: Labelable matches newly put in the batch.
+    added: int
+    #: Labelable matches that were in the batch already.
+    already: int
+    #: Matches that take no label (sold, graded, a roll...), passed over.
+    not_labelable: int
+
+
 class LabelsRecordedOut(BaseModel):
     """How many of the items named were labelable, and so are recorded."""
 

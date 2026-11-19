@@ -780,6 +780,20 @@ export const FIELD_HELP = {
       'and the like. The list is of the attributes the matching items carry, ' +
       'each with how many.',
   },
+  item_from: {
+    title: 'From item',
+    text:
+      'The first item number of a range, as on its label (004521) or with ' +
+      'the prefix (CC-004521). With To item, every item numbered from one to ' +
+      'the other, both included; alone, every item from it on. Add all ' +
+      'matching to label batch then queues their labels.',
+  },
+  item_to: {
+    title: 'To item',
+    text:
+      'The last item number of a range, included, typed as 004521 or ' +
+      'CC-004521. Alone, every item up to it.',
+  },
   item_code_filter: {
     title: 'Item code',
     text: 'All or part of an item code: CC-000412, or 412.',

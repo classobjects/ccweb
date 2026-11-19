@@ -12,7 +12,8 @@ Staff-only throughout: everything here exposes cost basis.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
+from contextlib import contextmanager
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Annotated, Any, cast
@@ -58,8 +59,10 @@ from ..inventory_search import (
     VIEWS,
     UnknownIssue,
     UnknownMissingField,
+    ViewSpec,
     count_facets,
     count_issues,
+    matching_ids,
     names_matching,
     plain,
     search,
@@ -140,6 +143,7 @@ from ..schemas import (
     ItemHistoryEventOut,
     ItemSaleOut,
     ItemSuggestIn,
+    LabelBatchAddedOut,
     ReceiveRequest,
     SaleUseOut,
     SerialPairOut,
@@ -247,6 +251,70 @@ def _to_piece(db: Session, spec: SplitPieceIn, single: int) -> SplitPiece:
     )
 
 
+def _view_spec(view: str) -> ViewSpec:
+    """The inventory view named, or 404."""
+    spec = VIEWS.get(view)
+    if spec is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Unknown inventory view: {view!r}. Expected one of "
+            f"{sorted(VIEWS)}.",
+        )
+    return spec
+
+
+#: Query parameters of a search that are not filters.
+_NOT_FILTERS = frozenset({"q", "sort", "desc", "facets", "limit", "offset"})
+
+
+def _search_filters(db: Session, request: Request) -> dict[str, str]:
+    """A search's filters from its query string; 422 for a lot no item holds."""
+    params = {k: v for k, v in request.query_params.items() if k not in _NOT_FILTERS}
+    lot_code = params.get("lot")
+    if lot_code and not db.scalar(
+        select(InventoryItem.id).where(InventoryItem.item_code == lot_code)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"No item has code {lot_code!r}.",
+        )
+    return params
+
+
+@contextmanager
+def _refused_search(view: str, spec: ViewSpec) -> Iterator[None]:
+    """Turn a search's refusal of its filters into a 422 that says why."""
+    try:
+        yield
+    except UnknownIssue as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"Unknown issue {exc.args[0]!r} for {view}. Available: "
+            f"{sorted(spec.issues)}",
+        ) from exc
+    except UnknownMissingField as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"Unknown missing field {exc.args[0]!r} for {view}. Available: "
+            f"{sorted(MISSING_FIELDS)}",
+        ) from exc
+    except KeyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"Unknown filter {exc.args[0]!r} for {view}. Available: "
+            f"{sorted({*spec.filters, *SPECIAL_PARAMS})}",
+        ) from exc
+    except ValueError as exc:
+        # Different failures reach here: an unsortable column, an
+        # unrecognized `deleted` mode, text that is not a grade or a whole
+        # number. Appending the sortable list to all of them sends the wrong
+        # person looking in the wrong place.
+        hint = f" Sortable: {sorted(spec.sortable)}" if "sort" in str(exc) else ""
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=f"{exc}{hint}"
+        ) from exc
+
+
 @router.get("/{view}/search")
 def search_inventory(
     view: str,
@@ -280,32 +348,14 @@ def search_inventory(
     422 rather than being ignored, because a silently dropped filter returns
     the whole collection and looks like a matching result.
     """
-    spec = VIEWS.get(view)
-    if spec is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Unknown inventory view: {view!r}. Expected one of "
-            f"{sorted(VIEWS)}.",
-        )
-
-    reserved = {"q", "sort", "desc", "facets", "limit", "offset"}
-    params = {k: v for k, v in request.query_params.items() if k not in reserved}
-
-    lot_code = params.get("lot")
-    if lot_code and not db.scalar(
-        select(InventoryItem.id).where(InventoryItem.item_code == lot_code)
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail=f"No item has code {lot_code!r}.",
-        )
-
+    spec = _view_spec(view)
+    params = _search_filters(db, request)
     # Text pasted from an order page or a table cell brings a space or a tab
     # with it, and the match is a substring: `%13579 %` finds nothing.
     q = q.strip() if q else q
     # Read once for the page, the facets and the issue counts alike.
     names = names_matching(db, spec, q)
-    try:
+    with _refused_search(view, spec):
         rows, total = search(
             db,
             spec,
@@ -317,33 +367,6 @@ def search_inventory(
             offset=offset,
             names=names,
         )
-    except UnknownIssue as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail=f"Unknown issue {exc.args[0]!r} for {view}. Available: "
-            f"{sorted(spec.issues)}",
-        ) from exc
-    except UnknownMissingField as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail=f"Unknown missing field {exc.args[0]!r} for {view}. Available: "
-            f"{sorted(MISSING_FIELDS)}",
-        ) from exc
-    except KeyError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail=f"Unknown filter {exc.args[0]!r} for {view}. Available: "
-            f"{sorted({*spec.filters, *SPECIAL_PARAMS})}",
-        ) from exc
-    except ValueError as exc:
-        # Different failures reach here: an unsortable column, an
-        # unrecognized `deleted` mode, text that is not a grade or a whole
-        # number. Appending the sortable list to all of them sends the wrong
-        # person looking in the wrong place.
-        hint = f" Sortable: {sorted(spec.sortable)}" if "sort" in str(exc) else ""
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=f"{exc}{hint}"
-        ) from exc
 
     return InventoryPageOut(
         view=view,
@@ -369,6 +392,41 @@ def search_inventory(
             if facets
             else {}
         ),
+    )
+
+
+@router.post("/{view}/label-batch")
+def add_matches_to_label_batch(
+    view: str,
+    request: Request,
+    db: DbSession,
+    _admin: AdminUser,
+    q: Annotated[
+        str | None, Query(description="Free text, as the search takes it")
+    ] = None,
+) -> LabelBatchAddedOut:
+    """Add every labelable item the search matches to the label print batch.
+
+    The same view, text and filters as `GET /{view}/search`, every page of
+    them, so the Coins and Currency screens choose what to label. Unlike
+    adding named items, which is all or none, an item that takes no label is
+    passed over and counted: a search of the collection holds sold and
+    graded pieces. An item already in the batch stays there once.
+    """
+    spec = _view_spec(view)
+    params = _search_filters(db, request)
+    q = q.strip() if q else q
+    with _refused_search(view, spec):
+        ids = matching_ids(db, spec, params=params, query=q)
+    items = labels.label_items(db, InventoryItem.id.in_(ids), labels.labelable_clause())
+    new = {item: {"in_label_batch": True} for item in items if not item.in_label_batch}
+    with committing(db, _STALE_ITEMS):
+        labels.write_quietly(db, new)
+    return LabelBatchAddedOut(
+        matched=len(ids),
+        added=len(new),
+        already=len(items) - len(new),
+        not_labelable=len(ids) - len(items),
     )
 
 

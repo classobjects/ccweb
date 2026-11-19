@@ -79,8 +79,10 @@ function PrintBatch({ batch, onChanged }) {
     <section aria-labelledby="label-batch-heading">
       <h2 id="label-batch-heading">The print batch</h2>
       <p className="muted">
-        Items kept for the next small run. Printing the batch and answering Yes empties
-        it of what printed.
+        Items kept for the next run. Printing the batch and answering Yes empties it of
+        what printed. To choose them by any filter -- a range of item numbers, a series,
+        the label state -- filter the Coins or Currency screen and press Add all
+        matching to label batch.
       </p>
       <div className="row">
         <label data-help="label_item_number">

@@ -181,6 +181,10 @@ Four structural filters join them:
 - `item_codes=<code>,<code>` -- exactly the items named, by whole code. This
   is how a report opens the items of one row as a list. The filter panel
   shows it as a chip ("Only these 3 items") that a click removes.
+- `item_from=<number>`, `item_to=<number>` -- items numbered from one to
+  the other, both included; either alone is open on the other side. Typed
+  as the label prints a number (004521) or with the prefix (CC-004521),
+  and compared as numbers; anything else is a 422.
 - `deleted=no|only|any`, default `no`; an unrecognized value is a 422.
 
 A filter is never silently ignored.
