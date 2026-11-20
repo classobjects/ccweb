@@ -719,6 +719,10 @@ class Metal(ReferenceMixin, Base):
     __tablename__ = "metal"
 
     symbol: Mapped[str] = mapped_column(String(4), default="", nullable=False)
+    #: The metal as a coin's holder label prints it, where its label is too
+    #: long for one: Clad for Copper-Nickel Clad. Empty prints the label
+    #: (`app.labels`).
+    label_name: Mapped[str] = mapped_column(String(12), default="", nullable=False)
     is_precious: Mapped[bool] = mapped_column(default=True, nullable=False)
     #: The metal a plated or layered one is read as for a coin's composition:
     #: gold-plated silver is silver, and has a silver coin's weights. Empty for

@@ -95,6 +95,23 @@ def test_coin_lines(db: Session, make_item: ItemFactory) -> None:
     ]
 
 
+def test_a_coin_label_prints_the_metals_label_name_where_it_has_one(
+    db: Session, make_item: ItemFactory
+) -> None:
+    clad = make_item(year_start=1965, metal_id=code_id(db, Metal, "clad"))
+    brass = make_item(year_start=2000, metal_id=code_id(db, Metal, "manganese_brass"))
+    silver = _coin(db, make_item)
+    assert label_lines(db, clad)[-1] == "Clad"
+    assert label_lines(db, brass)[-1] == "Clad"
+    # No label name: the label prints whole.
+    assert label_lines(db, silver)[-1] == "Silver"
+    # A label name of spaces is no label name.
+    metal = db.scalars(select(Metal).where(Metal.code == "silver")).one()
+    metal.label_name = "  "
+    db.flush()
+    assert label_lines(db, silver)[-1] == "Silver"
+
+
 def test_coin_without_mint_or_date(db: Session, make_item: ItemFactory) -> None:
     item = _coin(db, make_item)
     assert label_lines(db, item)[1] == "1921"

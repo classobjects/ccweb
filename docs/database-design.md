@@ -330,7 +330,7 @@ in use cannot vanish.
 | `seal_color` | blue, red, brown, green, gold, … | `base_seal_color_id` (what a shade is read as) |
 | `fed_district` | A Boston … L San Francisco | `letter`, `city`, `number` |
 | `signature_combination` | Treasurer and Secretary; on a large-size note, Register and Treasurer -- a `secretary` or a `register`, never both | `treasurer`, `secretary`, `register`, `term_from`, `term_to` |
-| `metal` | silver, gold, platinum, palladium, copper, nickel, zinc, clad (copper-nickel), manganese brass (the golden dollars) | `symbol`, `is_precious`, `base_metal_id` (what a plated metal is read as for a composition) |
+| `metal` | silver, gold, platinum, palladium, copper, nickel, zinc, clad (copper-nickel), manganese brass (the golden dollars) | `symbol`, `label_name` (the short name a coin's holder label prints), `is_precious`, `base_metal_id` (what a plated metal is read as for a composition) |
 | `valuation_basis` | melt, numismatic, manual | |
 | `error_type` | mint or printing error | `applies_to` (`coin` \| `currency` \| `any`) |
 | `item_status` | acquisition axis (§7) | |

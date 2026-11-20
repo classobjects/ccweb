@@ -308,7 +308,10 @@ Silver
 
 - Line 2: the year, with the mint mark after a dash; a range of years as
   recorded; nothing for an item marked No date.
-- Line 3: the metal's label.
+- Line 3: the metal's label name (`metal.label_name`: Clad for
+  Copper-Nickel Clad and Manganese Brass, 24K Plate, ...), else its
+  label. Set in Vocabulary; a name of about 9 characters fits.
+- All three lines are bold.
 
 **Note** (SL564):
 
@@ -350,12 +353,15 @@ San Francisco · 9 pieces
 
 - **Safe border.** Text keeps 0.06" inside each label's edge on every side,
   so a small drift stays on the label.
+- **Centered.** Each line is centered across the label, and the lines
+  together are centered down it, so the room left over is shared on every
+  side and a drift either way has the same to spare.
 - **Long lines.** A line too long for the width is set smaller, down to 5pt,
   and then cut with an ellipsis. It is never wrapped onto a line the label
   does not have.
-- **Overflow.** Text starts at the top of the label. So a label with more
-  lines than fit loses its bottom line, never the item number.
-- **Type size.** 7pt on SL597 and 7.5pt on SL564
+- **Overflow.** A label with more lines than fit starts at the top instead,
+  so it loses its bottom line, never the item number.
+- **Type size.** 7.5pt on both sheets
   (`frontend/src/management/pages/labels/labels.css`), provisional until the
   owner's test print on the Epson sets them.
 - The pages are HTML and CSS laid out in inches.

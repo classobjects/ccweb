@@ -99,38 +99,48 @@ fieldset.label-run {
   box-sizing: border-box;
 }
 /* The safe border: text keeps 0.06in inside the label's edge on every
-   side, so a little printer drift stays on the label. Lines start at the
-   top: a label with more lines than fit loses its bottom one, never the
-   item number. */
+   side, so a little printer drift stays on the label. The text is centered
+   both ways, so the room left over is shared equally on every side and a
+   drift in any direction has the same to spare. `safe`: a label with more
+   lines than fit falls back to starting at the top, so it loses its bottom
+   line, never the item number. */
 .label {
   padding: 0.06in;
   display: flex;
   flex-direction: column;
-  justify-content: flex-start;
+  justify-content: safe center;
   overflow: hidden;
   font-family: Arial, Helvetica, sans-serif;
   line-height: 1.15;
+  text-align: center;
 }
 /* A line never wraps onto a line the label does not have: too long, it is
-   set smaller (LabelSheets.jsx, down to --label-min-size) and then cut. */
+   set smaller (LabelSheets.jsx, down to --label-min-size) and then cut.
+   A line still too long starts at the left edge, as any overflowing
+   centered line does, so its ellipsis cuts its end. A line keeps its
+   height: one too many is cut off below, not squeezed into the others. */
 .label-line {
+  flex-shrink: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.label-line:first-child {
+.label-line:first-child,
+.label-sheet-SL597 .label-line {
   font-weight: 700;
 }
 
 /* Font sizes: provisional -- set from the owner's test print on the Epson.
    Chosen to fit the label's height inside the safe border at a line height
    of 1.15:
-   - SL597, coins, 0.5in tall: 0.38in (27.4pt) for 3 lines; 7pt is 24.2pt.
+   - SL597, coins, 0.5in tall: 0.38in (27.4pt) for 3 lines; 7.5pt is
+     25.9pt. Every line is bold: a metal prints by its short label name
+     (Clad, not Copper-Nickel Clad), so all three fit at this size.
    - SL564, notes and sets, 0.625in tall: 0.505in (36.4pt) for 4 lines;
      7.5pt is 34.5pt.
    A long line shrinks to the minimum, 5pt on both, before it is cut. */
 .label-sheet-SL597 .label-line {
-  font-size: 7pt;
+  font-size: 7.5pt;
   --label-min-size: 5pt;
 }
 .label-sheet-SL564 .label-line {

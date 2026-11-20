@@ -1677,6 +1677,10 @@ export const FIELD_HELP = {
     title: 'Two-letter code',
     text: "The country's two-letter ISO code: US, CA, MX.",
   },
+  vocabulary_field_label_name: {
+    title: 'Label name',
+    text: "The metal as a coin's holder label prints it, where its label is too long for the label: Clad for Copper-Nickel Clad, 24K Plate. About 9 characters fit. Leave it empty to print the label.",
+  },
   vocabulary_field_is_precious: {
     title: 'Precious',
     text: 'Tick for a metal whose weight gives a piece its value -- gold, silver, platinum, palladium.',

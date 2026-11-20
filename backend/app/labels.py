@@ -38,6 +38,7 @@ from .models import (
     InventoryItem,
     ItemKind,
     ItemStatus,
+    Metal,
     Mint,
     NoteType,
     Series,
@@ -410,8 +411,15 @@ def _coin_lines(db: Session, item: InventoryItem) -> list[str]:
     return [
         printed_number(item.item_code),
         _coin_date(db, item) or "",
-        item.metal.label if item.metal is not None else "",
+        _metal_on_label(item.metal),
     ]
+
+
+def _metal_on_label(metal: Metal | None) -> str:
+    """The metal as a coin label prints it: its label name, else its label."""
+    if metal is None:
+        return ""
+    return metal.label_name.strip() or metal.label
 
 
 def printed_coolness(value: Decimal) -> str:

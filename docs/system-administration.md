@@ -1336,8 +1336,11 @@ now differs from the text applied. The *Needs a new label* run rechecks every
 labeled item first, so a change no save saw -- a vocabulary label renamed --
 is caught too.
 
-**Font sizes** are in `frontend/src/management/pages/labels/labels.css`: 7pt
-on SL597 and 7.5pt on SL564. A long line is set smaller, down to 5pt, and
+**Font sizes** are in `frontend/src/management/pages/labels/labels.css`: 7.5pt
+on both sheets, every line bold on a coin's. The text is centered on the
+label both ways. A coin's metal prints by its **Label name** in
+Vocabulary (Clad, 24K Plate), else its label: give a new metal with a
+long label a short label name. A long line is set smaller, down to 5pt, and
 then cut with an ellipsis, never wrapped. These sizes are provisional until a
 test print on the Epson sets them.
 
