@@ -205,6 +205,41 @@
       "sort_order": 185
     },
     {
+      "code": "super_radar",
+      "label": "Super Radar Serial",
+      "applies_to": "currency",
+      "attribute_group": "serial",
+      "sort_order": 186
+    },
+    {
+      "code": "super_repeater",
+      "label": "Super Repeater Serial",
+      "applies_to": "currency",
+      "attribute_group": "serial",
+      "sort_order": 187
+    },
+    {
+      "code": "bookend",
+      "label": "Bookend Serial",
+      "applies_to": "currency",
+      "attribute_group": "serial",
+      "sort_order": 188
+    },
+    {
+      "code": "flipper",
+      "label": "Flipper Serial",
+      "applies_to": "currency",
+      "attribute_group": "serial",
+      "sort_order": 189
+    },
+    {
+      "code": "rotator",
+      "label": "Rotator Serial",
+      "applies_to": "currency",
+      "attribute_group": "serial",
+      "sort_order": 190
+    },
+    {
       "code": "no_motto",
       "label": "No Motto",
       "applies_to": "any",

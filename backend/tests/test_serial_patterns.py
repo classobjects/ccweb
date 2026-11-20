@@ -42,7 +42,6 @@ STAR_SERIAL = "A38164927*"
         ("A12344321B", {"radar", "fancy_serial"}),
         ("A12341234B", {"repeater", "fancy_serial"}),
         ("A11112222B", {"binary", "double_quad", "fancy_serial"}),
-        ("M88888888", {"solid_serial", "radar", "repeater", "fancy_serial"}),
         ("A12345678B", {"ladder", "fancy_serial"}),
         # Low and high are positional -- where the note sits in the print
         # run -- so they stack with the pattern designations rather than
@@ -78,12 +77,13 @@ STAR_SERIAL = "A38164927*"
                 "solid_serial",
                 "radar",
                 "repeater",
+                "flipper",
                 "fancy_serial",
             },
         ),
         ("A04301989B", {"birthday", "fancy_serial"}),
         ("A15141514B", {"trinary", "repeater", "fancy_serial"}),
-        ("A25282252B", {"trinary", "5_of_a_kind", "fancy_serial"}),
+        ("A25282252B", {"trinary", "5_of_a_kind", "bookend", "fancy_serial"}),
         # Four of one digit then four of another. Binary too -- two distinct
         # digits -- but the arrangement is the thing collectors pay for.
         (
@@ -97,7 +97,7 @@ STAR_SERIAL = "A38164927*"
         ("A12555578B", {"quad", "fancy_serial"}),
         ("A12222256B", {"5_in_a_row", "fancy_serial"}),
         ("A37777771B", {"6_in_a_row", "trinary", "fancy_serial"}),
-        ("A55551555B", {"binary", "quad", "fancy_serial"}),
+        ("A55551555B", {"binary", "quad", "bookend", "fancy_serial"}),
         ("A12333456B", set()),
         # Of a kind: one digit exactly five or six times, not all of them in
         # a row (that is a run). CC-008387 is a Quad and 5 of a Kind both.
@@ -106,6 +106,36 @@ STAR_SERIAL = "A38164927*"
         ("A77077717B", {"6_of_a_kind", "trinary", "fancy_serial"}),
         ("A22222132B", {"5_in_a_row", "6_of_a_kind", "trinary", "fancy_serial"}),
         ("A13151715B", set()),
+        # Super Radar: six middle digits one digit, not the ends'. A Radar too.
+        (
+            "A27777772B",
+            {"radar", "super_radar", "6_in_a_row", "binary", "fancy_serial"},
+        ),
+        ("A27733772B", {"radar", "trinary", "fancy_serial"}),
+        # Super Repeater: two different digits four times. A Repeater too.
+        ("A45454545B", {"repeater", "super_repeater", "binary", "fancy_serial"}),
+        ("A45544554B", {"repeater", "radar", "binary", "fancy_serial"}),
+        # Bookend: first three digits again at the end; a Repeater is not one,
+        # and two matching digits (the 83549483 of some guides) are not enough.
+        ("A12358123B", {"bookend", "fancy_serial"}),
+        ("A83549483B", set()),
+        # Flipper: every digit turns (0 1 6 8 9). Rotator: and reads the same.
+        ("A10110100B", {"binary", "flipper", "fancy_serial"}),
+        ("A69811869B", {"flipper", "rotator", "fancy_serial"}),
+        ("A16088091B", {"flipper", "rotator", "fancy_serial"}),
+        # A Solid of turning digits is both; nines turn into sixes.
+        (
+            "M88888888",
+            {
+                "solid_serial",
+                "radar",
+                "repeater",
+                "flipper",
+                "rotator",
+                "fancy_serial",
+            },
+        ),
+        ("A16080897B", set()),
     ],
 )
 def test_designations(serial: str, expected: set[str]) -> None:

@@ -4,9 +4,10 @@
 """Derive note designations from the serial number itself.
 
 PMG and PCGS give special pedigree designations to particular serial numbers --
-radars, repeaters, binaries, solids, ladders, runs of one digit (a Quad, 5
-to 7 in a row), one digit five or six times (5 / 6 of a Kind), low serials,
-and star
+radars and super radars, repeaters and super repeaters, bookends, flippers
+and rotators, binaries, solids, ladders, runs of one digit (a Quad, 5 to 7
+in a row), one digit five or six times (5 / 6 of a Kind), low serials, and
+star
 (replacement) notes -- and a grading submission asks the sender to declare
 them. They carry real premiums, so a note whose designation is unrecorded is a
 note sold too cheaply.
@@ -120,7 +121,12 @@ DIGIT_PATTERNS: frozenset[str] = (
             "binary",
             "trinary",
             "radar",
+            "super_radar",
             "repeater",
+            "super_repeater",
+            "bookend",
+            "flipper",
+            "rotator",
             "double_quad",
             "ladder",
             "scattered_ladder",
@@ -256,6 +262,53 @@ def _is_double_quad(d: str) -> bool:
     return len(set(d[:half])) == 1 and len(set(d[half:])) == 1 and d[0] != d[half]
 
 
+#: Bookend: the first and last this many digits match (123xx123). The
+#: owner's rule; collectors also use two, which one note in a hundred meets.
+BOOKEND_DIGITS = 3
+
+#: The digits that still read as digits upside down, and what each becomes.
+UPSIDE_DOWN: dict[str, str] = {"0": "0", "1": "1", "6": "9", "8": "8", "9": "6"}
+
+
+def _is_super_radar(d: str) -> bool:
+    """A radar whose six middle digits are one digit, not the ends' -- 27777772."""
+    middle = set(d[1:-1])
+    return d == d[::-1] and len(middle) == 1 and d[0] not in middle
+
+
+def _is_super_repeater(d: str) -> bool:
+    """A block of two different digits four times -- 45454545."""
+    return d[0] != d[1] and d == d[:2] * (SERIAL_DIGITS // 2)
+
+
+def _is_bookend(d: str) -> bool:
+    """The first `BOOKEND_DIGITS` digits again at the end, the serial no Repeater.
+
+    A Repeater's first four are its last four, which says more: it is not
+    also a Bookend.
+    """
+    half = SERIAL_DIGITS // 2
+    return d[:BOOKEND_DIGITS] == d[-BOOKEND_DIGITS:] and d[:half] != d[half:]
+
+
+def _upside_down(d: str) -> str | None:
+    """The serial turned 180 degrees, or None when a digit cannot be turned."""
+    if not set(d) <= UPSIDE_DOWN.keys():
+        return None
+    return "".join(UPSIDE_DOWN[c] for c in reversed(d))
+
+
+def _turned(d: str) -> set[str]:
+    """Flipper (reads as a number upside down) and Rotator (the same number).
+
+    A Rotator is always a Flipper too; both are recorded.
+    """
+    turned = _upside_down(d)
+    if turned is None:
+        return set()
+    return {"flipper", "rotator"} if turned == d else {"flipper"}
+
+
 def _pattern_designations(d: str) -> set[str]:
     """Designations earned by what the digits spell."""
     found: set[str] = set()
@@ -279,6 +332,16 @@ def _pattern_designations(d: str) -> set[str]:
         found.add("radar")
     if d.startswith(d[SERIAL_DIGITS // 2 :]):
         found.add("repeater")
+
+    # The "super" forms stack with the plain ones (a Super Radar is a Radar
+    # too); a Solid Serial earns neither, its own name saying more.
+    if _is_super_radar(d):
+        found.add("super_radar")
+    if _is_super_repeater(d):
+        found.add("super_repeater")
+    if _is_bookend(d):
+        found.add("bookend")
+    found |= _turned(d)
 
     # Named separately from `binary` because collectors and grading forms
     # treat the arrangement as the point, not merely the count of distinct
