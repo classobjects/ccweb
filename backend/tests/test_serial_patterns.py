@@ -83,7 +83,7 @@ STAR_SERIAL = "A38164927*"
         ),
         ("A04301989B", {"birthday", "fancy_serial"}),
         ("A15141514B", {"trinary", "repeater", "fancy_serial"}),
-        ("A25282252B", {"trinary", "5_of_a_kind", "bookend", "fancy_serial"}),
+        ("A25282252B", {"trinary", "5_of_a_kind", "bookends", "fancy_serial"}),
         # Four of one digit then four of another. Binary too -- two distinct
         # digits -- but the arrangement is the thing collectors pay for.
         (
@@ -97,7 +97,7 @@ STAR_SERIAL = "A38164927*"
         ("A12555578B", {"quad", "fancy_serial"}),
         ("A12222256B", {"5_in_a_row", "fancy_serial"}),
         ("A37777771B", {"6_in_a_row", "trinary", "fancy_serial"}),
-        ("A55551555B", {"binary", "quad", "bookend", "fancy_serial"}),
+        ("A55551555B", {"binary", "quad", "bookends", "fancy_serial"}),
         ("A12333456B", set()),
         # Of a kind: one digit exactly five or six times, not all of them in
         # a row (that is a run). CC-008387 is a Quad and 5 of a Kind both.
@@ -117,7 +117,7 @@ STAR_SERIAL = "A38164927*"
         ("A45544554B", {"repeater", "radar", "binary", "fancy_serial"}),
         # Bookend: first three digits again at the end; a Repeater is not one,
         # and two matching digits (the 83549483 of some guides) are not enough.
-        ("A12358123B", {"bookend", "fancy_serial"}),
+        ("A12358123B", {"bookends", "fancy_serial"}),
         ("A83549483B", set()),
         # Flipper: every digit turns (0 1 6 8 9). Rotator: and reads the same.
         ("A10110100B", {"binary", "flipper", "fancy_serial"}),

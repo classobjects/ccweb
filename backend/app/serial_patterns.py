@@ -124,7 +124,7 @@ DIGIT_PATTERNS: frozenset[str] = (
             "super_radar",
             "repeater",
             "super_repeater",
-            "bookend",
+            "bookends",
             "flipper",
             "rotator",
             "double_quad",
@@ -340,7 +340,7 @@ def _pattern_designations(d: str) -> set[str]:
     if _is_super_repeater(d):
         found.add("super_repeater")
     if _is_bookend(d):
-        found.add("bookend")
+        found.add("bookends")
     found |= _turned(d)
 
     # Named separately from `binary` because collectors and grading forms

@@ -94,7 +94,7 @@ item as saved, in the same transaction.
 ## 2. Serial patterns derived on save
 
 `app/serial_patterns.py` derives Star, Solid, Binary, Trinary, Radar,
-Super Radar, Repeater, Super Repeater, Bookend, Flipper, Rotator, Double
+Super Radar, Repeater, Super Repeater, Bookends, Flipper, Rotator, Double
 Quad, Ladder, Quad, 5 to 7 in a row, 5 and 6 of a Kind, Birthday, Low
 Serial, High Serial and Fancy Serial from a note's serial. Each is a derived link (`derived_by`
 `serial_pattern`), which a person may remove and which then stays removed.
@@ -162,12 +162,16 @@ row -- five in a row is 5 in a row, not 5 of a Kind.
 |---|---|---|---|
 | Super Radar (`super_radar`) | A Radar whose six middle digits are one digit, not the ends' | 27777772 | 27733772 (a Radar), 88888888 (a Solid) |
 | Super Repeater (`super_repeater`) | Two different digits, the pair four times | 45454545 | 45544554 (a Repeater), 88888888 (a Solid) |
-| Bookend (`bookend`) | The first three digits again as the last three, and not a Repeater | 12358123 | 83549483 (two digits only), 12341234 (a Repeater) |
+| Bookends (`bookends`) | The first three digits again as the last three, and not a Repeater | 12358123 | 83549483 (two digits only), 12341234 (a Repeater) |
 | Flipper (`flipper`) | Every digit is 0, 1, 6, 8 or 9, so the number reads as a number upside down | 10110100, 99999999 | 16080897 |
 | Rotator (`rotator`) | A Flipper that reads the same number upside down (6 and 9 trade places) | 69811869, 88888888 | 99999999 (reads 66666666) |
 
 - The super forms stack with the plain ones: a Super Radar is a Radar too.
 - A Rotator is always a Flipper too; both are recorded.
+
+Flipper and Bookends were first made by hand in the console, so they
+are seeded under those codes and labels, and a seed load leaves the
+hand-made rows as they are.
 
 All eleven are digit patterns, so each adds Fancy Serial. They are seeded in
 `backend/data/reference/attribute.json` in the `serial` group, `applies_to`

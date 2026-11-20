@@ -219,15 +219,15 @@
       "sort_order": 187
     },
     {
-      "code": "bookend",
-      "label": "Bookend Serial",
+      "code": "bookends",
+      "label": "Bookends",
       "applies_to": "currency",
       "attribute_group": "serial",
       "sort_order": 188
     },
     {
       "code": "flipper",
-      "label": "Flipper Serial",
+      "label": "Flipper",
       "applies_to": "currency",
       "attribute_group": "serial",
       "sort_order": 189
