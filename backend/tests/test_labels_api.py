@@ -322,6 +322,43 @@ def test_the_batch_is_listed_and_an_item_removed(
     assert client.delete(f"{_API}/batch/0", headers=admin_headers).status_code == 404
 
 
+def test_clearing_the_batch_empties_it_and_records_nothing(
+    db: Session,
+    make_item: ItemFactory,
+    client: TestClient,
+    admin_headers: dict[str, str],
+) -> None:
+    coin = _coin(db, make_item)
+    note = _note(db, make_item)
+    gone = _coin(db, make_item)
+    outside = _coin(db, make_item)
+    _add(client, admin_headers, coin.id, note.id, gone.id)
+    # No longer labelable: kept in the batch until removed -- or cleared.
+    _sold(db, gone)
+    version = _fresh(db, coin.id).version
+
+    cleared = client.delete(f"{_API}/batch", headers=admin_headers)
+    assert cleared.status_code == 200, cleared.text
+    assert cleared.json() == {"cleared": 3}
+    assert client.get(f"{_API}/batch", headers=admin_headers).json() == []
+    for item in (coin, note, gone, outside):
+        fresh = _fresh(db, item.id)
+        assert fresh.in_label_batch is False
+        # Not printed: nothing waits in To apply.
+        assert fresh.label_waiting_at is None
+    # Bookkeeping, not an edit.
+    assert _fresh(db, coin.id).version == version
+
+    again = client.delete(f"{_API}/batch", headers=admin_headers)
+    assert again.json() == {"cleared": 0}
+
+
+def test_a_customer_cannot_clear_the_batch(
+    client: TestClient, customer_headers: dict[str, str]
+) -> None:
+    assert client.delete(f"{_API}/batch", headers=customer_headers).status_code == 403
+
+
 def test_only_labelable_items_join_the_batch(
     db: Session,
     make_item: ItemFactory,

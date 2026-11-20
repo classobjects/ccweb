@@ -416,6 +416,8 @@ the browser. An item is added to it from:
 The rules of the batch:
 
 - The Labels page lists the batch with a *Remove* beside each item.
+- *Clear the batch* empties it, after asking, those no longer labelable
+  included, and records nothing as printed (`DELETE /api/labels/batch`).
 - Only labelable items are added.
 - A *Yes* after printing the batch empties it; a *No* keeps it.
 - The batch is separate from the other two choices. Printing everything not

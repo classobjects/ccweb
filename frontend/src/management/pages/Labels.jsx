@@ -43,6 +43,21 @@ function PrintBatch({ batch, onChanged }) {
   const [number, setNumber] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [clearing, setClearing] = useState(false)
+
+  async function clear() {
+    setBusy(true)
+    setError('')
+    try {
+      await api.clearLabelBatch()
+      setClearing(false)
+      onChanged()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setBusy(false)
+    }
+  }
 
   async function add() {
     const wanted = number.trim()
@@ -102,8 +117,30 @@ function PrintBatch({ batch, onChanged }) {
         <button type="button" disabled={busy} onClick={add}>
           Add to batch
         </button>
+        {batch?.length > 0 && (
+          <button type="button" disabled={busy} onClick={() => setClearing(true)}>
+            Clear the batch
+          </button>
+        )}
       </div>
-      {error && <p className="error">{error}</p>}
+      {clearing && (
+        <ConfirmDialog
+          question="Clear the print batch?"
+          confirmLabel="Clear it"
+          busyLabel="Clearing..."
+          cancelLabel="Keep it"
+          busy={busy}
+          onConfirm={clear}
+          onCancel={() => setClearing(false)}
+        >
+          <p>
+            Takes all {batch.length === 1 ? '1 item' : `${batch.length} items`} out of
+            the batch. Nothing is recorded as printed; add them again to print them.
+          </p>
+          {error && <p className="error">{error}</p>}
+        </ConfirmDialog>
+      )}
+      {error && !clearing && <p className="error">{error}</p>}
       {batch?.length === 0 && <p className="muted">The print batch is empty.</p>}
       {batch && batch.length > 0 && (
         <table className="table stacks" aria-label="Print batch">

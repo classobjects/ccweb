@@ -12,6 +12,7 @@ vi.mock('../api', () => ({
     labelBatch: vi.fn(),
     addToLabelBatch: vi.fn(),
     removeFromLabelBatch: vi.fn(),
+    clearLabelBatch: vi.fn(),
     recordPrintedLabels: vi.fn(),
     labelsWaiting: vi.fn(),
     markLabelsApplied: vi.fn(),
@@ -245,6 +246,30 @@ describe('Labels', () => {
     await waitFor(() => expect(within(batch).queryByText('CC-009902')).toBeNull())
     // The batch run is drawn again.
     expect(api.labelRun).toHaveBeenLastCalledWith('batch')
+  })
+
+  it('clears the whole batch after asking, recording nothing as printed', async () => {
+    const user = open()
+    await screen.findByRole('table', { name: 'Print batch' })
+    await user.click(screen.getByRole('button', { name: 'Clear the batch' }))
+    const dialog = screen.getByRole('dialog', { name: 'Clear the print batch?' })
+    expect(dialog).toHaveTextContent('Takes all 3 items out of the batch.')
+    await user.click(within(dialog).getByRole('button', { name: 'Keep it' }))
+    expect(api.clearLabelBatch).not.toHaveBeenCalled()
+
+    api.clearLabelBatch.mockResolvedValue({ cleared: 3 })
+    api.labelBatch.mockResolvedValue([])
+    api.labelRun.mockClear()
+    await user.click(screen.getByRole('button', { name: 'Clear the batch' }))
+    await user.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: 'Clear it' }),
+    )
+    expect(api.clearLabelBatch).toHaveBeenCalledTimes(1)
+    expect(await screen.findByText('The print batch is empty.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Clear the batch' })).toBeNull()
+    // The batch run is drawn again: it is empty now.
+    expect(api.labelRun).toHaveBeenCalledWith('batch')
+    expect(api.recordPrintedLabels).not.toHaveBeenCalled()
   })
 
   it('adds an item by its number as the inventory search takes it', async () => {

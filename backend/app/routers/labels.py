@@ -46,6 +46,7 @@ from ..labels import (
 )
 from ..models import InventoryItem, utcnow
 from ..schemas import (
+    LabelBatchClearedOut,
     LabelItemsIn,
     LabelOut,
     LabelRunOut,
@@ -198,6 +199,22 @@ def add_to_batch(
             },
         )
     return _batch(db)
+
+
+@router.delete("/batch")
+def clear_batch(db: DbSession, _admin: AdminUser) -> LabelBatchClearedOut:
+    """Empty the print batch; returns how many items left it.
+
+    Every item in it, those no longer labelable included. Nothing is
+    recorded as printed: this is how a batch filled by mistake is undone,
+    where answering *Yes* to a print would put its labels in To apply.
+    """
+    items = list(
+        db.scalars(select(InventoryItem).where(InventoryItem.in_label_batch.is_(True)))
+    )
+    with committing(db, _STALE):
+        write_quietly(db, {item: {"in_label_batch": False} for item in items})
+    return LabelBatchClearedOut(cleared=len(items))
 
 
 @router.delete("/batch/{item_id}", status_code=status.HTTP_204_NO_CONTENT)

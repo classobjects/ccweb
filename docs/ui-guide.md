@@ -326,7 +326,8 @@ ticked, since finding the coins can take days.
 
 **The print batch**, under To apply, lists its items with a **Remove** beside
 each. To add an item, type its number in **Item number** and press **Add to
-batch**.
+batch**. **Clear the batch** empties it after asking; nothing is recorded as
+printed.
 
 ![The Labels page: the print batch's sheets, the labels printed and waiting to be applied, and the print batch](images/ui-guide/labels.png)
 

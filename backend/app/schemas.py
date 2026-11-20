@@ -3243,6 +3243,12 @@ class LabelBatchAddedOut(BaseModel):
     not_labelable: int
 
 
+class LabelBatchClearedOut(BaseModel):
+    """How many items clearing the print batch took out of it."""
+
+    cleared: int
+
+
 class LabelsRecordedOut(BaseModel):
     """How many of the items named were labelable, and so are recorded."""
 

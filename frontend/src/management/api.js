@@ -443,6 +443,8 @@ export const api = {
     send('/api/labels/batch', { method: 'POST', body: { item_ids: itemIds } }),
   removeFromLabelBatch: (itemId) =>
     send(`/api/labels/batch/${itemId}`, { method: 'DELETE' }),
+  // Empties the batch, recording nothing as printed: `{cleared}`.
+  clearLabelBatch: () => send('/api/labels/batch', { method: 'DELETE' }),
   // `labels`: `{item_id, lines}` exactly as the run carried them -- the
   // server records what is on the sheet, not what the item reads now.
   recordPrintedLabels: (source, labels) =>
