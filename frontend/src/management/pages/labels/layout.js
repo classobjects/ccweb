@@ -93,6 +93,57 @@ export function cellBox(layout, cell) {
   }
 }
 
+/** US Letter, the page every sheet is printed on, in inches. */
+const PAGE = { width: 8.5, height: 11 }
+
+/** The narrowest and widest a printer correction may say, in percent. */
+export const CORRECTION_RANGE = { min: 90, max: 110 }
+
+/** No correction: the printer prints the page at its size. */
+export const NO_CORRECTION = { across: 100, down: 100 }
+
+/**
+ * A printer correction as numbers: each of `across` and `down` a percent
+ * from 90 to 110, and 100 for anything else (nothing stored, a stale or
+ * mistyped value).
+ */
+export function normalCorrection(correction) {
+  const percent = (value) => {
+    const n = Number(value)
+    const inRange =
+      value !== null &&
+      value !== '' &&
+      Number.isFinite(n) &&
+      n >= CORRECTION_RANGE.min &&
+      n <= CORRECTION_RANGE.max
+    return inRange ? n : 100
+  }
+  return { across: percent(correction?.across), down: percent(correction?.down) }
+}
+
+/**
+ * Where to lay `box` out so a printer that prints the page at `correction`
+ * (percent across and down) puts it where it is on the sheet.
+ *
+ * A printer that fits the whole Letter page into the part it can print
+ * shrinks it about the page's center. The box is moved away from the center
+ * and made larger by the inverse, so that shrink brings it back.
+ */
+export function correctedBox(box, correction) {
+  // Untouched, not recomputed: no rounding moves an uncorrected label.
+  if (correction.across === 100 && correction.down === 100) return box
+  const across = correction.across / 100
+  const down = correction.down / 100
+  const cx = PAGE.width / 2
+  const cy = PAGE.height / 2
+  return {
+    left: cx + (box.left - cx) / across,
+    top: cy + (box.top - cy) / down,
+    width: box.width / across,
+    height: box.height / down,
+  }
+}
+
 /**
  * A label's lines, each with a key of its own for a list: the text, and
  * which of its repeats it is, so two equal lines are told apart without

@@ -1434,6 +1434,16 @@ export const FIELD_HELP = {
       'then Applied. Not used returns the ticked labels so the next run prints ' +
       'them again; unticked labels stay here.',
   },
+  label_printer_correction: {
+    title: 'Printer correction',
+    text:
+      'How large your printer prints the page, across and down, as a percent: ' +
+      'print a test page, measure its grid, and enter measured ÷ intended × 100 ' +
+      '(an SL564 grid measured 10.375 in tall of 10.625 is 97.6). Labels and ' +
+      'test pages are then laid out that much larger, about the middle of the ' +
+      'page, so the printer brings them back to size. 100 is no correction; ' +
+      '90 to 110 are taken. Kept in this browser only.',
+  },
   label_item_number: {
     title: 'Item number',
     text:

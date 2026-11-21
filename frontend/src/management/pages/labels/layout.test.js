@@ -5,9 +5,11 @@ import { describe, expect, it } from 'vitest'
 
 import {
   cellBox,
+  correctedBox,
   endOf,
   fittedSize,
   keyedLines,
+  normalCorrection,
   placeLabels,
   sheetLayout,
 } from './layout'
@@ -64,6 +66,53 @@ describe('cellBox', () => {
     const note = cellBox(sheetLayout(SL564), 102)
     expect(note.left + note.width).toBeCloseTo(8.5 - 0.25, 2)
     expect(note.top + note.height).toBeCloseTo(11 - 0.188, 2)
+  })
+})
+
+describe('correctedBox', () => {
+  const printed = (value, scale, center) => center + (value - center) * scale
+
+  it('leaves a box alone at 100%', () => {
+    const box = cellBox(sheetLayout(SL564), 1)
+    expect(correctedBox(box, { across: 100, down: 100 })).toEqual(box)
+  })
+
+  it('lays a box out larger about the page center, so the printer lands it on its cell', () => {
+    const box = cellBox(sheetLayout(SL564), 102)
+    const laid = correctedBox(box, { across: 97, down: 97.5 })
+    // What the printer makes of the corrected box is the box itself.
+    expect(printed(laid.left, 0.97, 4.25)).toBeCloseTo(box.left, 6)
+    expect(printed(laid.top, 0.975, 5.5)).toBeCloseTo(box.top, 6)
+    expect(laid.width * 0.97).toBeCloseTo(box.width, 6)
+    expect(laid.height * 0.975).toBeCloseTo(box.height, 6)
+  })
+
+  it('keeps the corner cells on the page at a 95% printer', () => {
+    const layout = sheetLayout(SL597)
+    const first = correctedBox(cellBox(layout, 1), { across: 95, down: 95 })
+    const last = correctedBox(cellBox(layout, 160), { across: 95, down: 95 })
+    expect(first.left).toBeGreaterThan(0)
+    expect(first.top).toBeGreaterThan(0)
+    expect(last.left + last.width).toBeLessThan(8.5)
+    expect(last.top + last.height).toBeLessThan(11)
+  })
+})
+
+describe('normalCorrection', () => {
+  it('keeps a percent from 90 to 110', () => {
+    expect(normalCorrection({ across: 97.5, down: '102' })).toEqual({
+      across: 97.5,
+      down: 102,
+    })
+  })
+
+  it('takes 100% for anything missing, not a number, or out of range', () => {
+    expect(normalCorrection(null)).toEqual({ across: 100, down: 100 })
+    expect(normalCorrection({ across: 'x', down: 89.9 })).toEqual({
+      across: 100,
+      down: 100,
+    })
+    expect(normalCorrection({ across: 110.1 })).toEqual({ across: 100, down: 100 })
   })
 })
 

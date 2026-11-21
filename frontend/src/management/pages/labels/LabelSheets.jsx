@@ -3,7 +3,15 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useLayoutEffect, useRef } from 'react'
 
-import { cellBox, fittedSize, keyedLines, placeLabels, sheetLayout } from './layout'
+import {
+  NO_CORRECTION,
+  cellBox,
+  correctedBox,
+  fittedSize,
+  keyedLines,
+  placeLabels,
+  sheetLayout,
+} from './layout'
 
 /** Inches as a CSS length, rounded past anything a printer can place. */
 const inch = (value) => `${+value.toFixed(4)}in`
@@ -50,12 +58,21 @@ function fitLines(container) {
  * line too long is set smaller (`fitLines`), then cut with an ellipsis.
  * `outline` draws every cell's border on every page, for the test page
  * printed on plain paper and held against a sheet; with no labels it is
- * one blank page of outlines.
+ * one blank page of outlines. `correction` is how large the printer prints
+ * the page, percent across and down: every cell, outlines included, is laid
+ * out larger by its inverse about the page's center (`correctedBox`), so
+ * the printer's shrink lands it on its label.
  *
  * Shown only under `@media print` (labels.css); on the screen it is laid
  * out out of sight, so the lines can be measured before printing.
  */
-export default function LabelSheets({ sheet, labels, start, outline = false }) {
+export default function LabelSheets({
+  sheet,
+  labels,
+  start,
+  outline = false,
+  correction = NO_CORRECTION,
+}) {
   const layout = sheetLayout(sheet)
   const container = useRef(null)
   const places = placeLabels(labels.length, start, layout.cells)
@@ -81,7 +98,7 @@ export default function LabelSheets({ sheet, labels, start, outline = false }) {
     .join(' ')
 
   function placed(cell) {
-    const box = cellBox(layout, cell)
+    const box = correctedBox(cellBox(layout, cell), correction)
     return {
       left: inch(box.left),
       top: inch(box.top),

@@ -12,7 +12,8 @@ import { useRequest } from '../../shared/useRequest'
 import LabelSheets from './labels/LabelSheets'
 import SheetPicker from './labels/SheetPicker'
 import ToApply from './labels/ToApply'
-import { keyedLines } from './labels/layout'
+import { CORRECTION_RANGE, keyedLines } from './labels/layout'
+import { saveCorrection, storedCorrection } from './labels/printerCorrection'
 import './labels/labels.css'
 
 //: What a run is drawn from (`LabelSource`), as the page offers it.
@@ -183,6 +184,67 @@ function PrintBatch({ batch, onChanged }) {
 }
 
 /**
+ * The printer correction: how large this computer's printer prints the
+ * page, percent across and down, read off a test page. Each change is kept
+ * in this browser at once (`saveCorrection`); a value outside 90 to 110, or
+ * a box left empty, prints at 100%.
+ */
+function PrinterCorrection({ correction, onChange }) {
+  const [typed, setTyped] = useState({
+    across: String(correction.across),
+    down: String(correction.down),
+  })
+
+  function change(axis, value) {
+    const next = { ...typed, [axis]: value }
+    setTyped(next)
+    onChange(saveCorrection(next))
+  }
+
+  const ignored = ['across', 'down'].filter(
+    (axis) => typed[axis].trim() !== '' && Number(typed[axis]) !== correction[axis],
+  )
+
+  return (
+    <fieldset className="label-correction" data-help="label_printer_correction">
+      <legend>Printer correction</legend>
+      <label>
+        Prints at{' '}
+        <input
+          type="number"
+          inputMode="decimal"
+          step="0.1"
+          min={CORRECTION_RANGE.min}
+          max={CORRECTION_RANGE.max}
+          value={typed.across}
+          onChange={(e) => change('across', e.target.value)}
+        />
+        % across
+      </label>
+      <label>
+        and{' '}
+        <input
+          type="number"
+          inputMode="decimal"
+          step="0.1"
+          min={CORRECTION_RANGE.min}
+          max={CORRECTION_RANGE.max}
+          value={typed.down}
+          onChange={(e) => change('down', e.target.value)}
+        />
+        % down
+      </label>
+      {ignored.length > 0 && (
+        <p className="error">
+          {CORRECTION_RANGE.min} to {CORRECTION_RANGE.max} only: printing at 100%{' '}
+          {ignored.join(' and ')} until it is.
+        </p>
+      )}
+    </fieldset>
+  )
+}
+
+/**
  * Labels: prints holder labels on sheets of labels, from any starting cell
  * (holder-labels-design.md, section 4, "Printing").
  *
@@ -203,7 +265,9 @@ function PrintBatch({ batch, onChanged }) {
  * prints the same layout with every cell outlined, for plain paper, and
  * asks nothing. **Test pages** print that outline for either sheet with no
  * labels on it, so the printer's placement can be checked with nothing
- * chosen to print.
+ * chosen to print. Its **printer correction** undoes a printer that prints
+ * the page a little small: every label and test page is laid out larger by
+ * it (`PrinterCorrection`, `correctedBox`).
  */
 export default function Labels() {
   const [source, setSource] = useState('batch')
@@ -215,6 +279,7 @@ export default function Labels() {
   const [recording, setRecording] = useState(false)
   const [askError, setAskError] = useState('')
   const [said, setSaid] = useState('')
+  const [correction, setCorrection] = useState(storedCorrection)
   // The print request already handed to the browser: an effect run again
   // for the same one (StrictMode's setup, cleanup, setup) prints it once.
   const printed = useRef(null)
@@ -367,6 +432,14 @@ export default function Labels() {
             Every cell of a sheet outlined on plain paper, to hold against a sheet of
             labels and check where the printer puts them. Nothing is recorded.
           </p>
+          <p className="muted">
+            If the outlines come out small -- the top row low and the bottom row high --
+            measure the printed grid and enter what the printer printed, measured ÷
+            intended × 100. The SL564 grid is 8.000 in across and 10.625 in from the top
+            of the first row to the bottom of the last. Every label and test page is
+            then laid out that much larger. Kept in this browser.
+          </p>
+          <PrinterCorrection correction={correction} onChange={setCorrection} />
           <div className="label-run-actions">
             {sheets.data.map((sheet) => (
               <button key={sheet.code} type="button" onClick={() => printTest(sheet)}>
@@ -400,6 +473,7 @@ export default function Labels() {
               labels={printing.labels}
               start={printing.start}
               outline={printing.outline}
+              correction={correction}
             />
           </div>,
           document.body,

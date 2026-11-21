@@ -66,6 +66,30 @@ fieldset.label-run {
   padding: 0;
   min-width: 0;
 }
+/* The printer correction: two short percent boxes that wrap on a phone,
+   with no min-content width to push the page sideways. */
+fieldset.label-correction {
+  min-width: 0;
+  margin: 0.5rem 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  align-items: center;
+}
+/* "Prints at [97.5] % across": one line, not the console's stacked label. */
+.label-correction label {
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
+}
+.label-correction input {
+  width: 5.5em;
+  margin: 0 0.25em;
+}
+.label-correction .error {
+  flex-basis: 100%;
+  margin: 0;
+}
 .label-run-actions {
   display: flex;
   flex-wrap: wrap;

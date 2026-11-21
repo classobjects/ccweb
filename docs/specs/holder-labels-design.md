@@ -465,6 +465,19 @@ Each run has one, carrying its labels; the page's *Test pages* section
 prints a blank outlined sheet of either product with nothing chosen to
 print. Neither asks anything afterwards.
 
+**Printer correction.** A printer that fits the Letter page into its
+printable area prints it a few percent small, centered: a test page then
+shows the first row low and the last high by the same amount. *Test pages*
+takes how large the printer prints, a percent across and a percent down
+(90 to 110; 100 is none). Every cell, label and outline, is laid out
+larger by the inverse about the page's center (`correctedBox` in
+`labels/layout.js`): a cell at x is placed at 4.25 + (x - 4.25) / s and
+its width at w / s, and likewise down about 5.5, so the printer's shrink
+lands it on its label. Text keeps its size; the printer's shrink takes it
+a few percent smaller. The correction is kept in the browser's local
+storage (`labels/printerCorrection.js`), because the shrink belongs to the
+printing computer's driver.
+
 ### Applying
 
 A printed label is on a sheet, not on a holder. The owner confirms each one

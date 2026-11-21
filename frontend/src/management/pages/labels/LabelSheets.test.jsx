@@ -109,6 +109,26 @@ describe('LabelSheets', () => {
     expect(container.querySelectorAll('.label')).toHaveLength(0)
   })
 
+  it('lays every cell out larger about the page center for a printer correction', () => {
+    const { container } = render(
+      <LabelSheets
+        sheet={SL564}
+        labels={coins(1)}
+        start={1}
+        outline
+        correction={{ across: 97, down: 97.5 }}
+      />,
+    )
+    const label = container.querySelector('.label')
+    // Cell 1 at (0.25, 0.188), 1.333 x 0.625, moved out from (4.25, 5.5).
+    expect(inches(label.style.left)).toBeCloseTo(4.25 - 4 / 0.97, 4)
+    expect(inches(label.style.top)).toBeCloseTo(5.5 - 5.312 / 0.975, 4)
+    expect(inches(label.style.width)).toBeCloseTo(1.333 / 0.97, 4)
+    expect(inches(label.style.height)).toBeCloseTo(0.625 / 0.975, 4)
+    const outline = container.querySelector('.label-cell')
+    expect(outline.style.top).toBe(label.style.top)
+  })
+
   it('lays out no page when there is nothing to print and no outline', () => {
     const { container } = render(<LabelSheets sheet={SL564} labels={[]} start={1} />)
     expect(container.querySelectorAll('.label-page')).toHaveLength(0)

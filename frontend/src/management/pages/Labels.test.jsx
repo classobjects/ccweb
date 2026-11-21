@@ -257,6 +257,30 @@ describe('Labels', () => {
     expect(document.querySelectorAll('.label-print .label-cell')).toHaveLength(160)
   })
 
+  it('prints with the printer correction typed, and keeps it in this browser', async () => {
+    window.localStorage.clear()
+    const user = open({ run: { runs: [], skipped: [] }, batch: [] })
+    const tests = await screen.findByRole('region', { name: 'Test pages' })
+    const across = within(tests).getByRole('spinbutton', { name: /across/ })
+    const down = within(tests).getByRole('spinbutton', { name: /down/ })
+    expect(across).toHaveValue(100)
+    await user.clear(across)
+    await user.type(across, '97')
+    await user.clear(down)
+    await user.type(down, '97.5')
+    await user.click(
+      within(tests).getByRole('button', { name: 'Test page: Note and set, SL564' }),
+    )
+    const first = document.querySelector('.label-print .label-cell')
+    expect(Number.parseFloat(first.style.left)).toBeCloseTo(4.25 - 4 / 0.97, 4)
+    expect(Number.parseFloat(first.style.top)).toBeCloseTo(5.5 - 5.312 / 0.975, 4)
+    afterPrint()
+    expect(
+      JSON.parse(window.localStorage.getItem('ccwebdb.labelPrinterCorrection')),
+    ).toEqual({ across: 97, down: 97.5 })
+    window.localStorage.clear()
+  })
+
   it('lists the batch, and Remove takes an item out', async () => {
     const user = open()
     const batch = await screen.findByRole('table', { name: 'Print batch' })

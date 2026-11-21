@@ -313,7 +313,14 @@ these labels print correctly?**
 cell's outline, to hold against a sheet. It asks nothing afterwards.
 **Test pages**, below the runs, prints a blank outlined sheet of either
 product -- **Test page: Coin, SL597** or **Test page: Note and set, SL564** --
-with nothing chosen to print.
+with nothing chosen to print. Its **Printer correction** is for a printer
+that prints the page a little small, so the top row lands low and the bottom
+row high. Measure the printed grid and enter what the printer printed,
+**Prints at __% across and __% down**: measured ÷ intended × 100. The SL564
+grid is 8.000" across and 10.625" from the top of the first row to the
+bottom of the last. Labels and test pages are then laid out that much
+larger, and the printer brings them back to size. 100 is no correction. It
+is kept in this browser.
 
 **To apply**, under the sheets, lists the labels printed and not yet on their
 holders. There is one list per print and sheet, newest first, with the labels
