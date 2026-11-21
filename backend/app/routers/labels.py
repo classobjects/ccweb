@@ -33,7 +33,6 @@ from sqlalchemy.orm import Session
 
 from ..deps import AdminUser, DbSession
 from ..labels import (
-    SHEET_FOR_KIND,
     SHEETS,
     label_items,
     label_state_clauses,
@@ -140,7 +139,7 @@ def label_run(
     lines = labels_of(db, items)
     by_sheet: dict[str, list[InventoryItem]] = {}
     for item in items:
-        by_sheet.setdefault(SHEET_FOR_KIND[item.item_kind.code], []).append(item)
+        by_sheet.setdefault(sheet_for(item.item_kind.code), []).append(item)
     return LabelRunsOut(
         runs=[
             LabelRunOut(sheet=code, labels=_labels(by_sheet[code], lines))

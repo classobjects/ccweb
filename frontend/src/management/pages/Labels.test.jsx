@@ -235,6 +235,28 @@ describe('Labels', () => {
     expect(document.querySelector('.label-print')).toBeNull()
   })
 
+  it('prints a blank test page of either sheet with nothing to print', async () => {
+    const user = open({ run: { runs: [], skipped: [] }, batch: [] })
+    const tests = await screen.findByRole('region', { name: 'Test pages' })
+    await user.click(
+      within(tests).getByRole('button', { name: 'Test page: Note and set, SL564' }),
+    )
+    expect(printSpy).toHaveBeenCalledTimes(1)
+    const pages = document.querySelectorAll('.label-print .label-page')
+    expect(pages).toHaveLength(1)
+    expect(pages[0]).toHaveClass('label-sheet-SL564', 'outlined')
+    expect(document.querySelectorAll('.label-print .label-cell')).toHaveLength(102)
+    expect(document.querySelectorAll('.label-print .label')).toHaveLength(0)
+    afterPrint()
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(document.querySelector('.label-print')).toBeNull()
+
+    await user.click(
+      within(tests).getByRole('button', { name: 'Test page: Coin, SL597' }),
+    )
+    expect(document.querySelectorAll('.label-print .label-cell')).toHaveLength(160)
+  })
+
   it('lists the batch, and Remove takes an item out', async () => {
     const user = open()
     const batch = await screen.findByRole('table', { name: 'Print batch' })

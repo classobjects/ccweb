@@ -408,14 +408,16 @@ takes four steps:
      (below).
    - *No* records nothing. The run can be printed again from any cell.
 
-**Labelable** (the owner's ruling) means an item that is all of these:
+**Labelable** (the owner's ruling) means every item with disposition `held`
+or `listed` that is neither deleted nor split. A label is how an item's record
+is found from the item in hand, and it prints no grade, so nothing else rules
+one out: a piece in a grading service's holder (PCGS, NGC, PMG) takes one, as
+do bullion, medals, tokens, items of unknown kind, rolls and tubes, and items
+not yet received. An item sold or otherwise gone is never offered a label and
+never counted as needing one.
 
-- of kind coin, currency or set;
-- with status `received` and disposition `held` or `listed`;
-- not in a grading service's holder (no grading service recorded);
-- a single piece or a set -- not a roll, tube, bag or box of several pieces.
-
-Anything else is never offered for a label and never counted as needing one.
+Notes print on SL564 with the note lines, sets on SL564 with the set lines,
+and every other kind on SL597 with the coin lines (`sheet_for`).
 
 **The print batch** is a short list of items the owner builds up for the next
 small run. It is kept in the database until it prints, so it survives closing
@@ -430,8 +432,8 @@ the browser. An item is added to it from:
   page, so those filters choose what to label -- an item-number range
   (*From item*, *To item*), a series, the Label state. Unlike the other
   ways, which are all or none, it passes over the matches that take no
-  label and counts them, since a search of the collection holds sold and
-  graded pieces. Past 200 matches it asks first
+  label and counts them, since a search of the collection holds sold
+  pieces. Past 200 matches it asks first
   (`POST /api/inventory/{view}/label-batch`, the search's own query
   string; it answers `matched`, `added`, `already`, `not_labelable`);
 - the item editor, with an *Add to label batch* button.
@@ -459,6 +461,9 @@ the run's source.
 
 A **test page** prints the same layout on plain paper, with every label's
 outline. It is held against a sheet to check alignment before using labels.
+Each run has one, carrying its labels; the page's *Test pages* section
+prints a blank outlined sheet of either product with nothing chosen to
+print. Neither asks anything afterwards.
 
 ### Applying
 

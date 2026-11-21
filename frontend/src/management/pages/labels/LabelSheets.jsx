@@ -49,7 +49,8 @@ function fitLines(container) {
  * Each line of a label is a `.label-line` of its own that never wraps: a
  * line too long is set smaller (`fitLines`), then cut with an ellipsis.
  * `outline` draws every cell's border on every page, for the test page
- * printed on plain paper and held against a sheet.
+ * printed on plain paper and held against a sheet; with no labels it is
+ * one blank page of outlines.
  *
  * Shown only under `@media print` (labels.css); on the screen it is laid
  * out out of sight, so the lines can be measured before printing.
@@ -58,7 +59,9 @@ export default function LabelSheets({ sheet, labels, start, outline = false }) {
   const layout = sheetLayout(sheet)
   const container = useRef(null)
   const places = placeLabels(labels.length, start, layout.cells)
-  const pages = Array.from({ length: (places.at(-1)?.sheet ?? -1) + 1 }, (_, n) => ({
+  // An outlined layout has a page even with no labels: the blank test page.
+  const lastSheet = places.at(-1)?.sheet ?? (outline ? 0 : -1)
+  const pages = Array.from({ length: lastSheet + 1 }, (_, n) => ({
     number: n + 1,
     placed: [],
   }))

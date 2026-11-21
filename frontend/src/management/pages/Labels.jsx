@@ -201,7 +201,9 @@ function PrintBatch({ batch, onChanged }) {
  * then wait in To apply (`ToApply`) until each is marked on its holder. The
  * test page
  * prints the same layout with every cell outlined, for plain paper, and
- * asks nothing.
+ * asks nothing. **Test pages** print that outline for either sheet with no
+ * labels on it, so the printer's placement can be checked with nothing
+ * chosen to print.
  */
 export default function Labels() {
   const [source, setSource] = useState('batch')
@@ -255,6 +257,12 @@ export default function Labels() {
       start: starts[sheetRun.sheet] ?? 1,
       outline,
     })
+  }
+
+  /** A blank sheet of outlined cells, whatever the run holds. */
+  function printTest(sheet) {
+    setSaid('')
+    setPrinting({ source, sheet, labels: [], start: 1, outline: true })
   }
 
   async function recordPrinted() {
@@ -351,6 +359,23 @@ export default function Labels() {
             </section>
           )
         })}
+
+      {sheets.data && (
+        <section aria-labelledby="label-tests-heading" className="label-tests">
+          <h2 id="label-tests-heading">Test pages</h2>
+          <p className="muted">
+            Every cell of a sheet outlined on plain paper, to hold against a sheet of
+            labels and check where the printer puts them. Nothing is recorded.
+          </p>
+          <div className="label-run-actions">
+            {sheets.data.map((sheet) => (
+              <button key={sheet.code} type="button" onClick={() => printTest(sheet)}>
+                Test page: {sheet.name}, {sheet.code}
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
 
       <ToApply
         runs={waiting.data}

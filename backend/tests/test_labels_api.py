@@ -191,11 +191,38 @@ def test_the_unlabeled_run_holds_labelable_items_with_no_label(
     assert codes == sorted(codes)
     assert first.item_code in codes
     assert second.item_code in codes
-    for absent in (labeled, sold, slab):
+    # A slab takes a label too: it finds the record and prints no grade.
+    assert slab.item_code in codes
+    for absent in (labeled, sold):
         assert absent.item_code not in codes
     label = next(lb for lb in runs[0]["labels"] if lb["item_id"] == first.id)
     assert label["lines"] == [printed_number(first.item_code), "1921-S", "Silver"]
     assert body["skipped"] == []
+
+
+def test_kinds_no_sheet_names_print_with_the_coins(
+    db: Session,
+    make_item: ItemFactory,
+    client: TestClient,
+    admin_headers: dict[str, str],
+) -> None:
+    """Bullion, medals, tokens and unknowns print on the coin sheet, as coins do."""
+    note = _note(db, make_item)
+    bar = make_item(
+        kind="bullion", year_start=2024, metal_id=code_id(db, Metal, "silver")
+    )
+    odd = make_item(kind="unknown")
+    _add(client, admin_headers, note.id, bar.id, odd.id)
+
+    runs = _run(client, admin_headers, "batch")["runs"]
+    assert isinstance(runs, list)
+    by_sheet = {r["sheet"]: _codes(r) for r in runs}
+    assert by_sheet == {
+        "SL597": sorted([bar.item_code, odd.item_code]),
+        "SL564": [note.item_code],
+    }
+    bar_label = next(lb for lb in runs[0]["labels"] if lb["item_id"] == bar.id)
+    assert bar_label["lines"] == [printed_number(bar.item_code), "2024", "Silver"]
 
 
 def test_a_run_of_an_unknown_source_is_refused(
@@ -368,17 +395,17 @@ def test_only_labelable_items_join_the_batch(
     good = _coin(db, make_item)
     sold = _coin(db, make_item)
     _sold(db, sold)
-    bullion = make_item(kind="bullion")
+    deleted = make_item(deleted_at=utcnow())
 
     refused = client.post(
         f"{_API}/batch",
-        json={"item_ids": [good.id, sold.id, bullion.id]},
+        json={"item_ids": [good.id, sold.id, deleted.id]},
         headers=admin_headers,
     )
     assert refused.status_code == 422, refused.text
     detail = refused.json()["detail"]
     assert sold.item_code in detail
-    assert bullion.item_code in detail
+    assert deleted.item_code in detail
     assert good.item_code not in detail
     assert _fresh(db, good.id).in_label_batch is False
 

@@ -1271,21 +1271,18 @@ The piece keeps the cost it was allocated, and repeating it is harmless.
 The console's **Labels** page (Inventory menu) prints a label for each item,
 to stick on its holder (`docs/specs/holder-labels-design.md`, section 4).
 
-An item takes a label -- is **labelable** -- when it is all of these:
-
-- a coin, a note or a set;
-- received, held or listed;
-- not in a grading service's holder;
-- a single piece or a set, not a roll, tube, bag or box of several.
-
-Nothing else is offered a label or counted as needing one.
+Every item held or listed takes a label -- is **labelable** -- graded
+pieces in their holders, bullion, rolls and items not yet received included:
+the label finds the item's record and prints no grade. Only an item sold or
+otherwise gone, deleted or split is never offered one. Notes and sets print on
+SL564; every other kind prints on SL597 with a coin's lines.
 
 **The sheets.** Two products from sheetlabels.com, both US Letter, in the
 inkjet material ("Spectacle White Matte Inkjet"):
 
 | | SL597 | SL564 |
 |---|---|---|
-| Used for | coins | notes and sets |
+| Used for | coins and every other kind | notes and sets |
 | Label | 0.625" x 0.5", rounded corners | 1.333" x 0.625", square |
 | Grid | 10 across, 16 down: 160 | 6 across, 17 down: 102 |
 
@@ -1300,7 +1297,9 @@ product is a new entry there.
 - Leave Margins at Default: the page sets its own, none.
 
 **Test page.** Before the first run on a new printer, or whenever labels seem
-to drift, print **Print a test page** on plain paper. It is the same layout
+to drift, print a test page on plain paper: **Test page: Coin, SL597** or
+**Test page: Note and set, SL564** under *Test pages*, which needs nothing
+chosen to print, or a run's own **Print a test page**. It is the same layout
 with every cell's outline. Hold it against a sheet of labels, up to the
 light: the outlines should sit on the labels' edges. Text keeps 0.06" inside
 each label's edge, so a small drift stays on the label.

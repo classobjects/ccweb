@@ -100,6 +100,20 @@ describe('LabelSheets', () => {
     expect(container.querySelector('.label-page')).toHaveClass('outlined')
   })
 
+  it('outlines one blank page when there is nothing to print', () => {
+    const { container } = render(
+      <LabelSheets sheet={SL564} labels={[]} start={1} outline />,
+    )
+    expect(container.querySelectorAll('.label-page')).toHaveLength(1)
+    expect(container.querySelectorAll('.label-cell')).toHaveLength(102)
+    expect(container.querySelectorAll('.label')).toHaveLength(0)
+  })
+
+  it('lays out no page when there is nothing to print and no outline', () => {
+    const { container } = render(<LabelSheets sheet={SL564} labels={[]} start={1} />)
+    expect(container.querySelectorAll('.label-page')).toHaveLength(0)
+  })
+
   it('sets a line too long for the label smaller, down to the minimum', () => {
     withStylesheet()
     // jsdom does no layout: every line reports more width than it has.

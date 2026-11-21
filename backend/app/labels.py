@@ -27,7 +27,7 @@ from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
 
-from sqlalchemy import ColumnElement, Table, and_, bindparam, or_, select, true, update
+from sqlalchemy import ColumnElement, Table, and_, bindparam, select, true, update
 from sqlalchemy.orm import Session, selectinload
 from sqlalchemy.orm.attributes import set_committed_value
 
@@ -36,8 +36,6 @@ from .item_descriptions import FANCY_SERIAL, fancy_is_redundant, saved_errors_of
 from .models import (
     FriedbergNumber,
     InventoryItem,
-    ItemKind,
-    ItemStatus,
     Metal,
     Mint,
     NoteType,
@@ -122,17 +120,16 @@ SHEETS: dict[str, SheetLayout] = {
     ),
 }
 
-#: The sheet an item of each labelable kind prints on.
+#: The sheet a note or set prints on; every other kind takes the coin sheet.
 SHEET_FOR_KIND: dict[str, str] = {"coin": "SL597", "currency": "SL564", "set": "SL564"}
 
 
 def sheet_for(kind_code: str) -> str:
-    """The sheet a label for an item of this kind is shown with.
+    """The sheet a label for an item of this kind prints on.
 
-    A kind no sheet serves -- a token, medal or bullion piece -- is never
-    offered a label, but can still hold one printed before its kind was
-    changed. It is shown with the coins, beside which the Coins screen
-    holds it, so that waiting label can still be settled.
+    A kind not named in `SHEET_FOR_KIND` -- a token, medal, bullion piece or
+    unknown -- prints on the coin sheet with a coin's lines, as the Coins
+    screen holds it beside the coins.
     """
     return SHEET_FOR_KIND.get(kind_code, SHEET_FOR_KIND["coin"])
 
@@ -148,7 +145,6 @@ _NOTE_GROUPS = frozenset({"serial", "variety"})
 #: label is read by customers.
 _UNPRINTED_ATTRIBUTES = frozenset({"error", "gift"})
 
-_STATUS = "received"
 _DISPOSITIONS = ("held", "listed")
 _SET = "set"
 
@@ -161,19 +157,15 @@ def printed_number(item_code: str) -> str:
 def labelable_clause() -> ColumnElement[bool]:
     """The items offered a label, as a WHERE clause on `InventoryItem`.
 
-    A coin, note or set that is received, held or listed, in no grading
-    service's holder, a single piece or a set, and neither deleted nor split.
+    Every item still held or listed, neither deleted nor split. A label is
+    how an item's record is found from the item in hand, and it prints no
+    grade, so its kind, a grading service's holder, a roll's piece count or
+    an item not yet received does not rule one out. An item sold or
+    otherwise gone is no longer in hand to carry one.
     """
-    kind_ids = select(ItemKind.id).where(ItemKind.code.in_(SHEET_FOR_KIND))
-    set_ids = select(ItemKind.id).where(ItemKind.code == _SET)
-    status_ids = select(ItemStatus.id).where(ItemStatus.code == _STATUS)
     disposition_ids = select(Disposition.id).where(Disposition.code.in_(_DISPOSITIONS))
     return and_(
-        InventoryItem.item_kind_id.in_(kind_ids),
-        InventoryItem.status_id.in_(status_ids),
         InventoryItem.disposition_id.in_(disposition_ids),
-        InventoryItem.grading_service_id.is_(None),
-        or_(InventoryItem.piece_count == 1, InventoryItem.item_kind_id.in_(set_ids)),
         InventoryItem.deleted_at.is_(None),
         InventoryItem.split_at.is_(None),
     )

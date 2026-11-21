@@ -25,7 +25,7 @@ function saidOf({ added, already, not_labelable: skipped }) {
  * Add every item the search matches -- on every page, not only the ticked
  * rows -- to the label print batch, so the screen's own filters (an
  * item-number range, a series, the Label state...) choose what to label.
- * Items that take no label (sold, graded, a roll) are passed over and
+ * Items that take no label (sold, deleted, split) are passed over and
  * counted, and the Labels page prints the batch.
  */
 export default function AddMatchesToLabelBatch({ view, filters, total }) {

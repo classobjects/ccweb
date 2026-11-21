@@ -159,7 +159,7 @@ close the editor, it stays closed until the search changes.
 
 **Add all N matching to label batch** puts every item the filters match, on
 every page, on the list of labels to print next, and says how many were added,
-how many were in it already and how many take no label (sold, graded, a roll),
+how many were in it already and how many take no label (sold, deleted or split),
 which are passed over. Past 200 matches it asks first. The Labels page prints
 the batch. To label a run of numbers, fill in From item and To item, and pick
 Not labeled under Label to leave out the ones already done.
@@ -311,6 +311,9 @@ these labels print correctly?**
 
 **Print a test page** prints the same layout on plain paper, with every
 cell's outline, to hold against a sheet. It asks nothing afterwards.
+**Test pages**, below the runs, prints a blank outlined sheet of either
+product -- **Test page: Coin, SL597** or **Test page: Note and set, SL564** --
+with nothing chosen to print.
 
 **To apply**, under the sheets, lists the labels printed and not yet on their
 holders. There is one list per print and sheet, newest first, with the labels
@@ -329,7 +332,7 @@ each. To add an item, type its number in **Item number** and press **Add to
 batch**. **Clear the batch** empties it after asking; nothing is recorded as
 printed.
 
-![The Labels page: the print batch's sheets, the labels printed and waiting to be applied, and the print batch](images/ui-guide/labels.png)
+![The Labels page: the print batch's sheets, the test pages, the labels printed and waiting to be applied, and the print batch](images/ui-guide/labels.png)
 
 Its fields:
 

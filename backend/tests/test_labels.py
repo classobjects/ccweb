@@ -292,13 +292,17 @@ def test_labelable(db: Session, make_item: ItemFactory) -> None:
         (_set(db, make_item), True),
         (make_item(disposition_id=code_id(db, Disposition, "listed")), True),
         (make_item(disposition_id=code_id(db, Disposition, sold[0])), False),
-        (make_item(status_id=code_id(db, ItemStatus, "ordered")), False),
-        (make_item(grading_service_id=code_id(db, GradingService, "PMG")), False),
+        # A label finds the item's record; it prints no grade, so neither
+        # a holder, the kind, a roll nor an item still on its way rules
+        # one out.
+        (make_item(status_id=code_id(db, ItemStatus, "ordered")), True),
+        (make_item(grading_service_id=code_id(db, GradingService, "PMG")), True),
         (
             make_item(piece_count=50, storage_form_id=code_id(db, StorageForm, "roll")),
-            False,
+            True,
         ),
-        (make_item(kind="bullion"), False),
+        (make_item(kind="bullion"), True),
+        (make_item(kind="unknown"), True),
         (make_item(deleted_at=utcnow()), False),
         (make_item(split_at=utcnow()), False),
     ]
