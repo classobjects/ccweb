@@ -106,6 +106,67 @@ Each attribute keeps the service's own term. The release pedigrees are kept
 apart rather than merged into one "early release", because each service
 defines its own window.
 
+### The order of serial attributes: rarest first
+
+An item's attributes are listed by sort order: in the item detail, the
+suggested description and line 3 of a note's holder label, where a line too
+long is cut at its end. The serial attributes come first (sort order 10 to
+74, before every variety at 100 and up), and among them the most unique
+pattern is listed first -- the owner's rule.
+
+How unique a pattern is was measured, not judged: every eight-digit serial,
+00000000 to 99999999, was put through the rules of `app.serial_patterns`
+(`_pattern_designations` and `_positional_designations`), counting the
+serials that earn each designation. Patterns as rare as one another keep
+the order they had before.
+
+| Sort | Attribute | Serials of 10^8 | One in |
+|---|---|---:|---:|
+| 10 | Solid Serial Number | 10 | 10,000,000 |
+| 12 | Ladder Serial | 20 | 5,000,000 |
+| 14 | Double Quad Serial | 90 | 1,111,111 |
+| 16 | Super Radar Serial | 90 | 1,111,111 |
+| 18 | Super Repeater Serial | 90 | 1,111,111 |
+| 20 | 7 in a row | 180 | 555,556 |
+| 22 | Rotator Serial | 625 | 160,000 |
+| 24 | 6 in a row | 2,610 | 38,314 |
+| 26 | Low Serial Number | 10,000 | 10,000 |
+| 28 | Radar Serial | 10,000 | 10,000 |
+| 30 | Repeater Serial | 10,000 | 10,000 |
+| 32 | Binary Serial | 11,430 | 8,749 |
+| 34 | 6 of a Kind | 20,250 | 4,938 |
+| 36 | 5 in a row | 34,200 | 2,924 |
+| 38 | Birthday Serial | 67,332 | 1,485 |
+| 40 | Partial Ladder | 74,220 | 1,347 |
+| 42 | Bookends | 99,990 | 1,000 |
+| 44 | 5 of a Kind | 379,080 | 264 |
+| 46 | Flipper | 390,625 | 256 |
+| 48 | Scattered Ladder | 403,180 | 248 |
+| 50 | Quad | 422,820 | 237 |
+| 52 | Trinary Serial | 695,520 | 144 |
+| 54 | Fancy Serial | 2,239,092 | 45 |
+| 56 | High Serial Number | 10,000,000 | 10 |
+
+The counts check where they can be worked by hand: a Solid is one of 10, a
+Flipper uses only the five digits that turn (5^8), a Rotator is fixed by its
+first four (5^4), a Radar by its first four (10^4).
+
+**Not measured by the serial,** and listed after those in the order they
+had before:
+
+| Sort | Attribute | Why it is not measured |
+|---|---|---|
+| 58 | Star Note | how many replacement notes were printed, not the digits |
+| 60 | Consecutive | a run of notes, not one serial |
+
+Attributes a person adds on the live database, with no rule here, go after
+these too (62 and up). On the owner's installation those are Centennial,
+Doubles (all pairs), Gas Pump, Matched Pair, Over-Inked Digit, Pairs and
+Rollover, in that order.
+
+A new serial pattern takes its place in this order by the same count, and
+the numbers after it move up.
+
 **Derived links.** Three rules add links. Each link is recorded `derived`,
 with its rule in `derived_by`:
 

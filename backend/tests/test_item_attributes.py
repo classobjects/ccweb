@@ -340,8 +340,8 @@ def test_what_a_new_serial_earns_sent_with_it_stays_the_rules(
     assert response.status_code == 200
     rule = ("derived", "serial_pattern")
     assert _held(client, admin_headers, note) == [
-        ("fancy_serial", *rule),
         ("radar", *rule),
+        ("fancy_serial", *rule),
     ]
 
     # The editor leaves out what the corrected serial no longer earns.

@@ -159,6 +159,92 @@ def test_every_derived_designation_is_seeded() -> None:
     assert sorted(DESIGNATIONS - seeded) == []
 
 
+#: The serial attributes, most unique first: item-attributes-design.md,
+#: "The order of serial attributes", where each is counted over every
+#: eight-digit serial. Then those no serial measures, in their old order.
+RAREST_FIRST = [
+    "solid_serial",
+    "ladder",
+    "double_quad",
+    "super_radar",
+    "super_repeater",
+    "7_in_a_row",
+    "rotator",
+    "6_in_a_row",
+    "low_serial",
+    "radar",
+    "repeater",
+    "binary",
+    "6_of_a_kind",
+    "5_in_a_row",
+    "birthday",
+    "partial_ladder",
+    "bookends",
+    "5_of_a_kind",
+    "flipper",
+    "scattered_ladder",
+    "quad",
+    "trinary",
+    "fancy_serial",
+    "high_serial",
+    "star",
+    "consecutive",
+]
+
+
+def test_serial_attributes_sort_rarest_first_before_any_other() -> None:
+    """Listed by sort order, an item's serial attributes lead with the rarest.
+
+    And all of them before every other group, so a variety does not split
+    them on a label line or in a description.
+    """
+    rows = json.loads(
+        (Path(__file__).parents[1] / "data/reference/attribute.json").read_text(
+            encoding="utf-8"
+        )
+    )["item_attribute"]
+    serial = sorted(
+        (r for r in rows if r["attribute_group"] == "serial"),
+        key=lambda r: r["sort_order"],
+    )
+    assert [r["code"] for r in serial] == RAREST_FIRST
+    assert len({r["sort_order"] for r in serial}) == len(serial)
+    others = [r["sort_order"] for r in rows if r["attribute_group"] != "serial"]
+    assert serial[-1]["sort_order"] < min(others)
+
+
+@pytest.mark.parametrize(
+    ("serials", "code", "count"),
+    [
+        # Small enough to count every serial that could qualify: a Solid is
+        # one digit, a Rotator is fixed by its first four turnable digits.
+        ([f"{d}" * 8 for d in "0123456789"], "solid_serial", 10),
+        (
+            [
+                a
+                + b
+                + c
+                + d
+                + "".join(
+                    {"0": "0", "1": "1", "6": "9", "8": "8", "9": "6"}[x]
+                    for x in (d, c, b, a)
+                )
+                for a in "01689"
+                for b in "01689"
+                for c in "01689"
+                for d in "01689"
+            ],
+            "rotator",
+            625,
+        ),
+    ],
+)
+def test_the_documented_counts_hold_where_they_can_be_listed(
+    serials: list[str], code: str, count: int
+) -> None:
+    assert sum(code in analyze(f"A{s}A") for s in serials) == count
+
+
 def test_a_star_is_not_a_fancy_serial() -> None:
     """Two different questions on a grading form, and two different suffixes.
 
@@ -585,7 +671,7 @@ def test_a_new_note_s_description_names_the_designations_its_save_derived(
         db.autoflush = True
     assert made.status_code == 201, made.text
 
-    assert "Star Note, Radar" in made.json()["description"]
+    assert "Radar, Star Note" in made.json()["description"]
 
 
 def test_a_labeled_note_given_a_radar_serial_is_marked_stale(

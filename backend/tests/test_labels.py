@@ -197,7 +197,7 @@ def test_note_lines(db: Session, make_item: ItemFactory) -> None:
         name,
         # vocabulary order; CAC (verification group), Fancy Serial and Gift
         # (customers read labels; how it was bought is not theirs) are left out
-        " · ".join(labels[c] for c in ("star", "partial_ladder", "wide")),
+        " · ".join(labels[c] for c in ("partial_ladder", "star", "wide")),
         " · ".join(e.label for e in errors),
     ]
     assert label_text(label_lines(db, item)).count("\n") == 3

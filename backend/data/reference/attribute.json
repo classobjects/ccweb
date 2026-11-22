@@ -27,63 +27,63 @@
       "label": "Star Note",
       "applies_to": "currency",
       "attribute_group": "serial",
-      "sort_order": 10
+      "sort_order": 58
     },
     {
       "code": "fancy_serial",
       "label": "Fancy Serial",
       "applies_to": "currency",
       "attribute_group": "serial",
-      "sort_order": 20
+      "sort_order": 54
     },
     {
       "code": "consecutive",
       "label": "Consecutive",
       "applies_to": "currency",
       "attribute_group": "serial",
-      "sort_order": 30
+      "sort_order": 60
     },
     {
       "code": "low_serial",
       "label": "Low Serial Number",
       "applies_to": "currency",
       "attribute_group": "serial",
-      "sort_order": 40
+      "sort_order": 26
     },
     {
       "code": "solid_serial",
       "label": "Solid Serial Number",
       "applies_to": "currency",
       "attribute_group": "serial",
-      "sort_order": 50
+      "sort_order": 10
     },
     {
       "code": "radar",
       "label": "Radar Serial",
       "applies_to": "currency",
       "attribute_group": "serial",
-      "sort_order": 60
+      "sort_order": 28
     },
     {
       "code": "repeater",
       "label": "Repeater Serial",
       "applies_to": "currency",
       "attribute_group": "serial",
-      "sort_order": 70
+      "sort_order": 30
     },
     {
       "code": "binary",
       "label": "Binary Serial",
       "applies_to": "currency",
       "attribute_group": "serial",
-      "sort_order": 80
+      "sort_order": 32
     },
     {
       "code": "birthday",
       "label": "Birthday Serial",
       "applies_to": "currency",
       "attribute_group": "serial",
-      "sort_order": 90
+      "sort_order": 38
     },
     {
       "code": "error",
@@ -111,21 +111,21 @@
       "label": "Ladder Serial",
       "applies_to": "currency",
       "attribute_group": "serial",
-      "sort_order": 120
+      "sort_order": 12
     },
     {
       "code": "scattered_ladder",
       "label": "Scattered Ladder",
       "applies_to": "currency",
       "attribute_group": "serial",
-      "sort_order": 121
+      "sort_order": 48
     },
     {
       "code": "partial_ladder",
       "label": "Partial Ladder",
       "applies_to": "currency",
       "attribute_group": "serial",
-      "sort_order": 122
+      "sort_order": 40
     },
     {
       "code": "specimen",
@@ -146,98 +146,98 @@
       "label": "Trinary Serial",
       "applies_to": "currency",
       "attribute_group": "serial",
-      "sort_order": 150
+      "sort_order": 52
     },
     {
       "code": "double_quad",
       "label": "Double Quad Serial",
       "applies_to": "currency",
       "attribute_group": "serial",
-      "sort_order": 160
+      "sort_order": 14
     },
     {
       "code": "high_serial",
       "label": "High Serial Number",
       "applies_to": "currency",
       "attribute_group": "serial",
-      "sort_order": 170
+      "sort_order": 56
     },
     {
       "code": "quad",
       "label": "Quad",
       "applies_to": "currency",
       "attribute_group": "serial",
-      "sort_order": 180
+      "sort_order": 50
     },
     {
       "code": "5_in_a_row",
       "label": "5 in a row",
       "applies_to": "currency",
       "attribute_group": "serial",
-      "sort_order": 181
+      "sort_order": 36
     },
     {
       "code": "6_in_a_row",
       "label": "6 in a row",
       "applies_to": "currency",
       "attribute_group": "serial",
-      "sort_order": 182
+      "sort_order": 24
     },
     {
       "code": "7_in_a_row",
       "label": "7 in a row",
       "applies_to": "currency",
       "attribute_group": "serial",
-      "sort_order": 183
+      "sort_order": 20
     },
     {
       "code": "5_of_a_kind",
       "label": "5 of a Kind",
       "applies_to": "currency",
       "attribute_group": "serial",
-      "sort_order": 184
+      "sort_order": 44
     },
     {
       "code": "6_of_a_kind",
       "label": "6 of a Kind",
       "applies_to": "currency",
       "attribute_group": "serial",
-      "sort_order": 185
+      "sort_order": 34
     },
     {
       "code": "super_radar",
       "label": "Super Radar Serial",
       "applies_to": "currency",
       "attribute_group": "serial",
-      "sort_order": 186
+      "sort_order": 16
     },
     {
       "code": "super_repeater",
       "label": "Super Repeater Serial",
       "applies_to": "currency",
       "attribute_group": "serial",
-      "sort_order": 187
+      "sort_order": 18
     },
     {
       "code": "bookends",
       "label": "Bookends",
       "applies_to": "currency",
       "attribute_group": "serial",
-      "sort_order": 188
+      "sort_order": 42
     },
     {
       "code": "flipper",
       "label": "Flipper",
       "applies_to": "currency",
       "attribute_group": "serial",
-      "sort_order": 189
+      "sort_order": 46
     },
     {
       "code": "rotator",
       "label": "Rotator Serial",
       "applies_to": "currency",
       "attribute_group": "serial",
-      "sort_order": 190
+      "sort_order": 22
     },
     {
       "code": "no_motto",
