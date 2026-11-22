@@ -3164,6 +3164,31 @@ class LabelSheetOut(BaseModel):
     cells: int
 
 
+#: A printer correction's percent, as a test page reads it.
+_CorrectionPercent = Annotated[
+    Decimal, Field(ge=90, le=110, max_digits=4, decimal_places=1)
+]
+
+
+class LabelCorrectionIn(BaseModel):
+    """How large the printer prints a page of labels, percent each way.
+
+    90 to 110, one decimal place; 100 both ways is none.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    across: _CorrectionPercent
+    down: _CorrectionPercent
+
+
+class LabelCorrectionOut(BaseModel):
+    """The installation's printer correction; 100 both ways when none is set."""
+
+    across: Decimal
+    down: Decimal
+
+
 class LabelOut(BaseModel):
     """One item's label: its lines, empty ones left out."""
 

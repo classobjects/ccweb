@@ -2,38 +2,55 @@
 // Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
 // SPDX-License-Identifier: Apache-2.0
 /**
- * The printer correction, kept in this browser (holder-labels-design.md,
- * section 4, "Printer correction").
+ * Saving the printer correction (holder-labels-design.md, section 4,
+ * "Printer correction").
  *
- * The shrink it undoes belongs to the printer driver of the computer that
- * prints, so each browser keeps its own, under `CORRECTION_KEY`. With no
- * storage, or nothing stored, it is 100% both ways.
+ * The correction is one for the installation, kept on the server, and the
+ * boxes save as they are typed in: 97.5 is sent as 9, 97, 97. and 97.5.
+ * Sent all at once, the answers could land in any order and leave 97
+ * stored. So a saver sends one at a time, and of the values typed while a
+ * save is out, only the newest: what is stored is always the last typed.
  */
-import { NO_CORRECTION, normalCorrection } from './layout'
+import { normalCorrection } from './layout'
 
-export const CORRECTION_KEY = 'ccwebdb.labelPrinterCorrection'
+const same = (a, b) => a.across === b.across && a.down === b.down
 
-/** The correction this browser last saved. */
-export function storedCorrection() {
-  try {
-    const saved = window.localStorage.getItem(CORRECTION_KEY)
-    return saved ? normalCorrection(JSON.parse(saved)) : NO_CORRECTION
-  } catch {
-    return NO_CORRECTION
-  }
-}
+/**
+ * A saver: `save(correction)` keeps it with `send`, one request at a time.
+ *
+ * `saved` is the correction already stored; saving it again sends nothing,
+ * nor does one equal to the value last sent. After each request `report`
+ * is called with '' or the failure's message. `save` returns a promise
+ * settled once every value handed to it so far has been sent.
+ */
+export function correctionSaver(send, report, saved) {
+  let last = saved ? normalCorrection(saved) : null
+  let waiting = null
+  let running = null
 
-/** Keep `correction` in this browser; 100% both ways keeps nothing. */
-export function saveCorrection(correction) {
-  const kept = normalCorrection(correction)
-  try {
-    if (kept.across === 100 && kept.down === 100) {
-      window.localStorage.removeItem(CORRECTION_KEY)
-    } else {
-      window.localStorage.setItem(CORRECTION_KEY, JSON.stringify(kept))
+  async function drain() {
+    while (waiting) {
+      const value = waiting
+      waiting = null
+      try {
+        await send(value)
+        report('')
+      } catch (err) {
+        // Sent again by the next change, even if it is this value.
+        last = null
+        report(err?.message ?? String(err))
+      }
     }
-  } catch {
-    // No storage: the correction holds until the page is left.
+    running = null
   }
-  return kept
+
+  return function save(correction) {
+    const kept = normalCorrection(correction)
+    if (!(last && same(last, kept))) {
+      last = kept
+      waiting = kept
+      running ??= drain()
+    }
+    return running ?? Promise.resolve()
+  }
 }

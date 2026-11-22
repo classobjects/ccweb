@@ -19,12 +19,17 @@ two runs, each in item-number order.
 applied or returned write through `labels.write_quietly`: the item's version and
 last-changed time stay as they were, so a form open on the item still
 saves.
+
+**The printer correction** is one for the installation
+(`LabelPrinterCorrection`): read and set here, applied by the console as
+it lays the labels out.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime
+from decimal import Decimal
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, Response, status
@@ -43,9 +48,11 @@ from ..labels import (
     sheet_for,
     write_quietly,
 )
-from ..models import InventoryItem, utcnow
+from ..models import InventoryItem, LabelPrinterCorrection, utcnow
 from ..schemas import (
     LabelBatchClearedOut,
+    LabelCorrectionIn,
+    LabelCorrectionOut,
     LabelItemsIn,
     LabelOut,
     LabelRunOut,
@@ -110,6 +117,44 @@ def list_sheets(_admin: AdminUser) -> list[LabelSheetOut]:
         )
         for s in SHEETS.values()
     ]
+
+
+#: No correction: the page prints at its own size.
+_NO_CORRECTION = Decimal(100)
+
+
+@router.get("/correction")
+def read_correction(db: DbSession, _admin: AdminUser) -> LabelCorrectionOut:
+    """The installation's printer correction; 100% both ways when none is set."""
+    row = db.get(LabelPrinterCorrection, 1)
+    if row is None:
+        return LabelCorrectionOut(across=_NO_CORRECTION, down=_NO_CORRECTION)
+    return LabelCorrectionOut(across=row.across, down=row.down)
+
+
+@router.put("/correction")
+def set_correction(
+    db: DbSession, _admin: AdminUser, payload: LabelCorrectionIn
+) -> LabelCorrectionOut:
+    """Set the installation's printer correction; 100% both ways clears it.
+
+    The last write wins: the correction is the printer's, not anyone's
+    edit, so there is no version to conflict on.
+    """
+    row = db.get(LabelPrinterCorrection, 1)
+    none = payload.across == _NO_CORRECTION and payload.down == _NO_CORRECTION
+    with committing(db, _STALE):
+        if none:
+            if row is not None:
+                db.delete(row)
+        elif row is None:
+            db.add(
+                LabelPrinterCorrection(id=1, across=payload.across, down=payload.down)
+            )
+        else:
+            row.across = payload.across
+            row.down = payload.down
+    return LabelCorrectionOut(across=payload.across, down=payload.down)
 
 
 @router.get("/run")

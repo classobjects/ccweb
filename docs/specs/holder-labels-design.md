@@ -474,9 +474,18 @@ larger by the inverse about the page's center (`correctedBox` in
 `labels/layout.js`): a cell at x is placed at 4.25 + (x - 4.25) / s and
 its width at w / s, and likewise down about 5.5, so the printer's shrink
 lands it on its label. Text keeps its size; the printer's shrink takes it
-a few percent smaller. The correction is kept in the browser's local
-storage (`labels/printerCorrection.js`), because the shrink belongs to the
-printing computer's driver.
+a few percent smaller. A printer that prints large takes more than 100,
+and every cell is laid out smaller the same way.
+
+The correction is one for the installation, in the one-row table
+`label_printer_correction` (no row is 100% both ways), read with `GET
+/api/labels/correction` and set with `PUT` (90 to 110, one decimal place;
+100 both ways deletes the row). One is enough: the labels are printed on
+one printer. The boxes save as they are typed, through `correctionSaver`
+(`labels/printerCorrection.js`), which sends one request at a time and only
+the newest value typed meanwhile, so the stored value is the last one
+typed whatever order answers come back in. Until it has loaded, the boxes
+wait; if it cannot be read, labels print at 100% and the page says so.
 
 ### Applying
 

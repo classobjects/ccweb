@@ -1441,8 +1441,9 @@ export const FIELD_HELP = {
       'print a test page, measure its grid, and enter measured ÷ intended × 100 ' +
       '(an SL564 grid measured 10.375 in tall of 10.625 is 97.6). Labels and ' +
       'test pages are then laid out that much larger, about the middle of the ' +
-      'page, so the printer brings them back to size. 100 is no correction; ' +
-      '90 to 110 are taken. Kept in this browser only.',
+      'page, so the printer brings them back to size; a printer that prints ' +
+      'large takes more than 100. 100 is no correction; 90 to 110 are taken. ' +
+      'Saved as you type, for every computer that prints.',
   },
   label_item_number: {
     title: 'Item number',

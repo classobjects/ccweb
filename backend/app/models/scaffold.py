@@ -1,24 +1,38 @@
 # (c) Copyright 2026 Nathaniel Mills
 # Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
 # SPDX-License-Identifier: Apache-2.0
-"""The user account table.
+"""The user account table, and the installation's printer correction.
 
 `users` is the login table the whole application uses. The schema references
 it from `customer`, `sales_order`, both type catalogs and every table that
 records who did something.
+
+`label_printer_correction` is one row, or none: how large the installation's
+printer prints a page of holder labels.
 """
 
 from __future__ import annotations
 
 import enum
 from datetime import datetime
+from decimal import Decimal
 
-from sqlalchemy import Boolean, DateTime, Index, Integer, String, text
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    Index,
+    Integer,
+    Numeric,
+    SmallInteger,
+    String,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .base import Base, enum_column, utcnow
 
-__all__ = ["Theme", "User", "UserRole"]
+__all__ = ["LabelPrinterCorrection", "Theme", "User", "UserRole"]
 
 
 class UserRole(enum.StrEnum):
@@ -79,3 +93,35 @@ class User(Base):
     )
 
     __table_args__ = (Index("uq_users_email", text("lower(email::text)"), unique=True),)
+
+
+class LabelPrinterCorrection(Base):
+    """How large the installation's printer prints a page of holder labels.
+
+    holder-labels-design.md, section 4, "Printer correction". Percent across
+    and down, as read off a test page; every label is laid out larger (or
+    smaller) by the inverse, so it lands on its label. One for the whole
+    installation, whoever prints: `id` is always 1. No row is 100% both
+    ways.
+    """
+
+    __tablename__ = "label_printer_correction"
+
+    id: Mapped[int] = mapped_column(
+        SmallInteger, primary_key=True, autoincrement=False, default=1
+    )
+    across: Mapped[Decimal] = mapped_column(Numeric(4, 1), nullable=False)
+    down: Mapped[Decimal] = mapped_column(Numeric(4, 1), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
+    )
+
+    __table_args__ = (
+        CheckConstraint("id = 1", name="ck_label_printer_correction_one_row"),
+        CheckConstraint(
+            "across BETWEEN 90 AND 110", name="ck_label_printer_correction_across"
+        ),
+        CheckConstraint(
+            "down BETWEEN 90 AND 110", name="ck_label_printer_correction_down"
+        ),
+    )

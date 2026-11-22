@@ -20,7 +20,7 @@ Layout follows `docs/database-design.md`:
     sales           listings, customers, orders, shipments (section 9)
     auctions        consigning lots to a sale, and settling it (section 9)
     views           the four database views (section 10); not imported here
-    scaffold        the users table (section 13)
+    scaffold        the users table and the printer correction (section 13)
 """
 
 from __future__ import annotations
@@ -135,7 +135,7 @@ from .sales import (
     SalesVenue,
     Shipment,
 )
-from .scaffold import Theme, User, UserRole
+from .scaffold import LabelPrinterCorrection, Theme, User, UserRole
 from .valuation import Composition, MetalPrice, ValuationSnapshot
 
 #: Reference tables, in dependency order. Seeding, export **and the reference
@@ -233,6 +233,7 @@ __all__ = [
     "ItemKind",
     "ItemStatus",
     "ItemStatusHistory",
+    "LabelPrinterCorrection",
     "Listing",
     "ListingFormat",
     "ListingImage",

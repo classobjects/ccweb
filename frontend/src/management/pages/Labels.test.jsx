@@ -10,6 +10,8 @@ vi.mock('../api', () => ({
     labelSheets: vi.fn(),
     labelRun: vi.fn(),
     labelBatch: vi.fn(),
+    labelCorrection: vi.fn(),
+    saveLabelCorrection: vi.fn(),
     addToLabelBatch: vi.fn(),
     removeFromLabelBatch: vi.fn(),
     clearLabelBatch: vi.fn(),
@@ -60,8 +62,11 @@ function open({
   run = BATCH_RUN,
   batch = [COIN, COIN_2, NOTE],
   waiting = WAITING,
+  correction = { across: '100.0', down: '100.0' },
 } = {}) {
   api.labelSheets.mockResolvedValue([SL597, SL564])
+  api.labelCorrection.mockResolvedValue(correction)
+  api.saveLabelCorrection.mockResolvedValue(correction)
   api.labelsWaiting.mockResolvedValue(waiting)
   api.labelRun.mockResolvedValue(run)
   api.labelBatch.mockResolvedValue(batch)
@@ -257,11 +262,10 @@ describe('Labels', () => {
     expect(document.querySelectorAll('.label-print .label-cell')).toHaveLength(160)
   })
 
-  it('prints with the printer correction typed, and keeps it in this browser', async () => {
-    window.localStorage.clear()
+  it('prints with the printer correction typed, and saves it', async () => {
     const user = open({ run: { runs: [], skipped: [] }, batch: [] })
     const tests = await screen.findByRole('region', { name: 'Test pages' })
-    const across = within(tests).getByRole('spinbutton', { name: /across/ })
+    const across = await within(tests).findByRole('spinbutton', { name: /across/ })
     const down = within(tests).getByRole('spinbutton', { name: /down/ })
     expect(across).toHaveValue(100)
     await user.clear(across)
@@ -275,10 +279,43 @@ describe('Labels', () => {
     expect(Number.parseFloat(first.style.left)).toBeCloseTo(4.25 - 4 / 0.97, 4)
     expect(Number.parseFloat(first.style.top)).toBeCloseTo(5.5 - 5.312 / 0.975, 4)
     afterPrint()
+    await waitFor(() =>
+      expect(api.saveLabelCorrection).toHaveBeenLastCalledWith({
+        across: 97,
+        down: 97.5,
+      }),
+    )
+  })
+
+  it("prints with the installation's correction, untyped", async () => {
+    const user = open({
+      run: { runs: [], skipped: [] },
+      batch: [],
+      correction: { across: '97.5', down: '97.5' },
+    })
+    const tests = await screen.findByRole('region', { name: 'Test pages' })
+    const across = await within(tests).findByRole('spinbutton', { name: /across/ })
+    expect(across).toHaveValue(97.5)
+    await user.click(
+      within(tests).getByRole('button', { name: 'Test page: Note and set, SL564' }),
+    )
+    const first = document.querySelector('.label-print .label-cell')
+    expect(Number.parseFloat(first.style.top)).toBeCloseTo(5.5 - 5.312 / 0.975, 4)
+    expect(api.saveLabelCorrection).not.toHaveBeenCalled()
+  })
+
+  it('says so when the correction cannot be saved', async () => {
+    const user = open({ run: { runs: [], skipped: [] }, batch: [] })
+    api.saveLabelCorrection.mockRejectedValue(new Error('Server unavailable'))
+    const tests = await screen.findByRole('region', { name: 'Test pages' })
+    const across = await within(tests).findByRole('spinbutton', { name: /across/ })
+    await user.clear(across)
+    await user.type(across, '98')
     expect(
-      JSON.parse(window.localStorage.getItem('ccwebdb.labelPrinterCorrection')),
-    ).toEqual({ across: 97, down: 97.5 })
-    window.localStorage.clear()
+      await within(tests).findByText(
+        'The printer correction could not be saved: Server unavailable',
+      ),
+    ).toBeInTheDocument()
   })
 
   it('lists the batch, and Remove takes an item out', async () => {

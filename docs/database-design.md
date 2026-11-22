@@ -37,7 +37,7 @@ The sections follow the life of an item:
 | 10 | **Views** and the public boundary | `coin_inventory`, `currency_inventory`, `item_valuation`, `public_catalog` |
 | 11 | Conventions, constraints, indexes, locking, migrations | |
 | 12 | Shipped reference data | `backend/data/reference/*.json` |
-| 13 | **Logins** | `users` |
+| 13 | **Logins** and settings | `users`, `label_printer_correction` |
 
 Reports (`app.reports`) have no tables of their own; they read these.
 
@@ -1289,7 +1289,7 @@ Seed files hold facts only, never a catalog publisher's numbering or prices
 
 ---
 
-## 13. Users
+## 13. Users and settings
 
 `users` is the login table (`models/scaffold.py`). Its columns:
 
@@ -1308,6 +1308,12 @@ change, so a reset revokes every token issued before it.
 The table is referenced by `customer.user_id` and by the audit columns on
 history, catalog, error, attribute, merge and order rows, all `ON DELETE
 SET NULL`.
+
+`label_printer_correction` (`models/scaffold.py`) is the installation's
+printer correction for holder labels: one row at most (`id` = 1,
+`ck_label_printer_correction_one_row`), with `across` and `down` percents,
+numeric(4,1) between 90 and 110, and `updated_at`. No row is 100% both
+ways (`docs/specs/holder-labels-design.md`, section 4).
 
 ---
 

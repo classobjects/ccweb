@@ -12,8 +12,8 @@ import { useRequest } from '../../shared/useRequest'
 import LabelSheets from './labels/LabelSheets'
 import SheetPicker from './labels/SheetPicker'
 import ToApply from './labels/ToApply'
-import { CORRECTION_RANGE, keyedLines } from './labels/layout'
-import { saveCorrection, storedCorrection } from './labels/printerCorrection'
+import { CORRECTION_RANGE, keyedLines, normalCorrection } from './labels/layout'
+import { correctionSaver } from './labels/printerCorrection'
 import './labels/labels.css'
 
 //: What a run is drawn from (`LabelSource`), as the page offers it.
@@ -184,10 +184,10 @@ function PrintBatch({ batch, onChanged }) {
 }
 
 /**
- * The printer correction: how large this computer's printer prints the
- * page, percent across and down, read off a test page. Each change is kept
- * in this browser at once (`saveCorrection`); a value outside 90 to 110, or
- * a box left empty, prints at 100%.
+ * The printer correction: how large the printer prints the page, percent
+ * across and down, read off a test page. Each change applies at once and is
+ * handed to `onChange` to keep for the installation; a value outside 90 to
+ * 110, or a box left empty, prints at 100%.
  */
 function PrinterCorrection({ correction, onChange }) {
   const [typed, setTyped] = useState({
@@ -198,7 +198,7 @@ function PrinterCorrection({ correction, onChange }) {
   function change(axis, value) {
     const next = { ...typed, [axis]: value }
     setTyped(next)
-    onChange(saveCorrection(next))
+    onChange(normalCorrection(next))
   }
 
   const ignored = ['across', 'down'].filter(
@@ -266,8 +266,10 @@ function PrinterCorrection({ correction, onChange }) {
  * asks nothing. **Test pages** print that outline for either sheet with no
  * labels on it, so the printer's placement can be checked with nothing
  * chosen to print. Its **printer correction** undoes a printer that prints
- * the page a little small: every label and test page is laid out larger by
- * it (`PrinterCorrection`, `correctedBox`).
+ * the page a little small (or large): every label and test page is laid out
+ * larger (or smaller) by it (`PrinterCorrection`, `correctedBox`). It is one
+ * for the installation, read from the server and saved back as it is typed
+ * (`correctionSaver`); until it has loaded, its boxes wait.
  */
 export default function Labels() {
   const [source, setSource] = useState('batch')
@@ -279,7 +281,10 @@ export default function Labels() {
   const [recording, setRecording] = useState(false)
   const [askError, setAskError] = useState('')
   const [said, setSaid] = useState('')
-  const [correction, setCorrection] = useState(storedCorrection)
+  // The correction typed here, once there is one; until then, the server's.
+  const [chosen, setChosen] = useState(null)
+  const [correctionError, setCorrectionError] = useState('')
+  const saveCorrection = useRef(null)
   // The print request already handed to the browser: an effect run again
   // for the same one (StrictMode's setup, cleanup, setup) prints it once.
   const printed = useRef(null)
@@ -288,8 +293,20 @@ export default function Labels() {
   const run = useRequest(source, () => api.labelRun(source))
   const batch = useRequest('label-batch', () => api.labelBatch())
   const waiting = useRequest('labels-waiting', () => api.labelsWaiting())
+  const stored = useRequest('label-correction', () => api.labelCorrection())
+  const correction = chosen ?? normalCorrection(stored.data)
   const answer = run.busy ? null : run.data
   const sheetByCode = Object.fromEntries((sheets.data ?? []).map((s) => [s.code, s]))
+
+  function chooseCorrection(next) {
+    setChosen(next)
+    saveCorrection.current ??= correctionSaver(
+      (value) => api.saveLabelCorrection(value),
+      setCorrectionError,
+      stored.data,
+    )
+    saveCorrection.current(next)
+  }
 
   useEffect(() => {
     if (!printing) return undefined
@@ -437,9 +454,25 @@ export default function Labels() {
             measure the printed grid and enter what the printer printed, measured ÷
             intended × 100. The SL564 grid is 8.000 in across and 10.625 in from the top
             of the first row to the bottom of the last. Every label and test page is
-            then laid out that much larger. Kept in this browser.
+            then laid out that much larger. One for the installation: every computer
+            prints with it.
           </p>
-          <PrinterCorrection correction={correction} onChange={setCorrection} />
+          {stored.busy ? (
+            <p className="muted">Loading the printer correction...</p>
+          ) : (
+            <PrinterCorrection correction={correction} onChange={chooseCorrection} />
+          )}
+          {stored.error && (
+            <p className="error">
+              The printer correction could not be read ({stored.error}): printing at
+              100% until it is.
+            </p>
+          )}
+          {correctionError && (
+            <p className="error">
+              The printer correction could not be saved: {correctionError}
+            </p>
+          )}
           <div className="label-run-actions">
             {sheets.data.map((sheet) => (
               <button key={sheet.code} type="button" onClick={() => printTest(sheet)}>

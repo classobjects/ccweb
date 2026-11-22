@@ -9,6 +9,7 @@ holder-labels spec, section 4, "Printing" and "Knowing what is labeled".
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 
 import pytest
 from app.labels import label_lines, label_text, printed_number
@@ -19,6 +20,7 @@ from app.models import (
     ErrorType,
     GradingService,
     InventoryItem,
+    LabelPrinterCorrection,
     Metal,
     Mint,
     NoteType,
@@ -28,6 +30,7 @@ from app.models.reference import Disposition
 from fastapi.testclient import TestClient
 from sqlalchemy import event, select
 from sqlalchemy.engine import Connection
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from tests.builders import ItemFactory, code_id, patch_current
@@ -164,6 +167,86 @@ def test_a_customer_cannot_read_labels(
     printed = {"labels": [{"item_id": item.id, "lines": ["x"]}], "source": "batch"}
     assert client.post(f"{_API}/printed", json=printed, headers=h).status_code == 403
     assert client.get(f"{_API}/sheets").status_code == 401
+
+
+# --- printer correction -----------------------------------------------------
+
+
+def test_no_correction_set_is_100_both_ways(
+    client: TestClient, admin_headers: dict[str, str]
+) -> None:
+    got = client.get(f"{_API}/correction", headers=admin_headers)
+    assert got.status_code == 200, got.text
+    assert {k: float(v) for k, v in got.json().items()} == {
+        "across": 100.0,
+        "down": 100.0,
+    }
+
+
+def test_the_correction_is_kept_for_every_session(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    body = {"across": "97.5", "down": "97.4"}
+    put = client.put(f"{_API}/correction", json=body, headers=admin_headers)
+    assert put.status_code == 200, put.text
+    again = {"across": "97.5", "down": "97.6"}
+    put = client.put(f"{_API}/correction", json=again, headers=admin_headers)
+    assert put.status_code == 200, put.text
+    got = client.get(f"{_API}/correction", headers=admin_headers).json()
+    assert (float(got["across"]), float(got["down"])) == (97.5, 97.6)
+    db.expire_all()
+    rows = db.scalars(select(LabelPrinterCorrection)).all()
+    assert [(r.id, float(r.across), float(r.down)) for r in rows] == [(1, 97.5, 97.6)]
+
+
+def test_100_both_ways_clears_the_correction(
+    client: TestClient, admin_headers: dict[str, str], db: Session
+) -> None:
+    h = admin_headers
+    client.put(f"{_API}/correction", json={"across": 98, "down": 98}, headers=h)
+    put = client.put(f"{_API}/correction", json={"across": 100, "down": 100}, headers=h)
+    assert put.status_code == 200, put.text
+    db.expire_all()
+    assert db.scalars(select(LabelPrinterCorrection)).all() == []
+    got = client.get(f"{_API}/correction", headers=h).json()
+    assert (float(got["across"]), float(got["down"])) == (100.0, 100.0)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"across": 89.9, "down": 100},
+        {"across": 100, "down": 110.1},
+        {"across": "97.55", "down": 100},
+        {"across": 97.5},
+        {"across": 97.5, "down": 97.5, "who": "me"},
+    ],
+)
+def test_a_correction_out_of_range_or_too_fine_is_refused(
+    client: TestClient, admin_headers: dict[str, str], body: dict[str, object]
+) -> None:
+    put = client.put(f"{_API}/correction", json=body, headers=admin_headers)
+    assert put.status_code == 422, put.text
+
+
+def test_the_database_refuses_a_second_row_or_one_out_of_range(db: Session) -> None:
+    for row in (
+        LabelPrinterCorrection(id=2, across=Decimal(98), down=Decimal(98)),
+        LabelPrinterCorrection(id=1, across=Decimal(111), down=Decimal(98)),
+    ):
+        db.add(row)
+        with pytest.raises(IntegrityError):
+            db.flush()
+        db.rollback()
+
+
+def test_a_customer_cannot_read_or_set_the_correction(
+    client: TestClient, customer_headers: dict[str, str]
+) -> None:
+    h = customer_headers
+    assert client.get(f"{_API}/correction", headers=h).status_code == 403
+    body = {"across": 98, "down": 98}
+    assert client.put(f"{_API}/correction", json=body, headers=h).status_code == 403
 
 
 # --- runs -------------------------------------------------------------------

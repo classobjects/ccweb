@@ -1307,7 +1307,9 @@ each label's edge, so a small drift stays on the label.
 **Printer correction.** Some printers fit the whole Letter page into the
 part they can print, even at 100% with scaling off, so every page comes out
 a few percent small about its middle: the top row lands low and the bottom
-row high, by the same amount. On a test page, measure the grid with a
+row high, by the same amount. This is common on inkjets; most laser
+printers print true to size, and one that prints large is corrected the
+same way, above 100. On a test page, measure the grid with a
 ruler and enter what the printer printed under *Test pages*, **Prints at
 __% across and __% down**:
 
@@ -1317,8 +1319,9 @@ __% across and __% down**:
 
 Labels and test pages are then laid out that much larger, about the middle
 of the page, and the printer's shrink brings them back. Print a test page
-again to check. The correction is kept in the browser that printed, since it
-belongs to that computer's printer driver; another computer starts at 100%.
+again to check. The correction is one for the installation, kept in the
+database (`label_printer_correction`) and saved as it is typed: every
+computer and browser prints with it, so one printer does the labels.
 
 **What printed.** When the print dialog closes, the page asks whether the
 labels printed correctly.

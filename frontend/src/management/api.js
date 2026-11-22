@@ -433,6 +433,12 @@ export const api = {
   // batch items no longer labelable in `skipped`.
   labelRun: (source) => send(withQuery('/api/labels/run', { source })),
   labelBatch: () => send('/api/labels/batch'),
+  // The installation's printer correction, `{across, down}` in percent
+  // (Decimals as strings); 100 both ways when none is set.
+  labelCorrection: () => send('/api/labels/correction'),
+  // 90 to 110, one decimal place; 100 both ways clears it.
+  saveLabelCorrection: (correction) =>
+    send('/api/labels/correction', { method: 'PUT', body: correction }),
   // Every labelable item an inventory search matches, on every page, into the
   // batch; `filters` are the search's own. `{matched, added, already,
   // not_labelable}`.
