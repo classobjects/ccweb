@@ -14,6 +14,7 @@ import SheetPicker from './labels/SheetPicker'
 import ToApply from './labels/ToApply'
 import { CORRECTION_RANGE, keyedLines, normalCorrection } from './labels/layout'
 import { correctionSaver } from './labels/printerCorrection'
+import { sampleLabels } from './labels/sampleLabels'
 import './labels/labels.css'
 
 //: What a run is drawn from (`LabelSource`), as the page offers it.
@@ -263,9 +264,10 @@ function PrinterCorrection({ correction, onChange }) {
  * then wait in To apply (`ToApply`) until each is marked on its holder. The
  * test page
  * prints the same layout with every cell outlined, for plain paper, and
- * asks nothing. **Test pages** print that outline for either sheet with no
- * labels on it, so the printer's placement can be checked with nothing
- * chosen to print. Its **printer correction** undoes a printer that prints
+ * asks nothing. **Test pages** print that outline for either sheet with a
+ * made-up label in every cell (`sampleLabels`, numbered from 900001), so the
+ * printer's placement and the text's size can be checked, and a label
+ * scanned, with nothing chosen to print. Its **printer correction** undoes a printer that prints
  * the page a little small (or large): every label and test page is laid out
  * larger (or smaller) by it (`PrinterCorrection`, `correctedBox`). It is one
  * for the installation, read from the server and saved back as it is typed
@@ -341,10 +343,10 @@ export default function Labels() {
     })
   }
 
-  /** A blank sheet of outlined cells, whatever the run holds. */
+  /** A sheet of outlined cells, each with a sample label, whatever the run holds. */
   function printTest(sheet) {
     setSaid('')
-    setPrinting({ source, sheet, labels: [], start: 1, outline: true })
+    setPrinting({ source, sheet, labels: sampleLabels(sheet), start: 1, outline: true })
   }
 
   async function recordPrinted() {
@@ -447,7 +449,9 @@ export default function Labels() {
           <h2 id="label-tests-heading">Test pages</h2>
           <p className="muted">
             Every cell of a sheet outlined on plain paper, to hold against a sheet of
-            labels and check where the printer puts them. Nothing is recorded.
+            labels and check where the printer puts them. Each cell holds a sample
+            label, numbered from 900001 (no such item), to show the size of the text.
+            Nothing is recorded.
           </p>
           <p className="muted">
             If the outlines come out small -- the top row low and the bottom row high --

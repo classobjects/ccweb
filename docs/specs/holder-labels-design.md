@@ -462,8 +462,13 @@ the run's source.
 A **test page** prints the same layout on plain paper, with every label's
 outline. It is held against a sheet to check alignment before using labels.
 Each run has one, carrying its labels; the page's *Test pages* section
-prints a blank outlined sheet of either product with nothing chosen to
-print. Neither asks anything afterwards.
+prints an outlined sheet of either product with nothing chosen to print,
+every cell holding a made-up label in that sheet's real layout
+(`labels/sampleLabels.js`): a coin's number, year and mint, metal; a note's
+number with Fr and Coolness, what it is, attributes, an error. The samples
+are numbered from 900001, far above any item, so a test page shows the
+text's size and gives a label to scan without naming a real item. Neither
+asks anything afterwards.
 
 **Printer correction.** A printer that fits the Letter page into its
 printable area prints it a few percent small, centered: a test page then

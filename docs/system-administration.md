@@ -1300,7 +1300,9 @@ product is a new entry there.
 to drift, print a test page on plain paper: **Test page: Coin, SL597** or
 **Test page: Note and set, SL564** under *Test pages*, which needs nothing
 chosen to print, or a run's own **Print a test page**. It is the same layout
-with every cell's outline. Hold it against a sheet of labels, up to the
+with every cell's outline. Under *Test pages* each cell also holds a sample
+label numbered from 900001 (no real item has such a number), showing how
+large the text prints. Hold it against a sheet of labels, up to the
 light: the outlines should sit on the labels' edges. Text keeps 0.06" inside
 each label's edge, so a small drift stays on the label.
 

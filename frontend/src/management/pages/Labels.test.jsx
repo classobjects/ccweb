@@ -240,7 +240,7 @@ describe('Labels', () => {
     expect(document.querySelector('.label-print')).toBeNull()
   })
 
-  it('prints a blank test page of either sheet with nothing to print', async () => {
+  it('prints a test page of sample labels for either sheet with nothing to print', async () => {
     const user = open({ run: { runs: [], skipped: [] }, batch: [] })
     const tests = await screen.findByRole('region', { name: 'Test pages' })
     await user.click(
@@ -251,7 +251,12 @@ describe('Labels', () => {
     expect(pages).toHaveLength(1)
     expect(pages[0]).toHaveClass('label-sheet-SL564', 'outlined')
     expect(document.querySelectorAll('.label-print .label-cell')).toHaveLength(102)
-    expect(document.querySelectorAll('.label-print .label')).toHaveLength(0)
+    const samples = document.querySelectorAll('.label-print .label')
+    expect(samples).toHaveLength(102)
+    expect(samples[0].querySelector('.label-line')).toHaveTextContent(
+      '900001 Fr 1621* Cool 72.5%',
+    )
+    expect(samples[101].querySelector('.label-line')).toHaveTextContent(/^900102 /)
     afterPrint()
     expect(screen.queryByRole('dialog')).toBeNull()
     expect(document.querySelector('.label-print')).toBeNull()
@@ -260,6 +265,11 @@ describe('Labels', () => {
       within(tests).getByRole('button', { name: 'Test page: Coin, SL597' }),
     )
     expect(document.querySelectorAll('.label-print .label-cell')).toHaveLength(160)
+    const coins = document.querySelectorAll('.label-print .label')
+    expect(coins).toHaveLength(160)
+    expect(
+      [...coins[159].querySelectorAll('.label-line')].map((l) => l.textContent),
+    ).toEqual(['900160', '1964 D', '40% Silver'])
   })
 
   it('prints with the printer correction typed, and saves it', async () => {
