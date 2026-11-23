@@ -37,7 +37,14 @@ of a split item).
 **Reading.** The page starts the camera only when **Start the camera** is
 pressed (the browser asks permission then) and shows its picture with a
 guide box: a wide strip across the middle (`GUIDE` in
-`scan/cameraFrame.js`). Every frame, the strip is enlarged to at least
+`scan/cameraFrame.js`). The picture is shown whole, its shape kept, no
+taller than 45% of the screen and no wider than the screen or 720px
+(`scan.css`): a phone held upright sends a tall picture, which at full
+width would put the box below the fold. Starting the camera scrolls the
+picture into view. The camera is asked for continuous focus and, where it
+offers one, a 2x zoom (`tuneCamera`), so a phone held beyond its closest
+focusing distance still fills the box; a camera without either reads as
+it is. Every frame, the strip is enlarged to at least
 1,400 pixels wide, turned to strong grey, and read by Tesseract
 (`scan/labelReader.js`), told to see only digits, the underscore and
 spaces. `scan/readLabel.js` takes the number: the first line that opens

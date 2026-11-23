@@ -3,7 +3,11 @@
    SPDX-License-Identifier: Apache-2.0 */
 
 /* Scan a label (label-scan-design.md): the camera's picture with its guide
-   box, at most a laptop screen's width and never wider than a phone's. */
+   box, whole on the screen. A phone held upright sends a tall picture: at
+   the screen's full width it would run far below the fold, the box out of
+   sight. So the picture is no taller than 45% of the screen and no wider
+   than the screen or 720px, its shape kept, and the stage wraps it
+   exactly, so the guide's percentages still mark the strip that is read. */
 
 .scan-actions {
   display: flex;
@@ -14,8 +18,8 @@
 
 .scan-stage {
   position: relative;
-  width: 100%;
-  max-width: 720px;
+  width: fit-content;
+  max-width: 100%;
   background: #000;
   border-radius: 6px;
   overflow: hidden;
@@ -24,10 +28,18 @@
 .scan-stage-idle {
   display: none;
 }
+/* Both sizes auto under two maxima: a video keeps its shape, shrinking to
+   whichever limit it meets first. The limits are the screen's, not the
+   stage's, which takes its width from the video. 45% of the height leaves
+   the buttons, the menu and the help band room; svh is the height with a
+   phone's browser bars showing, vh stands in where svh is not known. */
 .scan-stage video {
   display: block;
-  width: 100%;
+  width: auto;
   height: auto;
+  max-width: min(720px, calc(100vw - 2rem));
+  max-height: 45vh;
+  max-height: 45svh;
 }
 
 /* The box the label's number is held in: the strip cameraFrame.js's GUIDE

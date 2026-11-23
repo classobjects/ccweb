@@ -58,6 +58,32 @@ export function grabGuide(video, canvas) {
   return canvas
 }
 
+//: The zoom asked for where the camera has one: a phone held twice as far
+//: back, beyond its closest focusing distance, still fills the guide box
+//: with the label.
+const READ_ZOOM = 2
+
+/**
+ * Ask the camera to keep focusing, and to zoom in where it can, for type
+ * held close. Each is asked for only where the camera says it has it, and
+ * a refusal leaves the camera as it was: the page reads either way.
+ */
+export async function tuneCamera(track) {
+  const can = track.getCapabilities?.() ?? {}
+  const wanted = {}
+  if (can.focusMode?.includes('continuous')) wanted.focusMode = 'continuous'
+  if (can.zoom && can.zoom.max >= READ_ZOOM && can.zoom.min <= READ_ZOOM) {
+    wanted.zoom = READ_ZOOM
+  }
+  if (Object.keys(wanted).length === 0) return {}
+  try {
+    await track.applyConstraints({ advanced: [wanted] })
+    return wanted
+  } catch {
+    return {}
+  }
+}
+
 /** Turn the camera's light on or off, where it has one; false if it can't. */
 export async function setLight(track, on) {
   try {

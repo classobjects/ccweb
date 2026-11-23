@@ -1383,6 +1383,9 @@ then kept by the browser.
   else -- another site's record, say -- set `LABEL_LOOKUP_URL`
   ([settings.md](settings.md#the-shop-and-purchases)) and restart the API.
 - Light helps: on a phone that has one, **Light** turns on its flashlight.
+- Hold a phone a hand's width or more from the label: where the camera
+  can, the page zooms in 2x and keeps focusing, so the label still fills
+  the box from there. Closer than the camera can focus, nothing reads.
 - A test page's sample labels (900001 on) scan as numbers no item has: a
   quick check that the camera reads the type.
 

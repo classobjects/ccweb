@@ -16,6 +16,7 @@ vi.mock('./scan/cameraFrame', () => ({
   grabGuide: vi.fn(),
   hasLight: vi.fn(),
   setLight: vi.fn(),
+  tuneCamera: vi.fn(),
 }))
 
 import { api } from '../api'
@@ -56,6 +57,7 @@ function open({
   })
   camera.grabGuide.mockReturnValue({ frame: true })
   camera.hasLight.mockReturnValue(false)
+  camera.tuneCamera.mockResolvedValue({})
   let n = 0
   reader = {
     read: vi.fn(async () => frames[Math.min(n++, frames.length - 1)] ?? ''),
@@ -95,6 +97,8 @@ describe('Scan a label', () => {
     // Leaving for the item stopped the camera and the reader.
     expect(track.stop).toHaveBeenCalled()
     expect(reader.close).toHaveBeenCalled()
+    // The camera was asked to focus (and zoom) for close type.
+    expect(camera.tuneCamera).toHaveBeenCalledWith(track)
   })
 
   it('opens a coin on the coins screen, and runs under StrictMode', async () => {

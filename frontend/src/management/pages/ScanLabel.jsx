@@ -14,6 +14,7 @@ import {
   hasLight,
   openCamera,
   setLight,
+  tuneCamera,
 } from './scan/cameraFrame'
 import { startLabelReader } from './scan/labelReader'
 import {
@@ -56,6 +57,7 @@ function typedNumber(text) {
 export default function ScanLabel() {
   const navigate = useNavigate()
   const lookup = useRequest('label-lookup-url', () => api.labelLookupUrl())
+  const stage = useRef(null)
   const video = useRef(null)
   const canvas = useRef(null)
   const stream = useRef(null)
@@ -132,6 +134,9 @@ export default function ScanLabel() {
       await video.current.play()
       const [track] = stream.current.getVideoTracks()
       setLightOffered(hasLight(track))
+      await tuneCamera(track)
+      // On a phone the picture is below the buttons: bring the box into view.
+      stage.current?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' })
       setSaid('Loading the reader...')
       reader.current = await startLabelReader()
       steady.current.reset()
@@ -206,7 +211,7 @@ export default function ScanLabel() {
         )}
       </div>
 
-      <div className={`scan-stage${watching ? '' : ' scan-stage-idle'}`}>
+      <div ref={stage} className={`scan-stage${watching ? '' : ' scan-stage-idle'}`}>
         <video ref={video} playsInline muted aria-label="Camera" />
         <div className="scan-guide" aria-hidden="true" />
       </div>
