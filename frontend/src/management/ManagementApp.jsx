@@ -1,6 +1,7 @@
 // (c) Copyright 2026 Nathaniel Mills
 // Open Source licensed under Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
 // SPDX-License-Identifier: Apache-2.0
+import { useEffect } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 
 import { useAuth } from '../shared/auth-context'
@@ -28,6 +29,8 @@ import Photos from './pages/Photos'
 import Platforms from './pages/Platforms'
 import Receiving from './pages/Receiving'
 import Reports from './pages/Reports'
+import ScanLabel from './pages/ScanLabel'
+import { prefetchLabelReader } from './pages/scan/labelReader'
 import SpotPrices from './pages/SpotPrices'
 import Vocabularies from './pages/Vocabularies'
 
@@ -79,6 +82,9 @@ function ConsoleHome() {
  */
 function Console() {
   const { user, logout } = useAuth()
+  // Once a signed-in console has loaded, fetch the label reader's files
+  // while the browser is idle, so the first scan opens at once.
+  useEffect(() => prefetchLabelReader(), [])
 
   return (
     <HelpProvider>
@@ -109,6 +115,7 @@ function Console() {
             <Route path="/inventory/coins" element={<InventoryCoins />} />
             <Route path="/inventory/currency" element={<InventoryCurrency />} />
             <Route path="/labels" element={<Labels />} />
+            <Route path="/scan" element={<ScanLabel />} />
             <Route path="/photos" element={<Photos />} />
             <Route path="/order-lookup" element={<OrderLookup />} />
             <Route path="/receiving" element={<Receiving />} />

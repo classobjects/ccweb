@@ -36,6 +36,7 @@ from fastapi import APIRouter, HTTPException, Query, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ..config import settings
 from ..deps import AdminUser, DbSession
 from ..labels import (
     SHEETS,
@@ -54,6 +55,7 @@ from ..schemas import (
     LabelCorrectionIn,
     LabelCorrectionOut,
     LabelItemsIn,
+    LabelLookupUrlOut,
     LabelOut,
     LabelRunOut,
     LabelRunsOut,
@@ -155,6 +157,15 @@ def set_correction(
             row.across = payload.across
             row.down = payload.down
     return LabelCorrectionOut(across=payload.across, down=payload.down)
+
+
+@router.get("/lookup-url")
+def lookup_url(_admin: AdminUser) -> LabelLookupUrlOut:
+    """The address a scanned label opens, from `LABEL_LOOKUP_URL`.
+
+    The console's Scan a label page fills in `{item_code}` and `{view}`.
+    """
+    return LabelLookupUrlOut(lookup_url=settings.label_lookup_url)
 
 
 @router.get("/run")

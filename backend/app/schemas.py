@@ -3189,6 +3189,13 @@ class LabelCorrectionOut(BaseModel):
     down: Decimal
 
 
+class LabelLookupUrlOut(BaseModel):
+    """The address a scanned label opens (`LABEL_LOOKUP_URL`)."""
+
+    #: With `{item_code}` and `{view}` (`coins` or `currency`) to fill in.
+    lookup_url: str
+
+
 class LabelOut(BaseModel):
     """One item's label: its lines, empty ones left out."""
 

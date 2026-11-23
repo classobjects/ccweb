@@ -168,6 +168,26 @@ class Settings(RuntimeFields):
     # stops the API at start-up (`app.default_kind_check`).
     default_item_kind: str = "coin"
 
+    # --- scanning labels -------------------------------------------------------
+    # The address a scanned holder label opens (`GET /api/labels/lookup-url`):
+    # `{item_code}` is filled with the item's code (CC-002427) and `{view}`
+    # with the inventory screen it is listed on, `coins` or `currency`. One
+    # under /management opens in the console; any other address, another
+    # site's included, opens as a page of its own. Unset: the item on its
+    # inventory screen.
+    label_lookup_url: str = "/management/inventory/{view}?item_code={item_code}"
+
+    @field_validator("label_lookup_url")
+    @classmethod
+    def _lookup_names_the_item(cls, value: str) -> str:
+        """Refuse an address that does not say which item to show."""
+        if "{item_code}" not in value:
+            raise ValueError(
+                "LABEL_LOOKUP_URL must contain {item_code}, where the scanned "
+                "item's code goes."
+            )
+        return value
+
     @field_validator("jwt_secret")
     @classmethod
     def _refuse_a_weak_secret(cls, value: str) -> str:

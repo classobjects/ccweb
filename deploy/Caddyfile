@@ -33,6 +33,12 @@
 # application's own pages set no inline style; 'unsafe-inline' in style-src
 # is for the seal script, whose markup is DigiCert's.
 #
+# The label reader's files, /assets/ocr-* (frontend/ocr-assets.js), get a
+# policy of their own that also lets them compile WebAssembly: the reader is
+# Tesseract compiled to it, and a worker obeys its own script's policy, not
+# the page's. The header is deferred (>), so on those files alone it replaces
+# the policy above; every page keeps the stricter one.
+#
 # Caching: a file under /assets/ is named for a hash of its content, so a
 # browser may keep it a year unasked; a new build is new names. Every other
 # file -- management.html and index.html above all, which name the build's
@@ -58,6 +64,9 @@
 		Content-Security-Policy "default-src 'self'; script-src 'self' https://seal.digicert.com; img-src 'self' data: https://seal.digicert.com https://*.digicert.com; style-src 'self' 'unsafe-inline'; object-src https://seal.digicert.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 		-Server
 	}
+
+	@ocr path /assets/ocr-*
+	header @ocr >Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 
 	@hashed path /assets/*
 	header @hashed Cache-Control "public, max-age=31536000, immutable"

@@ -639,6 +639,9 @@ classobjects.com {
 		-Server
 	}
 
+	@ocr path /assets/ocr-*
+	header @ocr >Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+
 	@hashed path /assets/*
 	header @hashed Cache-Control "public, max-age=31536000, immutable"
 	@checked not path /assets/* /api/*

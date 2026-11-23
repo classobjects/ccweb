@@ -21,6 +21,7 @@ vi.mock('./pages/Inventory', () => ({
   InventoryCurrency: () => 'page:currency',
 }))
 vi.mock('./pages/Labels', () => ({ default: () => 'page:labels' }))
+vi.mock('./pages/ScanLabel', () => ({ default: () => 'page:scan' }))
 vi.mock('./pages/Listings', () => ({ default: () => 'page:listings' }))
 vi.mock('./pages/Lists', () => ({ default: () => 'page:lists' }))
 vi.mock('./pages/Lots', () => ({ default: () => 'page:lots' }))
@@ -48,6 +49,7 @@ const MENU_PAGES = [
   ['/inventory/coins', 'page:coins'],
   ['/inventory/currency', 'page:currency'],
   ['/labels', 'page:labels'],
+  ['/scan', 'page:scan'],
   ['/photos', 'page:photos'],
   ['/order-lookup', 'page:order-lookup'],
   ['/purchases', 'page:purchases'],

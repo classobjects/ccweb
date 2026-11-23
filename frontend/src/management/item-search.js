@@ -7,6 +7,22 @@ import { api } from './api'
 const INVENTORY_VIEWS = ['coins', 'currency']
 
 /**
+ * The one item `number` names and the inventory view it is listed in
+ * (`coins` or `currency`), as `{item, view}`, or null when none is. The
+ * number is taken as `findItemByNumber` takes it.
+ */
+export async function findItemAndView(number) {
+  const pages = await Promise.all(
+    INVENTORY_VIEWS.map((view) => api.searchInventory(view, { item_code: number })),
+  )
+  for (const [i, view] of INVENTORY_VIEWS.entries()) {
+    const item = (pages[i]?.rows ?? []).find((row) => sameItemNumber(row, number))
+    if (item) return { item, view }
+  }
+  return null
+}
+
+/**
  * Every item whose code contains `code`, from both inventory views: coins
  * first, then currency.
  *

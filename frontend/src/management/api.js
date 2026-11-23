@@ -436,6 +436,9 @@ export const api = {
   // The installation's printer correction, `{across, down}` in percent
   // (Decimals as strings); 100 both ways when none is set.
   labelCorrection: () => send('/api/labels/correction'),
+  // The address a scanned label opens, `{lookup_url}` with {item_code} and
+  // {view} to fill in (LABEL_LOOKUP_URL).
+  labelLookupUrl: () => send('/api/labels/lookup-url'),
   // 90 to 110, one decimal place; 100 both ways clears it.
   saveLabelCorrection: (correction) =>
     send('/api/labels/correction', { method: 'PUT', body: correction }),

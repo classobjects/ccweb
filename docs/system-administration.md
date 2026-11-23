@@ -1364,6 +1364,30 @@ long label a short label name. A long line is set smaller, down to 5pt, and
 then cut with an ellipsis, never wrapped. These sizes are provisional until a
 test print on the Epson sets them.
 
+### Scanning a label
+
+**Scan a label** (Inventory menu) opens the item a holder label names: press
+**Start the camera**, allow the camera when the browser asks, and hold the
+label so its number sits inside the white box. The item opens as soon as two
+frames read the same number. A number no item has is said on the page, and
+reading goes on. The number can also be typed, with or without its zeros or
+the `CC-`.
+
+The picture is read in the browser and never sent anywhere. The reader,
+about 7 MB, is fetched once, in the background after the console opens, and
+then kept by the browser.
+
+- A camera works only on the site's https address (or on the computer the
+  console is served from). Elsewhere the page offers only the typed number.
+- A found item opens on its Coins or Currency screen. To open it somewhere
+  else -- another site's record, say -- set `LABEL_LOOKUP_URL`
+  ([settings.md](settings.md#the-shop-and-purchases)) and restart the API.
+- Light helps: on a phone that has one, **Light** turns on its flashlight.
+- A test page's sample labels (900001 on) scan as numbers no item has: a
+  quick check that the camera reads the type.
+
+How it works: [label-scan-design.md](specs/label-scan-design.md).
+
 ## Entering a purchase
 
 **Purchases** (`/management/purchases`) is the one door for an acquisition.

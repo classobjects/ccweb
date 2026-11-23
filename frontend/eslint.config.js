@@ -22,7 +22,8 @@ export default [
     files: ['**/*.{js,jsx,mjs}'],
     languageOptions: {
       ecmaVersion: 'latest',
-      globals: { ...globals.browser },
+      // __OCR_BASE__ is the label reader's folder, set by vite.config.js.
+      globals: { ...globals.browser, __OCR_BASE__: 'readonly' },
       parserOptions: {
         ecmaFeatures: { jsx: true },
         sourceType: 'module',

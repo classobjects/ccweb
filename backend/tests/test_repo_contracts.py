@@ -380,6 +380,25 @@ def test_both_site_blocks_send_the_security_headers() -> None:
         assert [h for h in _SITE_HEADERS if h not in body] == [], name
 
 
+def test_only_the_label_reader_may_compile_webassembly() -> None:
+    """The pages' policy never allows WebAssembly; the reader's files alone do."""
+    template = (REPO_ROOT / "deploy" / "Caddyfile").read_text(encoding="utf-8")
+    policies = re.findall(
+        r"^\s*(.*)Content-Security-Policy \"([^\"]*)\"", template, re.MULTILINE
+    )
+    looser = [(where, p) for where, p in policies if "'wasm-unsafe-eval'" in p]
+    assert looser == [
+        (
+            "header @ocr >",
+            "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; "
+            "connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; "
+            "form-action 'self'",
+        )
+    ]
+    assert "@ocr path /assets/ocr-*\n" in template
+    assert len(policies) == 3
+
+
 def test_the_console_rule_matches_only_the_console() -> None:
     """`/management*` would also catch `/managementx`; the matcher names paths."""
     template = (REPO_ROOT / "deploy" / "Caddyfile").read_text(encoding="utf-8")

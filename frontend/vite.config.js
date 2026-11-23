@@ -4,6 +4,7 @@
 import { readFileSync } from 'node:fs'
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
+import { OCR_BASE, ocrAssets } from './ocr-assets.js'
 import { sealWarning } from './seal-warning.js'
 import { siteHtml } from './site-html.js'
 
@@ -123,7 +124,15 @@ export default defineConfig(({ command, mode }) => {
     // /management/inventory/coins to the shop. twoAppDevFallback replaces it with one
     // that knows about both entries.
     appType: 'mpa',
-    plugins: [react(), twoAppDevFallback(), bundleGraph(), siteHtml(viteEnv)],
+    plugins: [
+      react(),
+      twoAppDevFallback(),
+      bundleGraph(),
+      siteHtml(viteEnv),
+      ocrAssets(),
+    ],
+    // Where the label reader's files are served (ocr-assets.js).
+    define: { __OCR_BASE__: JSON.stringify(OCR_BASE) },
     server: {
       // An IPv4 loopback address by default (CCWEB_FRONTEND_HOST). Left unset,
       // Vite binds only [::1] on some machines, and every documented URL says

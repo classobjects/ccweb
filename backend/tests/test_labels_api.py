@@ -12,6 +12,7 @@ from datetime import datetime
 from decimal import Decimal
 
 import pytest
+from app.config import Settings, settings
 from app.labels import label_lines, label_text, printed_number
 from app.models import (
     AppliesTo,
@@ -28,6 +29,7 @@ from app.models import (
 )
 from app.models.reference import Disposition
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 from sqlalchemy import event, select
 from sqlalchemy.engine import Connection
 from sqlalchemy.exc import IntegrityError
@@ -167,6 +169,35 @@ def test_a_customer_cannot_read_labels(
     printed = {"labels": [{"item_id": item.id, "lines": ["x"]}], "source": "batch"}
     assert client.post(f"{_API}/printed", json=printed, headers=h).status_code == 403
     assert client.get(f"{_API}/sheets").status_code == 401
+
+
+# --- the address a scanned label opens --------------------------------------
+
+
+def test_the_lookup_url_is_the_installation_setting(
+    client: TestClient, admin_headers: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        settings, "label_lookup_url", "https://example.org/find?code={item_code}"
+    )
+    got = client.get(f"{_API}/lookup-url", headers=admin_headers)
+    assert got.status_code == 200, got.text
+    assert got.json() == {"lookup_url": "https://example.org/find?code={item_code}"}
+
+
+def test_the_lookup_url_defaults_to_the_item_on_its_inventory_screen() -> None:
+    assert Settings.model_fields["label_lookup_url"].default == (
+        "/management/inventory/{view}?item_code={item_code}"
+    )
+
+
+def test_a_lookup_url_without_the_item_is_refused() -> None:
+    with pytest.raises(ValidationError, match=r"must contain \{item_code\}"):
+        Settings(jwt_secret="k" * 32, label_lookup_url="/management/inventory/coins")
+
+
+def test_the_lookup_url_is_for_the_console_only(client: TestClient) -> None:
+    assert client.get(f"{_API}/lookup-url").status_code == 401
 
 
 # --- printer correction -----------------------------------------------------

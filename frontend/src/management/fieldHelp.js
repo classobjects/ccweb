@@ -1415,6 +1415,14 @@ export const FIELD_HELP = {
       'Type it and press Find or Enter, then choose the match. The move is ' +
       'made when the item is saved.',
   },
+  // -- the Scan a label page -------------------------------------------------
+  scan_item_number: {
+    title: 'Number on the label',
+    text:
+      "The item's number as its holder label prints it (002427), the whole " +
+      'code (CC-002427), or the number without its leading zeros (2427). Open ' +
+      'shows the item as a scanned label would.',
+  },
   // -- the Labels page --------------------------------------------------------
   label_source: {
     title: 'What to print',
