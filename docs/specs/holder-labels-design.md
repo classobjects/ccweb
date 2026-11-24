@@ -290,7 +290,7 @@ https://www.sheetlabels.com/labels/SL564):
 
 | | SL597 | SL564 |
 |---|---|---|
-| Label | 0.625" x 0.5", rounded corners | 1.333" x 0.625", square |
+| Label | 0.625" x 0.5", square (the owner's sheets) | 1.333" x 0.625", square |
 | Grid | 10 across, 16 down: 160 | 6 across, 17 down: 102 |
 | Top / bottom margin | 0.3345" | 0.188" |
 | Left / right margin | 0.333" | 0.25" |
@@ -351,7 +351,7 @@ Cut error · Ink smear
     `item_descriptions` already does;
   - Error Note, since line 4 is the errors;
   - Gift (the owner's ruling): it is how the note was acquired, a purchasing
-    matter, and labels are read by customers.
+    matter, not something about the note.
 - **Line 4:** its errors.
 
 **Set** (SL564), the owner's list:
@@ -382,6 +382,79 @@ San Francisco · 9 pieces
   (`frontend/src/management/pages/labels/labels.css`), provisional until the
   owner's test print on the Epson sets them.
 - The pages are HTML and CSS laid out in inches.
+
+### The color bar
+
+Every label -- coin, note and set -- carries a thin vertical bar at its left
+edge, so a box of holders can be sorted by eye before a line is read. The
+labels are read only by the owner (the owner's ruling, 2026-11-24), so the
+bar's meaning is theirs alone; nothing on the label explains it.
+
+The bar is two blocks, one above the other, with a thin white gap between
+them. Each block's place says what it is, so a color is never read as the
+other block's.
+
+| Block | Shows | Empty when |
+|---|---|---|
+| Top | the item's metal | no metal is recorded, or its metal has no color (notes) |
+| Bottom | the cost bracket of one piece | no cost is recorded (0.00: a gift, a cost not known) |
+
+**Metal.** `metal.label_color`, a color set in Vocabulary beside the
+label name; empty is no color. Metals are rows on the database, some added
+by hand on live, so the migration sets a color on the common codes where
+they exist and leaves every other row empty:
+
+| Metal | Color |
+|---|---|
+| Silver | gray |
+| Gold | yellow |
+| Copper, bronze | orange |
+| Clad, nickel | white, with the block's outline |
+| Platinum | blue |
+
+**Cost per piece.** The item's `total_cost` (item, shipping and sales tax)
+divided by its `piece_count`, the owner's ruling: a lot is priced per coin,
+since lots are split in time, and a roll, which is never split, by its coins
+too. A $600 roll of 20 is $30 a coin. The brackets follow the resistor color
+code, so their order is the order of the colors, and an uncertain shade is
+off by one bracket at most:
+
+| Per piece | Color |
+|---|---|
+| under $10 | black |
+| $10 to under $25 | brown |
+| $25 to under $50 | red |
+| $50 to under $100 | orange |
+| $100 to under $200 | yellow |
+| $200 to under $500 | green |
+| $500 to under $1,000 | blue |
+| $1,000 and over | violet |
+
+The scale starts at black, not white, so an empty block (no cost) is never
+taken for a cheap coin. The brackets are rows in Vocabulary (a lower bound
+and a color each), seeded with these; the owner may move a bound or a color.
+
+**Placing it.** The bar sits inside the safe border, 0.06" from the left
+edge and from the top and bottom, and is 0.07" wide. The text's area starts
+0.03" to its right, so text and bar never touch. On SL597 that leaves the
+lines 0.415" of width, enough for `004521` and `Silver` at 7.5pt; a longer
+line is set smaller as before. The two blocks share the height the border
+leaves, about 0.18" each on SL597.
+
+**Printing color.** Browsers leave out backgrounds when printing unless told
+otherwise, so the bar is drawn with `print-color-adjust: exact`. The color
+values are plain hexadecimal, chosen to stay apart on the Epson: the
+*Test pages* section gains a **swatch page** that prints every bracket's and
+every metal's color in label-sized blocks, with its name beside it, on either
+sheet product. It is printed before the colors are relied on.
+
+**A changed color is a changed label.** What a label prints, and what
+*Applied* records, includes the bar: the label's text gains a last line that
+names the two colors (`bar: <metal color> <cost color>`), which the page draws
+as the bar and does not print as text. So a corrected metal, a corrected cost
+or a bracket moved in Vocabulary marks the label *Needs a new label*, by the
+comparison already made. A label applied before the bar existed differs from
+every label now, and is offered again.
 
 ### Printing
 
