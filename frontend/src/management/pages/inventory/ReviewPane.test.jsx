@@ -29,6 +29,27 @@ describe('ReviewPane', () => {
     expect(screen.getByText('2 of 3 -- 1 saved')).toBeInTheDocument()
   })
 
+  it('ends the review when the last item is saved', async () => {
+    // The owner saved the one item opened from a receipt and the editor stayed.
+    const user = userEvent.setup()
+    const onClose = vi.fn()
+    render(<ReviewPane ids={[1, 2]} onClose={onClose} />)
+    await user.click(screen.getByRole('button', { name: 'stub delete' }))
+    expect(onClose).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: 'stub save' }))
+
+    expect(onClose).toHaveBeenCalledWith([1])
+  })
+
+  it('ends the review when its only item is saved', async () => {
+    const user = userEvent.setup()
+    const onClose = vi.fn()
+    render(<ReviewPane ids={[7]} onClose={onClose} />)
+    await user.click(screen.getByRole('button', { name: 'stub save' }))
+
+    expect(onClose).toHaveBeenCalledWith([])
+  })
+
   it('drops a deleted item from the queue, uncounted, and never reopens it', async () => {
     const user = userEvent.setup()
     render(<ReviewPane ids={[1, 2, 3]} onClose={vi.fn()} />)

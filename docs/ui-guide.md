@@ -166,7 +166,8 @@ Not labeled under Label to leave out the ones already done.
 
 **Review these** walks through the current result in the editor, one item at a
 time. The list is frozen when you start, so fixing an item does not skip the
-next one. **Leave review** or Escape returns to the list.
+next one. Saving moves on to the next item, and saving the last one ends the
+review. **Leave review** or Escape returns to the list.
 
 ![Review, with the item editor open on the first of the result](images/ui-guide/review.png)
 

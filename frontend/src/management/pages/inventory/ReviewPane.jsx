@@ -40,6 +40,8 @@ function useEscapeToLeave(leave) {
  * after it -- silently skipping an item. A saved item keeps its place in the
  * queue, and the count of those saved is shown beside the position.
  *
+ * Saving the last item in the queue ends the review, as Leave review does.
+ *
  * A deleted item is the one exception: it no longer exists to be reviewed,
  * so it leaves the queue -- the item after it takes its place -- and is not
  * counted as saved. Deleting the last one left ends the review. However the
@@ -92,10 +94,16 @@ export default function ReviewPane({ ids, onClose }) {
         key={itemId}
         itemId={itemId}
         onSaved={() => {
-          setDone((d) => (d.includes(itemId) ? d : [...d, itemId]))
           // Saving advances, because the next thing you want after finishing
-          // a coin is the next coin.
-          if (at + 1 < queue.length) setAt(at + 1)
+          // a coin is the next coin -- and saving the last one ends the
+          // review, back to whatever opened it (the receipt to record, the
+          // search to refresh), rather than leaving its form on screen.
+          if (at + 1 >= queue.length) {
+            onClose?.(deleted)
+            return
+          }
+          setDone((d) => (d.includes(itemId) ? d : [...d, itemId]))
+          setAt(at + 1)
         }}
         onDeleted={removed}
       />

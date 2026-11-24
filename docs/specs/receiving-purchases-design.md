@@ -214,6 +214,7 @@ orders' items, or none.
   review component. Editing in it writes `PATCH`.
   - While Identify has unsaved changes it opens nothing, and the reason is
     shown beside it.
+  - Saving the last item in it closes it, back to the receipt.
   - Identify is hidden while it is open, and reads the item again when it
     closes.
   - While it is closed, `ErrorsPanel` records mint or printing errors. Only
