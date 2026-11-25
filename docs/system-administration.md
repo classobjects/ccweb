@@ -1312,7 +1312,8 @@ SL564) prints one outlined label per bar color, each named: the metal
 colors, then the cost brackets from black (under $10) to violet ($1,000
 and over). Print it on the label stock before relying on the colors, and
 check each can be told from the next. A color is changed in Vocabulary:
-*Metal*'s **Label color**, or *Label cost band*'s **Color** and **Lower
+*Metal*'s **Label color** and **Label pattern** (empty for solid, or
+`striped`, to tell two metals of one color apart), or *Label cost band*'s **Color** and **Lower
 bound**, as `#` and six hexadecimal digits. A change marks every label it
 alters *Needs a new label*.
 

@@ -20,7 +20,7 @@ export default function LabelLines({ lines }) {
         <LabelBar
           bar={bar}
           className="label-bar-inline"
-          title={`Color bar: metal ${colorName(bar.metal)}, cost ${colorName(bar.cost)}`}
+          title={`Color bar: metal ${colorName(bar.metal)}${bar.metalPattern ? ` ${bar.metalPattern}` : ''}, cost ${colorName(bar.cost)}`}
         />
       )}
       <div className="label-lines-text">

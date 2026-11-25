@@ -1704,6 +1704,10 @@ export const FIELD_HELP = {
     title: 'Label color',
     text: "The top block of a holder label's color bar for items of this metal, as # and six hexadecimal digits: #8c8c8c is gray. Leave it empty to leave the block blank. Print the Labels page's color swatches to see it on the label stock.",
   },
+  vocabulary_field_label_pattern: {
+    title: 'Label pattern',
+    text: "How the metal's block of a holder label's color bar is filled: leave it empty for solid, or type striped for white diagonal lines over the color -- to tell a metal from another of the same color, as Colorized Silver from Silver.",
+  },
   vocabulary_field_lower_bound: {
     title: 'Lower bound',
     text: "The least one piece may cost, all in, to fall in this bracket of a holder label's color bar: 25.00 for $25 to $50. A piece falls in the bracket with the highest lower bound at or below its cost; the lowest bracket starts at 0.00.",

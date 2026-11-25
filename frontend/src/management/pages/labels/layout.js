@@ -157,21 +157,32 @@ const HEX_COLOR = /^#[0-9a-f]{6}$/i
  * The server ends every label with `bar: <metal> <cost>`, each a color or
  * `-` for a block left blank. `bar` is null when the last line is not one --
  * a label printed before the bar existed -- and each color is null when its
- * block is blank or names no color.
+ * block is blank or names no color. A metal written `#8c8c8c/striped` is
+ * striped: `metalPattern` is then `'striped'`, and absent for a solid one.
  */
 export function splitBar(lines) {
   const last = lines.at(-1)
   if (typeof last !== 'string' || !last.startsWith(BAR_PREFIX)) {
     return { text: lines, bar: null }
   }
-  const [metal, cost] = last.slice(BAR_PREFIX.length).split(' ')
+  const [metalToken, cost] = last.slice(BAR_PREFIX.length).split(' ')
+  const [metal, pattern] = (metalToken ?? '').split('/')
   const color = (value) => (HEX_COLOR.test(value ?? '') ? value : null)
-  return { text: lines.slice(0, -1), bar: { metal: color(metal), cost: color(cost) } }
+  const bar = { metal: color(metal), cost: color(cost) }
+  if (bar.metal && PATTERNS.has(pattern)) bar.metalPattern = pattern
+  return { text: lines.slice(0, -1), bar }
 }
 
-/** The bar line for these two colors, as the server writes it; null is blank. */
-export function barLine(metal, cost) {
-  return `${BAR_PREFIX}${metal || '-'} ${cost || '-'}`
+/** The patterns a metal's block may carry besides solid. */
+const PATTERNS = new Set(['striped'])
+
+/**
+ * The bar line for these two colors, as the server writes it; null is
+ * blank, and a metal pattern is written after its color.
+ */
+export function barLine(metal, cost, metalPattern = null) {
+  const top = metal && metalPattern ? `${metal}/${metalPattern}` : metal || '-'
+  return `${BAR_PREFIX}${top} ${cost || '-'}`
 }
 
 /**

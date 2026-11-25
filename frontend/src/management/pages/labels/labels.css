@@ -182,6 +182,21 @@ fieldset.label-correction {
 .label-bar-block.filled {
   border: 0.25pt solid #666;
 }
+/* Striped: white diagonal lines over the color, about 0.022in apart, so a
+   block 0.07in wide carries three or four -- coarse enough for an inkjet,
+   and a solid block of the same color reads differently at a glance. The
+   small swatch on the screen (To apply, the batch) has stripes of its own
+   size, in pixels. */
+.label-bar .label-bar-block.striped {
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent 0 0.011in,
+    #fff 0.011in 0.022in
+  );
+}
+.label-bar-inline .label-bar-block.striped {
+  background-image: repeating-linear-gradient(45deg, transparent 0 2px, #fff 2px 4px);
+}
 /* The same bar beside a waiting label's lines in To apply: a small swatch
    of each block, not to scale. */
 .label-lines {

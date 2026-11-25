@@ -573,3 +573,28 @@ def test_a_recolored_metal_marks_its_labels_stale(
     refresh_stale(db, [item.id])
     db.commit()
     assert _stale_after(db, item.id)
+
+
+def test_a_striped_metal_says_so_and_a_solid_one_reads_as_before(
+    db: Session, make_item: ItemFactory
+) -> None:
+    coin = _costing(make_item, db, "30.00")
+    assert _bar(db, coin) == f"{BAR_PREFIX}{_SILVER} {_RED}"
+    metal = db.scalars(select(Metal).where(Metal.code == "silver")).one()
+    metal.label_pattern = "striped"
+    db.flush()
+    assert _bar(db, coin) == f"{BAR_PREFIX}{_SILVER}/striped {_RED}"
+    # A pattern on no color is still a blank block.
+    assert bar_line("", _RED, "striped") == f"{BAR_PREFIX}- {_RED}"
+
+
+def test_a_restriped_metal_marks_its_labels_stale(
+    db: Session, make_item: ItemFactory
+) -> None:
+    item = _labeled_coin(db, make_item)
+    metal = db.scalars(select(Metal).where(Metal.code == "silver")).one()
+    metal.label_pattern = "striped"
+    db.flush()
+    refresh_stale(db, [item.id])
+    db.commit()
+    assert _stale_after(db, item.id)

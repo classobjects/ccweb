@@ -411,6 +411,15 @@ they exist and leaves every other row empty:
 | Copper, bronze | orange |
 | Clad, nickel | white, with the block's outline |
 | Platinum | blue |
+| Colorized Silver | gray, striped |
+| Colorized Copper | orange, striped |
+
+**A pattern.** `metal.label_pattern`, beside the color: empty is solid,
+`striped` lays white diagonal lines about 0.022" apart over the color, so a
+metal can share another's color and still be told from it (the owner's
+ruling: a colorized metal takes its base metal's color, striped). The bar
+line writes a striped metal as `#8c8c8c/striped`; a solid one reads as it
+did before patterns existed. The cost brackets are solid.
 
 **Cost per piece.** The item's `total_cost` (item, shipping and sales tax)
 divided by its `piece_count`, the owner's ruling: a lot is priced per coin,
@@ -667,7 +676,7 @@ rehearsal, live, verify), in this order. The commands are in
   `a4d7c2e9b1f6_holder_labels`, `b7e1d4a9c3f2_label_applied` (the
   waiting label), `c3e8f1a5d7b9_coolness_two_places` and
   `f4a8c1d6e2b7_label_color_bar` (the color bar's metal colors and cost
-  brackets). Each is applied to live by the release procedure in
+  brackets) and `a7d3e9b2c5f1_label_bar_pattern` (a metal's pattern). Each is applied to live by the release procedure in
   `docs/system-administration.md`.
 - Serial-rule tests use the synthetic serials already used in tests.
 - Help texts are in `frontend/src/management/fieldHelp.js`.

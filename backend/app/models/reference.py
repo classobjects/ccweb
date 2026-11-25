@@ -727,6 +727,10 @@ class Metal(ReferenceMixin, Base):
     #: The top block of a holder label's color bar, as `#rrggbb`; empty
     #: leaves the block blank (`app.labels`).
     label_color: Mapped[str] = mapped_column(String(7), default="", nullable=False)
+    #: How that block is filled: empty is solid, `striped` adds white diagonal
+    #: lines, to tell a metal from another of the same color (colorized silver
+    #: from silver).
+    label_pattern: Mapped[str] = mapped_column(String(16), default="", nullable=False)
     is_precious: Mapped[bool] = mapped_column(default=True, nullable=False)
     #: The metal a plated or layered one is read as for a coin's composition:
     #: gold-plated silver is silver, and has a silver coin's weights. Empty for
@@ -742,6 +746,9 @@ class Metal(ReferenceMixin, Base):
         ),
         CheckConstraint(
             "label_color ~ '^(#[0-9a-fA-F]{6})?$'", name="ck_metal_label_color"
+        ),
+        CheckConstraint(
+            "label_pattern IN ('', 'striped')", name="ck_metal_label_pattern"
         ),
     )
 

@@ -33,8 +33,9 @@ const isColor = (value) => typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(v
 
 /**
  * The bar's colors from the vocabularies, as the test and swatch pages use
- * them: `metals`, one entry per color with the names of the metals that
- * carry it ("Silver, 40% Silver"), and `costs`, one per bracket, cheapest
+ * them: `metals`, one entry per color and pattern with the names of the
+ * metals that carry it ("Silver, 40% Silver"; a striped one has `pattern`),
+ * and `costs`, one per bracket, cheapest
  * first. Retired values and values with no color are left out; either
  * vocabulary not yet loaded gives an empty list.
  */
@@ -43,8 +44,9 @@ export function barPalette(metals, bands) {
   for (const metal of metals ?? []) {
     const color = metal.extra?.label_color
     if (!isColor(color)) continue
-    const key = color.toLowerCase()
-    const entry = byColor.get(key) ?? { color, names: [] }
+    const pattern = metal.extra?.label_pattern || null
+    const key = `${color.toLowerCase()}/${pattern ?? ''}`
+    const entry = byColor.get(key) ?? { color, pattern, names: [] }
     entry.names.push(metal.extra?.label_name || metal.label)
     byColor.set(key, entry)
   }
@@ -57,8 +59,9 @@ export function barPalette(metals, bands) {
     }))
     .sort((a, b) => a.bound - b.bound)
   return {
-    metals: [...byColor.values()].map(({ color, names }) => ({
+    metals: [...byColor.values()].map(({ color, pattern, names }) => ({
       color,
+      ...(pattern ? { pattern } : {}),
       name: [...new Set(names)].join(', '),
     })),
     costs,
@@ -76,8 +79,8 @@ function sampleBar(i, palette) {
   if (costs.length === 0 && metals.length === 1) return null
   const cost = costs.length ? costs[i % costs.length].color : null
   const turn = costs.length ? Math.floor(i / costs.length) : i
-  const metal = metals[turn % metals.length]?.color ?? null
-  return barLine(metal, cost)
+  const metal = metals[turn % metals.length]
+  return barLine(metal?.color ?? null, cost, metal?.pattern)
 }
 
 /**
@@ -105,7 +108,12 @@ export function sampleLabels(sheet, palette) {
 export function swatchLabels(palette) {
   const metals = (palette?.metals ?? []).map((m, i) => ({
     item_id: `swatch-metal-${i}`,
-    lines: ['Metal', m.name, m.color, barLine(m.color, null)],
+    lines: [
+      'Metal',
+      m.name,
+      m.pattern ? `${m.color} ${m.pattern}` : m.color,
+      barLine(m.color, null, m.pattern),
+    ],
   }))
   const costs = (palette?.costs ?? []).map((c, i) => ({
     item_id: `swatch-cost-${i}`,

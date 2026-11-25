@@ -107,6 +107,64 @@ describe('the bar on a printed label', () => {
   })
 })
 
+describe('a striped metal', () => {
+  it('reads its pattern from the bar line, and writes it back', () => {
+    const line = barLine(SILVER, RED, 'striped')
+    expect(line).toBe(`bar: ${SILVER}/striped ${RED}`)
+    expect(splitBar(['1', line]).bar).toEqual({
+      metal: SILVER,
+      metalPattern: 'striped',
+      cost: RED,
+    })
+    // An unknown pattern is drawn solid; a pattern on no color is blank.
+    expect(splitBar(['1', `bar: ${SILVER}/dotted -`]).bar.metalPattern).toBeUndefined()
+    expect(barLine(null, RED, 'striped')).toBe(`bar: - ${RED}`)
+  })
+
+  it('draws the stripes on the metal block only', () => {
+    const { container } = render(
+      <LabelSheets
+        sheet={SL597}
+        start={1}
+        labels={[{ item_id: 1, lines: ['1', barLine(SILVER, RED, 'striped')] }]}
+      />,
+    )
+    const [metal, cost] = container.querySelectorAll('.label-bar-block')
+    expect(metal).toHaveClass('filled', 'striped')
+    expect(cost).not.toHaveClass('striped')
+  })
+
+  it('is a swatch of its own beside the solid metal of its color', () => {
+    const palette = barPalette(
+      [
+        ...METALS,
+        {
+          code: 'colorized_silver',
+          label: 'Colorized Silver',
+          extra: {
+            label_color: SILVER,
+            label_pattern: 'striped',
+            label_name: 'Color Ag',
+          },
+        },
+      ],
+      BANDS,
+    )
+    expect(palette.metals).toEqual([
+      { color: SILVER, name: 'Silver, 40% Silver' },
+      { color: '#ffffff', name: 'Copper-Nickel Clad' },
+      { color: SILVER, pattern: 'striped', name: 'Color Ag' },
+    ])
+    const striped = swatchLabels(palette)[2]
+    expect(striped.lines.slice(0, 3)).toEqual([
+      'Metal',
+      'Color Ag',
+      `${SILVER} striped`,
+    ])
+    expect(splitBar(striped.lines).bar.metalPattern).toBe('striped')
+  })
+})
+
 describe('barPalette', () => {
   it('groups metals by color, leaves out the uncolored, and orders brackets', () => {
     expect(barPalette(METALS, BANDS)).toEqual({

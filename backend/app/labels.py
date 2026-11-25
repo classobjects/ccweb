@@ -338,9 +338,16 @@ BAR_PREFIX = "bar: "
 _NO_COLOR = "-"
 
 
-def bar_line(metal_color: str, cost_color: str) -> str:
-    """The line naming a label's two bar colors, metal first; empty is blank."""
-    return f"{BAR_PREFIX}{metal_color or _NO_COLOR} {cost_color or _NO_COLOR}"
+def bar_line(metal_color: str, cost_color: str, metal_pattern: str = "") -> str:
+    """The line naming a label's two bar colors, metal first; empty is blank.
+
+    A metal block with a pattern is written `#8c8c8c/striped`: a solid one
+    reads as it did before patterns existed, so its label is not stale.
+    """
+    metal = metal_color or _NO_COLOR
+    if metal_color and metal_pattern:
+        metal = f"{metal}/{metal_pattern}"
+    return f"{BAR_PREFIX}{metal} {cost_color or _NO_COLOR}"
 
 
 def cost_per_piece(item: InventoryItem) -> Decimal | None:
@@ -370,11 +377,12 @@ def _bands(db: Session) -> list[tuple[Decimal, str]]:
 def _bar_of(item: InventoryItem, facts: _Facts) -> str:
     """The item's bar line: its metal's color, and its cost bracket's."""
     metal = item.metal.label_color if item.metal is not None else ""
+    pattern = item.metal.label_pattern if item.metal is not None else ""
     cost = cost_per_piece(item)
     bracket = ""
     if cost is not None:
         bracket = next((color for bound, color in facts.bands if cost >= bound), "")
-    return bar_line(metal, bracket)
+    return bar_line(metal, bracket, pattern)
 
 
 def write_quietly(
