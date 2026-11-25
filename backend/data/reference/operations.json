@@ -7,15 +7,25 @@
     "Sales platform kinds describe how a platform sells, not which one it is."
   ],
   "metal": [
-    {"code": "silver", "label": "Silver", "symbol": "Ag", "is_precious": true, "sort_order": 10},
-    {"code": "gold", "label": "Gold", "symbol": "Au", "is_precious": true, "sort_order": 20},
-    {"code": "platinum", "label": "Platinum", "symbol": "Pt", "is_precious": true, "sort_order": 30},
+    {"code": "silver", "label": "Silver", "symbol": "Ag", "label_color": "#8c8c8c", "is_precious": true, "sort_order": 10},
+    {"code": "gold", "label": "Gold", "symbol": "Au", "label_color": "#f5c400", "is_precious": true, "sort_order": 20},
+    {"code": "platinum", "label": "Platinum", "symbol": "Pt", "label_color": "#2f6fd6", "is_precious": true, "sort_order": 30},
     {"code": "palladium", "label": "Palladium", "symbol": "Pd", "is_precious": true, "sort_order": 40},
-    {"code": "copper", "label": "Copper", "symbol": "Cu", "is_precious": false, "sort_order": 50},
-    {"code": "nickel", "label": "Nickel", "symbol": "Ni", "is_precious": false, "sort_order": 60},
+    {"code": "copper", "label": "Copper", "symbol": "Cu", "label_color": "#e8741e", "is_precious": false, "sort_order": 50},
+    {"code": "nickel", "label": "Nickel", "symbol": "Ni", "label_color": "#ffffff", "is_precious": false, "sort_order": 60},
     {"code": "zinc", "label": "Zinc", "symbol": "Zn", "is_precious": false, "sort_order": 70},
-    {"code": "clad", "label": "Copper-Nickel Clad", "symbol": "", "label_name": "Clad", "is_precious": false, "sort_order": 80},
-    {"code": "manganese_brass", "label": "Manganese Brass", "symbol": "", "label_name": "Clad", "is_precious": false, "sort_order": 90}
+    {"code": "clad", "label": "Copper-Nickel Clad", "symbol": "", "label_name": "Clad", "label_color": "#ffffff", "is_precious": false, "sort_order": 80},
+    {"code": "manganese_brass", "label": "Manganese Brass", "symbol": "", "label_name": "Clad", "label_color": "#ffffff", "is_precious": false, "sort_order": 90}
+  ],
+  "label_cost_band": [
+    {"code": "under_10", "label": "Under $10", "lower_bound": "0.00", "color": "#000000", "sort_order": 10},
+    {"code": "10_to_25", "label": "$10 to $25", "lower_bound": "10.00", "color": "#8b4513", "sort_order": 20},
+    {"code": "25_to_50", "label": "$25 to $50", "lower_bound": "25.00", "color": "#e02020", "sort_order": 30},
+    {"code": "50_to_100", "label": "$50 to $100", "lower_bound": "50.00", "color": "#ff8c00", "sort_order": 40},
+    {"code": "100_to_200", "label": "$100 to $200", "lower_bound": "100.00", "color": "#f5d000", "sort_order": 50},
+    {"code": "200_to_500", "label": "$200 to $500", "lower_bound": "200.00", "color": "#1e9e3a", "sort_order": 60},
+    {"code": "500_to_1000", "label": "$500 to $1,000", "lower_bound": "500.00", "color": "#2f6fd6", "sort_order": 70},
+    {"code": "1000_and_over", "label": "$1,000 and over", "lower_bound": "1000.00", "color": "#8a3fd1", "sort_order": 80}
   ],
   "valuation_basis": [
     {"code": "melt", "label": "Melt value", "sort_order": 10},

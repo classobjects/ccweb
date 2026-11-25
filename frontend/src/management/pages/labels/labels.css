@@ -154,6 +154,57 @@ fieldset.label-correction {
   font-weight: 700;
 }
 
+/* The color bar (LabelBar.jsx): 0.07in wide at the left edge, inside the
+   safe border on three sides, so a drifting printer keeps it on its label
+   -- SL564 labels touch. Two blocks, metal above and cost below, share the
+   height with a 0.02in white gap; a blank block keeps its place. The text
+   starts 0.03in to its right. Browsers leave backgrounds out of a printout
+   unless told to keep them, and the bar is nothing but backgrounds. */
+.label.has-bar {
+  padding-left: 0.16in;
+}
+.label-bar {
+  position: absolute;
+  left: 0.06in;
+  top: 0.06in;
+  bottom: 0.06in;
+  width: 0.07in;
+  display: flex;
+  flex-direction: column;
+  gap: 0.02in;
+}
+.label-bar-block {
+  flex: 1;
+  box-sizing: border-box;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+.label-bar-block.filled {
+  border: 0.25pt solid #666;
+}
+/* The same bar beside a waiting label's lines in To apply: a small swatch
+   of each block, not to scale. */
+.label-lines {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4em;
+}
+/* No min-content width of its own: a long line scrolls in its cell, and
+   the row never widens the page. */
+.label-lines-text {
+  min-width: 0;
+  flex: 1;
+}
+.label-bar-inline {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  gap: 2px;
+  width: 0.6em;
+  height: 1.6em;
+  margin-top: 0.15em;
+}
+
 /* Font sizes: provisional -- set from the owner's test print on the Epson.
    Chosen to fit the label's height inside the safe border at a line height
    of 1.15:

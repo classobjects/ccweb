@@ -444,14 +444,20 @@ leaves, about 0.18" each on SL597.
 **Printing color.** Browsers leave out backgrounds when printing unless told
 otherwise, so the bar is drawn with `print-color-adjust: exact`. The color
 values are plain hexadecimal, chosen to stay apart on the Epson: the
-*Test pages* section gains a **swatch page** that prints every bracket's and
-every metal's color in label-sized blocks, with its name beside it, on either
-sheet product. It is printed before the colors are relied on.
+*Test pages* section has **Color swatches** for either sheet product: one
+outlined label per metal color (metals sharing a color named together) and
+per cost bracket, from cell 1, each naming its color with only its own block
+filled. It is printed before the colors are relied on. The test pages'
+sample labels carry a bar too, taking the costs cell by cell and the metals
+-- a blank one among them -- a turn of the costs at a time, so a test page
+shows every pairing as real labels print it. Both take the colors from the
+vocabularies, retired values and uncolored ones left out.
 
 **A changed color is a changed label.** What a label prints, and what
 *Applied* records, includes the bar: the label's text gains a last line that
 names the two colors (`bar: <metal color> <cost color>`), which the page draws
-as the bar and does not print as text. So a corrected metal, a corrected cost
+as the bar and does not print as text; the print batch and *To apply* show
+it as a small swatch beside the lines. So a corrected metal, a corrected cost
 or a bracket moved in Vocabulary marks the label *Needs a new label*, by the
 comparison already made. A label applied before the bar existed differs from
 every label now, and is offered again.
@@ -659,7 +665,9 @@ rehearsal, live, verify), in this order. The commands are in
   `docs/code-quality.md`; the gate (`scripts\ccweb_check.cmd`) passes.
 - The schema for all four pieces ships as Alembic migrations
   `a4d7c2e9b1f6_holder_labels`, `b7e1d4a9c3f2_label_applied` (the
-  waiting label) and `c3e8f1a5d7b9_coolness_two_places`. Each is applied to live by the release procedure in
+  waiting label), `c3e8f1a5d7b9_coolness_two_places` and
+  `f4a8c1d6e2b7_label_color_bar` (the color bar's metal colors and cost
+  brackets). Each is applied to live by the release procedure in
   `docs/system-administration.md`.
 - Serial-rule tests use the synthetic serials already used in tests.
 - Help texts are in `frontend/src/management/fieldHelp.js`.

@@ -1700,6 +1700,18 @@ export const FIELD_HELP = {
     title: 'Label name',
     text: "The metal as a coin's holder label prints it, where its label is too long for the label: Clad for Copper-Nickel Clad, 24K Plate. About 9 characters fit. Leave it empty to print the label.",
   },
+  vocabulary_field_label_color: {
+    title: 'Label color',
+    text: "The top block of a holder label's color bar for items of this metal, as # and six hexadecimal digits: #8c8c8c is gray. Leave it empty to leave the block blank. Print the Labels page's color swatches to see it on the label stock.",
+  },
+  vocabulary_field_lower_bound: {
+    title: 'Lower bound',
+    text: "The least one piece may cost, all in, to fall in this bracket of a holder label's color bar: 25.00 for $25 to $50. A piece falls in the bracket with the highest lower bound at or below its cost; the lowest bracket starts at 0.00.",
+  },
+  vocabulary_field_color: {
+    title: 'Color',
+    text: "The bottom block of a holder label's color bar for a piece costing into this bracket, as # and six hexadecimal digits: #e02020 is red. Leave it empty to leave the block blank.",
+  },
   vocabulary_field_is_precious: {
     title: 'Precious',
     text: 'Tick for a metal whose weight gives a piece its value -- gold, silver, platinum, palladium.',

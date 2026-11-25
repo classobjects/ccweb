@@ -4,7 +4,7 @@
 import { useState } from 'react'
 
 import { api } from '../../api'
-import { keyedLines } from './layout'
+import LabelLines from './LabelLines'
 
 /** "1 label" or "N labels". */
 const labelsWord = (n) => (n === 1 ? '1 label' : `${n} labels`)
@@ -147,11 +147,7 @@ export default function ToApply({ runs, sheetNames, onChanged }) {
                       {label.item_code}
                     </td>
                     <td data-label="Label">
-                      {keyedLines(label.lines).map(({ line, key }) => (
-                        <div key={key} className="cell-scroll">
-                          {line}
-                        </div>
-                      ))}
+                      <LabelLines lines={label.lines} />
                     </td>
                   </tr>
                 ))}

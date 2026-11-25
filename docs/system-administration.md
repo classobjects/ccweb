@@ -1302,9 +1302,19 @@ to drift, print a test page on plain paper: **Test page: Coin, SL597** or
 chosen to print, or a run's own **Print a test page**. It is the same layout
 with every cell's outline. Under *Test pages* each cell also holds a sample
 label numbered from 900001 (no real item has such a number), showing how
-large the text prints. Hold it against a sheet of labels, up to the
-light: the outlines should sit on the labels' edges. Text keeps 0.06" inside
-each label's edge, so a small drift stays on the label.
+large the text prints, and a color bar at its left edge taking each metal
+and cost color in turn. Hold it against a sheet of labels, up to the
+light: the outlines should sit on the labels' edges. Text and bar keep
+0.06" inside each label's edge, so a small drift stays on the label.
+
+**Color swatches.** **Color swatches: Coin, SL597** (or Note and set,
+SL564) prints one outlined label per bar color, each named: the metal
+colors, then the cost brackets from black (under $10) to violet ($1,000
+and over). Print it on the label stock before relying on the colors, and
+check each can be told from the next. A color is changed in Vocabulary:
+*Metal*'s **Label color**, or *Label cost band*'s **Color** and **Lower
+bound**, as `#` and six hexadecimal digits. A change marks every label it
+alters *Needs a new label*.
 
 **Printer correction.** Some printers fit the whole Letter page into the
 part they can print, even at 100% with scaling off, so every page comes out

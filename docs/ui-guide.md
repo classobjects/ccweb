@@ -314,7 +314,11 @@ these labels print correctly?**
 cell's outline, to hold against a sheet. It asks nothing afterwards.
 **Test pages**, below the runs, prints a blank outlined sheet of either
 product -- **Test page: Coin, SL597** or **Test page: Note and set, SL564** --
-with nothing chosen to print. Its **Printer correction** is for a printer
+with nothing chosen to print, each cell a sample label with a color bar.
+**Color swatches** prints each bar color on a label of its own, named, to
+check on the label stock. The bar is the item's metal above and what one
+piece cost below, all in, black under $10 through violet for $1,000 and
+over; the colors are set in Vocabulary. Its **Printer correction** is for a printer
 that prints the page a little small, so the top row lands low and the bottom
 row high -- or a little large, the other way round. Measure the printed grid and enter what the printer printed,
 **Prints at __% across and __% down**: measured ÷ intended × 100. The SL564

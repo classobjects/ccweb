@@ -93,7 +93,8 @@ TABLES: dict[str, type[ReferenceMixin]] = {
 #: `sales_fee_kind` is curated too: the migration orders it commission,
 #: processing, listing, shipping label, promotion, other, which is the order
 #: a person reads a platform's statement in and puts the catch-all last,
-#: where alphabetical by label puts "Other" third). Everything else is a
+#: where alphabetical by label puts "Other" third; `label_cost_band` is a
+#: scale, cheapest bracket first). Everything else is a
 #: descriptive list that is scanned by name, and alphabetical is the only
 #: order a reader can predict.
 _SEQUENCED_TABLES = frozenset(
@@ -107,6 +108,7 @@ _SEQUENCED_TABLES = frozenset(
         "item_kind",
         "signature_combination",
         "sales_fee_kind",
+        "label_cost_band",
     }
 )
 

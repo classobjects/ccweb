@@ -91,6 +91,7 @@ from .reference import (
     ItemAttribute,
     ItemKind,
     ItemStatus,
+    LabelCostBand,
     Metal,
     Mint,
     NoteIssue,
@@ -185,6 +186,7 @@ REFERENCE_MODELS: tuple[type[ReferenceMixin], ...] = (
     SalesOrderStatus,
     SalesFeeKind,
     ShipmentStatus,
+    LabelCostBand,
 )
 
 __all__ = [
@@ -233,6 +235,7 @@ __all__ = [
     "ItemKind",
     "ItemStatus",
     "ItemStatusHistory",
+    "LabelCostBand",
     "LabelPrinterCorrection",
     "Listing",
     "ListingFormat",

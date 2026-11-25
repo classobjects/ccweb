@@ -144,6 +144,36 @@ export function correctedBox(box, correction) {
   }
 }
 
+/** What starts a label's closing line naming its bar colors (`app.labels`). */
+export const BAR_PREFIX = 'bar: '
+
+/** A color as the bar line may name one: `#` and six hexadecimal digits. */
+const HEX_COLOR = /^#[0-9a-f]{6}$/i
+
+/**
+ * A label's lines split into the text it prints and the colors of the bar
+ * at its left edge (holder-labels-design.md, "The color bar").
+ *
+ * The server ends every label with `bar: <metal> <cost>`, each a color or
+ * `-` for a block left blank. `bar` is null when the last line is not one --
+ * a label printed before the bar existed -- and each color is null when its
+ * block is blank or names no color.
+ */
+export function splitBar(lines) {
+  const last = lines.at(-1)
+  if (typeof last !== 'string' || !last.startsWith(BAR_PREFIX)) {
+    return { text: lines, bar: null }
+  }
+  const [metal, cost] = last.slice(BAR_PREFIX.length).split(' ')
+  const color = (value) => (HEX_COLOR.test(value ?? '') ? value : null)
+  return { text: lines.slice(0, -1), bar: { metal: color(metal), cost: color(cost) } }
+}
+
+/** The bar line for these two colors, as the server writes it; null is blank. */
+export function barLine(metal, cost) {
+  return `${BAR_PREFIX}${metal || '-'} ${cost || '-'}`
+}
+
 /**
  * A label's lines, each with a key of its own for a list: the text, and
  * which of its repeats it is, so two equal lines are told apart without

@@ -13,7 +13,7 @@ from decimal import Decimal
 
 import pytest
 from app.config import Settings, settings
-from app.labels import label_lines, label_text, printed_number
+from app.labels import bar_line, label_lines, label_text, printed_number
 from app.models import (
     AppliesTo,
     CoinDetail,
@@ -36,6 +36,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from tests.builders import ItemFactory, code_id, patch_current
+
+#: The color bar of a silver coin with no cost recorded (`app.labels`).
+_SILVER_NO_COST = bar_line("#8c8c8c", "")
 
 _API = "/api/labels"
 
@@ -147,7 +150,7 @@ def test_the_sheets_are_listed_with_their_cells(
     assert set(by_code) == {"SL597", "SL564"}
     coin = by_code["SL597"]
     assert coin["cells"] == 160
-    assert (coin["columns"], coin["rows"], coin["rounded"]) == (10, 16, True)
+    assert (coin["columns"], coin["rows"], coin["rounded"]) == (10, 16, False)
     assert coin["name"] == "Coin"
     for field in ("width", "height", "top", "left", "gap_x", "gap_y"):
         assert field in coin
@@ -310,7 +313,12 @@ def test_the_unlabeled_run_holds_labelable_items_with_no_label(
     for absent in (labeled, sold):
         assert absent.item_code not in codes
     label = next(lb for lb in runs[0]["labels"] if lb["item_id"] == first.id)
-    assert label["lines"] == [printed_number(first.item_code), "1921-S", "Silver"]
+    assert label["lines"] == [
+        printed_number(first.item_code),
+        "1921-S",
+        "Silver",
+        _SILVER_NO_COST,
+    ]
     assert body["skipped"] == []
 
 
@@ -336,7 +344,12 @@ def test_kinds_no_sheet_names_print_with_the_coins(
         "SL564": [note.item_code],
     }
     bar_label = next(lb for lb in runs[0]["labels"] if lb["item_id"] == bar.id)
-    assert bar_label["lines"] == [printed_number(bar.item_code), "2024", "Silver"]
+    assert bar_label["lines"] == [
+        printed_number(bar.item_code),
+        "2024",
+        "Silver",
+        _SILVER_NO_COST,
+    ]
 
 
 def test_a_run_of_an_unknown_source_is_refused(
@@ -834,7 +847,12 @@ def test_waiting_runs_are_grouped_newest_first(
     assert str(runs[0]["printed_at"]) > str(runs[2]["printed_at"])
     first = runs[2]["labels"]
     assert isinstance(first, list)
-    assert first[0]["lines"] == [printed_number(early.item_code), "1921-S", "Silver"]
+    assert first[0]["lines"] == [
+        printed_number(early.item_code),
+        "1921-S",
+        "Silver",
+        _SILVER_NO_COST,
+    ]
 
 
 def test_a_waiting_label_is_listed_after_its_item_s_kind_changes(

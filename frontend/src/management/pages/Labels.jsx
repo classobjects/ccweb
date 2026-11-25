@@ -9,12 +9,14 @@ import ConfirmDialog from '../ConfirmDialog'
 import HelpScope from '../HelpScope'
 import { findItemByNumber } from '../item-search'
 import { useRequest } from '../../shared/useRequest'
+import { useReference } from '../../shared/reference-context'
+import LabelLines from './labels/LabelLines'
 import LabelSheets from './labels/LabelSheets'
 import SheetPicker from './labels/SheetPicker'
 import ToApply from './labels/ToApply'
-import { CORRECTION_RANGE, keyedLines, normalCorrection } from './labels/layout'
+import { CORRECTION_RANGE, normalCorrection } from './labels/layout'
 import { correctionSaver } from './labels/printerCorrection'
-import { sampleLabels } from './labels/sampleLabels'
+import { barPalette, sampleLabels, swatchLabels } from './labels/sampleLabels'
 import './labels/labels.css'
 
 //: What a run is drawn from (`LabelSource`), as the page offers it.
@@ -160,11 +162,7 @@ function PrintBatch({ batch, onChanged }) {
                   {label.item_code}
                 </td>
                 <td data-label="Label">
-                  {keyedLines(label.lines).map(({ line, key }) => (
-                    <div key={key} className="cell-scroll">
-                      {line}
-                    </div>
-                  ))}
+                  <LabelLines lines={label.lines} />
                 </td>
                 <td>
                   <button
@@ -296,6 +294,9 @@ export default function Labels() {
   const batch = useRequest('label-batch', () => api.labelBatch())
   const waiting = useRequest('labels-waiting', () => api.labelsWaiting())
   const stored = useRequest('label-correction', () => api.labelCorrection())
+  const metals = useReference('metal')
+  const costBands = useReference('label_cost_band')
+  const palette = barPalette(metals, costBands)
   const correction = chosen ?? normalCorrection(stored.data)
   const answer = run.busy ? null : run.data
   const sheetByCode = Object.fromEntries((sheets.data ?? []).map((s) => [s.code, s]))
@@ -346,7 +347,25 @@ export default function Labels() {
   /** A sheet of outlined cells, each with a sample label, whatever the run holds. */
   function printTest(sheet) {
     setSaid('')
-    setPrinting({ source, sheet, labels: sampleLabels(sheet), start: 1, outline: true })
+    setPrinting({
+      source,
+      sheet,
+      labels: sampleLabels(sheet, palette),
+      start: 1,
+      outline: true,
+    })
+  }
+
+  /** Every bar color on outlined labels, each named, from cell 1. */
+  function printSwatches(sheet) {
+    setSaid('')
+    setPrinting({
+      source,
+      sheet,
+      labels: swatchLabels(palette),
+      start: 1,
+      outline: true,
+    })
   }
 
   async function recordPrinted() {
@@ -450,8 +469,17 @@ export default function Labels() {
           <p className="muted">
             Every cell of a sheet outlined on plain paper, to hold against a sheet of
             labels and check where the printer puts them. Each cell holds a sample
-            label, numbered from 900001 (no such item), to show the size of the text.
-            Nothing is recorded.
+            label, numbered from 900001 (no such item), to show the size of the text,
+            with a color bar taking each metal and cost color in turn. Nothing is
+            recorded.
+          </p>
+          <p className="muted">
+            The color bar at a label&apos;s left edge is its metal above and what one
+            piece cost below, all in: black under $10, then brown, red, orange, yellow,
+            green, blue, and violet for $1,000 and over. A blank block is no metal color
+            or no cost recorded. The colors are set in Vocabulary (Metal, and Label cost
+            band). Color swatches print each one named, on a label of its own, to check
+            on the label stock that each can be told from the next.
           </p>
           <p className="muted">
             If the outlines come out small -- the top row low and the bottom row high --
@@ -481,6 +509,18 @@ export default function Labels() {
             {sheets.data.map((sheet) => (
               <button key={sheet.code} type="button" onClick={() => printTest(sheet)}>
                 Test page: {sheet.name}, {sheet.code}
+              </button>
+            ))}
+          </div>
+          <div className="label-run-actions">
+            {sheets.data.map((sheet) => (
+              <button
+                key={sheet.code}
+                type="button"
+                disabled={palette.metals.length + palette.costs.length === 0}
+                onClick={() => printSwatches(sheet)}
+              >
+                Color swatches: {sheet.name}, {sheet.code}
               </button>
             ))}
           </div>

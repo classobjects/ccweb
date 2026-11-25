@@ -64,6 +64,7 @@ __all__ = [
     "ItemAttribute",
     "ItemKind",
     "ItemStatus",
+    "LabelCostBand",
     "Metal",
     "Mint",
     "NoteIssue",
@@ -723,6 +724,9 @@ class Metal(ReferenceMixin, Base):
     #: long for one: Clad for Copper-Nickel Clad. Empty prints the label
     #: (`app.labels`).
     label_name: Mapped[str] = mapped_column(String(12), default="", nullable=False)
+    #: The top block of a holder label's color bar, as `#rrggbb`; empty
+    #: leaves the block blank (`app.labels`).
+    label_color: Mapped[str] = mapped_column(String(7), default="", nullable=False)
     is_precious: Mapped[bool] = mapped_column(default=True, nullable=False)
     #: The metal a plated or layered one is read as for a coin's composition:
     #: gold-plated silver is silver, and has a silver coin's weights. Empty for
@@ -735,6 +739,32 @@ class Metal(ReferenceMixin, Base):
         CheckConstraint(
             "base_metal_id IS NULL OR base_metal_id <> id",
             name="ck_metal_base_is_another",
+        ),
+        CheckConstraint(
+            "label_color ~ '^(#[0-9a-fA-F]{6})?$'", name="ck_metal_label_color"
+        ),
+    )
+
+
+class LabelCostBand(ReferenceMixin, Base):
+    """A cost bracket of a holder label's color bar: its lower bound and color.
+
+    A piece costs into the bracket with the highest `lower_bound` at or below
+    its cost (`app.labels`); the lowest bracket's bound is 0.00. The colors
+    follow the resistor color code, so their order is the brackets' order.
+    """
+
+    __tablename__ = "label_cost_band"
+
+    lower_bound: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    #: The bottom block's color, as `#rrggbb`; empty leaves it blank.
+    color: Mapped[str] = mapped_column(String(7), default="", nullable=False)
+
+    extra_table_args = (
+        UniqueConstraint("lower_bound", name="uq_label_cost_band_lower_bound"),
+        CheckConstraint("lower_bound >= 0", name="ck_label_cost_band_lower_bound"),
+        CheckConstraint(
+            "color ~ '^(#[0-9a-fA-F]{6})?$'", name="ck_label_cost_band_color"
         ),
     )
 

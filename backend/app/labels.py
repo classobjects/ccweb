@@ -10,6 +10,13 @@ the empty lines left out; `label_text` joins them into the one string a
 label's tracking stores and compares. `labelable_clause` and `is_labelable`
 say which items are offered a label at all.
 
+Every label ends with a `bar:` line (`bar_line`): the two colors of the
+bar at its left edge, the item's metal above and the cost bracket of one
+piece below (section 4, "The color bar"). The page draws it as the bar and
+prints no text for it; being a line, it is in the text a label's tracking
+stores and compares, so a changed color marks the label stale like any
+changed word.
+
 `labels_of` is `label_lines` for many items at once: what notes carry --
 attributes, errors, Friedberg numbers -- is read in one statement for all
 of them, so a run over the whole collection is a handful of statements, not
@@ -36,6 +43,7 @@ from .item_descriptions import FANCY_SERIAL, fancy_is_redundant, saved_errors_of
 from .models import (
     FriedbergNumber,
     InventoryItem,
+    LabelCostBand,
     Metal,
     Mint,
     NoteType,
@@ -46,9 +54,12 @@ from .models.reference import Disposition
 from .offer_titles import _coin_date, _years, name_of
 
 __all__ = [
+    "BAR_PREFIX",
     "SHEETS",
     "SHEET_FOR_KIND",
     "SheetLayout",
+    "bar_line",
+    "cost_per_piece",
     "is_labelable",
     "label_items",
     "label_lines",
@@ -103,7 +114,7 @@ SHEETS: dict[str, SheetLayout] = {
         _d("0.333"),
         _d("0.176"),
         _d("0.1556"),
-        True,
+        False,
     ),
     "SL564": SheetLayout(
         "SL564",
@@ -141,8 +152,8 @@ _LIST_JOIN = " · "
 #: The attribute groups line 3 of a note draws from.
 _NOTE_GROUPS = frozenset({"serial", "variety"})
 #: Attributes line 3 leaves out: Error Note, because line 4 carries the
-#: errors themselves; Gift, because it is how the item was acquired, and a
-#: label is read by customers.
+#: errors themselves; Gift, because it is how the item was acquired, not
+#: something about the item.
 _UNPRINTED_ATTRIBUTES = frozenset({"error", "gift"})
 
 _DISPOSITIONS = ("held", "listed")
@@ -244,6 +255,8 @@ class _Facts:
     held: dict[int, list[Held]]
     errors: dict[int, list[tuple[str, str | None]]]
     friedberg: dict[int, str]
+    #: The active cost brackets, highest lower bound first: (bound, color).
+    bands: list[tuple[Decimal, str]]
     #: Reference rows `db.get` will be asked for. The session's identity map
     #: holds rows weakly, so these are kept here while the lines are made.
     kept: list[object]
@@ -285,6 +298,7 @@ def _facts(db: Session, items: Sequence[InventoryItem]) -> _Facts:
         held=held_attributes_of(db, note_ids),
         errors=saved_errors_of(db, note_ids),
         friedberg=friedberg,
+        bands=_bands(db),
         kept=kept,
     )
 
@@ -315,7 +329,52 @@ def _lines(db: Session, item: InventoryItem, facts: _Facts) -> list[str]:
         lines = _set_lines(db, item)
     else:
         lines = _coin_lines(db, item)
-    return [line for line in lines if line]
+    return [line for line in lines if line] + [_bar_of(item, facts)]
+
+
+#: What starts the line naming a label's bar colors, and stands for a block
+#: left blank.
+BAR_PREFIX = "bar: "
+_NO_COLOR = "-"
+
+
+def bar_line(metal_color: str, cost_color: str) -> str:
+    """The line naming a label's two bar colors, metal first; empty is blank."""
+    return f"{BAR_PREFIX}{metal_color or _NO_COLOR} {cost_color or _NO_COLOR}"
+
+
+def cost_per_piece(item: InventoryItem) -> Decimal | None:
+    """What one piece of the item cost, all in; None when no cost is recorded.
+
+    The total cost -- item, shipping and sales tax -- over the piece count:
+    a lot is priced per coin, as it will be split, and a roll, which is
+    not, by its coins too (the owner's ruling). A cost of 0.00 is a gift or
+    a cost not known, and has no bracket.
+    """
+    total = item.total_cost
+    if total is None or total <= 0:
+        return None
+    return total / max(item.piece_count or 1, 1)
+
+
+def _bands(db: Session) -> list[tuple[Decimal, str]]:
+    """The active cost brackets, highest lower bound first."""
+    rows = db.execute(
+        select(LabelCostBand.lower_bound, LabelCostBand.color)
+        .where(LabelCostBand.is_active.is_(True))
+        .order_by(LabelCostBand.lower_bound.desc())
+    )
+    return [(bound, color) for bound, color in rows.tuples().all()]
+
+
+def _bar_of(item: InventoryItem, facts: _Facts) -> str:
+    """The item's bar line: its metal's color, and its cost bracket's."""
+    metal = item.metal.label_color if item.metal is not None else ""
+    cost = cost_per_piece(item)
+    bracket = ""
+    if cost is not None:
+        bracket = next((color for bound, color in facts.bands if cost >= bound), "")
+    return bar_line(metal, bracket)
 
 
 def write_quietly(

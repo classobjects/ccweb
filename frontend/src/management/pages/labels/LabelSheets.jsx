@@ -11,7 +11,9 @@ import {
   keyedLines,
   placeLabels,
   sheetLayout,
+  splitBar,
 } from './layout'
+import LabelBar from './LabelBar'
 
 /** Inches as a CSS length, rounded past anything a printer can place. */
 const inch = (value) => `${+value.toFixed(4)}in`
@@ -56,6 +58,8 @@ function fitLines(container) {
  * The first sheet is filled from `start`, every further one from cell 1.
  * Each line of a label is a `.label-line` of its own that never wraps: a
  * line too long is set smaller (`fitLines`), then cut with an ellipsis.
+ * A label's closing `bar:` line is drawn as the color bar at its left edge
+ * (`LabelBar`), not printed as text; the text moves right to clear it.
  * `outline` draws every cell's border on every page, for the test page
  * printed on plain paper and held against a sheet; with no labels it is
  * one blank page of outlines. `correction` is how large the printer prints
@@ -115,15 +119,23 @@ export default function LabelSheets({
             Array.from({ length: layout.cells }, (_, i) => (
               <div key={`cell-${i + 1}`} className="label-cell" style={placed(i + 1)} />
             ))}
-          {page.placed.map(({ cell, label }) => (
-            <div key={label.item_id} className="label" style={placed(cell)}>
-              {keyedLines(label.lines).map(({ line, key }) => (
-                <div key={key} className="label-line">
-                  {line}
-                </div>
-              ))}
-            </div>
-          ))}
+          {page.placed.map(({ cell, label }) => {
+            const { text, bar } = splitBar(label.lines)
+            return (
+              <div
+                key={label.item_id}
+                className={bar ? 'label has-bar' : 'label'}
+                style={placed(cell)}
+              >
+                {bar && <LabelBar bar={bar} />}
+                {keyedLines(text).map(({ line, key }) => (
+                  <div key={key} className="label-line">
+                    {line}
+                  </div>
+                ))}
+              </div>
+            )
+          })}
         </section>
       ))}
     </div>

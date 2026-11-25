@@ -9,8 +9,11 @@ from decimal import Decimal
 
 import pytest
 from app.labels import (
+    BAR_PREFIX,
     SHEET_FOR_KIND,
     SHEETS,
+    bar_line,
+    cost_per_piece,
     is_labelable,
     label_lines,
     label_text,
@@ -30,6 +33,7 @@ from app.models import (
     ItemAttribute,
     ItemAttributeLink,
     ItemError,
+    LabelCostBand,
     Metal,
     Mint,
     NoteType,
@@ -54,7 +58,7 @@ def test_each_layout_fills_letter_exactly() -> None:
         assert float(down) == pytest.approx(11, abs=0.0035)
     assert SHEETS["SL597"].cells == 160
     assert SHEETS["SL564"].cells == 102
-    assert SHEETS["SL597"].rounded
+    assert not SHEETS["SL597"].rounded
     assert not SHEETS["SL564"].rounded
     assert SHEETS["SL597"].gap_y == Decimal("0.1556")
     assert SHEET_FOR_KIND == {"coin": "SL597", "currency": "SL564", "set": "SL564"}
@@ -76,6 +80,13 @@ def test_printed_number() -> None:
     assert printed_number("CC-000412_02") == "000412_02"
 
 
+def _printed(db: Session, item: InventoryItem) -> list[str]:
+    """The item's label lines as text prints them: all but the closing bar line."""
+    lines = label_lines(db, item)
+    assert lines[-1].startswith(BAR_PREFIX)
+    return lines[:-1]
+
+
 def _coin(db: Session, make_item: ItemFactory, **kw: object) -> InventoryItem:
     item = make_item(year_start=1921, metal_id=code_id(db, Metal, "silver"), **kw)
     db.refresh(item)
@@ -88,7 +99,7 @@ def test_coin_lines(db: Session, make_item: ItemFactory) -> None:
     db.flush()
     db.refresh(item)
     assert item.metal is not None
-    assert label_lines(db, item) == [
+    assert _printed(db, item) == [
         printed_number(item.item_code),
         "1921-S",
         item.metal.label,
@@ -101,26 +112,26 @@ def test_a_coin_label_prints_the_metals_label_name_where_it_has_one(
     clad = make_item(year_start=1965, metal_id=code_id(db, Metal, "clad"))
     brass = make_item(year_start=2000, metal_id=code_id(db, Metal, "manganese_brass"))
     silver = _coin(db, make_item)
-    assert label_lines(db, clad)[-1] == "Clad"
-    assert label_lines(db, brass)[-1] == "Clad"
+    assert _printed(db, clad)[-1] == "Clad"
+    assert _printed(db, brass)[-1] == "Clad"
     # No label name: the label prints whole.
-    assert label_lines(db, silver)[-1] == "Silver"
+    assert _printed(db, silver)[-1] == "Silver"
     # A label name of spaces is no label name.
     metal = db.scalars(select(Metal).where(Metal.code == "silver")).one()
     metal.label_name = "  "
     db.flush()
-    assert label_lines(db, silver)[-1] == "Silver"
+    assert _printed(db, silver)[-1] == "Silver"
 
 
 def test_coin_without_mint_or_date(db: Session, make_item: ItemFactory) -> None:
     item = _coin(db, make_item)
-    assert label_lines(db, item)[1] == "1921"
+    assert _printed(db, item)[1] == "1921"
     undated = make_item(year_start=None, no_date=True)
-    assert label_lines(db, undated) == [printed_number(undated.item_code)] + (
+    assert _printed(db, undated) == [printed_number(undated.item_code)] + (
         [undated.metal.label] if undated.metal is not None else []
     )
     span = make_item(year_start=1878, year_end=1904)
-    assert label_lines(db, span)[1] == "1878-1904"
+    assert _printed(db, span)[1] == "1878-1904"
 
 
 def _note(db: Session, make_item: ItemFactory, **detail: object) -> InventoryItem:
@@ -192,7 +203,7 @@ def test_note_lines(db: Session, make_item: ItemFactory) -> None:
     }
     name = name_of(db, item)
     assert name
-    assert label_lines(db, item) == [
+    assert _printed(db, item) == [
         f"{printed_number(item.item_code)}  Fr 9901*  Cool 96.9%",
         name,
         # vocabulary order; CAC (verification group), Fancy Serial and Gift
@@ -200,7 +211,7 @@ def test_note_lines(db: Session, make_item: ItemFactory) -> None:
         " · ".join(labels[c] for c in ("partial_ladder", "star", "wide")),
         " · ".join(e.label for e in errors),
     ]
-    assert label_text(label_lines(db, item)).count("\n") == 3
+    assert label_text(_printed(db, item)).count("\n") == 3
 
 
 def test_a_conflicting_friedberg_is_not_printed(
@@ -213,11 +224,11 @@ def test_a_conflicting_friedberg_is_not_printed(
             friedberg_id=_friedberg(db, f"99{status[:2]}"),
             friedberg_status=status,
         )
-        assert label_lines(db, item)[0] == printed_number(item.item_code)
+        assert _printed(db, item)[0] == printed_number(item.item_code)
     confirmed = _note(
         db, make_item, friedberg_id=_friedberg(db, "9902"), friedberg_status="confirmed"
     )
-    assert label_lines(db, confirmed)[0].endswith("  Fr 9902")
+    assert _printed(db, confirmed)[0].endswith("  Fr 9902")
 
 
 def test_a_note_with_nothing_to_add_drops_empty_lines(
@@ -225,7 +236,7 @@ def test_a_note_with_nothing_to_add_drops_empty_lines(
 ) -> None:
     item = _note(db, make_item)
     _link(db, item, "fancy_serial")
-    lines = label_lines(db, item)
+    lines = _printed(db, item)
     assert "" not in lines
     assert len(lines) == 3  # number, name, Fancy Serial alone is still said
     assert (
@@ -250,7 +261,7 @@ def _set(db: Session, make_item: ItemFactory, **kw: object) -> InventoryItem:
 
 def test_set_lines(db: Session, make_item: ItemFactory) -> None:
     item = _set(db, make_item)
-    assert label_lines(db, item) == [
+    assert _printed(db, item) == [
         printed_number(item.item_code),
         "1999 Silver Proof Set",
         "9 pieces",
@@ -258,7 +269,7 @@ def test_set_lines(db: Session, make_item: ItemFactory) -> None:
     db.add(CoinDetail(inventory_item_id=item.id, mint_id=code_id(db, Mint, "S")))
     db.flush()
     db.refresh(item)
-    assert label_lines(db, item) == [
+    assert _printed(db, item) == [
         printed_number(item.item_code),
         "1999 Silver Proof Set",
         "San Francisco · 9 pieces",
@@ -268,16 +279,16 @@ def test_set_lines(db: Session, make_item: ItemFactory) -> None:
 def test_a_sets_year_is_not_printed_twice(db: Session, make_item: ItemFactory) -> None:
     item = _set(db, make_item)
     # name_of already leads with the year; the line must not repeat it.
-    assert label_lines(db, item)[1].count("1999") == 1
+    assert _printed(db, item)[1].count("1999") == 1
     one = _set(db, make_item, piece_count=1)
-    assert label_lines(db, one)[2] == "1 piece"
+    assert _printed(db, one)[2] == "1 piece"
 
 
 def test_a_set_with_nothing_to_name_it_drops_the_line(
     db: Session, make_item: ItemFactory
 ) -> None:
     item = make_item(kind="set", year_start=None, piece_count=2)
-    assert label_lines(db, item) == [printed_number(item.item_code), "2 pieces"]
+    assert _printed(db, item) == [printed_number(item.item_code), "2 pieces"]
 
 
 def _make(db: Session, make_item: ItemFactory, **kw: object) -> InventoryItem:
@@ -466,3 +477,99 @@ def test_refresh_stale_loads_its_items_together(
     large = _count_queries(db, many)
     assert large <= small + 1, (small, large)
     assert small <= 14, (small, large)
+
+
+# -- the color bar -----------------------------------------------------------
+
+_SILVER = "#8c8c8c"
+_BLACK = "#000000"
+_BROWN = "#8b4513"
+_RED = "#e02020"
+_VIOLET = "#8a3fd1"
+
+
+def _bar(db: Session, item: InventoryItem) -> str:
+    return label_lines(db, item)[-1]
+
+
+def _costing(
+    make_item: ItemFactory, db: Session, cost: str, **kw: object
+) -> InventoryItem:
+    """A silver coin that cost `cost`, untaxed and with no shipping."""
+    return _coin(db, make_item, item_cost=Decimal(cost), tax_rate=Decimal("0"), **kw)
+
+
+def test_every_label_ends_with_its_bar_metal_then_cost(
+    db: Session, make_item: ItemFactory
+) -> None:
+    coin = _costing(make_item, db, "30.00")
+    assert _bar(db, coin) == bar_line(_SILVER, _RED) == f"{BAR_PREFIX}{_SILVER} {_RED}"
+
+
+def test_the_cost_bracket_is_one_pieces_cost_all_in(
+    db: Session, make_item: ItemFactory
+) -> None:
+    # A $600 roll of 20 is $30 a coin.
+    roll = _costing(make_item, db, "600.00", piece_count=20)
+    assert cost_per_piece(roll) == Decimal(30)
+    assert _bar(db, roll) == bar_line(_SILVER, _RED)
+    # Shipping and tax count: $9 and $2 shipping is $11, brown, not black.
+    shipped = _coin(
+        db,
+        make_item,
+        item_cost=Decimal("9.00"),
+        shipping_cost=Decimal("2.00"),
+        tax_rate=Decimal("0"),
+    )
+    assert _bar(db, shipped) == bar_line(_SILVER, _BROWN)
+
+
+@pytest.mark.parametrize(
+    ("cost", "color"),
+    [
+        ("0.01", _BLACK),
+        ("9.99", _BLACK),
+        ("10.00", _BROWN),
+        ("24.99", _BROWN),
+        ("25.00", _RED),
+        ("1000.00", _VIOLET),
+        ("25000.00", _VIOLET),
+    ],
+)
+def test_a_bracket_takes_its_lower_bound_and_stops_short_of_the_next(
+    db: Session, make_item: ItemFactory, cost: str, color: str
+) -> None:
+    assert _bar(db, _costing(make_item, db, cost)) == bar_line(_SILVER, color)
+
+
+def test_no_cost_and_no_metal_leave_their_blocks_blank(
+    db: Session, make_item: ItemFactory
+) -> None:
+    gift = _costing(make_item, db, "0.00")
+    assert cost_per_piece(gift) is None
+    assert _bar(db, gift) == bar_line(_SILVER, "") == f"{BAR_PREFIX}{_SILVER} -"
+    note = make_item(kind="currency", item_cost=Decimal("40.00"), tax_rate=Decimal("0"))
+    assert _bar(db, note) == bar_line("", _RED)
+
+
+def test_a_retired_bracket_is_passed_over(db: Session, make_item: ItemFactory) -> None:
+    band = db.scalars(
+        select(LabelCostBand).where(LabelCostBand.code == "25_to_50")
+    ).one()
+    band.is_active = False
+    db.flush()
+    # $30 falls back to the bracket below it.
+    assert _bar(db, _costing(make_item, db, "30.00")) == bar_line(_SILVER, _BROWN)
+
+
+def test_a_recolored_metal_marks_its_labels_stale(
+    db: Session, make_item: ItemFactory
+) -> None:
+    item = _labeled_coin(db, make_item)
+    assert not _stale_after(db, item.id)
+    metal = db.scalars(select(Metal).where(Metal.code == "silver")).one()
+    metal.label_color = "#999999"
+    db.flush()
+    refresh_stale(db, [item.id])
+    db.commit()
+    assert _stale_after(db, item.id)

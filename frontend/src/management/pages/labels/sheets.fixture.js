@@ -16,7 +16,7 @@ export const SL597 = {
   left: '0.333',
   gap_x: '0.176',
   gap_y: '0.1556',
-  rounded: true,
+  rounded: false,
   cells: 160,
 }
 
